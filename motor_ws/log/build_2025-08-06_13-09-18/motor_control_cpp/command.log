@@ -1,0 +1,6 @@
+Invoking command in '/home/seo/motor_ws/build/motor_control_cpp': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake /home/seo/motor_ws/src/motor_control_cpp -DAMENT_CMAKE_SYMLINK_INSTALL=1 -DCMAKE_INSTALL_PREFIX=/home/seo/motor_ws/install/motor_control_cpp
+Invoked command in '/home/seo/motor_ws/build/motor_control_cpp' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake /home/seo/motor_ws/src/motor_control_cpp -DAMENT_CMAKE_SYMLINK_INSTALL=1 -DCMAKE_INSTALL_PREFIX=/home/seo/motor_ws/install/motor_control_cpp
+Invoking command in '/home/seo/motor_ws/build/motor_control_cpp': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/seo/motor_ws/build/motor_control_cpp -- -j22 -l22
+Invoked command in '/home/seo/motor_ws/build/motor_control_cpp' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/seo/motor_ws/build/motor_control_cpp -- -j22 -l22
+Invoking command in '/home/seo/motor_ws/build/motor_control_cpp': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/seo/motor_ws/build/motor_control_cpp
+Invoked command in '/home/seo/motor_ws/build/motor_control_cpp' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/seo/motor_ws/build/motor_control_cpp

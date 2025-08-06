@@ -1,0 +1,1 @@
+/home/seo/motor_ws/build/throttle_msgs/rosidl_generator_c/throttle_msgs/msg/throttle_data.h

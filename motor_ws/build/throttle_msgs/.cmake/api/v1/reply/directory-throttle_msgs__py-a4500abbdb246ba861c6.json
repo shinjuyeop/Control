@@ -1,0 +1,14 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : [],
+		"files" : [],
+		"nodes" : []
+	},
+	"installers" : [],
+	"paths" : 
+	{
+		"build" : "throttle_msgs__py",
+		"source" : "/home/seo/motor_ws/build/throttle_msgs/throttle_msgs__py"
+	}
+}

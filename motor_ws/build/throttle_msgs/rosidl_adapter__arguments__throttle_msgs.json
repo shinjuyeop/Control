@@ -1,0 +1,6 @@
+{
+  "package_name": "throttle_msgs",
+  "non_idl_tuples": [
+    "/home/seo/motor_ws/src/throttle_msgs:msg/ThrottleData.msg"
+  ]
+}

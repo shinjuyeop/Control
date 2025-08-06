@@ -1,0 +1,23 @@
+running develop
+running egg_info
+creating throttle_serial_py.egg-info
+writing throttle_serial_py.egg-info/PKG-INFO
+writing dependency_links to throttle_serial_py.egg-info/dependency_links.txt
+writing entry points to throttle_serial_py.egg-info/entry_points.txt
+writing requirements to throttle_serial_py.egg-info/requires.txt
+writing top-level names to throttle_serial_py.egg-info/top_level.txt
+writing manifest file 'throttle_serial_py.egg-info/SOURCES.txt'
+reading manifest file 'throttle_serial_py.egg-info/SOURCES.txt'
+writing manifest file 'throttle_serial_py.egg-info/SOURCES.txt'
+running build_ext
+Creating /home/seo/motor_ws/install/throttle_serial_py/lib/python3.10/site-packages/throttle-serial-py.egg-link (link to .)
+Installing rpm_mux script to /home/seo/motor_ws/install/throttle_serial_py/lib/throttle_serial_py
+Installing throttle_serial_node script to /home/seo/motor_ws/install/throttle_serial_py/lib/throttle_serial_py
+
+Installed /home/seo/motor_ws/build/throttle_serial_py
+running symlink_data
+creating /home/seo/motor_ws/install/throttle_serial_py/share/ament_index
+creating /home/seo/motor_ws/install/throttle_serial_py/share/ament_index/resource_index
+creating /home/seo/motor_ws/install/throttle_serial_py/share/ament_index/resource_index/packages
+symbolically linking /home/seo/motor_ws/build/throttle_serial_py/resource/throttle_serial_py -> /home/seo/motor_ws/install/throttle_serial_py/share/ament_index/resource_index/packages
+symbolically linking /home/seo/motor_ws/build/throttle_serial_py/package.xml -> /home/seo/motor_ws/install/throttle_serial_py/share/throttle_serial_py

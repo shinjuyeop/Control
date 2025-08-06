@@ -1,0 +1,233 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"childIndexes" : 
+					[
+						1
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-.-51cbf8e422cf5ccb8694.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.12"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3,
+						5,
+						6,
+						7,
+						8,
+						9,
+						10,
+						11,
+						12,
+						13,
+						14,
+						15,
+						16,
+						17
+					]
+				},
+				{
+					"build" : "throttle_msgs__py",
+					"jsonFile" : "directory-throttle_msgs__py-a4500abbdb246ba861c6.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.12"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "/home/seo/motor_ws/build/throttle_msgs/throttle_msgs__py",
+					"targetIndexes" : 
+					[
+						4
+					]
+				}
+			],
+			"name" : "",
+			"projects" : 
+			[
+				{
+					"directoryIndexes" : 
+					[
+						0,
+						1
+					],
+					"name" : "throttle_msgs",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3,
+						4,
+						5,
+						6,
+						7,
+						8,
+						9,
+						10,
+						11,
+						12,
+						13,
+						14,
+						15,
+						16,
+						17
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "ament_cmake_python_build_throttle_msgs_egg::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-ament_cmake_python_build_throttle_msgs_egg-d6bb117f45c591b87fce.json",
+					"name" : "ament_cmake_python_build_throttle_msgs_egg",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "ament_cmake_python_symlink_throttle_msgs::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-ament_cmake_python_symlink_throttle_msgs-8c10c5a2d52f7f0a4ecc.json",
+					"name" : "ament_cmake_python_symlink_throttle_msgs",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "throttle_msgs::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-throttle_msgs-c8717ddcf631e06edf78.json",
+					"name" : "throttle_msgs",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "throttle_msgs__cpp::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-throttle_msgs__cpp-62fad24095a97ac6f1b5.json",
+					"name" : "throttle_msgs__cpp",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 1,
+					"id" : "throttle_msgs__py::@dced835f026a92ad4dae",
+					"jsonFile" : "target-throttle_msgs__py-0c12805e056038aa2510.json",
+					"name" : "throttle_msgs__py",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "throttle_msgs__rosidl_generator_c::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-throttle_msgs__rosidl_generator_c-a5afec7a6f76edd9fd61.json",
+					"name" : "throttle_msgs__rosidl_generator_c",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "throttle_msgs__rosidl_generator_py::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-throttle_msgs__rosidl_generator_py-f97abe0b8eb395786ece.json",
+					"name" : "throttle_msgs__rosidl_generator_py",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "throttle_msgs__rosidl_typesupport_c::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-throttle_msgs__rosidl_typesupport_c-7af827f69e1d68629f83.json",
+					"name" : "throttle_msgs__rosidl_typesupport_c",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "throttle_msgs__rosidl_typesupport_c__pyext::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-throttle_msgs__rosidl_typesupport_c__pyext-1f6b93c6ce51e333caf9.json",
+					"name" : "throttle_msgs__rosidl_typesupport_c__pyext",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "throttle_msgs__rosidl_typesupport_cpp::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-throttle_msgs__rosidl_typesupport_cpp-2cf14fb0d3a637a09d6d.json",
+					"name" : "throttle_msgs__rosidl_typesupport_cpp",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "throttle_msgs__rosidl_typesupport_fastrtps_c::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-throttle_msgs__rosidl_typesupport_fastrtps_c-0ac08aee1c433a0ad924.json",
+					"name" : "throttle_msgs__rosidl_typesupport_fastrtps_c",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "throttle_msgs__rosidl_typesupport_fastrtps_c__pyext::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-throttle_msgs__rosidl_typesupport_fastrtps_c__pyext-ca2b149ef5da2fe63a1f.json",
+					"name" : "throttle_msgs__rosidl_typesupport_fastrtps_c__pyext",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "throttle_msgs__rosidl_typesupport_fastrtps_cpp::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-throttle_msgs__rosidl_typesupport_fastrtps_cpp-bdd5c191f528bded64e5.json",
+					"name" : "throttle_msgs__rosidl_typesupport_fastrtps_cpp",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "throttle_msgs__rosidl_typesupport_introspection_c::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-throttle_msgs__rosidl_typesupport_introspection_c-b42852b434eb361f840e.json",
+					"name" : "throttle_msgs__rosidl_typesupport_introspection_c",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "throttle_msgs__rosidl_typesupport_introspection_c__pyext::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-throttle_msgs__rosidl_typesupport_introspection_c__pyext-fc6909a44271a17d80b4.json",
+					"name" : "throttle_msgs__rosidl_typesupport_introspection_c__pyext",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "throttle_msgs__rosidl_typesupport_introspection_cpp::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-throttle_msgs__rosidl_typesupport_introspection_cpp-99d22e5f62718e35c5bc.json",
+					"name" : "throttle_msgs__rosidl_typesupport_introspection_cpp",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "throttle_msgs_uninstall::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-throttle_msgs_uninstall-c9b534484667ca83e170.json",
+					"name" : "throttle_msgs_uninstall",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "uninstall::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-uninstall-2ab5aee5489003b1b801.json",
+					"name" : "uninstall",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "/home/seo/motor_ws/build/throttle_msgs",
+		"source" : "/home/seo/motor_ws/src/throttle_msgs"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 3
+	}
+}
