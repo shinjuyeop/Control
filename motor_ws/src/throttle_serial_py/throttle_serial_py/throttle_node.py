@@ -14,23 +14,31 @@ class ThrottleSerialNode(Node):
         self.create_timer(0.01, self.read_once)   # 100 Hz
 
     def read_once(self):
-        if self.ser.read(1) != bytes([HDR]):      # 헤더 대기
+        hdr = self.ser.read(1)
+        if not hdr or hdr[0] != HDR:
             return
-        data = self.ser.read(1)
-        if len(data) != 1:
+        
+        packet = self.ser.read(3)       # RPM_H, RPM_L, FLAGS
+        if len(packet) != 3:
             return
+        
+        hi, lo, flags = packet
+        
+        #16-bit RPM 복원
+        rpm16 = (hi << 8) | lo
 
-        b       = data[0]
-        rpm4    = (b >> 4) & 0x0F
-        sign    = (b >> 3) & 0x01
-        estop   = bool(b & 0x04)
-        asms    = bool(b & 0x02)
+        reverse = bool((flags >> 2) & 0x01)        # bit 2 = 후진
+        estop   = bool((flags >> 1) & 0x01)       # bit 1 = E-STOP
+        asms    = bool(flags & 0x01)              # bit 0 = MANUAL 
 
-        rpm_mag = rpm4 * STEP_RPM
-        rpm     = -rpm_mag if sign else rpm_mag
+        rpm = -int(rpm16) if reverse else int(rpm16)
 
-        msg = ThrottleData(rpm=int(rpm), estop=estop, asms=asms)
-        self.pub.publish(msg)
+        msg = ThrottleData(
+            rpm = rpm,
+            estop = estop,
+            asms = asms
+        )
+        self.pub.publlish(msg)
 
 def main(args=None):
     rclpy.init(args=args)

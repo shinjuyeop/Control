@@ -59,6 +59,9 @@ Servo brakeServo;
 Servo exhaust;          // VESS 서보
 int rawMin, rawMax;
 
+static float rpmPrev = 0;
+static float qError = 0;    // EMA, Error dithering 
+
 /* Hall 펄스 카운터 */
 volatile unsigned long pulseCnt = 0;
 unsigned long lastPulseCnt = 0;
@@ -160,7 +163,7 @@ void setup() {
 void loop() {
   const unsigned long now = millis();
 
-  /* 1) 50 Hz 패킷 처리 */
+  /* 1) 100 Hz 패킷 처리 */
   static uint32_t tPkt = 0;
   if (now - tPkt >= PERIOD_MS) {
     tPkt = now;
@@ -169,24 +172,26 @@ void loop() {
     if (estopFlag)        enterEmergency();
     else if (isManual)    enterManual();
     else                  enterAutomatic();
-
+    
     /* 스로틀 → 4-bit rpm */
     int raw = readThrottle();
     raw = constrain(raw, rawMin, rawMax);
     float voltage = raw * (5.0f / 1023.0f);
     float rpm_f = (voltage - V_MIN) / (V_MAX - V_MIN) * (RPM_MAX - RPM_MIN) + RPM_MIN;
     rpm_f = constrain(rpm_f, RPM_MIN, RPM_MAX);
-    uint8_t rpm4 = uint8_t(rpm_f / (RPM_MAX / 15.0f) + 0.5f);
 
-    /* 1-byte 패킷 */
-    uint8_t pkt =
-        (rpm4        << 4) |
-        (reverseFlag << 3) |
-        (estopFlag   << 2) |
-        (isManual    << 1);   // 1 = MANUAL
+    uint16_t rpm16 = uint16_t(rpm_f + 0.5f);
 
+    uint8_t flags = 
+      (reverseFlag << 2) |
+      (estopFlag   << 1) |
+      (isManual    << 0);
+
+    
     Serial.write(0xAA);
-    Serial.write(pkt);
+    Serial.write(uint8_t(rpm16 >> 8));
+    Serial.write(uint8_t(rpm16 & 0xFF));
+    Serial.write(flags);
   }
 
   /* 2) 속도 계산 + VESS PWM */
