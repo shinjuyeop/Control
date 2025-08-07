@@ -9,7 +9,7 @@ STEP_RPM = RPM_MAX / 15  # 33 rpm 단계
 class ThrottleSerialNode(Node):
     def __init__(self):
         super().__init__('throttle_serial_node')
-        self.ser = serial.Serial('/dev/ttyACM0', 115200, timeout=0.05)
+        self.ser = serial.Serial('/dev/ttyACM1', 115200, timeout=0.05)
         self.pub = self.create_publisher(ThrottleData, 'throttle_data', 10)
         self.create_timer(0.01, self.read_once)   # 100 Hz
 
@@ -24,21 +24,23 @@ class ThrottleSerialNode(Node):
         
         hi, lo, flags = packet
         
+        print(f"flags={flags:03b}, manual={bool(flags & 0x01)}")
+
         #16-bit RPM 복원
         rpm16 = (hi << 8) | lo
 
-        reverse = bool((flags >> 2) & 0x01)        # bit 2 = 후진
+        reverse = bool((flags >> 2) & 0x01)       # bit 2 = 후진
         estop   = bool((flags >> 1) & 0x01)       # bit 1 = E-STOP
-        asms    = bool(flags & 0x01)              # bit 0 = MANUAL 
+        manual  = bool(flags & 0x01)              # bit 0 = MANUAL 
 
         rpm = -int(rpm16) if reverse else int(rpm16)
 
         msg = ThrottleData(
             rpm = rpm,
             estop = estop,
-            asms = asms
+            asms = manual
         )
-        self.pub.publlish(msg)
+        self.pub.publish(msg)
 
 def main(args=None):
     rclpy.init(args=args)
