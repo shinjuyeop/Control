@@ -1,1 +1,0 @@
-/home/seo/Control/motor_ws/src/throttle_serial_py/setup.py

@@ -1,4 +1,0 @@
-source;share/throttle_msgs/local_setup.bash
-source;share/throttle_msgs/local_setup.dsv
-source;share/throttle_msgs/local_setup.sh
-source;share/throttle_msgs/local_setup.zsh

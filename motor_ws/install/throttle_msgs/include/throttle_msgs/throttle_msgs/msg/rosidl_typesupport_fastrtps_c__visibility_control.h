@@ -1,1 +1,0 @@
-/home/seo/Control/motor_ws/build/throttle_msgs/rosidl_typesupport_fastrtps_c/throttle_msgs/msg/rosidl_typesupport_fastrtps_c__visibility_control.h

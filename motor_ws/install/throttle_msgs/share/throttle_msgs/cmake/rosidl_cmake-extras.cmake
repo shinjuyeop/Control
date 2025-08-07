@@ -1,1 +1,0 @@
-/home/seo/Control/motor_ws/build/throttle_msgs/rosidl_cmake/rosidl_cmake-extras.cmake

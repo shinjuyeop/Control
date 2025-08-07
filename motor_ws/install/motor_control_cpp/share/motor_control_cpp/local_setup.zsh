@@ -1,1 +1,0 @@
-/home/seo/Control/motor_ws/build/motor_control_cpp/ament_cmake_environment_hooks/local_setup.zsh

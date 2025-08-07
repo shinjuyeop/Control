@@ -1,1 +1,0 @@
-ament_cmake_symlink_install_targets("TARGET_FILES" "/home/seo/Control/motor_ws/build/motor_control_cpp/speed_publisher" "/home/seo/Control/motor_ws/build/motor_control_cpp/can_speed_sender" "/home/seo/Control/motor_ws/build/motor_control_cpp/can_speed_receiver" "TARGETS" "speed_publisher" "can_speed_sender" "can_speed_receiver" "DESTINATION" "lib/motor_control_cpp")

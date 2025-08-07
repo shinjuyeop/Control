@@ -1,1 +1,0 @@
-/home/seo/Control/motor_ws/build/motor_control_cpp/ament_cmake_core/motor_control_cppConfig.cmake

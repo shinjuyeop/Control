@@ -1,1 +1,0 @@
-/home/seo/Control/motor_ws/build/throttle_msgs/ament_cmake_core/throttle_msgsConfig-version.cmake

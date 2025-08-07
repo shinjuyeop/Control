@@ -1,1 +1,0 @@
-/home/seo/Control/motor_ws/build/throttle_msgs/rosidl_generator_py/throttle_msgs/_throttle_msgs_s.ep.rosidl_typesupport_introspection_c.c

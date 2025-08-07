@@ -1,4 +1,0 @@
-[console_scripts]
-rpm_mux = throttle_serial_py.rpm_mux:main
-throttle_serial_node = throttle_serial_py.throttle_node:main
-

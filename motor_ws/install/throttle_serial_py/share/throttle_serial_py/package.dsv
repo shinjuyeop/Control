@@ -1,9 +1,0 @@
-source;share/throttle_serial_py/hook/pythonpath.ps1
-source;share/throttle_serial_py/hook/pythonpath.dsv
-source;share/throttle_serial_py/hook/pythonpath.sh
-source;share/throttle_serial_py/hook/ament_prefix_path.ps1
-source;share/throttle_serial_py/hook/ament_prefix_path.dsv
-source;share/throttle_serial_py/hook/ament_prefix_path.sh
-source;../../build/throttle_serial_py/share/throttle_serial_py/hook/pythonpath_develop.ps1
-source;../../build/throttle_serial_py/share/throttle_serial_py/hook/pythonpath_develop.dsv
-source;../../build/throttle_serial_py/share/throttle_serial_py/hook/pythonpath_develop.sh
