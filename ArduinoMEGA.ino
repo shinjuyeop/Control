@@ -148,7 +148,7 @@ void setup() {
   rawMax = int((V_MAX / ADC_REF) * ADC_RES + 0.5);
 
   /* LCD */
-  lcd.init();
+  lcd.begin();
   lcd.backlight();
   lcd.clear();
   lcd.setCursor(0,0); lcd.print("SPEED: --.- km/h   ");
