@@ -1,1 +1,1 @@
-/home/seo/motor_ws/src/throttle_msgs/msg/ThrottleData.msg
+/home/seo/Control/motor_ws/src/throttle_msgs/msg/ThrottleData.msg

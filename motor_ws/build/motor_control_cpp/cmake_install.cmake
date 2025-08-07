@@ -1,8 +1,8 @@
-# Install script for directory: /home/seo/motor_ws/src/motor_control_cpp
+# Install script for directory: /home/seo/Control/motor_ws/src/motor_control_cpp
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
-  set(CMAKE_INSTALL_PREFIX "/home/seo/motor_ws/install/motor_control_cpp")
+  set(CMAKE_INSTALL_PREFIX "/home/seo/Control/motor_ws/install/motor_control_cpp")
 endif()
 string(REGEX REPLACE "/$" "" CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}")
 
@@ -43,7 +43,7 @@ if(NOT DEFINED CMAKE_OBJDUMP)
 endif()
 
 if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
-  include("/home/seo/motor_ws/build/motor_control_cpp/ament_cmake_symlink_install/ament_cmake_symlink_install.cmake")
+  include("/home/seo/Control/motor_ws/build/motor_control_cpp/ament_cmake_symlink_install/ament_cmake_symlink_install.cmake")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT)
@@ -54,5 +54,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "/home/seo/motor_ws/build/motor_control_cpp/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "/home/seo/Control/motor_ws/build/motor_control_cpp/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")

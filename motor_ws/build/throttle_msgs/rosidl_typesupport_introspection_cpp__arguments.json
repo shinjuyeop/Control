@@ -1,9 +1,9 @@
 {
   "package_name": "throttle_msgs",
-  "output_dir": "/home/seo/motor_ws/build/throttle_msgs/rosidl_typesupport_introspection_cpp/throttle_msgs",
+  "output_dir": "/home/seo/Control/motor_ws/build/throttle_msgs/rosidl_typesupport_introspection_cpp/throttle_msgs",
   "template_dir": "/opt/ros/humble/share/rosidl_typesupport_introspection_cpp/resource",
   "idl_tuples": [
-    "/home/seo/motor_ws/build/throttle_msgs/rosidl_adapter/throttle_msgs:msg/ThrottleData.idl"
+    "/home/seo/Control/motor_ws/build/throttle_msgs/rosidl_adapter/throttle_msgs:msg/ThrottleData.idl"
   ],
   "ros_interface_dependencies": [
     "std_msgs:/opt/ros/humble/share/std_msgs/msg/Bool.idl",
@@ -48,7 +48,7 @@
     "/opt/ros/humble/share/rosidl_typesupport_introspection_cpp/resource/msg__type_support.cpp.em",
     "/opt/ros/humble/share/rosidl_typesupport_introspection_cpp/resource/srv__rosidl_typesupport_introspection_cpp.hpp.em",
     "/opt/ros/humble/share/rosidl_typesupport_introspection_cpp/resource/srv__type_support.cpp.em",
-    "/home/seo/motor_ws/build/throttle_msgs/rosidl_adapter/throttle_msgs/msg/ThrottleData.idl",
+    "/home/seo/Control/motor_ws/build/throttle_msgs/rosidl_adapter/throttle_msgs/msg/ThrottleData.idl",
     "/opt/ros/humble/share/std_msgs/msg/Bool.idl",
     "/opt/ros/humble/share/std_msgs/msg/Byte.idl",
     "/opt/ros/humble/share/std_msgs/msg/ByteMultiArray.idl",

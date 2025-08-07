@@ -1,1 +1,1 @@
-/home/seo/motor_ws/build/throttle_msgs/rosidl_typesupport_introspection_cpp/throttle_msgs/msg/detail/throttle_data__rosidl_typesupport_introspection_cpp.hpp
+/home/seo/Control/motor_ws/build/throttle_msgs/rosidl_typesupport_introspection_cpp/throttle_msgs/msg/detail/throttle_data__rosidl_typesupport_introspection_cpp.hpp

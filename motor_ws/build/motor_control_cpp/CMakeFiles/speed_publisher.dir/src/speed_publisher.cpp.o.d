@@ -1,5 +1,5 @@
 CMakeFiles/speed_publisher.dir/src/speed_publisher.cpp.o: \
- /home/seo/motor_ws/src/motor_control_cpp/src/speed_publisher.cpp \
+ /home/seo/Control/motor_ws/src/motor_control_cpp/src/speed_publisher.cpp \
  /usr/include/stdc-predef.h /usr/include/c++/11/chrono \
  /usr/include/c++/11/ratio /usr/include/c++/11/type_traits \
  /usr/include/x86_64-linux-gnu/c++/11/bits/c++config.h \

@@ -1,1 +1,1 @@
-/home/seo/motor_ws/build/throttle_msgs/ament_cmake_environment_hooks/local_setup.sh
+/home/seo/Control/motor_ws/build/throttle_msgs/ament_cmake_environment_hooks/local_setup.sh

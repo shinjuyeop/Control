@@ -1,1 +1,1 @@
-/home/seo/motor_ws/build/throttle_msgs/rosidl_typesupport_fastrtps_c/throttle_msgs/msg/detail/throttle_data__rosidl_typesupport_fastrtps_c.h
+/home/seo/Control/motor_ws/build/throttle_msgs/rosidl_typesupport_fastrtps_c/throttle_msgs/msg/detail/throttle_data__rosidl_typesupport_fastrtps_c.h

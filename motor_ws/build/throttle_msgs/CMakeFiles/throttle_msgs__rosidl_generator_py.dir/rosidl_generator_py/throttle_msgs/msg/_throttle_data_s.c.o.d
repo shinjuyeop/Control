@@ -1,5 +1,5 @@
 CMakeFiles/throttle_msgs__rosidl_generator_py.dir/rosidl_generator_py/throttle_msgs/msg/_throttle_data_s.c.o: \
- /home/seo/motor_ws/build/throttle_msgs/rosidl_generator_py/throttle_msgs/msg/_throttle_data_s.c \
+ /home/seo/Control/motor_ws/build/throttle_msgs/rosidl_generator_py/throttle_msgs/msg/_throttle_data_s.c \
  /usr/include/stdc-predef.h /usr/include/python3.10/Python.h \
  /usr/include/python3.10/patchlevel.h /usr/include/python3.10/pyconfig.h \
  /usr/include/x86_64-linux-gnu/python3.10/pyconfig.h \
@@ -207,6 +207,6 @@ CMakeFiles/throttle_msgs__rosidl_generator_py.dir/rosidl_generator_py/throttle_m
  /usr/include/python3.10/numpy/_neighborhood_iterator_imp.h \
  /usr/include/python3.10/numpy/__multiarray_api.h \
  /opt/ros/humble/include/rosidl_runtime_c/rosidl_runtime_c/visibility_control.h \
- /home/seo/motor_ws/build/throttle_msgs/rosidl_generator_c/throttle_msgs/msg/detail/throttle_data__struct.h \
- /home/seo/motor_ws/build/throttle_msgs/rosidl_generator_c/throttle_msgs/msg/detail/throttle_data__functions.h \
- /home/seo/motor_ws/build/throttle_msgs/rosidl_generator_c/throttle_msgs/msg/rosidl_generator_c__visibility_control.h
+ /home/seo/Control/motor_ws/build/throttle_msgs/rosidl_generator_c/throttle_msgs/msg/detail/throttle_data__struct.h \
+ /home/seo/Control/motor_ws/build/throttle_msgs/rosidl_generator_c/throttle_msgs/msg/detail/throttle_data__functions.h \
+ /home/seo/Control/motor_ws/build/throttle_msgs/rosidl_generator_c/throttle_msgs/msg/rosidl_generator_c__visibility_control.h

@@ -1,6 +1,0 @@
-Invoking command in '/home/seo/motor_ws/build/throttle_msgs': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake /home/seo/motor_ws/src/throttle_msgs -DAMENT_CMAKE_SYMLINK_INSTALL=1 -DCMAKE_INSTALL_PREFIX=/home/seo/motor_ws/install/throttle_msgs
-Invoked command in '/home/seo/motor_ws/build/throttle_msgs' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake /home/seo/motor_ws/src/throttle_msgs -DAMENT_CMAKE_SYMLINK_INSTALL=1 -DCMAKE_INSTALL_PREFIX=/home/seo/motor_ws/install/throttle_msgs
-Invoking command in '/home/seo/motor_ws/build/throttle_msgs': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/seo/motor_ws/build/throttle_msgs -- -j22 -l22
-Invoked command in '/home/seo/motor_ws/build/throttle_msgs' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/seo/motor_ws/build/throttle_msgs -- -j22 -l22
-Invoking command in '/home/seo/motor_ws/build/throttle_msgs': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/seo/motor_ws/build/throttle_msgs
-Invoked command in '/home/seo/motor_ws/build/throttle_msgs' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/seo/motor_ws/build/throttle_msgs

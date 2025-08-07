@@ -8,7 +8,7 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/home/seo/motor_ws/src/motor_control_cpp/src/speed_publisher.cpp" "CMakeFiles/speed_publisher.dir/src/speed_publisher.cpp.o" "gcc" "CMakeFiles/speed_publisher.dir/src/speed_publisher.cpp.o.d"
+  "/home/seo/Control/motor_ws/src/motor_control_cpp/src/speed_publisher.cpp" "CMakeFiles/speed_publisher.dir/src/speed_publisher.cpp.o" "gcc" "CMakeFiles/speed_publisher.dir/src/speed_publisher.cpp.o.d"
   )
 
 # Targets to which this target links.

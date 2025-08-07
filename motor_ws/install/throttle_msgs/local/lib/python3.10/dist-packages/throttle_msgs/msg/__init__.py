@@ -1,1 +1,1 @@
-/home/seo/motor_ws/build/throttle_msgs/rosidl_generator_py/throttle_msgs/msg/__init__.py
+/home/seo/Control/motor_ws/build/throttle_msgs/rosidl_generator_py/throttle_msgs/msg/__init__.py

@@ -53,10 +53,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/seo/motor_ws/src/motor_control_cpp
+CMAKE_SOURCE_DIR = /home/seo/Control/motor_ws/src/motor_control_cpp
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/seo/motor_ws/build/motor_control_cpp
+CMAKE_BINARY_DIR = /home/seo/Control/motor_ws/build/motor_control_cpp
 
 # Utility rule file for motor_control_cpp_uninstall.
 
@@ -67,7 +67,7 @@ include CMakeFiles/motor_control_cpp_uninstall.dir/compiler_depend.make
 include CMakeFiles/motor_control_cpp_uninstall.dir/progress.make
 
 CMakeFiles/motor_control_cpp_uninstall:
-	/usr/bin/cmake -P /home/seo/motor_ws/build/motor_control_cpp/ament_cmake_uninstall_target/ament_cmake_uninstall_target.cmake
+	/usr/bin/cmake -P /home/seo/Control/motor_ws/build/motor_control_cpp/ament_cmake_uninstall_target/ament_cmake_uninstall_target.cmake
 
 motor_control_cpp_uninstall: CMakeFiles/motor_control_cpp_uninstall
 motor_control_cpp_uninstall: CMakeFiles/motor_control_cpp_uninstall.dir/build.make
@@ -82,6 +82,6 @@ CMakeFiles/motor_control_cpp_uninstall.dir/clean:
 .PHONY : CMakeFiles/motor_control_cpp_uninstall.dir/clean
 
 CMakeFiles/motor_control_cpp_uninstall.dir/depend:
-	cd /home/seo/motor_ws/build/motor_control_cpp && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/seo/motor_ws/src/motor_control_cpp /home/seo/motor_ws/src/motor_control_cpp /home/seo/motor_ws/build/motor_control_cpp /home/seo/motor_ws/build/motor_control_cpp /home/seo/motor_ws/build/motor_control_cpp/CMakeFiles/motor_control_cpp_uninstall.dir/DependInfo.cmake --color=$(COLOR)
+	cd /home/seo/Control/motor_ws/build/motor_control_cpp && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/seo/Control/motor_ws/src/motor_control_cpp /home/seo/Control/motor_ws/src/motor_control_cpp /home/seo/Control/motor_ws/build/motor_control_cpp /home/seo/Control/motor_ws/build/motor_control_cpp /home/seo/Control/motor_ws/build/motor_control_cpp/CMakeFiles/motor_control_cpp_uninstall.dir/DependInfo.cmake --color=$(COLOR)
 .PHONY : CMakeFiles/motor_control_cpp_uninstall.dir/depend
 

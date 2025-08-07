@@ -8,7 +8,7 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/home/seo/motor_ws/src/motor_control_cpp/src/can_speed_receiver.cpp" "CMakeFiles/can_speed_receiver.dir/src/can_speed_receiver.cpp.o" "gcc" "CMakeFiles/can_speed_receiver.dir/src/can_speed_receiver.cpp.o.d"
+  "/home/seo/Control/motor_ws/src/motor_control_cpp/src/can_speed_receiver.cpp" "CMakeFiles/can_speed_receiver.dir/src/can_speed_receiver.cpp.o" "gcc" "CMakeFiles/can_speed_receiver.dir/src/can_speed_receiver.cpp.o.d"
   )
 
 # Targets to which this target links.

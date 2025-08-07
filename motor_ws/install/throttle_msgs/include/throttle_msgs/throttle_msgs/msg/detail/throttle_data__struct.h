@@ -1,1 +1,1 @@
-/home/seo/motor_ws/build/throttle_msgs/rosidl_generator_c/throttle_msgs/msg/detail/throttle_data__struct.h
+/home/seo/Control/motor_ws/build/throttle_msgs/rosidl_generator_c/throttle_msgs/msg/detail/throttle_data__struct.h

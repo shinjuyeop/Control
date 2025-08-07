@@ -1,5 +1,5 @@
 CMakeFiles/can_speed_receiver.dir/src/can_speed_receiver.cpp.o: \
- /home/seo/motor_ws/src/motor_control_cpp/src/can_speed_receiver.cpp \
+ /home/seo/Control/motor_ws/src/motor_control_cpp/src/can_speed_receiver.cpp \
  /usr/include/stdc-predef.h \
  /opt/ros/humble/include/rclcpp/rclcpp/rclcpp.hpp \
  /usr/include/c++/11/csignal \

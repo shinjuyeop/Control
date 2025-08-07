@@ -1,1 +1,1 @@
-/home/seo/motor_ws/build/throttle_msgs/ament_cmake_environment_hooks/pythonpath.sh
+/home/seo/Control/motor_ws/build/throttle_msgs/ament_cmake_environment_hooks/pythonpath.sh

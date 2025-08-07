@@ -53,10 +53,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/seo/motor_ws/src/throttle_msgs
+CMAKE_SOURCE_DIR = /home/seo/Control/motor_ws/src/throttle_msgs
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/seo/motor_ws/build/throttle_msgs
+CMAKE_BINARY_DIR = /home/seo/Control/motor_ws/build/throttle_msgs
 
 # Utility rule file for throttle_msgs.
 
@@ -66,7 +66,7 @@ include CMakeFiles/throttle_msgs.dir/compiler_depend.make
 # Include the progress variables for this target.
 include CMakeFiles/throttle_msgs.dir/progress.make
 
-CMakeFiles/throttle_msgs: /home/seo/motor_ws/src/throttle_msgs/msg/ThrottleData.msg
+CMakeFiles/throttle_msgs: /home/seo/Control/motor_ws/src/throttle_msgs/msg/ThrottleData.msg
 CMakeFiles/throttle_msgs: /opt/ros/humble/share/std_msgs/msg/Bool.idl
 CMakeFiles/throttle_msgs: /opt/ros/humble/share/std_msgs/msg/Byte.idl
 CMakeFiles/throttle_msgs: /opt/ros/humble/share/std_msgs/msg/ByteMultiArray.idl
@@ -111,6 +111,6 @@ CMakeFiles/throttle_msgs.dir/clean:
 .PHONY : CMakeFiles/throttle_msgs.dir/clean
 
 CMakeFiles/throttle_msgs.dir/depend:
-	cd /home/seo/motor_ws/build/throttle_msgs && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/seo/motor_ws/src/throttle_msgs /home/seo/motor_ws/src/throttle_msgs /home/seo/motor_ws/build/throttle_msgs /home/seo/motor_ws/build/throttle_msgs /home/seo/motor_ws/build/throttle_msgs/CMakeFiles/throttle_msgs.dir/DependInfo.cmake --color=$(COLOR)
+	cd /home/seo/Control/motor_ws/build/throttle_msgs && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/seo/Control/motor_ws/src/throttle_msgs /home/seo/Control/motor_ws/src/throttle_msgs /home/seo/Control/motor_ws/build/throttle_msgs /home/seo/Control/motor_ws/build/throttle_msgs /home/seo/Control/motor_ws/build/throttle_msgs/CMakeFiles/throttle_msgs.dir/DependInfo.cmake --color=$(COLOR)
 .PHONY : CMakeFiles/throttle_msgs.dir/depend
 

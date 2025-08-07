@@ -53,10 +53,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/seo/motor_ws/src/throttle_msgs
+CMAKE_SOURCE_DIR = /home/seo/Control/motor_ws/src/throttle_msgs
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/seo/motor_ws/build/throttle_msgs
+CMAKE_BINARY_DIR = /home/seo/Control/motor_ws/build/throttle_msgs
 
 # Utility rule file for throttle_msgs_uninstall.
 
@@ -67,7 +67,7 @@ include CMakeFiles/throttle_msgs_uninstall.dir/compiler_depend.make
 include CMakeFiles/throttle_msgs_uninstall.dir/progress.make
 
 CMakeFiles/throttle_msgs_uninstall:
-	/usr/bin/cmake -P /home/seo/motor_ws/build/throttle_msgs/ament_cmake_uninstall_target/ament_cmake_uninstall_target.cmake
+	/usr/bin/cmake -P /home/seo/Control/motor_ws/build/throttle_msgs/ament_cmake_uninstall_target/ament_cmake_uninstall_target.cmake
 
 throttle_msgs_uninstall: CMakeFiles/throttle_msgs_uninstall
 throttle_msgs_uninstall: CMakeFiles/throttle_msgs_uninstall.dir/build.make
@@ -82,6 +82,6 @@ CMakeFiles/throttle_msgs_uninstall.dir/clean:
 .PHONY : CMakeFiles/throttle_msgs_uninstall.dir/clean
 
 CMakeFiles/throttle_msgs_uninstall.dir/depend:
-	cd /home/seo/motor_ws/build/throttle_msgs && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/seo/motor_ws/src/throttle_msgs /home/seo/motor_ws/src/throttle_msgs /home/seo/motor_ws/build/throttle_msgs /home/seo/motor_ws/build/throttle_msgs /home/seo/motor_ws/build/throttle_msgs/CMakeFiles/throttle_msgs_uninstall.dir/DependInfo.cmake --color=$(COLOR)
+	cd /home/seo/Control/motor_ws/build/throttle_msgs && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/seo/Control/motor_ws/src/throttle_msgs /home/seo/Control/motor_ws/src/throttle_msgs /home/seo/Control/motor_ws/build/throttle_msgs /home/seo/Control/motor_ws/build/throttle_msgs /home/seo/Control/motor_ws/build/throttle_msgs/CMakeFiles/throttle_msgs_uninstall.dir/DependInfo.cmake --color=$(COLOR)
 .PHONY : CMakeFiles/throttle_msgs_uninstall.dir/depend
 

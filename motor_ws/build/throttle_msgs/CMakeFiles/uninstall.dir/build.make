@@ -53,10 +53,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/seo/motor_ws/src/throttle_msgs
+CMAKE_SOURCE_DIR = /home/seo/Control/motor_ws/src/throttle_msgs
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/seo/motor_ws/build/throttle_msgs
+CMAKE_BINARY_DIR = /home/seo/Control/motor_ws/build/throttle_msgs
 
 # Utility rule file for uninstall.
 
@@ -78,6 +78,6 @@ CMakeFiles/uninstall.dir/clean:
 .PHONY : CMakeFiles/uninstall.dir/clean
 
 CMakeFiles/uninstall.dir/depend:
-	cd /home/seo/motor_ws/build/throttle_msgs && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/seo/motor_ws/src/throttle_msgs /home/seo/motor_ws/src/throttle_msgs /home/seo/motor_ws/build/throttle_msgs /home/seo/motor_ws/build/throttle_msgs /home/seo/motor_ws/build/throttle_msgs/CMakeFiles/uninstall.dir/DependInfo.cmake --color=$(COLOR)
+	cd /home/seo/Control/motor_ws/build/throttle_msgs && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/seo/Control/motor_ws/src/throttle_msgs /home/seo/Control/motor_ws/src/throttle_msgs /home/seo/Control/motor_ws/build/throttle_msgs /home/seo/Control/motor_ws/build/throttle_msgs /home/seo/Control/motor_ws/build/throttle_msgs/CMakeFiles/uninstall.dir/DependInfo.cmake --color=$(COLOR)
 .PHONY : CMakeFiles/uninstall.dir/depend
 
