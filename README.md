@@ -66,6 +66,7 @@ KAI_ws/src/Control/
 - **속도 측정**: Hall 센서 기반 실시간 속도 계산
 - **안전 제어**: 하드웨어 레벨 비상정지 및 브레이크 제어
 - **통신**: 100Hz 시리얼 패킷 전송 (헤더: 0xAA + RPM16 + FLAGS)
+- **실제 시리얼 포트**: `/dev/ttyACM1` (기본 설정과 다를 수 있음)
 - **부가 기능**: LCD 디스플레이, VESS 서보 제어
 
 #### 시리얼 패킷 포맷
@@ -92,13 +93,14 @@ KAI_ws/src/Control/
 - **입력**: `target_rpm` 토픽 구독
 - **프로토콜**: 
   - 핸드셰이크: MCU(0x1801D0EF) ↔ Node(0x0C01EFD0)
-  - 제어 프레임: 위상전류 + RPM + 모드(0x03) + life counter
+  - 제어 프레임: 위상전류(RPM 부호에 따라 ±180A) + RPM + 모드(0x03) + life counter
+  - **피드백**: MCU data[7:6]에서 RPM 추출 (문서 data[6:7]과 다름)
 - **주기**: 50ms
 
 ##### `throttle_node` (Python)
 - **기능**: Arduino 시리얼 패킷 파싱
 - **출력**: `throttle_data` (ThrottleData)
-- **포트**: `/dev/ttyACM1` (115200 bps)
+- **포트**: `/dev/ttyACM1` (115200 bps) - 하드코딩됨, 파라미터화 필요
 - **파일명**: throttle_node.py (실제 파일명)
 
 ##### `rpm_mux` (Python)
@@ -109,7 +111,7 @@ KAI_ws/src/Control/
   elif MANUAL: output = manual_rpm
   else: output = auto_rpm
   ```
-- **출력**: `target_rpm` @ 100Hz
+- **출력**: `target_rpm` @ 100Hz (실제 동작 주파수, 문서에는 20Hz로 표기된 경우 있음)
 
 ### 3. Steering Control (ROS2)
 **위치**: `steering_control/`
@@ -131,12 +133,15 @@ KAI_ws/src/Control/
 - **기능**: 엔코더 피드백 수신
 - **출력**: `/encoder_angle` (Float32, degrees)
 - **CAN ID**: 0x07000001 (Heartbeat)
+- **⚠️ 주의**: position_control 패키지와 동일한 토픽 발행 (충돌 가능성)
 
 ### 4. Position Control (Python)
 **위치**: `position_control/`
 
 - **`control_node`**: Python-CAN 기반 실험용 제어
 - **`position_control_test1`**: 목표 각도 시퀀스 테스트
+- **⚠️ CAN 충돌 위험**: steering_control과 동일한 CAN ID (0x06000001) 사용
+- **⚠️ 토픽 충돌**: `/encoder_angle` 토픽을 steering_feedback_node와 중복 발행 가능
 
 ## 데이터 플로우
 
@@ -307,17 +312,42 @@ bool asms      # AUTO/MANUAL 스위치 (True=Manual)
 | 0x06000001 | ROS→Motor | Enable/Position |
 | 0x07000001 | Motor→ROS | Heartbeat/Encoder |
 
+## ⚠️ 주요 이슈 및 주의사항
+
+### 🔴 CAN 충돌 위험
+- **ID 0x06000001**: `steering_control`과 `position_control` 패키지가 동일한 CAN ID 사용
+- **위험**: 두 패키지 동시 실행 시 명령 충돌로 인한 예측 불가능한 동작
+- **해결방안**: 한 번에 하나의 조향 제어 패키지만 실행 권장
+
+### 🔶 토픽 충돌 가능성
+- **토픽 `/encoder_angle`**: `steering_feedback_node`와 `position_control` 패키지에서 동시 발행 가능
+- **영향**: 토픽 구독자가 혼재된 데이터 수신 가능
+- **해결방안**: 토픽명 변경 또는 네임스페이스 분리 필요
+
+### 🔶 하드코딩된 설정
+- **시리얼 포트**: `throttle_node.py`에서 `/dev/ttyACM1` 하드코딩
+- **문제**: 포트 변경 시 코드 수정 필요
+- **개선 필요**: ROS2 파라미터로 포트 설정 가능하도록 수정
+
+### 📊 문서-코드 불일치
+- **rpm_mux 주기**: 실제 100Hz 동작, 일부 문서에는 20Hz 표기
+- **CAN 피드백**: 실제 data[7:6] 사용, 문서에는 data[6:7] 표기
+- **phase_current**: RPM 부호에 따라 ±180A 설정, 문서에 상세 설명 부족
+
 ## 트러블슈팅
 
 ### 일반적인 문제 해결
 
 #### 시리얼 포트 접근 오류
 ```bash
-# 포트 확인
+# 포트 확인 (ACM0 또는 ACM1 확인 필요)
 ls -l /dev/ttyACM*
 
+# Arduino 실제 포트가 /dev/ttyACM1일 수 있음
+# throttle_node.py에서 하드코딩된 포트 확인 필요
+
 # 권한 추가
-sudo chmod 666 /dev/ttyACM0
+sudo chmod 666 /dev/ttyACM0  # 또는 /dev/ttyACM1
 # 또는
 sudo usermod -a -G dialout $USER
 # (로그아웃 후 재로그인 필요)
@@ -345,6 +375,12 @@ ip -details -statistics link show can0
 1. Enable 프레임 전송 확인
 2. 엔코더 피드백 확인: `ros2 topic echo /encoder_angle`
 3. CAN 보레이트 확인 (250kbps)
+4. **CAN ID 충돌 확인**: steering_control과 position_control 동시 실행 여부
+
+#### 토픽 데이터가 이상함
+1. **중복 발행자 확인**: `ros2 topic info /encoder_angle` 으로 발행자 수 확인
+2. **네임스페이스 분리**: 필요시 `--ros-args -r __ns:=/steering` 사용
+3. **토픽 리매핑**: `--ros-args -r encoder_angle:=/steering/encoder_angle`
 
 ### 디버깅 팁
 
