@@ -16,7 +16,7 @@ setup(
     maintainer='subin',
     maintainer_email='subin@todo.todo',
     description='TODO: Package description',
-    license='TODO: License declaration',
+    license='MIT',
     entry_points={
         'console_scripts': [
         'control_node = position_control.control_node:main',
