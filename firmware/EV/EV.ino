@@ -66,7 +66,9 @@ void setup() {
   pinMode(BTN_PIN, INPUT_PULLUP);
   exhaust.attach(SERVO_PIN, 1000, 2000);      // 안전 클램프
 
-  lcd.init(); lcd.backlight(); lcd.clear();
+  lcd.begin(20, 4);  // ← 여기서 변경 (기존 lcd.init() → lcd.begin(cols, rows))
+  lcd.backlight();
+  lcd.clear();
   lcd.setCursor(0,0); lcd.print("SPEED: --.- km/h   ");
   lcd.setCursor(0,1); lcd.print("TIME : --:--       ");
   lcd.setCursor(0,2); lcd.print("BEST : --:--(--)");

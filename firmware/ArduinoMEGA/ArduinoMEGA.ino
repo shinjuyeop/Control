@@ -148,7 +148,7 @@ void setup() {
   rawMax = int((V_MAX / ADC_REF) * ADC_RES + 0.5);
 
   /* LCD */
-  lcd.begin();
+  lcd.begin(20, 4);  // <-- 여기 수정
   lcd.backlight();
   lcd.clear();
   lcd.setCursor(0,0); lcd.print("SPEED: --.- km/h   ");
@@ -187,7 +187,6 @@ void loop() {
       (estopFlag   << 1) |
       (isManual    << 0);
 
-    
     Serial.write(0xAA);
     Serial.write(uint8_t(rpm16 >> 8));
     Serial.write(uint8_t(rpm16 & 0xFF));
