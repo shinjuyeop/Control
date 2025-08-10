@@ -18,7 +18,7 @@ const float TRANS_RATIO   = 4.60;
 const unsigned long SPD_INTERVAL = 500;   // ms
 
 /* ── PWM 매핑 (아이들~풀) ───────────────── */
-const int   SERVO_IDLE_US = 1500;         // 아이들
+const int   SERVO_IDLE_US = 1600;         // 아이들
 const int   SERVO_MAX_US  = 2000;         // 풀 스로틀
 const float KMH_MAX       = 100.0;        // 최고속(필요하면 변경)
 

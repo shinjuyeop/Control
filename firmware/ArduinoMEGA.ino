@@ -41,7 +41,7 @@ const float TIRE_DIAM_CM = 47.0;
 const float TRANS_RATIO  = 4.60;
 
 /* ── VESS 매핑 ── */
-const int   SERVO_IDLE_US = 1500;   // 0 km/h
+const int   SERVO_IDLE_US = 1600;   // 0 km/h -> 시동음 없애기 테스트
 const int   SERVO_MAX_US  = 2000;   // 최고속
 const float KMH_MAX       = 100.0;  // 이 이상은 MAX 고정
 
