@@ -24,7 +24,7 @@ class RpmMux(Node):
         # 발행
         self.pub = self.create_publisher(Int32, 'target_rpm', 10)
 
-        # 50 ms 주기(20 Hz) 100Hz 0.01 
+        # 10 ms 주기(100 Hz) 100Hz 0.01 
         self.create_timer(0.01, self.tick)
 
     # ───────── 콜백 ─────────
