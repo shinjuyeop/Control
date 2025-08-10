@@ -1,4 +1,5 @@
 #include <rclcpp/rclcpp.hpp>
+#include <std_msgs/msg/int32.hpp>          // ⬅️ 추가
 
 #include <linux/can.h>
 #include <linux/can/raw.h>
@@ -33,6 +34,9 @@ public:
     if (bind(sock_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0)
       throw std::runtime_error("bind failed");
 
+    /* ── 퍼블리셔 생성 (/current_speed) ──────────────────────────── */
+    speed_pub_ = create_publisher<std_msgs::msg::Int32>("/current_speed", 10);
+
     /* ── 수신 쓰레드 시작 ─────────────────────────────────────────── */
     rx_thread_ = std::thread([this]{ receive_loop(); });
   }
@@ -57,24 +61,31 @@ private:
       if (n != sizeof(frame))                 continue;        // 길이 오류
       if ((frame.can_id & CAN_EFF_MASK) != EXPECT_ID) continue; // 다른 ID
 
-      /* 0x55 × 8 핸드셰이크 프레임 무시 */
+      // 0x55 × 8 핸드셰이크 프레임 무시
       bool all55 = std::all_of(std::begin(frame.data), std::end(frame.data),
                                [](uint8_t b){ return b == 0x55; });
       if (all55) continue;
 
-      /* 속도 해석 (1 rpm/bit, offset –32000) */
+      // 속도 해석 (1 rpm/bit, offset –32000) — 바이트 [6]=low, [7]=high
       int16_t rpm_raw = static_cast<int16_t>((frame.data[7] << 8) | frame.data[6]);
       int16_t rpm     = rpm_raw - 32000;
 
+      // 로그(디버깅용)
       RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 500 /*ms*/,
                            "MCU feedback RPM: %d", rpm);
+
+      // ⬇️ 여기서 퍼블리시
+      std_msgs::msg::Int32 msg;
+      msg.data = rpm;
+      speed_pub_->publish(msg);
     }
   }
 
   /* ── members ──────────────────────────────────────────────────── */
   int sock_{-1};
-  std::thread           rx_thread_;
-  std::atomic<bool>     running_{true};
+  std::thread                               rx_thread_;
+  std::atomic<bool>                         running_{true};
+  rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr speed_pub_;  // ⬅️ 추가
 };
 
 int main(int argc, char ** argv)
