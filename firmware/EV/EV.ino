@@ -3,7 +3,9 @@
 #include <Servo.h>
 
 /* ── LCD & 사운드(PWM) ─────────────────── */
-LiquidCrystal_I2C lcd(0x3F, 20, 4);
+// 필요 시 0x27로 변경
+#define LCD_ADDR 0x3F
+LiquidCrystal_I2C lcd(LCD_ADDR, 20, 4);
 Servo exhaust;
 
 /* ── 핀 설정 ────────────────────────────── */
@@ -18,7 +20,7 @@ const float TRANS_RATIO   = 4.60;
 const unsigned long SPD_INTERVAL = 500;   // ms
 
 /* ── PWM 매핑 (아이들~풀) ───────────────── */
-const int   SERVO_IDLE_US = 1600;         // 아이들
+const int   SERVO_IDLE_US = 1600;         // 아이들 (0 km/h → 1600 µs)
 const int   SERVO_MAX_US  = 2000;         // 풀 스로틀
 const float KMH_MAX       = 100.0;        // 최고속(필요하면 변경)
 
@@ -66,12 +68,14 @@ void setup() {
   pinMode(BTN_PIN, INPUT_PULLUP);
   exhaust.attach(SERVO_PIN, 1000, 2000);      // 안전 클램프
 
-  lcd.begin(20, 4);  // ← 여기서 변경 (기존 lcd.init() → lcd.begin(cols, rows))
+  // ★ LiquidCrystal_I2C: init/backlight 방식
+  delay(200);          // 전원 안정화
+  lcd.init();
   lcd.backlight();
   lcd.clear();
   lcd.setCursor(0,0); lcd.print("SPEED: --.- km/h   ");
   lcd.setCursor(0,1); lcd.print("TIME : --:--       ");
-  lcd.setCursor(0,2); lcd.print("BEST : --:--(--)");
+  lcd.setCursor(0,2); lcd.print("BEST : --:--(--)   ");
   lcd.setCursor(0,3); lcd.print("LAP  : 0           ");
 }
 
@@ -128,7 +132,7 @@ void loop() {
         char bestBuf[6]; mmss(bestLapMs, bestBuf);
         lcd.setCursor(7,2); lcd.print(bestBuf);
 
-        char diffBuf[8]="(LAST)";
+        char diffBuf[8] = "(LAST)";
         if (!newBest) {
           long diff = (long)lastLapMs - (long)bestLapMs;
           long sec  = labs(diff)/1000;
@@ -162,7 +166,7 @@ void loop() {
     float wheelRpm = motorRpm / TRANS_RATIO;
     float kmh = (wheelRpm * 3.1416 * TIRE_DIAM_CM * 60.0) / 100000.0;
 
-    /* 0 km/h → 1500 µs,  KMH_MAX km/h → 2000 µs */
+    /* 0 km/h → 1600 µs,  KMH_MAX km/h → 2000 µs */
     float kmhClamp = constrain(kmh, 0.0, KMH_MAX);
     int thUs = SERVO_IDLE_US +
                (int)(kmhClamp * (SERVO_MAX_US - SERVO_IDLE_US) / KMH_MAX);
