@@ -13,7 +13,7 @@ class CanSpeedSender : public rclcpp::Node
 {
 public:
   CanSpeedSender()
-  : Node("can_speed_sender")//, phase_current_a_(100)
+  : Node("can_speed_sender")//, phase_current_a_(180)
   {
     /* ── SocketCAN init ─────────────────────────────────────────────── */
     sock_ = socket(PF_CAN, SOCK_RAW, CAN_RAW);
