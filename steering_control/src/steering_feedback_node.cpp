@@ -12,7 +12,7 @@
 
 class SteeringFeedbackNode : public rclcpp::Node {
 public:
-    SteeringFeedbackNode()
+    SteeringFeedbackNode(const std::string& can_iface = "can1")
     : Node("steering_feedback_node")
     {
         // 퍼블리셔 생성
@@ -30,7 +30,7 @@ public:
         }
 
         struct ifreq ifr;
-        std::strcpy(ifr.ifr_name, "can0");
+        std::strncpy(ifr.ifr_name, can_iface.c_str(), IFNAMSIZ - 1);
         if (ioctl(can_socket_, SIOCGIFINDEX, &ifr) < 0) {
             RCLCPP_FATAL(this->get_logger(), "Failed to get CAN interface index");
             rclcpp::shutdown();
@@ -87,7 +87,9 @@ private:
 
 int main(int argc, char * argv[]) {
     rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<SteeringFeedbackNode>());
+    std::string iface = "can1";
+    if (argc > 1) iface = argv[1];
+    rclcpp::spin(std::make_shared<SteeringFeedbackNode>(iface));
     rclcpp::shutdown();
     return 0;
 }
