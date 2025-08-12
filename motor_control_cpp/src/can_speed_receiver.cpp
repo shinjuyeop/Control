@@ -1,5 +1,5 @@
 #include <rclcpp/rclcpp.hpp>
-#include <std_msgs/msg/int32.hpp>          // ⬅️ 추가
+#include <std_msgs/msg/int32.hpp>
 
 #include <linux/can.h>
 #include <linux/can/raw.h>
@@ -16,7 +16,7 @@
 class CanSpeedReceiver : public rclcpp::Node
 {
 public:
-  CanSpeedReceiver() : Node("can_speed_receiver")
+  CanSpeedReceiver(const std::string& can_iface) : Node("can_speed_receiver")
   {
     /* ── SocketCAN 초기화 ─────────────────────────────────────────── */
     sock_ = socket(PF_CAN, SOCK_RAW, CAN_RAW);
@@ -24,7 +24,7 @@ public:
       throw std::runtime_error("CAN socket open failed");
 
     struct ifreq ifr{};
-    std::strncpy(ifr.ifr_name, "can0", IFNAMSIZ - 1);
+    std::strncpy(ifr.ifr_name, can_iface.c_str(), IFNAMSIZ - 1);
     if (ioctl(sock_, SIOCGIFINDEX, &ifr) < 0)
       throw std::runtime_error("ioctl(SIOCGIFINDEX) failed");
 
@@ -91,8 +91,10 @@ private:
 int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
+  std::string iface = "can0";
+  if (argc > 1) iface = argv[1];
   try {
-    rclcpp::spin(std::make_shared<CanSpeedReceiver>());
+    rclcpp::spin(std::make_shared<CanSpeedReceiver>(iface));
   } catch (const std::exception & e) {
     RCLCPP_FATAL(rclcpp::get_logger("rclcpp"), "Exception: %s", e.what());
   }
