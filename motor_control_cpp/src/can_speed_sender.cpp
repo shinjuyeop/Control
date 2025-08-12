@@ -12,7 +12,7 @@
 class CanSpeedSender : public rclcpp::Node
 {
 public:
-  CanSpeedSender()
+  CanSpeedSender(const std::string& can_iface)
   : Node("can_speed_sender")//, phase_current_a_(180)
   {
     /* ── SocketCAN init ─────────────────────────────────────────────── */
@@ -20,7 +20,7 @@ public:
     if (sock_ < 0) throw std::runtime_error("CAN socket open failed");
 
     struct ifreq ifr{};
-    std::strncpy(ifr.ifr_name, "can0", IFNAMSIZ - 1);
+    std::strncpy(ifr.ifr_name, can_iface.c_str(), IFNAMSIZ - 1);
     if (ioctl(sock_, SIOCGIFINDEX, &ifr) < 0) throw std::runtime_error("ifindex");
 
     sockaddr_can addr{};
@@ -125,8 +125,10 @@ private:
 int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
+  std::string iface = "can0";
+  if (argc > 1) iface = argv[1];
   try {
-    rclcpp::spin(std::make_shared<CanSpeedSender>());
+    rclcpp::spin(std::make_shared<CanSpeedSender>(iface));
   } catch (const std::exception & e) {
     RCLCPP_FATAL(rclcpp::get_logger("rclcpp"), "Exception: %s", e.what());
   }
