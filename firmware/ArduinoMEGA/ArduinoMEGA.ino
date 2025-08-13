@@ -11,7 +11,7 @@
 
 /* ───────── I2C LCD ───────── */
 // 필요 시 0x27로 변경
-#define LCD_ADDR 0x27
+#define LCD_ADDR 0x3F
 LiquidCrystal_I2C lcd(LCD_ADDR, 20, 4);
 
 /* ───────── PIN MAP ───────── */
@@ -34,8 +34,8 @@ const uint32_t PERIOD_MS    = 10;   // 100 Hz
 const uint32_t SPD_INTERVAL = 500;  // 0.5 s
 
 /* ── 서보 각도 ── */
-#define ANG_BRAKE   88
-#define ANG_RELEASE 45
+#define ANG_BRAKE   45
+#define ANG_RELEASE 80
 
 /* ── 속도 계산 ── */
 const int   PPR          = 6;
@@ -158,7 +158,7 @@ void setup() {
   lcd.backlight();
   lcd.clear();
   lcd.setCursor(0,0); lcd.print("SPEED: --.- km/h   ");
-  lcd.setCursor(0,1); lcd.print("MODE : AUTO        ");
+  lcd.setCursor(0,1); lcd.print("MODE : MANUAL      ");
   lcd.setCursor(0,2); lcd.print("GEAR : FWD         ");
   lcd.setCursor(0,3); lcd.print("ESTOP: OFF         ");
 
