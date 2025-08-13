@@ -11,7 +11,7 @@
 
 /* ───────── I2C LCD ───────── */
 // 필요 시 0x27로 변경
-#define LCD_ADDR 0x27
+#define LCD_ADDR 0x3F
 LiquidCrystal_I2C lcd(LCD_ADDR, 20, 4);
 
 /* ───────── PIN MAP ───────── */
@@ -53,7 +53,7 @@ volatile Mode currentMode = AS_AUTO;
 
 /* ── 플래그 ── */
 volatile bool estopFlag   = false;
-volatile bool isManual    = false;
+volatile bool isManual    = true;
 volatile bool reverseFlag = false;
 
 /* ── 전역 ── */
