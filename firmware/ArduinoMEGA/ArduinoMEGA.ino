@@ -53,7 +53,7 @@ volatile Mode currentMode = AS_AUTO;
 
 /* ── 플래그 ── */
 volatile bool estopFlag   = false;
-volatile bool isManual    = false;
+volatile bool isManual    = true;
 volatile bool reverseFlag = false;
 
 /* ── 전역 ── */
