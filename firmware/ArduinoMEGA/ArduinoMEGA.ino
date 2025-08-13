@@ -11,7 +11,7 @@
 
 /* ───────── I2C LCD ───────── */
 // 필요 시 0x27로 변경
-#define LCD_ADDR 0x3F
+#define LCD_ADDR 0x27
 LiquidCrystal_I2C lcd(LCD_ADDR, 20, 4);
 
 /* ───────── PIN MAP ───────── */
