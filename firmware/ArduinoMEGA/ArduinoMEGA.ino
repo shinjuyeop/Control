@@ -34,8 +34,8 @@ const uint32_t PERIOD_MS    = 10;   // 100 Hz
 const uint32_t SPD_INTERVAL = 500;  // 0.5 s
 
 /* ── 서보 각도 ── */
-#define ANG_BRAKE   40
-#define ANG_RELEASE 80
+#define ANG_BRAKE   88
+#define ANG_RELEASE 45
 
 /* ── 속도 계산 ── */
 const int   PPR          = 6;
