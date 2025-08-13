@@ -66,7 +66,7 @@ KAI_ws/src/Control/
 - **속도 측정**: Hall 센서 기반 실시간 속도 계산
 - **안전 제어**: 하드웨어 레벨 비상정지 및 브레이크 제어
 - **통신**: 100Hz 시리얼 패킷 전송 (헤더: 0xAA + RPM16 + FLAGS)
-- **실제 시리얼 포트**: `/dev/ttyACM1` (기본 설정과 다를 수 있음)
+- **실제 시리얼 포트**: ~~`/dev/ttyACM1` (기본 설정과 다를 수 있음)~~ -> 가변으로 수정 완료
 - **부가 기능**: LCD 디스플레이, VESS 서보 제어
 
 #### 시리얼 패킷 포맷
@@ -100,7 +100,7 @@ KAI_ws/src/Control/
 ##### `throttle_node` (Python)
 - **기능**: Arduino 시리얼 패킷 파싱
 - **출력**: `throttle_data` (ThrottleData)
-- **포트**: `/dev/ttyACM1` (115200 bps) - 하드코딩됨, 파라미터화 필요
+- **포트**: ~~`/dev/ttyACM1` (115200 bps)~~ -> 가변으로 수정 완료 termianl에서 vid/pid param 설정 시 추가 시 더욱 안정화 가능
 - **파일명**: throttle_node.py (실제 파일명)
 
 ##### `rpm_mux` (Python)
@@ -415,6 +415,6 @@ ros2 param set /speed_publisher rpm 1000
 
 ---
 
-**마지막 업데이트**: 2025-08-08  
-**버전**: 1.0.0  
+**마지막 업데이트**: 2025-08-11  
+**버전**: 1.0.1  
 **관리자**: TeamKAI-DL
