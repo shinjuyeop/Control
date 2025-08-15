@@ -12,7 +12,7 @@
 
 class SteeringControlNode : public rclcpp::Node {
 public:
-    SteeringControlNode() : Node("steering_control_node") {
+    SteeringControlNode(const std::string& can_iface = "can1") : Node("steering_control_node") {
         RCLCPP_INFO(this->get_logger(), "Steering Control Node Started");
 
         // 구독 생성
@@ -31,7 +31,7 @@ public:
         }
 
         struct ifreq ifr;
-        std::strcpy(ifr.ifr_name, "can0");
+        std::strncpy(ifr.ifr_name, can_iface.c_str(), IFNAMSIZ - 1);
         ioctl(can_socket_, SIOCGIFINDEX, &ifr);
 
         struct sockaddr_can addr;
@@ -108,7 +108,9 @@ private:
 
 int main(int argc, char * argv[]) {
     rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<SteeringControlNode>());
+    std::string iface = "can1";
+    if (argc > 1) iface = argv[1];
+    rclcpp::spin(std::make_shared<SteeringControlNode>(iface));
     rclcpp::shutdown();
     return 0;
 }

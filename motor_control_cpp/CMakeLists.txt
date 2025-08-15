@@ -10,7 +10,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
-find_package(rcl_interfaces REQUIRED)   # 파라미터 콜백용
+find_package(rcl_interfaces REQUIRED)   # 파라미터 콜백용 (정말 쓸 때만 유지)
 
 # ─────── executables ────────────────────────────────────────────────
 # 1 속도 퍼블리셔
@@ -29,13 +29,14 @@ ament_target_dependencies(can_speed_sender
 # 3 CAN 수신 노드 (신규)
 add_executable(can_speed_receiver src/can_speed_receiver.cpp)
 ament_target_dependencies(can_speed_receiver
-  rclcpp)
+  rclcpp
+  std_msgs)
 
 # ─────── install  ───────────────────────────────────────────────────
 install(TARGETS
   speed_publisher
   can_speed_sender
-  can_speed_receiver            # ← 신규 노드
+  can_speed_receiver
   DESTINATION lib/${PROJECT_NAME}
 )
 

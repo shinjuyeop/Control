@@ -9,6 +9,11 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
 
+/* ───────── I2C LCD ───────── */
+// 필요 시 0x27로 변경
+#define LCD_ADDR 0x27
+LiquidCrystal_I2C lcd(LCD_ADDR, 20, 4);
+
 /* ───────── PIN MAP ───────── */
 #define THROTTLE_PIN  A7      // 0–5 V
 #define ESTOP1_PIN    52
@@ -28,11 +33,8 @@ const float RPM_MIN = 0.0,  RPM_MAX = 2000.0;
 const uint32_t PERIOD_MS    = 10;   // 100 Hz
 const uint32_t SPD_INTERVAL = 500;  // 0.5 s
 
-/* ── LCD ── */
-LiquidCrystal_I2C lcd(0x3F, 20, 4);
-
 /* ── 서보 각도 ── */
-#define ANG_BRAKE   40
+#define ANG_BRAKE   45
 #define ANG_RELEASE 80
 
 /* ── 속도 계산 ── */
@@ -41,7 +43,7 @@ const float TIRE_DIAM_CM = 47.0;
 const float TRANS_RATIO  = 4.60;
 
 /* ── VESS 매핑 ── */
-const int   SERVO_IDLE_US = 1500;   // 0 km/h
+const int   SERVO_IDLE_US = 1600;   // 0 km/h → 시동음 최소화
 const int   SERVO_MAX_US  = 2000;   // 최고속
 const float KMH_MAX       = 100.0;  // 이 이상은 MAX 고정
 
@@ -51,7 +53,7 @@ volatile Mode currentMode = AS_AUTO;
 
 /* ── 플래그 ── */
 volatile bool estopFlag   = false;
-volatile bool isManual    = false;
+volatile bool isManual    = true;
 volatile bool reverseFlag = false;
 
 /* ── 전역 ── */
@@ -60,7 +62,7 @@ Servo exhaust;          // VESS 서보
 int rawMin, rawMax;
 
 static float rpmPrev = 0;
-static float qError = 0;    // EMA, Error dithering 
+static float qError = 0;    // EMA, Error dithering (미사용)
 
 /* Hall 펄스 카운터 */
 volatile unsigned long pulseCnt = 0;
@@ -127,7 +129,10 @@ void enterManual()    { currentMode = AS_MANUAL; brakeServo.write(ANG_RELEASE); 
 /* ── 공용 ADC 읽기 ── */
 int readThrottle(int n = 8) {
   long sum = 0;
-  for (int i = 0; i < n; ++i) { sum += analogRead(THROTTLE_PIN); delayMicroseconds(400); }
+  for (int i = 0; i < n; ++i) {
+    sum += analogRead(THROTTLE_PIN);
+    delayMicroseconds(400);
+  }
   return sum / n;
 }
 
@@ -147,12 +152,13 @@ void setup() {
   rawMin = int((V_MIN / ADC_REF) * ADC_RES + 0.5);
   rawMax = int((V_MAX / ADC_REF) * ADC_RES + 0.5);
 
-  /* LCD */
-  lcd.begin();
+  /* LCD (init/backlight 방식) */
+  delay(200);           // 전원 안정화 권장
+  lcd.init();           // ★ 변경 포인트
   lcd.backlight();
   lcd.clear();
   lcd.setCursor(0,0); lcd.print("SPEED: --.- km/h   ");
-  lcd.setCursor(0,1); lcd.print("MODE : AUTO        ");
+  lcd.setCursor(0,1); lcd.print("MODE : MANUAL      ");
   lcd.setCursor(0,2); lcd.print("GEAR : FWD         ");
   lcd.setCursor(0,3); lcd.print("ESTOP: OFF         ");
 
@@ -172,8 +178,8 @@ void loop() {
     if (estopFlag)        enterEmergency();
     else if (isManual)    enterManual();
     else                  enterAutomatic();
-    
-    /* 스로틀 → 4-bit rpm */
+
+    /* 스로틀 → rpm16 (0~2000) */
     int raw = readThrottle();
     raw = constrain(raw, rawMin, rawMax);
     float voltage = raw * (5.0f / 1023.0f);
@@ -182,12 +188,11 @@ void loop() {
 
     uint16_t rpm16 = uint16_t(rpm_f + 0.5f);
 
-    uint8_t flags = 
+    uint8_t flags =
       (reverseFlag << 2) |
       (estopFlag   << 1) |
       (isManual    << 0);
 
-    
     Serial.write(0xAA);
     Serial.write(uint8_t(rpm16 >> 8));
     Serial.write(uint8_t(rpm16 & 0xFF));
@@ -210,7 +215,7 @@ void loop() {
     /* --- LCD 속도 표시 --- */
     lcd.setCursor(7,0);
     if (kmh < 10) lcd.print(' ');
-    lcd.print(kmh,1); lcd.print(" km/h  ");
+    lcd.print(kmh, 1); lcd.print(" km/h  ");
 
     /* --- VESS PWM 매핑 --- */
     float kmhClamp = constrain(kmh, 0.0f, KMH_MAX);
