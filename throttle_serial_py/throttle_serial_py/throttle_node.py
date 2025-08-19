@@ -197,6 +197,9 @@ class ThrottleSerialNode(Node):
             manual  = bool(flags & 0x01)         # bit0
 
             rpm = -int(rpm16) if reverse else int(rpm16)
+            # 휴지 전압이 낮아 1 rpm 등이 나오는 경우 소거(수신측 데드밴드)
+            if -2 < rpm < 2:
+                rpm = 0
             msg = ThrottleData(rpm=rpm, estop=estop, asms=manual)
             self.pub.publish(msg)
 
