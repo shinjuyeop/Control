@@ -44,16 +44,19 @@
 ## 디렉토리 구조
 
 ```
-KAI_ws/src/Control/
+Control/
 ├── firmware/
-│   └── ArduinoMEGA.ino          # Arduino 펌웨어
+│   ├── ArduinoMEGA/
+│   │   └── ArduinoMEGA.ino      # Arduino Mega VCU 펌웨어
+│   └── EV/
+│       └── EV.ino               # 스탠드얼론 속도계/랩타이머
 ├── motor_control_cpp/           # C++ 모터 제어 패키지
 ├── throttle_serial_py/          # Python 시리얼 통신 패키지
 ├── throttle_msgs/               # 커스텀 메시지 정의
 ├── steering_control/            # 조향 제어 패키지
-├── position_control/            # 위치 제어 패키지
-├── position_control_ex/         # 위치 제어 실험용
-└── README.md                    # 본 문서
+├── speed_monitor_cpp/           # 속도 모니터링 유틸리티
+├── README.md                    # 본 문서
+└── DETAILED_ANALYSIS.md        # 상세 기술 분석 문서
 ```
 
 ## 주요 컴포넌트
@@ -66,7 +69,7 @@ KAI_ws/src/Control/
 - **속도 측정**: Hall 센서 기반 실시간 속도 계산
 - **안전 제어**: 하드웨어 레벨 비상정지 및 브레이크 제어
 - **통신**: 100Hz 시리얼 패킷 전송 (헤더: 0xAA + RPM16 + FLAGS)
-- **실제 시리얼 포트**: ~~`/dev/ttyACM1` (기본 설정과 다를 수 있음)~~ -> 가변으로 수정 완료
+- **시리얼 포트**: 자동 탐지 (우선순위: /dev/serial/by-id/*, Arduino Mega, CH340, CP210x)
 - **부가 기능**: LCD 디스플레이, VESS 서보 제어
 
 #### 시리얼 패킷 포맷
@@ -94,14 +97,14 @@ KAI_ws/src/Control/
 - **프로토콜**: 
   - 핸드셰이크: MCU(0x1801D0EF) ↔ Node(0x0C01EFD0)
   - 제어 프레임: 위상전류(RPM 부호에 따라 ±180A) + RPM + 모드(0x03) + life counter
-  - **피드백**: MCU data[7:6]에서 RPM 추출 (문서 data[6:7]과 다름)
+  - **피드백**: MCU data[6:7]에서 RPM 추출 (Little-endian)
 - **주기**: 50ms
 
 ##### `throttle_node` (Python)
 - **기능**: Arduino 시리얼 패킷 파싱
 - **출력**: `throttle_data` (ThrottleData)
-- **포트**: ~~`/dev/ttyACM1` (115200 bps)~~ -> 가변으로 수정 완료 termianl에서 vid/pid param 설정 시 추가 시 더욱 안정화 가능
-- **파일명**: throttle_node.py (실제 파일명)
+- **포트**: 자동 탐지 또는 ROS 파라미터 `port` 지정 (115200 bps)
+- **파라미터**: `port` (기본: 'auto'), `baud`, `boot_wait`, `probe_window`
 
 ##### `rpm_mux` (Python)
 - **기능**: AUTO/MANUAL/ESTOP 모드 선택
@@ -111,9 +114,28 @@ KAI_ws/src/Control/
   elif MANUAL: output = manual_rpm
   else: output = auto_rpm
   ```
-- **출력**: `target_rpm` @ 100Hz (실제 동작 주파수, 문서에는 20Hz로 표기된 경우 있음)
+- **출력**: `target_rpm` @ 100Hz
 
-### 3. Steering Control (ROS2)
+##### `can_speed_receiver` (C++)
+- **기능**: MCU로부터 실시간 피드백 수신
+- **입력**: CAN ID 0x1801D0EF (Part1), 0x1802D0EF (Part2)
+- **출력**: `/current_speed` (Int32) - 실제 RPM
+- **피드백 데이터**:
+  - Part1: 전압, 전류, 위상전류, RPM
+  - Part2: 온도, 상태, 에러, 결함
+
+### 3. Speed Monitor (ROS2)
+**위치**: `speed_monitor_cpp/`
+
+#### 노드 구성
+
+##### `speed_monitor_node` (C++)
+- **기능**: RPM 토픽 모니터링 유틸리티
+- **입력**: `/current_speed` (Int32) 또는 파라미터 지정 토픽
+- **출력**: 콘솔 로그 ("RPM: {value}")
+- **파라미터**: `topic` (모니터링할 토픽명)
+
+### 4. Steering Control (ROS2)
 **위치**: `steering_control/`
 
 #### 노드 구성
@@ -133,15 +155,6 @@ KAI_ws/src/Control/
 - **기능**: 엔코더 피드백 수신
 - **출력**: `/encoder_angle` (Float32, degrees)
 - **CAN ID**: 0x07000001 (Heartbeat)
-- **⚠️ 주의**: position_control 패키지와 동일한 토픽 발행 (충돌 가능성)
-
-### 4. Position Control (Python)
-**위치**: `position_control/`
-
-- **`control_node`**: Python-CAN 기반 실험용 제어
-- **`position_control_test1`**: 목표 각도 시퀀스 테스트
-- **⚠️ CAN 충돌 위험**: steering_control과 동일한 CAN ID (0x06000001) 사용
-- **⚠️ 토픽 충돌**: `/encoder_angle` 토픽을 steering_feedback_node와 중복 발행 가능
 
 ## 데이터 플로우
 
@@ -242,6 +255,9 @@ ros2 run motor_control_cpp can_speed_sender
 
 # (옵션) 터미널 5: CAN 수신 로거
 ros2 run motor_control_cpp can_speed_receiver
+
+# (옵션) 터미널 6: 속도 모니터
+ros2 run speed_monitor_cpp speed_monitor_node
 ```
 
 #### 3. Steering Control 실행
@@ -293,10 +309,11 @@ bool asms      # AUTO/MANUAL 스위치 (True=Manual)
 | 토픽명 | 타입 | 설명 | 주기 |
 |--------|------|------|------|
 | `/throttle_data` | ThrottleData | Arduino 센서 데이터 | 100Hz |
-| `/target_rpm_auto` | Int32 | 자율 목표 RPM | 20Hz |
+| `/target_rpm_auto` | Int32 | 자율 목표 RPM | 100Hz |
 | `/target_rpm` | Int32 | 최종 목표 RPM | 100Hz |
+| `/current_speed` | Int32 | MCU 피드백 실제 RPM | - |
 | `/steering_command` | Float32 | 목표 조향각 (deg) | - |
-| `/encoder_angle` | Float32 | 현재 조향각 (deg) | - |
+| `/encoder_angle` | Float32 | 현재 조향각 (deg) | 10Hz |
 
 ## CAN 메시지 사양
 
@@ -314,25 +331,15 @@ bool asms      # AUTO/MANUAL 스위치 (True=Manual)
 
 ## ⚠️ 주요 이슈 및 주의사항
 
-### 🔴 CAN 충돌 위험
-- **ID 0x06000001**: `steering_control`과 `position_control` 패키지가 동일한 CAN ID 사용
-- **위험**: 두 패키지 동시 실행 시 명령 충돌로 인한 예측 불가능한 동작
-- **해결방안**: 한 번에 하나의 조향 제어 패키지만 실행 권장
+### 🔶 CAN 인터페이스 설정
+- **기본값**: can_speed_sender/receiver는 `can0`, steering_control은 `can1` 사용
+- **변경 방법**: 실행 시 명령줄 인수로 지정 가능
+- **예시**: `ros2 run motor_control_cpp can_speed_sender can1`
 
-### 🔶 토픽 충돌 가능성
-- **토픽 `/encoder_angle`**: `steering_feedback_node`와 `position_control` 패키지에서 동시 발행 가능
-- **영향**: 토픽 구독자가 혼재된 데이터 수신 가능
-- **해결방안**: 토픽명 변경 또는 네임스페이스 분리 필요
-
-### 🔶 하드코딩된 설정
-- **시리얼 포트**: `throttle_node.py`에서 `/dev/ttyACM1` 하드코딩
-- **문제**: 포트 변경 시 코드 수정 필요
-- **개선 필요**: ROS2 파라미터로 포트 설정 가능하도록 수정
-
-### 📊 문서-코드 불일치
-- **rpm_mux 주기**: 실제 100Hz 동작, 일부 문서에는 20Hz 표기
-- **CAN 피드백**: 실제 data[7:6] 사용, 문서에는 data[6:7] 표기
-- **phase_current**: RPM 부호에 따라 ±180A 설정, 문서에 상세 설명 부족
+### 📊 개선 사항
+- **시리얼 포트 자동 탐지**: throttle_node가 Arduino를 자동으로 찾아 연결
+- **동적 파라미터**: speed_publisher의 RPM을 실행 중 변경 가능
+- **에러 복구**: 시리얼/CAN 연결 끊김 시 자동 재연결
 
 ## 트러블슈팅
 
@@ -340,17 +347,15 @@ bool asms      # AUTO/MANUAL 스위치 (True=Manual)
 
 #### 시리얼 포트 접근 오류
 ```bash
-# 포트 확인 (ACM0 또는 ACM1 확인 필요)
-ls -l /dev/ttyACM*
-
-# Arduino 실제 포트가 /dev/ttyACM1일 수 있음
-# throttle_node.py에서 하드코딩된 포트 확인 필요
+# 자동 탐지가 실패할 경우 수동 지정
+ros2 run throttle_serial_py throttle_node --ros-args -p port:=/dev/ttyACM0
 
 # 권한 추가
-sudo chmod 666 /dev/ttyACM0  # 또는 /dev/ttyACM1
-# 또는
 sudo usermod -a -G dialout $USER
 # (로그아웃 후 재로그인 필요)
+
+# 디버깅: 연결된 Arduino 확인
+ls -l /dev/serial/by-id/
 ```
 
 #### CAN 인터페이스 오류
@@ -375,12 +380,7 @@ ip -details -statistics link show can0
 1. Enable 프레임 전송 확인
 2. 엔코더 피드백 확인: `ros2 topic echo /encoder_angle`
 3. CAN 보레이트 확인 (250kbps)
-4. **CAN ID 충돌 확인**: steering_control과 position_control 동시 실행 여부
-
-#### 토픽 데이터가 이상함
-1. **중복 발행자 확인**: `ros2 topic info /encoder_angle` 으로 발행자 수 확인
-2. **네임스페이스 분리**: 필요시 `--ros-args -r __ns:=/steering` 사용
-3. **토픽 리매핑**: `--ros-args -r encoder_angle:=/steering/encoder_angle`
+4. CAN 인터페이스 확인 (기본 can1)
 
 ### 디버깅 팁
 
@@ -415,6 +415,6 @@ ros2 param set /speed_publisher rpm 1000
 
 ---
 
-**마지막 업데이트**: 2025-08-11  
-**버전**: 1.0.1  
+**마지막 업데이트**: 2025-08-19  
+**버전**: 1.1.0  
 **관리자**: TeamKAI-DL
