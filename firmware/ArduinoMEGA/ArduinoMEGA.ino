@@ -179,14 +179,18 @@ void loop() {
     else if (isManual)    enterManual();
     else                  enterAutomatic();
 
-    /* 스로틀 → rpm16 (0~2000) */
+    /* 스로틀 → rpm16 (0~2000)
+      - 하한(rawMin) 클램프 제거: 휴지 전압이 V_MIN보다 낮을 때도 음수→0으로 처리
+      - 데드밴드: 아주 작은 값(노이즈/양자화)을 0으로 소거
+      - 0 근처 반올림 억제: +0.5f 제거(0.6→1 같은 현상 방지) */
     int raw = readThrottle();
-    raw = constrain(raw, rawMin, rawMax);
-    float voltage = raw * (5.0f / 1023.0f);
+    int raw_hi = min(raw, rawMax);                 // 상한만 제한, 하한 미제한
+    float voltage = raw_hi * (5.0f / 1023.0f);
     float rpm_f = (voltage - V_MIN) / (V_MAX - V_MIN) * (RPM_MAX - RPM_MIN) + RPM_MIN;
+    if (rpm_f < 1.5f) rpm_f = 0.0f;                // 데드밴드(필요시 1.0~2.0 조정)
     rpm_f = constrain(rpm_f, RPM_MIN, RPM_MAX);
 
-    uint16_t rpm16 = uint16_t(rpm_f + 0.5f);
+    uint16_t rpm16 = uint16_t(rpm_f + 1e-6f);      // 0 인근에서 올림 방지
 
     uint8_t flags =
       (reverseFlag << 2) |

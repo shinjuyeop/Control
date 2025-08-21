@@ -107,6 +107,15 @@ private:
     tx.data[7] = life_++;
 
     write(sock_, &tx, sizeof(tx));
+
+    static int32_t prev_logged_rpm = INT32_MIN;
+    if (last_rpm_ != prev_logged_rpm) {
+      prev_logged_rpm = last_rpm_;
+      RCLCPP_INFO(get_logger(), "CAN TX rpm=%d phase_val=%d [data:%02X %02X %02X %02X %02X %02X %02X %02X]",
+                  last_rpm_, (int)phase_val,
+                  tx.data[0], tx.data[1], tx.data[2], tx.data[3],
+                  tx.data[4], tx.data[5], tx.data[6], tx.data[7]);
+    }
   }
 
   /* ── members ─────────────────────────────────────────────────────── */

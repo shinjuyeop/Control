@@ -24,7 +24,7 @@ class RpmMux(Node):
         # 발행
         self.pub = self.create_publisher(Int32, 'target_rpm', 10)
 
-        # 10 ms 주기(100 Hz) 100Hz 0.01 
+        # 10 ms 주기(100 Hz)
         self.create_timer(0.01, self.tick)
 
     # ───────── 콜백 ─────────
@@ -44,6 +44,8 @@ class RpmMux(Node):
         if not self.estop:  # ESTOP 시 무조건 0
             rpm_out = self.manual_rpm if self.is_manual else self.auto_rpm
         self.pub.publish(Int32(data=int(rpm_out)))
+
+    # (no per-change logging)
 
 
 def main(args=None):
