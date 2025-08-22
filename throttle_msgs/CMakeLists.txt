@@ -16,6 +16,9 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   DEPENDENCIES std_msgs
 )
 
+# Ensure downstream packages can find generated headers/typesupport at build time
+ament_export_dependencies(rosidl_default_runtime)
+
 ### ── 3. 테스트(옵션) ──────────────────────────────
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
