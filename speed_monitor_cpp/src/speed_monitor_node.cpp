@@ -5,7 +5,7 @@ class SpeedMonitorNode : public rclcpp::Node {
 public:
   SpeedMonitorNode() : rclcpp::Node("speed_monitor_node") {
     // 파라미터로 토픽명 설정 가능
-    topic_ = this->declare_parameter<std::string>("topic", "/current_speed");
+    topic_ = this->declare_parameter<std::string>("topic", "/current_speed/rpm");
 
     sub_ = this->create_subscription<std_msgs::msg::Int32>(
         topic_, 10,

@@ -64,7 +64,7 @@ public:
 
     setsockopt(sock_, SOL_CAN_RAW, CAN_RAW_FILTER, &flt, sizeof(flt));
     /* ── 퍼블리셔 생성 (/current_speed) ──────────────────────────── */
-    speed_pub_ = create_publisher<std_msgs::msg::Int32>("/current_speed", 10);
+    speed_pub_ = create_publisher<std_msgs::msg::Int32>("/current_speed/rpm", 10);
 
     /* ── 수신 쓰레드 시작 ─────────────────────────────────────────── */
     rx_thread_ = std::thread([this]{ receive_loop(); });
