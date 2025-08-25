@@ -1,5 +1,6 @@
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/int32.hpp>
+#include <std_msgs/msg/float32.hpp>
 
 #include <linux/can.h>
 #include <linux/can/raw.h>
@@ -20,7 +21,11 @@
 static constexpr canid_t ID_MCU_PART1 = 0x1801D0EF; // BusV / BusI / PhaseI / Speed
 static constexpr canid_t ID_MCU_PART2 = 0x1802D0EF; // Temps / Status / Error / Faults
 static constexpr int kRPM_OFFSET   = 32000;  // rpm 오프셋(카운트)
-static constexpr int kCURR_OFFSET  = 32000;   // 전류 오프셋(카운트, = 300.0 A)
+static constexpr int kCURR_OFFSET  = 32000;  // 전류 오프셋(카운트, = 300.0 A)
+
+// Arduino와 동일 파라미터(바퀴 직경/감속비)를 사용해 m/s로 변환
+static constexpr float kTireDiamCm = 47.0f;   // cm
+static constexpr float kGearRatio  = 4.60f;   // motor rpm / gear ratio = wheel rpm
 
 inline int16_t  le16 (uint8_t lo, uint8_t hi){ return int16_t(uint16_t(lo) | (uint16_t(hi)<<8)); }
 inline uint16_t le16u(uint8_t lo, uint8_t hi){ return        (uint16_t(lo) | (uint16_t(hi)<<8)); }
@@ -63,8 +68,8 @@ public:
     flt[1].can_mask = (CAN_EFF_MASK | CAN_EFF_FLAG);
 
     setsockopt(sock_, SOL_CAN_RAW, CAN_RAW_FILTER, &flt, sizeof(flt));
-    /* ── 퍼블리셔 생성 (/current_speed) ──────────────────────────── */
-    speed_pub_ = create_publisher<std_msgs::msg::Int32>("/current_speed/rpm", 10);
+    /* ── 퍼블리셔 생성 (/current_speed/control in m/s) ───────────── */
+    speed_pub_ = create_publisher<std_msgs::msg::Float32>("/current_speed/control", 10);
 
     /* ── 수신 쓰레드 시작 ─────────────────────────────────────────── */
     rx_thread_ = std::thread([this]{ receive_loop(); });
@@ -128,14 +133,20 @@ private:
         float busV = busV_u16 * 0.1f;             // V
         float busI = static_cast<float>(busI_ct) * 0.1f; // A
         float phaI = static_cast<float>(phaI_ct) * 0.1f; // A
-        int   rpm  = rpm_ct;                       // rpm
+        int   rpm  = rpm_ct;                       // motor rpm
 
-        // Publish RPM
-        std_msgs::msg::Int32 msg; msg.data = rpm; speed_pub_->publish(msg);
-        // 터미널 출력 (쓰로틀링: 300ms)
+        // m/s로 변환: wheel_rpm = motor_rpm / kGearRatio
+        // v [m/s] = wheel_rpm [rev/min] * (pi * D_m) / 60
+        const float D_m        = kTireDiamCm * 0.01f;
+        const float wheel_rpm  = static_cast<float>(rpm) / kGearRatio;
+        const float speed_mps  = wheel_rpm * (3.1415926f * D_m) / 60.0f;
+
+        // Publish m/s
+        std_msgs::msg::Float32 msg; msg.data = speed_mps; speed_pub_->publish(msg);
+        // 터미널 출력 (쓰로틀링: 500ms)
         RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 500,
-          "[PART1] V=%.1fV, I=%.1fA, Ph=%.1fA, RPM=%d",
-          busV, busI, phaI, rpm);
+          "[PART1] V=%.1fV, I=%.1fA, Ph=%.1fA, RPM=%d, Speed=%.3f m/s",
+          busV, busI, phaI, rpm, speed_mps);
       }
       else if (id == ID_MCU_PART2 && frame.can_dlc == 8) {
         // Part II: 0:CtrlTemp, 1:MotorTemp (°C = raw-40), 2:Status(bit0 RUN, bit1 SpeedMode), 3:Error, 4:Fault1, 5:Fault2
@@ -177,7 +188,7 @@ private:
   int sock_{-1};
   std::thread                               rx_thread_;
   std::atomic<bool>                         running_{true};
-  rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr speed_pub_;  // ⬅️ 추가
+  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr speed_pub_;  // m/s publisher
 };
 
 int main(int argc, char ** argv)
