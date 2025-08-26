@@ -1,6 +1,13 @@
 /********************************************************************
  * Integrated VCU Throttle / Mode / Gear Sender + Speed Meter
- *  ─ for Arduino Mega 2560   (VESS 추가 버전)
+ *  ─ for Arduino Mega 2560   (VESS 안정화 + 정지 감지 + 빠른 피드백)
+ *  변경점:
+ *   - Hall ISR 데글리치(MIN_PULSE_US)
+ *   - 속도 지수이동평균(EMA) kmhFilt
+ *   - LCD 10 Hz 갱신 + 임계 변경폭(LCD_THRESH)
+ *   - I2C Wire.begin()/setClock 추가
+ *   - ★ 정지 감지(STOP_US) 추가 → 무펄스 일정시간 지나면 kmhFilt=0
+ *   - ★ 피드백 가속: SPD_INTERVAL=300ms, ALPHA=0.35
  *******************************************************************/
 #include <Arduino.h>
 #include <Servo.h>
@@ -8,10 +15,10 @@
 #include <LiquidCrystal_I2C.h>
 #include <avr/io.h>
 #include <avr/interrupt.h>
+#include <math.h>
 
 /* ───────── I2C LCD ───────── */
-// 필요 시 0x27로 변경
-#define LCD_ADDR 0x27
+#define LCD_ADDR 0x27   // 필요 시 0x3F
 LiquidCrystal_I2C lcd(LCD_ADDR, 20, 4);
 
 /* ───────── PIN MAP ───────── */
@@ -30,8 +37,8 @@ const float V_MIN   = 0.8,  V_MAX   = 4.4;   // [V]
 const float RPM_MIN = 0.0,  RPM_MAX = 2000.0;
 
 /* ── 주기 ── */
-const uint32_t PERIOD_MS    = 10;   // 100 Hz
-const uint32_t SPD_INTERVAL = 500;  // 0.5 s
+const uint32_t PERIOD_MS    = 10;    // 100 Hz 시리얼 패킷
+const uint32_t SPD_INTERVAL = 300;   // ★ 0.3 s (기존 500ms → 더 빠른 응답)
 
 /* ── 서보 각도 ── */
 #define ANG_BRAKE   45
@@ -61,16 +68,31 @@ Servo brakeServo;
 Servo exhaust;          // VESS 서보
 int rawMin, rawMax;
 
-static float rpmPrev = 0;
-static float qError = 0;    // EMA, Error dithering (미사용)
-
-/* Hall 펄스 카운터 */
-volatile unsigned long pulseCnt = 0;
+/* Hall 펄스 카운터 + 데글리치 */
+volatile unsigned long pulseCnt   = 0;
+volatile unsigned long lastEdgeUs = 0;
+const unsigned long    MIN_PULSE_US = 300;  // 200~500 µs 사이에서 조정
 unsigned long lastPulseCnt = 0;
 unsigned long lastSpdCalc  = 0;
 
+/* 속도 필터(EMA) & LCD 갱신 제어 */
+float kmhFilt = 0.0f;
+const float ALPHA = 0.35f;           // ★ 0.35로 상향(더 빠른 반응)
+unsigned long lastLcdMs = 0;
+float lastShown = -1.0f;             // 처음엔 무조건 갱신되도록
+const float LCD_THRESH = 0.2f;       // 0.2 km/h 이상 변화 시 표시
+
+/* ── 정지 감지 파라미터 ── */
+const unsigned long STOP_US = 800000UL;   // ★ 0.8 s 무펄스면 정지로 판정
+
 /* ───────── 인터럽트 ───────── */
-void hallISR() { pulseCnt++; }
+void hallISR() {
+  unsigned long t = micros();
+  if (t - lastEdgeUs >= MIN_PULSE_US) {  // 노이즈성 짧은 에지 차단
+    pulseCnt++;
+    lastEdgeUs = t;
+  }
+}
 
 void setupInterrupts() {
   pinMode(ESTOP1_PIN, INPUT_PULLUP);
@@ -93,7 +115,6 @@ void setupInterrupts() {
   /* Hall 센서 인터럽트 */
   pinMode(HALL_PIN, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(HALL_PIN), hallISR, RISING);
-
   sei();
 }
 
@@ -112,7 +133,7 @@ ISR(PCINT2_vect) {
   bool e2 = (digitalRead(ESTOP2_PIN) == LOW);
 
   isManual    = (digitalRead(ASMS_PIN) == HIGH);  // HIGH = MANUAL
-  reverseFlag = (digitalRead(GEAR_PIN) == LOW);  // LOW = REV
+  reverseFlag = (digitalRead(GEAR_PIN) == HIGH);  // HIGH = REV
 
   estopFlag = (e1 || e2 || rf);
 }
@@ -154,13 +175,18 @@ void setup() {
 
   /* LCD (init/backlight 방식) */
   delay(200);           // 전원 안정화 권장
-  lcd.init();           // ★ 변경 포인트
+  Wire.begin();
+  Wire.setClock(100000);   // 필요시 50000으로 낮출 수 있음
+  lcd.init();
   lcd.backlight();
   lcd.clear();
   lcd.setCursor(0,0); lcd.print("SPEED: --.- km/h   ");
   lcd.setCursor(0,1); lcd.print("MODE : MANUAL      ");
   lcd.setCursor(0,2); lcd.print("GEAR : FWD         ");
   lcd.setCursor(0,3); lcd.print("ESTOP: OFF         ");
+
+  lastSpdCalc = millis();
+  lastLcdMs   = millis();
 
   Serial.println(F("Throttle sender + VESS ready"));
 }
@@ -169,7 +195,7 @@ void setup() {
 void loop() {
   const unsigned long now = millis();
 
-  /* 1) 100 Hz 패킷 처리 */
+  /* 1) 100 Hz 패킷 처리 (스로틀 → rpm16, 플래그) */
   static uint32_t tPkt = 0;
   if (now - tPkt >= PERIOD_MS) {
     tPkt = now;
@@ -179,18 +205,14 @@ void loop() {
     else if (isManual)    enterManual();
     else                  enterAutomatic();
 
-    /* 스로틀 → rpm16 (0~2000)
-      - 하한(rawMin) 클램프 제거: 휴지 전압이 V_MIN보다 낮을 때도 음수→0으로 처리
-      - 데드밴드: 아주 작은 값(노이즈/양자화)을 0으로 소거
-      - 0 근처 반올림 억제: +0.5f 제거(0.6→1 같은 현상 방지) */
+    /* 스로틀 → rpm16 (0~2000) */
     int raw = readThrottle();
-    int raw_hi = min(raw, rawMax);                 // 상한만 제한, 하한 미제한
+    int raw_hi = min(raw, rawMax);
     float voltage = raw_hi * (5.0f / 1023.0f);
     float rpm_f = (voltage - V_MIN) / (V_MAX - V_MIN) * (RPM_MAX - RPM_MIN) + RPM_MIN;
-    if (rpm_f < 1.5f) rpm_f = 0.0f;                // 데드밴드(필요시 1.0~2.0 조정)
+    if (rpm_f < 1.5f) rpm_f = 0.0f;
     rpm_f = constrain(rpm_f, RPM_MIN, RPM_MAX);
-
-    uint16_t rpm16 = uint16_t(rpm_f + 1e-6f);      // 0 인근에서 올림 방지
+    uint16_t rpm16 = uint16_t(rpm_f + 1e-6f);
 
     uint8_t flags =
       (reverseFlag << 2) |
@@ -203,38 +225,53 @@ void loop() {
     Serial.write(flags);
   }
 
-  /* 2) 속도 계산 + VESS PWM */
+  /* 2) 속도 계산 & VESS PWM */
   if (now - lastSpdCalc >= SPD_INTERVAL) {
     noInterrupts();
     unsigned long delta = pulseCnt - lastPulseCnt;
     lastPulseCnt = pulseCnt;
+    unsigned long lastEdgeCopy = lastEdgeUs;     // ★ 원자적 읽기용 복사
     interrupts();
 
-    float motorRpm = (delta * 60.0f * 1000.0f) / (PPR * (now - lastSpdCalc));
+    float dt_ms    = (now - lastSpdCalc);
+    float motorRpm = (delta * 60.0f * 1000.0f) / (PPR * dt_ms);
     float wheelRpm = motorRpm / TRANS_RATIO;
     float kmh      = (wheelRpm * 3.1416f * TIRE_DIAM_CM * 60.0f) / 100000.0f;
 
-    lastSpdCalc = now;
+    // EMA 갱신(빠른 반응을 위해 ALPHA=0.35)
+    kmhFilt += ALPHA * (kmh - kmhFilt);
 
-    /* --- LCD 속도 표시 --- */
-    lcd.setCursor(7,0);
-    if (kmh < 10) lcd.print(' ');
-    lcd.print(kmh, 1); lcd.print(" km/h  ");
+    // ★ 정지 감지: 최근 Hall 에지가 STOP_US 동안 없으면 0으로 클램프
+    if ((micros() - lastEdgeCopy) > STOP_US) {
+      kmhFilt = 0.0f;
+    }
 
-    /* --- VESS PWM 매핑 --- */
-    float kmhClamp = constrain(kmh, 0.0f, KMH_MAX);
+    float kmhClamp = constrain(kmhFilt, 0.0f, KMH_MAX);
     int   thUs = SERVO_IDLE_US +
                  int(kmhClamp * (SERVO_MAX_US - SERVO_IDLE_US) / KMH_MAX);
     exhaust.writeMicroseconds(thUs);
+
+    lastSpdCalc = now;
   }
 
-  /* 3) LCD 상태 업데이트 */
+  /* 3) LCD 속도 표시 */
+  if (now - lastLcdMs >= 100) {
+    lastLcdMs = now;
+    if (lastShown < 0.0f || fabs(kmhFilt - lastShown) >= LCD_THRESH) {
+      lcd.setCursor(7,0);
+      if (kmhFilt < 10.0f) lcd.print(' ');
+      lcd.print(kmhFilt, 1); lcd.print(" km/h  ");
+      lastShown = kmhFilt;
+    }
+  }
+
+  /* 4) LCD 상태 업데이트 */
   static Mode lastMode   = AS_AUTO;
   static bool lastGearRv = false;
   static bool lastEstop  = false;
 
   if (currentMode != lastMode) {
-    lcd.setCursor(7,1);         // "MODE : "
+    lcd.setCursor(7,1);
     switch (currentMode) {
       case AS_AUTO:      lcd.print("AUTO      "); break;
       case AS_MANUAL:    lcd.print("MANUAL    "); break;
@@ -244,14 +281,14 @@ void loop() {
   }
 
   if (reverseFlag != lastGearRv) {
-    lcd.setCursor(7,2);         // "GEAR : "
+    lcd.setCursor(7,2);
     lcd.print(reverseFlag ? "REV " : "FWD ");
     lcd.print("      ");
     lastGearRv = reverseFlag;
   }
 
   if (estopFlag != lastEstop) {
-    lcd.setCursor(7,3);         // "ESTOP: "
+    lcd.setCursor(7,3);
     lcd.print(estopFlag ? "ON " : "OFF");
     lcd.print("       ");
     lastEstop = estopFlag;
