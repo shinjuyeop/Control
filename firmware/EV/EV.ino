@@ -24,7 +24,7 @@ const byte BTN_PIN   = 3;     // 랩 버튼
 const int   PPR           = 6;        // 모터 1회전 당 펄스수
 const float TIRE_DIAM_CM  = 47.0;
 const float TRANS_RATIO   = 4.60;
-const unsigned long SPD_INTERVAL = 500;   // ms (표본창)
+const unsigned long SPD_INTERVAL = 300;   // ms (표본창)
 
 /* ── PWM 매핑 (아이들~풀) ───────────────── */
 const int   SERVO_IDLE_US = 1600;     // 0 km/h → 1600 µs
@@ -49,7 +49,7 @@ unsigned long lastSpdCalc  = 0;
 
 /* ── 속도 필터(EMA) & LCD 갱신 ──────────── */
 float kmhFilt     = 0.0f;
-const float ALPHA = 0.25f;   // 0.15~0.35 권장 (작을수록 안정, 클수록 즉각)
+const float ALPHA = 0.35f;   // 0.15~0.35 권장 (작을수록 안정, 클수록 즉각)
 unsigned long lastLcdMs = 0;
 float lastShown   = -1.0f;   // 처음엔 무조건 갱신되도록 -1로 둠
 const float LCD_THRESH = 0.2f; // 0.2 km/h 이상 변화 시만 표시
