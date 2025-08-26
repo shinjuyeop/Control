@@ -28,7 +28,7 @@ public:
     value_bits_      = this->declare_parameter<int>("value_bits", 16);      // 16-bit
     value_big_endian_= this->declare_parameter<bool>("big_endian", true);   // big-endian
     counts_per_rev_  = this->declare_parameter<int>("counts_per_rev", 360); // deg 그대로 가정
-    publish_topic_   = this->declare_parameter<std::string>("publish_topic", "/encoder_angle");
+    publish_topic_   = this->declare_parameter<std::string>("publish_topic", "/ctrl/steer");
     timer_ms_        = this->declare_parameter<int>("poll_period_ms", 20);
 
     feedback_id_ = static_cast<uint32_t>(feedback_id_i64_);

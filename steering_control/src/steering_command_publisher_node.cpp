@@ -7,7 +7,7 @@ public:
     SteeringCommandPublisher()
     : Node("steering_command_publisher"), index_(0)
     {
-        publisher_ = this->create_publisher<std_msgs::msg::Float32>("/steering_command", 10);
+        publisher_ = this->create_publisher<std_msgs::msg::Float32>("/cmd/steer", 10);
 
         // 테스트용 명령 시퀀스 (degree)
         commands_ = {15.0f, 0.0f, 0.0f, 0.0f, -15.0f};
