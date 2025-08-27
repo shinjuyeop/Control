@@ -133,7 +133,7 @@ ISR(PCINT2_vect) {
   bool e2 = (digitalRead(ESTOP2_PIN) == LOW);
 
   isManual    = (digitalRead(ASMS_PIN) == HIGH);  // HIGH = MANUAL
-  reverseFlag = (digitalRead(GEAR_PIN) == HIGH);  // HIGH = REV
+  reverseFlag = (digitalRead(GEAR_PIN) == LOW);   // LOW = REV
 
   estopFlag = (e1 || e2 || rf);
 }
