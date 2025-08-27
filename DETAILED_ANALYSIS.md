@@ -6,9 +6,17 @@
 ## 주요 발견사항
 
 ### README와 실제 코드베이스 차이점
-1. **position_control, position_control_ex 패키지 부재**: README에 언급되었으나 실제로 존재하지 않음
-2. **speed_monitor_cpp 패키지 존재**: README에 문서화되지 않았으나 실제로 존재
-3. **EV.ino 펌웨어 존재**: README에 ArduinoMEGA.ino만 언급되었으나 EV.ino도 존재
+1. **steering_monitor_cpp 패키지 존재**: README에 문서화되지 않았으나 실제로 존재하는 모니터링 유틸리티
+2. **EV.ino 펌웨어 존재**: README에 ArduinoMEGA.ino만 언급되었으나 EV.ino도 존재
+3. **토픽명 변경**: 일관된 네이밍 체계로 업데이트됨
+
+### 토픽 네이밍 변경사항
+- `/target_rpm_auto` → `/cmd/rpm` (자율주행 RPM 명령)
+- `/current_speed` → `/ctrl/speed` (현재 속도 피드백, 이제 m/s 단위)
+- `/steering_command` → `/cmd/steer` (조향 명령)
+- `/encoder_angle` → `/ctrl/steer` (조향 피드백)
+- `/throttle_data` 유지 (변경 없음)
+- `target_rpm` 유지 (슬래시 없음, rpm_mux 출력)
 
 ---
 
@@ -99,7 +107,7 @@ bool asms    # AUTO/MANUAL 스위치 (True = Manual)
 
 #### 입력
 - `/throttle_data` (ThrottleData): 수동 RPM + 모드 정보
-- `/target_rpm_auto` (Int32): 자율주행 목표 RPM
+- `/cmd/rpm` (Int32): 자율주행 목표 RPM (**업데이트된 토픽명**)
 
 #### 출력
 - `/target_rpm` (Int32): 최종 목표 RPM
@@ -130,7 +138,7 @@ else:
 - 자율주행 목표 RPM 생성 및 발행
 
 #### 출력
-- **토픽**: `/target_rpm_auto` (Int32)
+- **토픽**: `/cmd/rpm` (Int32) (**업데이트된 토픽명**)
 - **주기**: 100Hz (10ms 타이머)
 - **기본값**: 500 RPM
 
@@ -173,7 +181,7 @@ data[7]:   Life Counter (순증)
   - phase_val = (current_a - (-3200)) / 0.1
   - rpm_val = rpm - (-32000)
 
-### 3.3 can_speed_receiver.cpp
+### 3.3 can_speed_receiver.cpp (**주요 업데이트**)
 
 #### 기능
 - MCU로부터 실시간 피드백 수신 및 파싱
@@ -183,9 +191,21 @@ data[7]:   Life Counter (순증)
   - 0x1801D0EF (Part1: 전압/전류/RPM)
   - 0x1802D0EF (Part2: 온도/상태/에러)
 
-#### 출력
-- **토픽**: `/current_speed` (Int32) - 실제 RPM
+#### 출력 (**중요 변경사항**)
+- **토픽**: `/ctrl/speed` (Float32) - **RPM에서 m/s로 변경**
 - **로그**: 전압, 전류, 온도, 에러 상태
+
+#### 핵심 변환 로직 (**신규 기능**)
+```cpp
+// m/s 변환 (Arduino와 동일한 파라미터 사용)
+const float kTireDiamCm = 47.0f;   // cm
+const float kGearRatio  = 4.60f;   // 감속비
+
+// wheel_rpm = motor_rpm / kGearRatio
+const float wheel_rpm  = 2.0f * static_cast<float>(rpm) / kGearRatio;
+// v [m/s] = wheel_rpm * (π * D_m) / 60
+const float speed_mps  = wheel_rpm * (3.1415926f * D_m) / 60.0f;
+```
 
 #### 피드백 파싱
 ```cpp
@@ -206,24 +226,45 @@ data[5]: Fault2 bits
 
 ---
 
-## 4. steering_control 패키지
+## 4. steering_control 패키지 (**주요 업데이트**)
 
 ### 개요
 - **역할**: 조향 모터 제어 및 엔코더 피드백
 - **언어**: C++
 - **CAN 인터페이스**: can1 (기본값)
 
-### 4.1 steering_control_node.cpp
+### 4.1 steering_control_node.cpp (**안전 기능 강화**)
 
 #### 기능
 - 조향 명령을 CAN 신호로 변환하여 전송
+- **신규**: ESTOP/MANUAL 모드 처리 및 명령 버퍼링
 
 #### 입력
-- **토픽**: `/steering_command` (Float32, degrees)
+- **토픽**: `/cmd/steer` (Float32, degrees) (**업데이트된 토픽명**)
+- **토픽**: `/throttle_data` (ThrottleData): ESTOP/모드 상태
 
 #### 출력
 - **CAN ID**: 0x06000001 (EFF)
 - **프로토콜**: SDO (Service Data Object)
+
+#### 핵심 안전 로직 (**신규 기능**)
+```cpp
+// ESTOP/MANUAL 중 명령 버퍼링
+if (estop_ || is_manual_) {
+    pending_scaled_ = calculated_value;
+    has_pending_ = true;
+    return; // 전송 차단
+}
+
+// MANUAL → AUTO 전환 시
+if (!is_manual_ && last_is_manual_) {
+    enable_motor(); // 모터 재활성화
+    nanosleep(50ms); // 안정화 대기
+    if (has_pending_) {
+        send_position_scaled(pending_scaled_); // 버퍼된 명령 전송
+    }
+}
+```
 
 #### 핵심 변환 로직
 ```cpp
@@ -241,29 +282,37 @@ data[4:7]: scaled_val (int32, Big-endian)
 #### 초기화
 - Enable 명령: `[0x23, 0x0D, 0x20, 0x01, 0x00, 0x00, 0x00, 0x00]`
 
-### 4.2 steering_feedback_node.cpp
+### 4.2 steering_feedback_node.cpp (**구성 가능 엔코더**)
 
 #### 기능
 - 조향 모터 엔코더 값 수신 및 각도 변환
+- **신규**: 다중 CAN 인터페이스 및 구성 가능한 엔코더 파싱
 
 #### 입력
 - **CAN ID**: 0x07000001 (Heartbeat/Encoder)
+- **인터페이스**: can1,can0 (기본값, 구성 가능)
 
 #### 출력
-- **토픽**: `/encoder_angle` (Float32, degrees)
-- **주기**: 100ms (10Hz)
+- **토픽**: `/ctrl/steer` (Float32, degrees) (**업데이트된 토픽명**)
+- **주기**: 20ms (50Hz)
 
-#### 엔코더 파싱
+#### 구성 가능한 엔코더 파싱 (**신규 기능**)
 ```cpp
-// data[6:7]에서 16비트 엔코더 값 추출
-encoder_raw = (data[6] << 8) | data[7]
+// 파라미터 (런타임 구성 가능)
+can_ifaces: "can1,can0"          // 다중 인터페이스
+feedback_id: 0x07000001          // CAN ID
+value_offset: 0                  // 데이터 시작 위치
+value_bits: 16                   // 16/32-bit 선택
+big_endian: true                 // 엔디안 선택
+counts_per_rev: 360              // 해상도
 
-// 부호 확장
-if (encoder_raw & 0x8000) 
-    encoder_raw -= 0x10000
-
-// 각도 변환
-angle_deg = (encoder_raw / 10000.0f) * 360.0f
+// 16/32-bit 지원
+if (value_bits_ == 16) {
+    uint16_t u = value_big_endian_ ? 
+        (frame.data[offset] << 8) | frame.data[offset+1] :
+        (frame.data[offset+1] << 8) | frame.data[offset];
+    out_counts = static_cast<int16_t>(u);
+}
 ```
 
 ### 4.3 steering_command_publisher_node.cpp
@@ -272,7 +321,7 @@ angle_deg = (encoder_raw / 10000.0f) * 360.0f
 - 테스트용 조향 명령 생성
 
 #### 출력
-- **토픽**: `/steering_command` (Float32)
+- **토픽**: `/cmd/steer` (Float32) (**업데이트된 토픽명**)
 - **시퀀스**: [0°, 10°, -15°, 20°, 0°] 순환
 - **주기**: 1Hz
 
@@ -286,21 +335,47 @@ angle_deg = (encoder_raw / 10000.0f) * 360.0f
 - **노드**: speed_monitor_node
 
 ### 기능
-- RPM 토픽 구독 및 콘솔 출력
+- RPM/속도 토픽 구독 및 콘솔 출력
 - 디버깅 및 모니터링 용도
 
 ### 입력
-- **토픽**: `/current_speed` (Int32)
+- **토픽**: `/ctrl/speed` (Float32) (**업데이트된 토픽명, m/s**)
 - **파라미터**: `topic` (토픽명 변경 가능)
 
 ### 출력
-- **콘솔 로그**: "RPM: {value}"
+- **콘솔 로그**: "Speed: {value} m/s"
 
 ---
 
-## 6. firmware 패키지
+## 6. steering_monitor_cpp 패키지 (**신규 패키지**)
 
-### 6.1 ArduinoMEGA.ino
+### 개요
+- **역할**: 조향각 모니터링 유틸리티 (speed_monitor_cpp와 유사)
+- **언어**: C++
+- **노드**: steering_monitor_node
+
+### 기능
+- 조향각 피드백 및 명령 모니터링
+- 통계 분석 (최소/최대값, 이동평균, 주기)
+
+### 입력
+- **토픽**: `/ctrl/steer` (Float32) - 피드백 모니터링
+- **토픽**: `/cmd/steer` (Float32) - 명령 모니터링
+
+### 출력
+- **콘솔 로그**: "Angle={현재값} deg | Avg={평균} deg | Min={최소} Max={최대} | ~{주기} Hz"
+
+### 특징
+- **이동평균 계산**: 9개 샘플 윈도우
+- **주기 추정**: 지수 평활화 (0.9 * 이전값 + 0.1 * 현재값)
+- **쓰로틀링**: 500ms 간격으로 출력 제한
+- **통계 추적**: 최소/최대값 지속 추적
+
+---
+
+## 7. firmware 패키지
+
+### 7.1 ArduinoMEGA.ino
 
 #### 개요
 - **타겟**: Arduino Mega 2560
@@ -351,7 +426,7 @@ HALL_PIN      2    // Hall 센서 (속도)
    - PCINT 인터럽트로 즉각 응답
    - 비상정지 시 브레이크 서보 작동 (45°)
 
-### 6.2 EV.ino
+### 7.2 EV.ino
 
 #### 개요
 - **타겟**: Arduino (범용)
@@ -377,7 +452,7 @@ HALL_PIN      2    // Hall 센서 (속도)
 
 ---
 
-## 7. 실행 순서 검증
+## 8. 실행 순서 검증
 
 ### README.md 실행 명령 검토
 
@@ -391,6 +466,9 @@ ros2 run motor_control_cpp can_speed_sender        ✓
 ros2 run motor_control_cpp can_speed_receiver      ✓
 ros2 run steering_control steering_control_node    ✓
 ros2 run steering_control steering_feedback_node   ✓
+# 추가 (문서화되지 않음)
+ros2 run speed_monitor_cpp speed_monitor_node      ✓
+ros2 run steering_monitor_cpp steering_monitor_node ✓
 ```
 
 #### Launch 파일 부재
@@ -410,21 +488,22 @@ ros2 run steering_control steering_feedback_node   ✓
 
 ---
 
-## 8. 주요 이슈 및 개선 제안
+## 9. 주요 이슈 및 개선 제안
 
 ### 발견된 이슈
 
 #### 1. 문서화 불일치
-- **누락된 패키지**: speed_monitor_cpp가 README에 없음
-- **존재하지 않는 패키지**: position_control, position_control_ex
+- **누락된 패키지**: speed_monitor_cpp, steering_monitor_cpp가 README에 없음
 - **주기 불일치**: rpm_mux 실제 100Hz, 문서 20Hz
 
-#### 2. 하드코딩 문제
-- ~~시리얼 포트 /dev/ttyACM1 하드코딩~~ → 자동 탐지로 개선됨
-- CAN 인터페이스 기본값 can0, can1
+#### 2. 토픽 네이밍 일관성 개선
+- **개선됨**: 일관된 `/cmd/` 및 `/ctrl/` 네임스페이스 적용
+- **명령 토픽**: `/cmd/rpm`, `/cmd/steer`
+- **제어 피드백**: `/ctrl/speed`, `/ctrl/steer`
 
-#### 3. 토픽 충돌 가능성
-- `/encoder_angle` 토픽을 여러 노드에서 발행 가능 (position_control 존재 시)
+#### 3. 하드코딩 문제 (부분 해결)
+- ~~시리얼 포트 /dev/ttyACM1 하드코딩~~ → 자동 탐지로 개선됨
+- CAN 인터페이스 기본값 can0, can1 (파라미터로 변경 가능)
 
 ### 개선 제안
 
@@ -467,9 +546,7 @@ ros2 run --ros-args -r __ns:=/steering steering_control steering_control_node
 
 ---
 
----
-
-## 9. 하드웨어 연결 정보
+## 10. 하드웨어 연결 정보
 
 ### Arduino Mega 2560 핀 연결
 
@@ -533,7 +610,7 @@ CAN1 (조향 제어)
 
 ---
 
-## 10. 파라미터 상세 목록
+## 11. 파라미터 상세 목록
 
 ### throttle_serial_py 패키지
 
@@ -570,17 +647,32 @@ ros2 run motor_control_cpp speed_publisher --ros-args -p rpm:=800
 ros2 param set /speed_publisher rpm 1000
 ```
 
+### steering_control 패키지 (**신규 파라미터**)
+
+#### steering_feedback_node 파라미터
+| 파라미터 | 타입 | 기본값 | 설명 |
+|----------|------|--------|------|
+| can_ifaces | string | "can1,can0" | 모니터링할 CAN 인터페이스 목록 |
+| feedback_id | int64 | 0x07000001 | 엔코더 피드백 CAN ID |
+| extended_id | bool | true | 확장 프레임 사용 여부 |
+| value_offset | int | 0 | 엔코더 값 바이트 오프셋 |
+| value_bits | int | 16 | 엔코더 해상도 (16/32-bit) |
+| big_endian | bool | true | 엔디안 설정 |
+| counts_per_rev | int | 360 | 회전당 카운트 수 |
+| publish_topic | string | "/ctrl/steer" | 발행 토픽명 |
+| poll_period_ms | int | 20 | 폴링 주기 (ms) |
+
 ### speed_monitor_cpp 패키지
 
 #### speed_monitor_node 파라미터
 | 파라미터 | 타입 | 기본값 | 설명 |
 |----------|------|--------|------|
-| topic | string | '/current_speed' | 모니터링할 토픽명 |
+| topic | string | '/ctrl/speed' | 모니터링할 토픽명 |
 
 **사용 예시:**
 ```bash
 ros2 run speed_monitor_cpp speed_monitor_node --ros-args \
-  -p topic:=/target_rpm
+  -p topic:=/cmd/rpm
 ```
 
 ### Arduino 펌웨어 상수
@@ -610,7 +702,7 @@ ros2 run speed_monitor_cpp speed_monitor_node --ros-args \
 
 ---
 
-## 11. 에러 코드 및 상태 정의
+## 12. 에러 코드 및 상태 정의
 
 ### MCU 에러 비트 (0x1802D0EF data[3])
 
@@ -683,18 +775,57 @@ ros2 run speed_monitor_cpp speed_monitor_node --ros-args \
 
 ---
 
+## 13. 업데이트된 토픽 맵
+
+### 명령 토픽 (`/cmd/`)
+| 토픽명 | 타입 | 발행자 | 구독자 | 설명 |
+|--------|------|--------|--------|------|
+| `/cmd/rpm` | Int32 | speed_publisher | rpm_mux | 자율주행 RPM 명령 |
+| `/cmd/steer` | Float32 | 외부 플래너 | steering_control_node | 조향 명령 (degrees) |
+
+### 제어 피드백 토픽 (`/ctrl/`)
+| 토픽명 | 타입 | 발행자 | 구독자 | 설명 |
+|--------|------|--------|--------|------|
+| `/ctrl/speed` | Float32 | can_speed_receiver | speed_monitor_node | 현재 속도 (m/s) |
+| `/ctrl/steer` | Float32 | steering_feedback_node | steering_monitor_node | 현재 조향각 (degrees) |
+
+### 내부 토픽 (네임스페이스 없음)
+| 토픽명 | 타입 | 발행자 | 구독자 | 설명 |
+|--------|------|--------|--------|------|
+| `throttle_data` | ThrottleData | throttle_node | rpm_mux, steering_control_node | Arduino 센서 데이터 |
+| `target_rpm` | Int32 | rpm_mux | can_speed_sender | 최종 RPM 명령 |
+
+---
+
 ## 결론
 
 본 Control Stack은 기능적으로 완성도가 높으며, 하드웨어와 소프트웨어 통합이 잘 구현되어 있습니다. 
+
+### 주요 업데이트 사항
+1. **새 패키지 추가**: steering_monitor_cpp 모니터링 유틸리티
+2. **토픽 네이밍 일관성**: `/cmd/` 및 `/ctrl/` 네임스페이스 적용
+3. **단위 표준화**: 속도 피드백이 m/s로 통일
+4. **안전성 강화**: steering_control에서 ESTOP/MANUAL 모드 처리
+5. **구성 가능성 개선**: steering_feedback에서 엔코더 파싱 설정 가능
+
+### 패키지 요약 (총 7개)
+1. **throttle_msgs**: 메시지 정의
+2. **throttle_serial_py**: Arduino 통신 브릿지
+3. **motor_control_cpp**: 모터 제어 및 CAN 통신
+4. **steering_control**: 조향 제어 및 피드백
+5. **speed_monitor_cpp**: 속도 모니터링 유틸리티
+6. **steering_monitor_cpp**: 조향 모니터링 유틸리티 (**신규**)
+7. **firmware**: Arduino 펌웨어
 
 ### 문서 완성도
 - **하드웨어 연결**: 모든 핀 매핑과 전기적 사양 문서화 완료
 - **파라미터**: 모든 ROS2 노드 파라미터와 Arduino 상수 정의 완료
 - **에러/상태**: MCU 통신 프로토콜의 모든 비트 정의 완료
+- **토픽 맵**: 업데이트된 토픽 네이밍 체계 완전 반영
 
 ### 개선 제안
 1. **자동화**: Launch 파일로 복잡한 실행 과정 단순화
 2. **모니터링**: 에러 비트 자동 감지 및 알림 시스템
 3. **안전성**: Fault 발생 시 자동 복구 로직 추가
 
-전체적으로 실제 배포에 필요한 모든 기술 정보가 문서화되었습니다.
+전체적으로 실제 배포에 필요한 모든 기술 정보가 문서화되었으며, 최신 코드베이스 변경사항이 완전히 반영되었습니다.
