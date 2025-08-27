@@ -34,7 +34,7 @@ public:
       });
 
     /* ── Publisher & Timer ─────────────────────────────────────────── */
-    publisher_ = create_publisher<std_msgs::msg::Int32>("target_rpm_auto", 10);
+    publisher_ = create_publisher<std_msgs::msg::Int32>("/cmd/rpm", 10);
     timer_      = create_wall_timer(10ms,
                     std::bind(&SpeedPublisher::publish_rpm, this));
   }

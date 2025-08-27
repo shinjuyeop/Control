@@ -7,7 +7,7 @@ class SteeringMonitor : public rclcpp::Node {
 public:
   SteeringMonitor() : Node("steering_monitor") {
     angle_sub_ = create_subscription<std_msgs::msg::Float32>(
-      "/encoder_angle", 10,
+      "/ctrl/steer", 10,
       [this](const std_msgs::msg::Float32::SharedPtr msg){
         const double v = msg->data;
 

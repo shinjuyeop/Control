@@ -19,7 +19,7 @@ class RpmMux(Node):
         self.create_subscription(
             ThrottleData, 'throttle_data', self.cb_throttle, 10)
         self.create_subscription(
-            Int32, 'target_rpm_auto', self.cb_auto, 10)
+            Int32, '/cmd/rpm', self.cb_auto, 10)
 
         # 발행
         self.pub = self.create_publisher(Int32, 'target_rpm', 10)
