@@ -91,8 +91,8 @@ private:
     //int16_t phase_val = static_cast<int16_t>((phase_current_a_ - (-3200)) / 0.1);
     //int16_t rpm_val   = static_cast<int16_t>(last_rpm_ - (-32000));
 
-    /* ▼ ① ±300 A로 부호 결정 -------------------------------------- */
-    const double phase_current_a = (last_rpm_ >= 0 ?  300.0 : -300.0); /* 전진 & 후진 */
+    /* ▼ ① ±500 A로 부호 결정 -------------------------------------- */
+    const double phase_current_a = (last_rpm_ >= 0 ?  500.0 : -500.0); /* 전진 & 후진 */
 
     /* ▼ ② 변환식은 그대로 사용 -------------------------------------- */
     int16_t phase_val = static_cast<int16_t>((phase_current_a - (-3200)) / 0.1);
