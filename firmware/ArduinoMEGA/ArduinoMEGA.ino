@@ -41,7 +41,7 @@ const uint32_t PERIOD_MS    = 10;    // 100 Hz 시리얼 패킷
 const uint32_t SPD_INTERVAL = 300;   // ★ 0.3 s (기존 500ms → 더 빠른 응답)
 
 /* ── 서보 각도 ── */
-#define ANG_BRAKE   45
+#define ANG_BRAKE   70
 #define ANG_RELEASE 80
 
 /* ── 속도 계산 ── */
@@ -67,6 +67,13 @@ volatile bool reverseFlag = false;
 Servo brakeServo;
 Servo exhaust;          // VESS 서보
 int rawMin, rawMax;
+
+/* 브레이크 서보 속도 제한(슬루 레이트) */
+int  brakeTarget = ANG_RELEASE;   // 목표 각도
+int  brakeCurrent = ANG_RELEASE;  // 현재 명령 각도
+unsigned long lastBrakeStepMs = 0;
+const uint8_t  BRAKE_STEP_DEG = 1;        // 스텝당 이동 각도(°)
+const uint16_t BRAKE_STEP_INTERVAL_MS = 20; // 스텝 간격(ms) → 1°/20ms = 50°/s
 
 /* Hall 펄스 카운터 + 데글리치 */
 volatile unsigned long pulseCnt   = 0;
@@ -142,10 +149,10 @@ ISR(PCINT2_vect) {
 void enterEmergency() {
   if (currentMode != AS_EMERGENCY) Serial.println(F(">>> EMERGENCY <<<"));
   currentMode = AS_EMERGENCY;
-  brakeServo.write(ANG_BRAKE);
+  brakeTarget = ANG_BRAKE;  // 즉시 쓰지 않고 슬루 레이트로 이동
 }
-void enterAutomatic() { currentMode = AS_AUTO;   brakeServo.write(ANG_RELEASE); }
-void enterManual()    { currentMode = AS_MANUAL; brakeServo.write(ANG_RELEASE); }
+void enterAutomatic() { currentMode = AS_AUTO;   brakeTarget = ANG_RELEASE; }
+void enterManual()    { currentMode = AS_MANUAL; brakeTarget = ANG_RELEASE; }
 
 /* ── 공용 ADC 읽기 ── */
 int readThrottle(int n = 8) {
@@ -163,7 +170,9 @@ void setup() {
   setupInterrupts();
 
   brakeServo.attach(SERVO_PIN);                // 브레이크
-  brakeServo.write(ANG_RELEASE);
+  brakeCurrent = ANG_RELEASE;
+  brakeTarget  = ANG_RELEASE;
+  brakeServo.write(brakeCurrent);
 
   exhaust.attach(VESS_PIN, 1000, 2000);        // VESS (pin 9)
 
@@ -194,6 +203,19 @@ void setup() {
 /* ───────── LOOP ───────── */
 void loop() {
   const unsigned long now = millis();
+
+  /* 0) 브레이크 서보 슬루 레이트 적용 (논블로킹) */
+  if (now - lastBrakeStepMs >= BRAKE_STEP_INTERVAL_MS) {
+    lastBrakeStepMs = now;
+    if (brakeCurrent != brakeTarget) {
+      if (brakeCurrent < brakeTarget) {
+        brakeCurrent = min(brakeCurrent + BRAKE_STEP_DEG, brakeTarget);
+      } else {
+        brakeCurrent = max(brakeCurrent - BRAKE_STEP_DEG, brakeTarget);
+      }
+      brakeServo.write(brakeCurrent);
+    }
+  }
 
   /* 1) 100 Hz 패킷 처리 (스로틀 → rpm16, 플래그) */
   static uint32_t tPkt = 0;
