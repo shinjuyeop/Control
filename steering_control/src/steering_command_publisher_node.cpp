@@ -9,11 +9,12 @@ public:
     {
         publisher_ = this->create_publisher<std_msgs::msg::Float32>("/cmd/steer", 10);
 
-        // 테스트용 명령 시퀀스 (degree)
-        commands_ = {15.0f, 0.0f, 0.0f, 0.0f, -15.0f};
+        // 테스트용 명령 시퀀스 (degree): 15 -> 0 -> -15 -> 0, 각 2초 유지
+        commands_ = {15.0f, 0.0f, -15.0f, 0.0f};
 
+        // 2초 간격으로 다음 명령으로 전환
         timer_ = this->create_wall_timer(
-            std::chrono::seconds(1),
+            std::chrono::seconds(2),
             std::bind(&SteeringCommandPublisher::publish_command, this)
         );
 

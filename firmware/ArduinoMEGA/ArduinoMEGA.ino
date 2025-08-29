@@ -288,18 +288,16 @@ void loop() {
   }
 
   /* 4) LCD 상태 업데이트 */
-  static Mode lastMode   = AS_AUTO;
+  static Mode lastDisplayMode = AS_AUTO;
   static bool lastGearRv = false;
   static bool lastEstop  = false;
 
-  if (currentMode != lastMode) {
+  // MODE 표시는 비상(Emergency) 여부와 무관하게 AUTO/MANUAL만 표시
+  Mode displayMode = isManual ? AS_MANUAL : AS_AUTO;
+  if (displayMode != lastDisplayMode) {
     lcd.setCursor(7,1);
-    switch (currentMode) {
-      case AS_AUTO:      lcd.print("AUTO      "); break;
-      case AS_MANUAL:    lcd.print("MANUAL    "); break;
-      case AS_EMERGENCY: /*lcd.print("EMERGENCY ");*/ break;
-    }
-    lastMode = currentMode;
+    lcd.print(displayMode == AS_MANUAL ? "MANUAL    " : "AUTO      ");
+    lastDisplayMode = displayMode;
   }
 
   if (reverseFlag != lastGearRv) {
