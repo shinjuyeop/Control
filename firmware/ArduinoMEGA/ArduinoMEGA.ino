@@ -34,7 +34,7 @@ LiquidCrystal_I2C lcd(LCD_ADDR, 20, 4);
 
 /* ── 스로틀 → RPM 스케일 ── */
 const float V_MIN   = 0.8,  V_MAX   = 4.4;   // [V]
-const float RPM_MIN = 0.0,  RPM_MAX = 2000.0;
+const float RPM_MIN = 0.0,  RPM_MAX = 500.0;
 
 /* ── 주기 ── */
 const uint32_t PERIOD_MS    = 10;    // 100 Hz 시리얼 패킷

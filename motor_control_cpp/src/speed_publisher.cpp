@@ -13,7 +13,7 @@ public:
   : Node("speed_publisher")
   {
     /* ── Declare parameter & read initial value ────────────────────── */
-    declare_parameter<int>("rpm", 250);                 // default 500
+    declare_parameter<int>("rpm", 1000);                 // default 500
     rpm_ = get_parameter("rpm").as_int();
 
     /* ── Dynamic parameter callback ───────────────────────────────── */
