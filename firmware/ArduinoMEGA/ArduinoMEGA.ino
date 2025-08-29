@@ -41,7 +41,7 @@ const uint32_t PERIOD_MS    = 10;    // 100 Hz 시리얼 패킷
 const uint32_t SPD_INTERVAL = 300;   // ★ 0.3 s (기존 500ms → 더 빠른 응답)
 
 /* ── 서보 각도 ── */
-#define ANG_BRAKE   60
+#define ANG_BRAKE   50      // 튜닝 필요
 #define ANG_RELEASE 80
 
 /* ── 속도 계산 ── */
