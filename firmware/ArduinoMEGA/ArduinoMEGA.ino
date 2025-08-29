@@ -191,7 +191,7 @@ void setup() {
   lcd.clear();
   lcd.setCursor(0,0); lcd.print("SPEED: --.- km/h   ");
   lcd.setCursor(0,1); lcd.print("MODE : MANUAL      ");
-  lcd.setCursor(0,2); lcd.print("GEAR : FWD         ");
+  lcd.setCursor(0,2); lcd.print("GEAR : DRIVE       ");
   lcd.setCursor(0,3); lcd.print("ESTOP: OFF         ");
 
   lastSpdCalc = millis();
@@ -297,22 +297,22 @@ void loop() {
     switch (currentMode) {
       case AS_AUTO:      lcd.print("AUTO      "); break;
       case AS_MANUAL:    lcd.print("MANUAL    "); break;
-      case AS_EMERGENCY: lcd.print("EMERGENCY "); break;
+      case AS_EMERGENCY: /*lcd.print("EMERGENCY ");*/ break;
     }
     lastMode = currentMode;
   }
 
   if (reverseFlag != lastGearRv) {
     lcd.setCursor(7,2);
-    lcd.print(reverseFlag ? "REV " : "FWD ");
-    lcd.print("      ");
+    lcd.print(reverseFlag ? "REVERSE " : "DRIVE   ");
+    lcd.print("     ");
     lastGearRv = reverseFlag;
   }
 
   if (estopFlag != lastEstop) {
     lcd.setCursor(7,3);
-    lcd.print(estopFlag ? "ON " : "OFF");
-    lcd.print("       ");
+    lcd.print(estopFlag ? "ENGAGED " : "OFF     ");
+    lcd.print("     ");
     lastEstop = estopFlag;
   }
 }
