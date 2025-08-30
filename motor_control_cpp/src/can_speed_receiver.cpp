@@ -138,7 +138,7 @@ private:
         // m/s로 변환: wheel_rpm = motor_rpm / kGearRatio
         // v [m/s] = wheel_rpm [rev/min] * (pi * D_m) / 60
         const float D_m        = kTireDiamCm * 0.01f;
-        const float wheel_rpm  = 2.0f * static_cast<float>(rpm) / kGearRatio;
+        const float wheel_rpm  = static_cast<float>(rpm) / kGearRatio;
         const float speed_mps  = wheel_rpm * (3.1415926f * D_m) / 60.0f;
 
         // Publish m/s
