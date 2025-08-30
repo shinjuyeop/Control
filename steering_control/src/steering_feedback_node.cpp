@@ -27,7 +27,7 @@ public:
     value_offset_    = this->declare_parameter<int>("value_offset", 0);     // candump 결과: [0:1]
     value_bits_      = this->declare_parameter<int>("value_bits", 16);      // 16-bit
     value_big_endian_= this->declare_parameter<bool>("big_endian", true);   // big-endian
-    counts_per_rev_  = this->declare_parameter<int>("counts_per_rev", 360); // deg 그대로 가정
+    counts_per_rev_  = this->declare_parameter<int>("counts_per_rev", 360); // (counts/CPR)*360 = handle_deg
     publish_topic_   = this->declare_parameter<std::string>("publish_topic", "/ctrl/steer");
     timer_ms_        = this->declare_parameter<int>("poll_period_ms", 20);
 
@@ -57,10 +57,10 @@ public:
       oss << sockets_[i].name;
     }
     RCLCPP_INFO(get_logger(),
-      "Steering Feedback Node (ifaces=[%s], id=0x%08X %s, offset=%d, bits=%d, %s-endian, CPR=%d, period=%dms)",
+      "Steering Feedback Node (ifaces=[%s], id=0x%08X %s, offset=%d, bits=%d, %s-endian, CPR=%d, period=%dms, publish='%s')",
       oss.str().c_str(), feedback_id_, (is_eff_id_ ? "EFF" : "SFF"),
       value_offset_, value_bits_, (value_big_endian_ ? "big" : "little"),
-      counts_per_rev_, timer_ms_);
+      counts_per_rev_, timer_ms_, publish_topic_.c_str());
 
     // ---- Timer: drain all sockets ------------------------------------
     timer_ = this->create_wall_timer(
@@ -177,13 +177,28 @@ private:
     }
   }
 
+  // ---- 핵심 변경: 바퀴각 퍼블리시(우측 다항식 + 좌측 원점대칭) ----------
   void publish_angle_from_counts(int32_t counts) {
-    const float angle_deg = (static_cast<float>(counts) / static_cast<float>(counts_per_rev_)) * 360.0f;
+    // 1) counts -> 핸들각(raw)
+    const float handle_deg =
+      (static_cast<float>(counts) / static_cast<float>(counts_per_rev_)) * 360.0f; // x
+
+    // 2) 우측 구간(+) 실험식 y = 0.0002*x^2 + 0.2159*x + 0.1612
+    const float poly_y = 0.0002f * handle_deg * handle_deg
+                       + 0.2159f * handle_deg
+                       + 0.1612f;
+
+    // 3) 좌측(−)은 원점대칭 적용: y(-x) = -y(x)
+    const float wheel_deg = (handle_deg >= 0.0f) ? poly_y : -poly_y;
+
+    // 4) 퍼블리시: /ctrl/steer (바퀴 조향각)
     std_msgs::msg::Float32 msg;
-    msg.data = angle_deg;
+    msg.data = wheel_deg;
     encoder_pub_->publish(msg);
+
     RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 500,
-      "Feedback: counts=%d -> %.2f deg", counts, angle_deg);
+      "counts=%d -> handle=%.2f deg -> wheel=%.2f deg (poly right, odd-sym left)",
+      counts, handle_deg, wheel_deg);
   }
 
   void drain_fd(int fd, const char* ifname) {

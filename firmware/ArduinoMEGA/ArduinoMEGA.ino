@@ -34,7 +34,7 @@ LiquidCrystal_I2C lcd(LCD_ADDR, 20, 4);
 
 /* ── 스로틀 → RPM 스케일 ── */
 const float V_MIN   = 0.8,  V_MAX   = 4.4;   // [V]
-const float RPM_MIN = 0.0,  RPM_MAX = 500.0;
+const float RPM_MIN = 0.0,  RPM_MAX = 1000.0;
 
 /* ── 주기 ── */
 const uint32_t PERIOD_MS    = 10;    // 100 Hz 시리얼 패킷
@@ -45,7 +45,7 @@ const uint32_t SPD_INTERVAL = 300;   // ★ 0.3 s (기존 500ms → 더 빠른 �
 #define ANG_RELEASE 80
 
 /* ── 속도 계산 ── */
-const int   PPR          = 6;
+const int   PPR          = 12;
 const float TIRE_DIAM_CM = 47.0;
 const float TRANS_RATIO  = 4.60;
 

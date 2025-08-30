@@ -19,13 +19,7 @@ def generate_launch_description():
             name='throttle_serial',
             output='screen'
         ),
-        Node(
-            package='motor_control_cpp',
-            executable='speed_publisher',
-            name='speed_publisher',
-            output='screen',
-            parameters=[{'rpm': LaunchConfiguration('rpm')}]
-        ),
+        
         Node(
             package='throttle_serial_py',
             executable='rpm_mux',
