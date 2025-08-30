@@ -45,7 +45,7 @@ const uint32_t SPD_INTERVAL = 300;   // ★ 0.3 s (기존 500ms → 더 빠른 �
 #define ANG_RELEASE 80
 
 /* ── 속도 계산 ── */
-const int   PPR          = 6;
+const int   PPR          = 12;
 const float TIRE_DIAM_CM = 47.0;
 const float TRANS_RATIO  = 4.60;
 

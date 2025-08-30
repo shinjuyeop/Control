@@ -21,7 +21,7 @@ const byte SERVO_PIN = 9;     // ESS-DUAL+ PWM
 const byte BTN_PIN   = 3;     // 랩 버튼
 
 /* ── 속도 파라미터 ──────────────────────── */
-const int   PPR           = 6;        // 모터 1회전 당 펄스수
+const int   PPR           = 12;        // 모터 1회전 당 펄스수
 const float TIRE_DIAM_CM  = 47.0;
 const float TRANS_RATIO   = 4.60;
 const unsigned long SPD_INTERVAL = 300;   // ms (표본창)
