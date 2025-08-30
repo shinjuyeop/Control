@@ -13,6 +13,7 @@
 #include <vector>
 #include <sstream>
 #include <iomanip>
+#include <cmath>  // 추가
 
 class SteeringFeedbackNode : public rclcpp::Node {
 public:
@@ -30,6 +31,13 @@ public:
     counts_per_rev_  = this->declare_parameter<int>("counts_per_rev", 360); // deg 그대로 가정
     publish_topic_   = this->declare_parameter<std::string>("publish_topic", "/ctrl/steer");
     timer_ms_        = this->declare_parameter<int>("poll_period_ms", 20);
+
+    // ---- 추가: 핸들→바퀴 변환 다항식 파라미터 -----------------------
+    // y = a*x^2 + b*x + c  (x=핸들각[deg], y=바퀴각[deg])
+    poly_a_          = this->declare_parameter<double>("poly_a", 0.0002);
+    poly_b_          = this->declare_parameter<double>("poly_b", 0.2159);
+    poly_c_          = this->declare_parameter<double>("poly_c", 0.1612);
+    handle_zero_deg_ = this->declare_parameter<double>("handle_zero_deg", 0.0); // 영점=0
 
     feedback_id_ = static_cast<uint32_t>(feedback_id_i64_);
     encoder_pub_ = this->create_publisher<std_msgs::msg::Float32>(publish_topic_, 10);
@@ -61,6 +69,10 @@ public:
       oss.str().c_str(), feedback_id_, (is_eff_id_ ? "EFF" : "SFF"),
       value_offset_, value_bits_, (value_big_endian_ ? "big" : "little"),
       counts_per_rev_, timer_ms_);
+
+    RCLCPP_INFO(get_logger(),
+      "Wheel mapping: y = %.6f*x^2 + %.6f*x + %.6f  (handle_zero=%.3f deg) -> publish='%s'",
+      poly_a_, poly_b_, poly_c_, handle_zero_deg_, publish_topic_.c_str());
 
     // ---- Timer: drain all sockets ------------------------------------
     timer_ = this->create_wall_timer(
@@ -178,12 +190,26 @@ private:
   }
 
   void publish_angle_from_counts(int32_t counts) {
-    const float angle_deg = (static_cast<float>(counts) / static_cast<float>(counts_per_rev_)) * 360.0f;
+    // 1) counts -> 핸들각(raw)
+    const float handle_deg_raw =
+      (static_cast<float>(counts) / static_cast<float>(counts_per_rev_)) * 360.0f;
+
+    // 2) 영점 보정된 핸들각 x
+    const float x = handle_deg_raw - static_cast<float>(handle_zero_deg_);
+
+    // 3) 다항식으로 바퀴각 y 계산: y = a*x^2 + b*x + c
+    const float y = static_cast<float>(poly_a_)*x*x
+                  + static_cast<float>(poly_b_)*x
+                  + static_cast<float>(poly_c_);
+
+    // 4) 퍼블리시: /ctrl/steer (바퀴 조향각)
     std_msgs::msg::Float32 msg;
-    msg.data = angle_deg;
+    msg.data = y;
     encoder_pub_->publish(msg);
+
     RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 500,
-      "Feedback: counts=%d -> %.2f deg", counts, angle_deg);
+      "counts=%d -> handle=%.2f deg, x=%.2f -> wheel(y)=%.2f deg (y=%.6f*x^2+%.6f*x+%.6f)",
+      counts, handle_deg_raw, x, y, poly_a_, poly_b_, poly_c_);
   }
 
   void drain_fd(int fd, const char* ifname) {
@@ -240,6 +266,12 @@ private:
   int      counts_per_rev_;
   std::string publish_topic_;
   int      timer_ms_;
+
+  // 다항식 변환 파라미터
+  double poly_a_;
+  double poly_b_;
+  double poly_c_;
+  double handle_zero_deg_;
 
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr encoder_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
