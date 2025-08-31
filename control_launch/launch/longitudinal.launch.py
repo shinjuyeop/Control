@@ -45,5 +45,14 @@ def generate_launch_description():
             name='speed_monitor',
             output='screen'
         ),
+        # ✅ 추가: speed_publisher 노드 (rpm 인자 전달)
+        Node(
+            package='motor_control_cpp',
+            executable='speed_publisher',
+            name='speed_publisher',
+            output='screen',
+            parameters=[{'rpm': LaunchConfiguration('rpm')}]
+        ),
     ])
 EOF
+
