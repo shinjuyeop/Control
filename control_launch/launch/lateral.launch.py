@@ -34,7 +34,7 @@ def generate_launch_description():
 
         # 터미널 3: steering_monitor_node
         Node(
-            package='steering_monitor',
+            package='steering_monitor_cpp',
             executable='steering_monitor_node',
             name='steering_monitor',
             output='screen',
