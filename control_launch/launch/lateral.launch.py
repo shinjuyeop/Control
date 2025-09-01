@@ -8,7 +8,8 @@ def generate_launch_description():
             package='steering_control',
             executable='steering_control_node',
             name='steering_control',
-            output='screen'
+            output='screen',
+
         ),
 
         # 터미널 2: steering_feedback_node
@@ -16,6 +17,6 @@ def generate_launch_description():
             package='steering_control',
             executable='steering_feedback_node',
             name='steering_feedback',
-            output='screen'
+            output='screen',
         ),
     ])
