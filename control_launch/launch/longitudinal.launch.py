@@ -4,6 +4,17 @@ from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
+"""
+        # speed_publisher 필요 시 아래에 추가
+        Node(
+            package='motor_control_cpp',
+            executable='speed_publisher',
+            name='speed_publisher',
+            output='screen',
+            parameters=[{'rpm': LaunchConfiguration('rpm')}],
+        ),
+"""
+
 def generate_launch_description():
     rpm_arg = DeclareLaunchArgument(
         'rpm',
@@ -16,13 +27,7 @@ def generate_launch_description():
     return LaunchDescription([
         rpm_arg,
 
-        Node(
-            package='motor_control_cpp',
-            executable='speed_publisher',
-            name='speed_publisher',
-            output='screen',
-            parameters=[{'rpm': LaunchConfiguration('rpm')}],
-        ),
+
 
         Node(
             package='throttle_serial_py',
