@@ -13,6 +13,7 @@
 #include <vector>
 #include <sstream>
 #include <iomanip>
+#include <cmath>
 
 class SteeringFeedbackNode : public rclcpp::Node {
 public:
@@ -177,29 +178,27 @@ private:
     }
   }
 
-  // ---- 핵심 변경: 바퀴각 퍼블리시(우측 다항식 + 좌측 원점대칭) ----------
-  void publish_angle_from_counts(int32_t counts) {
-    // 1) counts -> 핸들각(raw)
-    const float handle_deg =
-      (static_cast<float>(counts) / static_cast<float>(counts_per_rev_)) * 360.0f; // x
+  // ---- 핵심 변경: 바퀴각 퍼블리시(오른쪽 다항식 f(|x|)에 부호만 입힘) ----------
+void publish_angle_from_counts(int32_t counts) {
+  // 1) counts -> 핸들각 x (deg)
+  const float x = (static_cast<float>(counts) / static_cast<float>(counts_per_rev_)) * 360.0f;
 
-    // 2) 우측 구간(+) 실험식 y = 0.0002*x^2 + 0.2159*x + 0.1612
-    const float poly_y = 0.0002f * handle_deg * handle_deg
-                       + 0.2159f * handle_deg
-                       + 0.1612f;
+  // 2) 오른쪽(+)에서 피팅한 다항식: f(t) = a*t^2 + b*t + c, t >= 0
+  const float t = std::fabs(x);                 // t = |x|
+  const float f = 0.0002f * t * t + 0.2159f * t + 0.1612f;
 
-    // 3) 좌측(−)은 원점대칭 적용: y(-x) = -y(x)
-    const float wheel_deg = (handle_deg >= 0.0f) ? poly_y : -poly_y;
+  // 3) 좌측(−)은 원점대칭: y(-x) = -y(x) ⇒ 결과는 x의 부호만 입힘
+  const float wheel_deg = std::copysign(f, x);  // sign(x) * f(|x|)
 
-    // 4) 퍼블리시: /ctrl/steer (바퀴 조향각)
-    std_msgs::msg::Float32 msg;
-    msg.data = wheel_deg;
-    encoder_pub_->publish(msg);
+  // 4) 퍼블리시
+  std_msgs::msg::Float32 msg;
+  msg.data = wheel_deg;
+  encoder_pub_->publish(msg);
 
-    RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 500,
-      "counts=%d -> handle=%.2f deg -> wheel=%.2f deg (poly right, odd-sym left)",
-      counts, handle_deg, wheel_deg);
-  }
+  RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 500,
+    "counts=%d -> handle=%.2f deg -> wheel=%.2f deg (using f(|x|) with sign(x))",
+    counts, x, wheel_deg);
+    }
 
   void drain_fd(int fd, const char* ifname) {
     while (true) {
