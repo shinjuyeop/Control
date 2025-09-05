@@ -15,7 +15,6 @@
 #include <sstream>
 #include <iomanip>
 #include <cmath>
-#include <algorithm>  // std::clamp
 
 class SteeringFeedbackNode : public rclcpp::Node {
 public:
@@ -23,34 +22,37 @@ public:
   : Node("steering_feedback_node")
   {
     // ---- Parameters ---------------------------------------------------
+    // 콤마로 구분된 인터페이스 목록. 기본값: can1,can0 둘 다 수신
     can_ifaces_csv_   = this->declare_parameter<std::string>("can_ifaces", "can1,can0");
     feedback_id_i64_  = this->declare_parameter<int64_t>("feedback_id", 0x07000001);
     is_eff_id_        = this->declare_parameter<bool>("extended_id", true);
-    value_offset_     = this->declare_parameter<int>("value_offset", 0);     // 데이터 시작 바이트
+
+    // raw 데이터에서 각도 값 추출 위치/형식
+    value_offset_     = this->declare_parameter<int>("value_offset", 0);     // 시작 바이트
     value_bits_       = this->declare_parameter<int>("value_bits", 16);      // 16 or 32
-    value_big_endian_ = this->declare_parameter<bool>("big_endian", true);
-    counts_per_rev_   = this->declare_parameter<int>("counts_per_rev", 360); // 360 또는 10000 등
+    value_big_endian_ = this->declare_parameter<bool>("big_endian", true);   // big-endian 여부
+
+    // 한 바퀴당 카운트(예: heartbeat ELE-H/ELE-L → 360, TPDO/SDO Position → 10000)
+    counts_per_rev_   = this->declare_parameter<int>("counts_per_rev", 360);
+
     publish_topic_    = this->declare_parameter<std::string>("publish_topic", "/ctrl/steer");
     timer_ms_         = this->declare_parameter<int>("poll_period_ms", 20);
 
-    // 새 파라미터(부호/영점/클램프)
-    auto_zero_on_start_ = this->declare_parameter<bool>("auto_zero_on_start", true);
-    zero_counts_        = this->declare_parameter<int>("zero_counts", 0);
-    invert_direction_   = this->declare_parameter<bool>("invert_direction", true);
-    //  ↑ raw가 "좌=양, 우=음"이면 true로 두면 "좌=음, 우=양"으로 뒤집힘
-    use_clamp_          = this->declare_parameter<bool>("use_clamp", false);
-    left_limit_deg_     = this->declare_parameter<double>("left_limit_deg",  -46.0); // 좌측 끝 (음수)
-    right_limit_deg_    = this->declare_parameter<double>("right_limit_deg", +43.0); // 우측 끝 (양수)
+    // raw(좌+ / 우−) → 출력(좌− / 우+) 로 바꾸기 위한 단순 부호 반전 스위치
+    invert_direction_ = this->declare_parameter<bool>("invert_direction", true);
 
     feedback_id_ = static_cast<uint32_t>(feedback_id_i64_);
     encoder_pub_ = this->create_publisher<std_msgs::msg::Float32>(publish_topic_, 10);
 
-    // ---- Open sockets -------------------------------------------------
+    // ---- Open sockets for all interfaces ------------------------------
     auto ifaces = split_csv(can_ifaces_csv_);
     for (const auto& iface : ifaces) {
       int fd = open_can_socket(iface);
-      if (fd >= 0) sockets_.push_back({iface, fd});
-      else RCLCPP_WARN(get_logger(), "Skip iface=%s (open failed)", iface.c_str());
+      if (fd >= 0) {
+        sockets_.push_back({iface, fd});
+      } else {
+        RCLCPP_WARN(get_logger(), "Skip iface=%s (open failed)", iface.c_str());
+      }
     }
 
     if (sockets_.empty()) {
@@ -60,16 +62,18 @@ public:
     }
 
     std::ostringstream oss;
-    for (size_t i = 0; i < sockets_.size(); ++i) { if (i) oss << ", "; oss << sockets_[i].name; }
+    for (size_t i = 0; i < sockets_.size(); ++i) {
+      if (i) oss << ", ";
+      oss << sockets_[i].name;
+    }
     RCLCPP_INFO(get_logger(),
-      "Steering Feedback Node (ifaces=[%s], id=0x%08X %s, offset=%d, bits=%d, %s-endian, CPR=%d, period=%dms, publish='%s', invert=%s, clamp=%s [L=%.1f°, R=%.1f°])",
+      "Steering Feedback Node (ifaces=[%s], id=0x%08X %s, offset=%d, bits=%d, %s-endian, CPR=%d, period=%dms, publish='%s', invert=%s)",
       oss.str().c_str(), feedback_id_, (is_eff_id_ ? "EFF" : "SFF"),
       value_offset_, value_bits_, (value_big_endian_ ? "big" : "little"),
       counts_per_rev_, timer_ms_, publish_topic_.c_str(),
-      (invert_direction_ ? "yes" : "no"),
-      (use_clamp_ ? "yes" : "no"), left_limit_deg_, right_limit_deg_);
+      (invert_direction_ ? "yes" : "no"));
 
-    // ---- Timer --------------------------------------------------------
+    // ---- Timer: drain all sockets ------------------------------------
     timer_ = this->create_wall_timer(
       std::chrono::milliseconds(timer_ms_),
       std::bind(&SteeringFeedbackNode::drain_all, this)
@@ -83,12 +87,14 @@ public:
 private:
   struct Sock { std::string name; int fd; };
 
-  // ---------- utils ----------
+  // ── utils ────────────────────────────────────────────────────────────
   static std::vector<std::string> split_csv(const std::string& s) {
-    std::vector<std::string> out; std::string cur;
+    std::vector<std::string> out;
+    std::string cur;
     for (char c : s) {
-      if (c == ',') { if (!cur.empty()) { trim(cur); out.push_back(cur); cur.clear(); } }
-      else cur.push_back(c);
+      if (c == ',') {
+        if (!cur.empty()) { trim(cur); out.push_back(cur); cur.clear(); }
+      } else cur.push_back(c);
     }
     if (!cur.empty()) { trim(cur); out.push_back(cur); }
     return out;
@@ -110,14 +116,6 @@ private:
     return oss.str();
   }
 
-  // [-half, +half)로 접기(회전형 카운터 안정화)
-  static int signed_wrap_counts(int delta, int mod) {
-    if (mod <= 0) return delta;
-    int d = delta % mod; if (d < 0) d += mod;
-    if (d >= (mod + 1) / 2) d -= mod;
-    return d;
-  }
-
   int open_can_socket(const std::string& iface) {
     int fd = socket(PF_CAN, SOCK_RAW, CAN_RAW);
     if (fd < 0) {
@@ -125,28 +123,34 @@ private:
       return -1;
     }
 
+    // filter only desired ID
     struct can_filter filter {};
     filter.can_id   = is_eff_id_ ? (feedback_id_ & CAN_EFF_MASK) : (feedback_id_ & CAN_SFF_MASK);
     filter.can_mask = is_eff_id_ ? CAN_EFF_MASK : CAN_SFF_MASK;
     if (setsockopt(fd, SOL_CAN_RAW, CAN_RAW_FILTER, &filter, sizeof(filter)) < 0) {
       RCLCPP_WARN(get_logger(), "[%s] setsockopt(FILTER) failed: %s", iface.c_str(), std::strerror(errno));
+      // 계속 진행
     }
 
+    // non-blocking
     int flags = fcntl(fd, F_GETFL, 0);
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 
+    // bind
     struct ifreq ifr {};
     std::strncpy(ifr.ifr_name, iface.c_str(), IFNAMSIZ - 1);
     if (ioctl(fd, SIOCGIFINDEX, &ifr) < 0) {
       RCLCPP_WARN(get_logger(), "[%s] ioctl(SIOCGIFINDEX) failed: %s", iface.c_str(), std::strerror(errno));
-      close(fd); return -1;
+      close(fd);
+      return -1;
     }
     struct sockaddr_can addr {};
     addr.can_family  = AF_CAN;
     addr.can_ifindex = ifr.ifr_ifindex;
     if (bind(fd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
       RCLCPP_WARN(get_logger(), "[%s] bind() failed: %s", iface.c_str(), std::strerror(errno));
-      close(fd); return -1;
+      close(fd);
+      return -1;
     }
     return fd;
   }
@@ -185,50 +189,39 @@ private:
     }
   }
 
-  // ---------- 핵심: 좌회전은 음수, 우회전은 양수 ----------
+  // ── 핵심: raw(좌+ / 우−, 0 유지)를 출력(좌− / 우+)로 변환 ───────────────
   void publish_angle_from_counts(int32_t counts) {
-    // 0) 시작 시 자동 영점
-    if (auto_zero_on_start_ && !zero_locked_) {
-      zero_counts_ = counts;
-      zero_locked_ = true;
-      RCLCPP_INFO(get_logger(), "Auto-zero captured: zero_counts=%d", zero_counts_);
+    if (counts_per_rev_ == 0) {
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+        "counts_per_rev is 0; check parameter.");
+      return;
     }
 
-    // 1) zero 기준 signed delta (회전형이면 wrap)
-    const int mod = counts_per_rev_; // 360(heartbeat), 10000(position) 등 실제 프로토콜에 맞추기
-    const int delta_counts_raw = counts - zero_counts_;
-    const int delta_counts     = (mod > 0) ? signed_wrap_counts(delta_counts_raw, mod)
-                                           : delta_counts_raw;
+    // 1) raw counts → raw 핸들각(deg) : 영점 보정/랩핑 없음 (raw 0은 0으로 유지)
+    const float x_raw = (static_cast<float>(counts) / static_cast<float>(counts_per_rev_)) * 360.0f;
+    //    raw 규약: 좌 +, 우 −
 
-    // 2) 핸들각 x(deg): 원본 규약(좌=양/우=음)을 우선 반영 → 이후 필요 시 전체 반전
-    float x = (static_cast<float>(delta_counts) / static_cast<float>(mod)) * 360.0f;
+    // 2) 요구 규약: 좌 −, 우 +  → 부호만 반전 (필요 시 파라미터로 끌 수 있음)
+    const float x = invert_direction_ ? -x_raw : x_raw;
 
-    //   요구사항: 출력은 좌=음, 우=양 이므로 raw 규약이 좌=양/우=음이라면 부호 반전 필요
-    if (invert_direction_) x = -x;
-
-    // 3) 오른쪽(+x) 실험식 f(t) = a*t^2 + b*t + c  (t=|x|)
+    // 3) 오른쪽(+x)에서 피팅된 다항식 f(t) = a*t^2 + b*t + c  (t = |x|)
     const float t = std::fabs(x);
     const float f = 0.0002f * t * t + 0.2159f * t + 0.1612f;
 
-    // 4) 부호는 x를 따름 → 바퀴각
-    float wheel_deg = std::copysign(f, x);
+    // 4) 최종 바퀴각(좌는 음수, 우는 양수): 부호는 x를 따름
+    const float wheel_deg = std::copysign(f, x);
 
-    // 5) (선택) 안전 클램프
-    if (use_clamp_) {
-      wheel_deg = std::clamp(wheel_deg, static_cast<float>(left_limit_deg_), static_cast<float>(right_limit_deg_));
-    }
-
-    // 6) 퍼블리시
+    // 5) 퍼블리시
     std_msgs::msg::Float32 msg;
     msg.data = wheel_deg;
     encoder_pub_->publish(msg);
 
-    // 7) 로그: 좌/우 표시 포함
-    const char* side = (x > 0.0f) ? "RIGHT(+)" : (x < 0.0f ? "LEFT(-)" : "CENTER");
+    // 6) 로그: 변환 전/후 부호와 방향을 명확히 표기
+    const char* side_raw = (x_raw > 0.f) ? "RAW:LEFT(+)" : (x_raw < 0.f ? "RAW:RIGHT(-)" : "RAW:CENTER");
+    const char* side_out = (x     > 0.f) ? "OUT:RIGHT(+)" : (x     < 0.f ? "OUT:LEFT(-)"  : "OUT:CENTER");
     RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 500,
-      "raw=%d  zero=%d  delta=%d  handle=%.2f° [%s]  -> wheel=%.2f°%s",
-      counts, zero_counts_, delta_counts, x, side, wheel_deg,
-      use_clamp_ ? " (clamped)" : "");
+      "counts=%d  raw_handle=%.2f° [%s]  -> conv_handle=%.2f° [%s]  -> wheel=%.2f°",
+      counts, x_raw, side_raw, x, side_out, wheel_deg);
   }
 
   void drain_fd(int fd, const char* ifname) {
@@ -265,11 +258,13 @@ private:
   }
 
   void drain_all() {
-    for (auto& s : sockets_) drain_fd(s.fd, s.name.c_str());
+    for (auto& s : sockets_) {
+      drain_fd(s.fd, s.name.c_str());
+    }
   }
 
 private:
-  // sockets
+  // multiple sockets
   std::vector<Sock> sockets_;
 
   // params / state
@@ -284,14 +279,7 @@ private:
   std::string publish_topic_;
   int      timer_ms_;
 
-  // zero/dir/clamp
-  bool     auto_zero_on_start_;
-  int      zero_counts_;
-  bool     zero_locked_ {false};
-  bool     invert_direction_;     // raw 좌=양/우=음 → 출력 좌=음/우=양로 뒤집기
-  bool     use_clamp_;
-  double   left_limit_deg_;
-  double   right_limit_deg_;
+  bool     invert_direction_;  // raw 좌+ / 우− → 출력 좌− / 우+ 로 뒤집기
 
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr encoder_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
@@ -303,4 +291,3 @@ int main(int argc, char* argv[]) {
   rclcpp::shutdown();
   return 0;
 }
-
