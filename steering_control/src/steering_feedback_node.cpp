@@ -30,11 +30,15 @@ public:
     value_bits_       = this->declare_parameter<int>("value_bits", 16);      // 16 or 32
     value_big_endian_ = this->declare_parameter<bool>("big_endian", true);   // big-endian 여부
 
-    // 한 바퀴당 카운트(예: 360 or 10000)
+    // 한 바퀴당 카운트(예: heartbeat ELE-H/ELE-L → 360, TPDO/SDO Position → 10000)
     counts_per_rev_   = this->declare_parameter<int>("counts_per_rev", 360);
 
     publish_topic_    = this->declare_parameter<std::string>("publish_topic", "/ctrl/steer");
     timer_ms_         = this->declare_parameter<int>("poll_period_ms", 20);
+
+    // 미세 최적화: 스케일 사전 계산
+    scale_deg_per_count_ = (counts_per_rev_ > 0)
+      ? (360.0f / static_cast<float>(counts_per_rev_)) : 0.0f;
 
     feedback_id_ = static_cast<uint32_t>(feedback_id_i64_);
     encoder_pub_ = this->create_publisher<std_msgs::msg::Float32>(publish_topic_, 10);
@@ -56,10 +60,10 @@ public:
     std::ostringstream oss;
     for (size_t i = 0; i < sockets_.size(); ++i) { if (i) oss << ", "; oss << sockets_[i].name; }
     RCLCPP_INFO(get_logger(),
-      "Steering Feedback Node (ifaces=[%s], id=0x%08X %s, offset=%d, bits=%d, %s-endian, CPR=%d, period=%dms, publish='%s')",
+      "Steering Feedback Node (ifaces=[%s], id=0x%08X %s, offset=%d, bits=%d, %s-endian, CPR=%d, period=%dms, scale=%.6f deg/count)",
       oss.str().c_str(), feedback_id_, (is_eff_id_ ? "EFF" : "SFF"),
       value_offset_, value_bits_, (value_big_endian_ ? "big" : "little"),
-      counts_per_rev_, timer_ms_, publish_topic_.c_str());
+      counts_per_rev_, timer_ms_, scale_deg_per_count_);
 
     // ---- Timer --------------------------------------------------------
     timer_ = this->create_wall_timer(
@@ -109,7 +113,6 @@ private:
       return -1;
     }
 
-    // filter only desired ID
     struct can_filter filter {};
     filter.can_id   = is_eff_id_ ? (feedback_id_ & CAN_EFF_MASK) : (feedback_id_ & CAN_SFF_MASK);
     filter.can_mask = is_eff_id_ ? CAN_EFF_MASK : CAN_SFF_MASK;
@@ -117,11 +120,9 @@ private:
       RCLCPP_WARN(get_logger(), "[%s] setsockopt(FILTER) failed: %s", iface.c_str(), std::strerror(errno));
     }
 
-    // non-blocking
     int flags = fcntl(fd, F_GETFL, 0);
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 
-    // bind
     struct ifreq ifr {};
     std::strncpy(ifr.ifr_name, iface.c_str(), IFNAMSIZ - 1);
     if (ioctl(fd, SIOCGIFINDEX, &ifr) < 0) {
@@ -172,45 +173,37 @@ private:
     }
   }
 
-  // 오른쪽(+)에서 피팅된 다항식 f(t) = a*t^2 + b*t + c  (t >= 0)
-  static inline float poly_right(float t_abs_deg) {
-    return 0.0002f * t_abs_deg * t_abs_deg + 0.2159f * t_abs_deg + 0.1612f;
+  // 오른쪽(+x)에서 피팅된 다항식 f(t) = a*t^2 + b*t + c (Horner)
+  static inline float poly_right(float t) {
+    return (0.0002f * t + 0.2159f) * t + 0.1612f;
   }
 
-  // 원점대칭 적용한 스케일링 g(x) = sign(x) * f(|x|)
-  static inline float mirrored_scaled(float x_deg) {
-    const float t = std::fabs(x_deg);
-    const float f = poly_right(t);
-    return std::copysign(f, x_deg);
-  }
-
-  // ── 핵심 로직: 1) raw 부호 반전 → x, 2) x<0이면 원점대칭 스케일링, 3) 퍼블리시/로그 ──
-  void publish_angle_from_counts(int32_t counts) {
-    if (counts_per_rev_ == 0) {
-      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "counts_per_rev is 0; check parameter.");
+  // ---- 핵심 로직: 1) raw 부호 반전 → x, 2) 원점대칭 스케일링, 3) 퍼블리시/로그
+  void publish_angle_from_counts(int32_t raw_counts) {
+    if (scale_deg_per_count_ == 0.0f) {
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "counts_per_rev invalid.");
       return;
     }
 
-    // raw -> 각도(deg). raw 규약: 좌 +, 우 -
-    const float x_raw = (static_cast<float>(counts) / static_cast<float>(counts_per_rev_)) * 360.0f;
+    // raw 규약: 좌 +, 우 −, 0은 센터(고정)
+    const float x_raw = static_cast<float>(raw_counts) * scale_deg_per_count_;
 
-    // (1) 부호 반전: 요구 규약(좌 -, 우 +)에 맞추기 위해 raw 부호를 뒤집음
+    // (1) 부호 반전: 요구 규약(좌 −, 우 +) 만들기
     const float x = -x_raw;
 
-    // (2) x가 음수면 원점대칭된 스케일링 = sign(x)*f(|x|) (양수여도 동일 수식으로 처리 가능)
-    const float wheel_deg = mirrored_scaled(x);
+    // (2) 원점대칭 스케일링: y = sign(x) * f(|x|)
+    const float t = std::fabs(x);
+    const float f = poly_right(t);
+    const float wheel_deg = std::copysign(f, x);
 
-    // (3) 로그/퍼블리시
+    // (3) 퍼블리시/로그
+    std_msgs::msg::Float32 msg; msg.data = wheel_deg; encoder_pub_->publish(msg);
+
     const char* side_raw = (x_raw > 0.f) ? "RAW:LEFT(+)" : (x_raw < 0.f ? "RAW:RIGHT(-)" : "RAW:CENTER");
     const char* side_out = (x     > 0.f) ? "OUT:RIGHT(+)" : (x     < 0.f ? "OUT:LEFT(-)"  : "OUT:CENTER");
-
-    std_msgs::msg::Float32 msg;
-    msg.data = wheel_deg;
-    encoder_pub_->publish(msg);
-
     RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 500,
-      "counts=%d  raw_handle=%.2f° [%s]  x(after invert)=%.2f° [%s]  -> wheel=%.2f°",
-      counts, x_raw, side_raw, x, side_out, wheel_deg);
+      "raw_counts=%d  raw_handle=%.2f° [%s]  x=%.2f° [%s]  -> wheel=%.2f°",
+      raw_counts, x_raw, side_raw, x, side_out, wheel_deg);
   }
 
   void drain_fd(int fd, const char* ifname) {
@@ -242,6 +235,16 @@ private:
                     ifname, id, frame.can_dlc, bytes_hex(frame.data, frame.can_dlc).c_str());
         continue;
       }
+
+      // 시작 디버그: 처음 몇 프레임은 원시 바이트/파싱값을 그대로 보여줌
+      if (startup_debug_left_-- > 0) {
+        const float deg_raw = static_cast<float>(counts) * scale_deg_per_count_;
+        RCLCPP_INFO(get_logger(),
+          "[STARTUP] id=0x%08X dlc=%d data=[%s] -> counts=%d (%.2f deg)",
+          id, frame.can_dlc, bytes_hex(frame.data, frame.can_dlc).c_str(),
+          counts, deg_raw);
+      }
+
       publish_angle_from_counts(counts);
     }
   }
@@ -265,6 +268,9 @@ private:
   int      counts_per_rev_;
   std::string publish_topic_;
   int      timer_ms_;
+
+  float    scale_deg_per_count_{0.0f};
+  int      startup_debug_left_{12}; // 시작 시 12프레임 자세히 덤프
 
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr encoder_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
