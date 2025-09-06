@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Int32
+from std_msgs.msg import Float32
 from throttle_msgs.msg import ThrottleData
 
 
@@ -19,10 +19,10 @@ class RpmMux(Node):
         self.create_subscription(
             ThrottleData, 'throttle_data', self.cb_throttle, 10)
         self.create_subscription(
-            Int32, '/cmd/rpm', self.cb_auto, 10)
+            Float32, '/cmd/rpm', self.cb_auto, 10)
 
         # 발행
-        self.pub = self.create_publisher(Int32, 'target_rpm', 10)
+        self.pub = self.create_publisher(Float32, 'target_rpm', 10)
 
         # 10 ms 주기(100 Hz)
         self.create_timer(0.01, self.tick)
@@ -34,7 +34,7 @@ class RpmMux(Node):
         self.estop      = msg.estop
         self.is_manual  = msg.asms        # bit1==1 → True → MANUAL
 
-    def cb_auto(self, msg: Int32):
+    def cb_auto(self, msg: Float32):
         """자율 스택 목표 rpm"""
         self.auto_rpm = msg.data
 
@@ -43,7 +43,7 @@ class RpmMux(Node):
         rpm_out = 0
         if not self.estop:  # ESTOP 시 무조건 0
             rpm_out = self.manual_rpm if self.is_manual else self.auto_rpm
-        self.pub.publish(Int32(data=int(rpm_out)))
+        self.pub.publish(Float32(data=Float32(rpm_out)))
 
     # (no per-change logging)
 
