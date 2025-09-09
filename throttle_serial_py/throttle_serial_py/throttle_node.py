@@ -16,7 +16,8 @@ from rclpy.node import Node
 from throttle_msgs.msg import ThrottleData
 from std_msgs.msg import Int32
 
-HDR      = 0xAA          # 패킷 헤더
+HDR_RX   = 0xAA          # 패킷 헤더
+HDR_TX   = 0xAB
 RPM_MAX  = 2000.0
 STEP_RPM = RPM_MAX / 15  # 33 rpm 단계 (현재 미사용)
 
@@ -123,7 +124,7 @@ class ThrottleSerialNode(Node):
         while time.time() - t0 < probe_window:
             b = ser.read(1)
             if b:
-                if b[0] == HDR:
+                if b[0] == HDR_RX:
                     ser.read(3)  # 첫 패킷 정렬
                     return True
             else:
@@ -133,7 +134,6 @@ class ThrottleSerialNode(Node):
     # ─────────────────────────────────────────────────────────────
     def _cb_aeb(self, msg: Int32):
         """/aeb (0/1) 수신 시 아두이노로 전달 패킷 전송.
-        간단한 사양: [0xAB][STATE]
           - STATE: 0=해제, 1=활성
         """
         val = 1 if msg.data else 0
@@ -149,7 +149,7 @@ class ThrottleSerialNode(Node):
         if self._last_sent_aeb == self._aeb:
             return
         try:
-            pkt = bytes([0xAB, 0x01 if self._aeb else 0x00])
+            pkt = bytes([HDR_TX, 0x00, 0x00, 0x01 if self._aeb else 0x00])
             self.ser.write(pkt)
             self.ser.flush()
             self._last_sent_aeb = self._aeb
@@ -174,7 +174,7 @@ class ThrottleSerialNode(Node):
         # 연결 상태
         try:
             hdr = self.ser.read(1)
-            if not hdr or hdr[0] != HDR:
+            if not hdr or hdr[0] != HDR_RX:
                 return
 
             packet = self.ser.read(3)
@@ -183,30 +183,33 @@ class ThrottleSerialNode(Node):
 
             hi, lo, flags = packet
 
-            rpm16   = (hi << 8) | lo
-            reverse = bool((flags >> 2) & 0x01)  # bit2
-            estop   = bool((flags >> 1) & 0x01)  # bit1
-            manual  = bool(flags & 0x01)         # bit0
+            rpm16    = (hi << 8) | lo
+            reverse  = bool((flags >> 2) & 0x01)  # bit2
+            estop_hw = bool((flags >> 1) & 0x01)  # bit1 ESTOP from MEGA
+            manual   = bool(flags & 0x01)         # bit0
 
             rpm = -int(rpm16) if reverse else int(rpm16)
             if -2 < rpm < 2:
                 rpm = 0
 
+            effective_estop = estop_hw or (self._aeb == 1)
+
             # 변화 감지 후 로그
             if (rpm != self._last_rpm or
-                estop != self._last_estop or
+                effective_estop != self._last_estop or
                 manual != self._last_manual or
                 reverse != self._last_rev):
+                
                 self.get_logger().info(
-                    f"RPM={rpm}, estop={estop}, manual={manual}, reverse={reverse}"
+                    f"RPM={rpm}, estop={effective_estop}, manual={manual}, reverse={reverse}"
                 )
                 self._last_rpm = rpm
-                self._last_estop = estop
+                self._last_estop = effective_estop
                 self._last_manual = manual
                 self._last_rev = reverse
 
             # 토픽 퍼블리시
-            msg = ThrottleData(rpm=rpm, estop=estop, asms=manual)
+            msg = ThrottleData(rpm=rpm, estop=effective_estop, asms=manual)
             self.pub.publish(msg)
 
         except (serial.SerialException, OSError) as e:
