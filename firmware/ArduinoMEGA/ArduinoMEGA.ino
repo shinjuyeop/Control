@@ -18,110 +18,118 @@
 #include <math.h>
 
 /* ───────── I2C LCD ───────── */
-#define LCD_ADDR 0x27   // 필요 시 0x3F
+#define LCD_ADDR 0x27 // 필요 시 0x3F or 0x27
 LiquidCrystal_I2C lcd(LCD_ADDR, 20, 4);
 
 /* ───────── PIN MAP ───────── */
-#define THROTTLE_PIN  A7      // 0–5 V
-#define ESTOP1_PIN    52
-#define ESTOP2_PIN    53
-#define ASMS_PIN      A8
-#define GEAR_PIN      A9
-#define SERVO_PIN     46      // 브레이크 서보
-#define VESS_PIN      9       // ESS-DUAL+ (가상 엔진음 PWM)
-#define RF_ESTOP_PIN  A12
-#define HALL_PIN      2       // 외부 인터럽트0
+#define THROTTLE_PIN A7 // 0–5 V
+#define ESTOP1_PIN 52
+#define ESTOP2_PIN 53
+#define ASMS_PIN A8
+#define GEAR_PIN A9
+#define SERVO_PIN 46 // 브레이크 서보
+#define VESS_PIN 9   // ESS-DUAL+ (가상 엔진음 PWM)
+#define RF_ESTOP_PIN A12
+#define HALL_PIN 2 // 외부 인터럽트0
 
-const uint8_t HDR_OUT = 0xAA;     // MCU -> PC (rpm16, flags)
-const uint8_t HDR_IN = 0xAB;      // PC -> MCU (hi, lo, flags)
+const uint8_t HDR_OUT = 0xAA; // MCU -> PC (rpm16, flags)
+const uint8_t HDR_IN = 0xAB;  // PC -> MCU (hi, lo, flags)
 /* ── 스로틀 → RPM 스케일 ── */
-const float V_MIN   = 0.8,  V_MAX   = 4.4;   // [V]
-const float RPM_MIN = 0.0,  RPM_MAX = 1000.0;
+const float V_MIN = 0.8, V_MAX = 4.4; // [V]
+const float RPM_MIN = 0.0, RPM_MAX = 1000.0;
 
 /* ── 주기 ── */
-const uint32_t PERIOD_MS    = 10;    // 100 Hz 시리얼 패킷
-const uint32_t SPD_INTERVAL = 300;   // ★ 0.3 s (기존 500ms → 더 빠른 응답)
+const uint32_t PERIOD_MS = 10;     // 100 Hz 시리얼 패킷
+const uint32_t SPD_INTERVAL = 300; // ★ 0.3 s (기존 500ms → 더 빠른 응답)
 
 /* ── 서보 각도 ── */
-#define ANG_BRAKE   50      // 튜닝 필요
+#define ANG_BRAKE 50 // 튜닝 필요
 #define ANG_RELEASE 80
 
 /* ── 속도 계산 ── */
-const int   PPR          = 12;
+const int PPR = 12;
 const float TIRE_DIAM_CM = 47.0;
-const float TRANS_RATIO  = 4.60;
+const float TRANS_RATIO = 4.60;
 
 /* ── VESS 매핑 ── */
-const int   SERVO_IDLE_US = 1600;   // 0 km/h → 시동음 최소화
-const int   SERVO_MAX_US  = 2000;   // 최고속
-const float KMH_MAX       = 100.0;  // 이 이상은 MAX 고정
+const int SERVO_IDLE_US = 1600; // 0 km/h → 시동음 최소화
+const int SERVO_MAX_US = 2000;  // 최고속
+const float KMH_MAX = 100.0;    // 이 이상은 MAX 고정
 
 /* ── MODE enum ── */
-enum Mode { AS_AUTO, AS_MANUAL, AS_EMERGENCY };
+enum Mode
+{
+  AS_AUTO,
+  AS_MANUAL,
+  AS_EMERGENCY
+};
 volatile Mode currentMode = AS_AUTO;
 
 /* ── 플래그 ── */
-volatile bool estopFlag   = false;
-volatile bool isManual    = true;
+volatile bool estopFlag = false;
+volatile bool isManual = true;
 volatile bool reverseFlag = false;
 
-volatile bool estopGate   = false;
+volatile bool estopGate = false;
 
 /* ── 전역 ── */
 Servo brakeServo;
-Servo exhaust;          // VESS 서보
+Servo exhaust; // VESS 서보
 int rawMin, rawMax;
 
 /* 브레이크 서보 속도 제한(슬루 레이트) */
-int  brakeTarget = ANG_RELEASE;   // 목표 각도
-int  brakeCurrent = ANG_RELEASE;  // 현재 명령 각도
+int brakeTarget = ANG_RELEASE;  // 목표 각도
+int brakeCurrent = ANG_RELEASE; // 현재 명령 각도
 unsigned long lastBrakeStepMs = 0;
-const uint8_t  BRAKE_STEP_DEG = 1;        // 스텝당 이동 각도(°)
+const uint8_t BRAKE_STEP_DEG = 1;           // 스텝당 이동 각도(°)
 const uint16_t BRAKE_STEP_INTERVAL_MS = 20; // 스텝 간격(ms) → 1°/20ms = 50°/s
 
 /* Hall 펄스 카운터 + 데글리치 */
-volatile unsigned long pulseCnt   = 0;
+volatile unsigned long pulseCnt = 0;
 volatile unsigned long lastEdgeUs = 0;
-const unsigned long    MIN_PULSE_US = 300;  // 200~500 µs 사이에서 조정
+const unsigned long MIN_PULSE_US = 300; // 200~500 µs 사이에서 조정
 unsigned long lastPulseCnt = 0;
-unsigned long lastSpdCalc  = 0;
+unsigned long lastSpdCalc = 0;
 
 /* 속도 필터(EMA) & LCD 갱신 제어 */
 float kmhFilt = 0.0f;
-const float ALPHA = 0.35f;           // ★ 0.35로 상향(더 빠른 반응)
+const float ALPHA = 0.35f; // ★ 0.35로 상향(더 빠른 반응)
 unsigned long lastLcdMs = 0;
-float lastShown = -1.0f;             // 처음엔 무조건 갱신되도록
-const float LCD_THRESH = 0.2f;       // 0.2 km/h 이상 변화 시 표시
+float lastShown = -1.0f;       // 처음엔 무조건 갱신되도록
+const float LCD_THRESH = 0.2f; // 0.2 km/h 이상 변화 시 표시
 
 /* ── 정지 감지 파라미터 ── */
-const unsigned long STOP_US = 800000UL;   // ★ 0.8 s 무펄스면 정지로 판정
+const unsigned long STOP_US = 800000UL; // ★ 0.8 s 무펄스면 정지로 판정
 
 /* ───────── 인터럽트 ───────── */
-void hallISR() {
+void hallISR()
+{
   unsigned long t = micros();
-  if (t - lastEdgeUs >= MIN_PULSE_US) {  // 노이즈성 짧은 에지 차단
+  if (t - lastEdgeUs >= MIN_PULSE_US)
+  { // 노이즈성 짧은 에지 차단
     pulseCnt++;
     lastEdgeUs = t;
   }
 }
 
-void setupInterrupts() {
+void setupInterrupts()
+{
   pinMode(ESTOP1_PIN, INPUT_PULLUP);
   pinMode(ESTOP2_PIN, INPUT_PULLUP);
-  pinMode(ASMS_PIN,   INPUT_PULLUP);
-  pinMode(GEAR_PIN,   INPUT_PULLUP);
+  pinMode(ASMS_PIN, INPUT_PULLUP);
+  pinMode(GEAR_PIN, INPUT_PULLUP);
   pinMode(RF_ESTOP_PIN, INPUT_PULLUP);
 
   /* --- PCINT 설정 --- */
   // PORTB (D52=PB1, D53=PB0)
   PCMSK0 |= (1 << PCINT0) | (1 << PCINT1);
-  PCIFR  |= (1 << PCIF0);
-  PCICR  |= (1 << PCIE0);
+  PCIFR |= (1 << PCIF0);
+  PCICR |= (1 << PCIE0);
 
   // PORTK (A8=PK0, A9=PK1, A12=PK4)
   PCMSK2 |= (1 << PCINT16) | (1 << PCINT17) | (1 << PCINT20);
-  PCIFR  |= (1 << PCIF2);
-  PCICR  |= (1 << PCIE2);
+  PCIFR |= (1 << PCIF2);
+  PCICR |= (1 << PCIE2);
 
   /* Hall 센서 인터럽트 */
   pinMode(HALL_PIN, INPUT_PULLUP);
@@ -130,7 +138,8 @@ void setupInterrupts() {
 }
 
 /* --- PORTB 인터럽트 --- */
-ISR(PCINT0_vect) {
+ISR(PCINT0_vect)
+{
   bool e1 = (digitalRead(ESTOP1_PIN) == LOW);
   bool e2 = (digitalRead(ESTOP2_PIN) == LOW);
   bool rf = (digitalRead(RF_ESTOP_PIN) == LOW);
@@ -138,30 +147,43 @@ ISR(PCINT0_vect) {
 }
 
 /* --- PORTK 인터럽트 --- */
-ISR(PCINT2_vect) {
+ISR(PCINT2_vect)
+{
   bool rf = (digitalRead(RF_ESTOP_PIN) == LOW);
   bool e1 = (digitalRead(ESTOP1_PIN) == LOW);
   bool e2 = (digitalRead(ESTOP2_PIN) == LOW);
 
-  isManual    = (digitalRead(ASMS_PIN) == HIGH);  // HIGH = MANUAL
-  reverseFlag = (digitalRead(GEAR_PIN) == LOW);   // LOW = REV
+  isManual = (digitalRead(ASMS_PIN) == HIGH);   // HIGH = MANUAL
+  reverseFlag = (digitalRead(GEAR_PIN) == LOW); // LOW = REV
 
   estopFlag = (e1 || e2 || rf);
 }
 
 /* ── MODE 전환 ── */
-void enterEmergency() {
-  if (currentMode != AS_EMERGENCY) Serial.println(F(">>> EMERGENCY <<<"));
+void enterEmergency()
+{
+  if (currentMode != AS_EMERGENCY)
+    Serial.println(F(">>> EMERGENCY <<<"));
   currentMode = AS_EMERGENCY;
-  brakeTarget = ANG_BRAKE;  // 즉시 쓰지 않고 슬루 레이트로 이동
+  brakeTarget = ANG_BRAKE; // 즉시 쓰지 않고 슬루 레이트로 이동
 }
-void enterAutomatic() { currentMode = AS_AUTO;   brakeTarget = ANG_RELEASE; }
-void enterManual()    { currentMode = AS_MANUAL; brakeTarget = ANG_RELEASE; }
+void enterAutomatic()
+{
+  currentMode = AS_AUTO;
+  brakeTarget = ANG_RELEASE;
+}
+void enterManual()
+{
+  currentMode = AS_MANUAL;
+  brakeTarget = ANG_RELEASE;
+}
 
 /* ── 공용 ADC 읽기 ── */
-int readThrottle(int n = 8) {
+int readThrottle(int n = 8)
+{
   long sum = 0;
-  for (int i = 0; i < n; ++i) {
+  for (int i = 0; i < n; ++i)
+  {
     sum += analogRead(THROTTLE_PIN);
     delayMicroseconds(400);
   }
@@ -172,91 +194,114 @@ int readThrottle(int n = 8) {
    프레임: 0xAB, HI, LO, FLAGS (4바이트)
    - 현재 FLAGS bit0: E-STOP 게이트(1=활성)
 */
-void onRxFrame(uint8_t hi, uint8_t lo, uint8_t flags) {
+void onRxFrame(uint8_t hi, uint8_t lo, uint8_t flags)
+{
   bool gate = (flags & 0x01);
-  estopGate = gate;              // 외부 게이트 반영
-  if (estopGate) enterEmergency();  // 안전을 위해 즉시 비상 모드 진입
+  estopGate = gate; // 외부 게이트 반영
+  if (estopGate)
+    enterEmergency(); // 안전을 위해 즉시 비상 모드 진입
   // hi/lo는 추후 필요 시 사용(예: 파라미터 전달)
 }
 
 // 논블로킹 상태기계로 0xAB 프레임 파싱
-void pollSerialRx() {
-  static uint8_t  state = 0;      // 0:헤더, 1:HI, 2:LO, 3:FLAGS
-  static uint8_t  buf[3];
+void pollSerialRx()
+{
+  static uint8_t state = 0; // 0:헤더, 1:HI, 2:LO, 3:FLAGS
+  static uint8_t buf[3];
   static uint32_t lastByteMs = 0;
-  const  uint32_t RX_TIMEOUT_MS = 50;  // 바이트 간 타임아웃 시 재동기
+  const uint32_t RX_TIMEOUT_MS = 50; // 바이트 간 타임아웃 시 재동기
 
-  while (Serial.available() > 0) {
+  while (Serial.available() > 0)
+  {
     uint8_t b = (uint8_t)Serial.read();
     uint32_t now = millis();
-    if (now - lastByteMs > RX_TIMEOUT_MS) state = 0;  // 시간 벌어지면 리셋
+    if (now - lastByteMs > RX_TIMEOUT_MS)
+      state = 0; // 시간 벌어지면 리셋
     lastByteMs = now;
 
-    switch (state) {
-      case 0:  // 헤더
-        if (b == HDR_IN) state = 1;
-        break;
-      case 1:  // HI
-        buf[0] = b; state = 2; break;
-      case 2:  // LO
-        buf[1] = b; state = 3; break;
-      case 3:  // FLAGS
-        buf[2] = b; state = 0;
-        onRxFrame(buf[0], buf[1], buf[2]);
-        break;
+    switch (state)
+    {
+    case 0: // 헤더
+      if (b == HDR_IN)
+        state = 1;
+      break;
+    case 1: // HI
+      buf[0] = b;
+      state = 2;
+      break;
+    case 2: // LO
+      buf[1] = b;
+      state = 3;
+      break;
+    case 3: // FLAGS
+      buf[2] = b;
+      state = 0;
+      onRxFrame(buf[0], buf[1], buf[2]);
+      break;
     }
   }
 }
 
 /* ───────── SETUP ───────── */
-void setup() {
+void setup()
+{
   Serial.begin(115200);
   setupInterrupts();
 
-  brakeServo.attach(SERVO_PIN);                // 브레이크
+  brakeServo.attach(SERVO_PIN); // 브레이크
   brakeCurrent = ANG_RELEASE;
-  brakeTarget  = ANG_RELEASE;
+  brakeTarget = ANG_RELEASE;
   brakeServo.write(brakeCurrent);
 
-  exhaust.attach(VESS_PIN, 1000, 2000);        // VESS (pin 9)
+  exhaust.attach(VESS_PIN, 1000, 2000); // VESS (pin 9)
 
   /* 스로틀 ADC 경계 */
   const float ADC_REF = 5.0;
-  const int   ADC_RES = 1023;
+  const int ADC_RES = 1023;
   rawMin = int((V_MIN / ADC_REF) * ADC_RES + 0.5);
   rawMax = int((V_MAX / ADC_REF) * ADC_RES + 0.5);
 
   /* LCD (init/backlight 방식) */
-  delay(200);           // 전원 안정화 권장
+  delay(200); // 전원 안정화 권장
   Wire.begin();
-  Wire.setClock(100000);   // 필요시 50000으로 낮출 수 있음
-  lcd.begin();
+  Wire.setClock(100000); // 필요시 50000으로 낮출 수 있음
+  lcd.init();
   lcd.backlight();
   lcd.clear();
-  lcd.setCursor(0,0); lcd.print("SPEED: --.- km/h   ");
-  lcd.setCursor(0,1); lcd.print("MODE : MANUAL      ");
-  lcd.setCursor(0,2); lcd.print("GEAR : DRIVE       ");
-  lcd.setCursor(0,3); lcd.print("ESTOP: OFF         ");
+  lcd.setCursor(0, 0);
+  lcd.print("SPEED: --.- km/h   ");
+  lcd.setCursor(0, 1);
+  lcd.print("MODE : MANUAL      ");
+  lcd.setCursor(0, 2);
+  lcd.print("GEAR : DRIVE       ");
+  lcd.setCursor(0, 3);
+  lcd.print("ESTOP: OFF         ");
 
   lastSpdCalc = millis();
-  lastLcdMs   = millis();
+  lastLcdMs = millis();
 
   Serial.println(F("Throttle sender + VESS ready"));
 }
 
 /* ───────── LOOP ───────── */
-void loop() {
+void loop()
+{
   const unsigned long now = millis();
 
   pollSerialRx();
 
   /* 0) 브레이크 서보 슬루 레이트 적용 (논블로킹) */
-  if (now - lastBrakeStepMs >= BRAKE_STEP_INTERVAL_MS) {
+  if (now - lastBrakeStepMs >= BRAKE_STEP_INTERVAL_MS)
+  {
     lastBrakeStepMs = now;
-    if (brakeCurrent != brakeTarget) {
-      if (brakeCurrent < brakeTarget) {
+    if (brakeCurrent != brakeTarget)
+    {
+      if (brakeCurrent < brakeTarget)
+      {
         brakeCurrent = min(brakeCurrent + BRAKE_STEP_DEG, brakeTarget);
-      } else {
+      }
+      else
+      {
         brakeCurrent = max(brakeCurrent - BRAKE_STEP_DEG, brakeTarget);
       }
       brakeServo.write(brakeCurrent);
@@ -265,28 +310,33 @@ void loop() {
 
   /* 1) 100 Hz 패킷 처리 (스로틀 → rpm16, 플래그) */
   static uint32_t tPkt = 0;
-  if (now - tPkt >= PERIOD_MS) {
+  if (now - tPkt >= PERIOD_MS)
+  {
     tPkt = now;
 
     /* MODE 결정 */
     bool estopEffective = (estopFlag || estopGate);
-    if (estopEffective)   enterEmergency();
-    else if (isManual)    enterManual();
-    else                  enterAutomatic();
+    if (estopEffective)
+      enterEmergency();
+    else if (isManual)
+      enterManual();
+    else
+      enterAutomatic();
 
     /* 스로틀 → rpm16 (0~2000) */
     int raw = readThrottle();
     int raw_hi = min(raw, rawMax);
     float voltage = raw_hi * (5.0f / 1023.0f);
     float rpm_f = (voltage - V_MIN) / (V_MAX - V_MIN) * (RPM_MAX - RPM_MIN) + RPM_MIN;
-    if (rpm_f < 1.5f) rpm_f = 0.0f;
+    if (rpm_f < 1.5f)
+      rpm_f = 0.0f;
     rpm_f = constrain(rpm_f, RPM_MIN, RPM_MAX);
     uint16_t rpm16 = uint16_t(rpm_f + 1e-6f);
 
     uint8_t flags =
-      (reverseFlag                      << 2) |
-      ((estopFlag || estopGate ? 1:0)   << 1) |
-      (isManual                         << 0);
+        (reverseFlag << 2) |
+        ((estopFlag || estopGate ? 1 : 0) << 1) |
+        (isManual << 0);
 
     Serial.write(HDR_OUT);
     Serial.write(uint8_t(rpm16 >> 8));
@@ -295,41 +345,47 @@ void loop() {
   }
 
   /* 2) 속도 계산 & VESS PWM */
-  if (now - lastSpdCalc >= SPD_INTERVAL) {
+  if (now - lastSpdCalc >= SPD_INTERVAL)
+  {
     noInterrupts();
     unsigned long delta = pulseCnt - lastPulseCnt;
     lastPulseCnt = pulseCnt;
-    unsigned long lastEdgeCopy = lastEdgeUs;     // ★ 원자적 읽기용 복사
+    unsigned long lastEdgeCopy = lastEdgeUs; // ★ 원자적 읽기용 복사
     interrupts();
 
-    float dt_ms    = (now - lastSpdCalc);
+    float dt_ms = (now - lastSpdCalc);
     float motorRpm = (delta * 60.0f * 1000.0f) / (PPR * dt_ms);
     float wheelRpm = motorRpm / TRANS_RATIO;
-    float kmh      = (wheelRpm * 3.1416f * TIRE_DIAM_CM * 60.0f) / 100000.0f;
+    float kmh = (wheelRpm * 3.1416f * TIRE_DIAM_CM * 60.0f) / 100000.0f;
 
     // EMA 갱신(빠른 반응을 위해 ALPHA=0.35)
     kmhFilt += ALPHA * (kmh - kmhFilt);
 
     // ★ 정지 감지: 최근 Hall 에지가 STOP_US 동안 없으면 0으로 클램프
-    if ((micros() - lastEdgeCopy) > STOP_US) {
+    if ((micros() - lastEdgeCopy) > STOP_US)
+    {
       kmhFilt = 0.0f;
     }
 
     float kmhClamp = constrain(kmhFilt, 0.0f, KMH_MAX);
-    int   thUs = SERVO_IDLE_US +
-                 int(kmhClamp * (SERVO_MAX_US - SERVO_IDLE_US) / KMH_MAX);
+    int thUs = SERVO_IDLE_US +
+               int(kmhClamp * (SERVO_MAX_US - SERVO_IDLE_US) / KMH_MAX);
     exhaust.writeMicroseconds(thUs);
 
     lastSpdCalc = now;
   }
 
   /* 3) LCD 속도 표시 */
-  if (now - lastLcdMs >= 100) {
+  if (now - lastLcdMs >= 100)
+  {
     lastLcdMs = now;
-    if (lastShown < 0.0f || fabs(kmhFilt - lastShown) >= LCD_THRESH) {
-      lcd.setCursor(7,0);
-      if (kmhFilt < 10.0f) lcd.print(' ');
-      lcd.print(kmhFilt, 1); lcd.print(" km/h  ");
+    if (lastShown < 0.0f || fabs(kmhFilt - lastShown) >= LCD_THRESH)
+    {
+      lcd.setCursor(7, 0);
+      if (kmhFilt < 10.0f)
+        lcd.print(' ');
+      lcd.print(kmhFilt, 1);
+      lcd.print(" km/h  ");
       lastShown = kmhFilt;
     }
   }
@@ -337,25 +393,28 @@ void loop() {
   /* 4) LCD 상태 업데이트 */
   static Mode lastDisplayMode = AS_AUTO;
   static bool lastGearRv = false;
-  static bool lastEstop  = false;
+  static bool lastEstop = false;
 
   // MODE 표시는 비상(Emergency) 여부와 무관하게 AUTO/MANUAL만 표시
   Mode displayMode = isManual ? AS_MANUAL : AS_AUTO;
-  if (displayMode != lastDisplayMode) {
-    lcd.setCursor(7,1);
+  if (displayMode != lastDisplayMode)
+  {
+    lcd.setCursor(7, 1);
     lcd.print(displayMode == AS_MANUAL ? "MANUAL    " : "AUTO      ");
     lastDisplayMode = displayMode;
   }
 
-  if (reverseFlag != lastGearRv) {
-    lcd.setCursor(7,2);
+  if (reverseFlag != lastGearRv)
+  {
+    lcd.setCursor(7, 2);
     lcd.print(reverseFlag ? "REVERSE " : "DRIVE   ");
     lcd.print("     ");
     lastGearRv = reverseFlag;
   }
   bool estopEffective = (estopFlag || estopGate);
-  if (estopEffective != lastEstop) {
-    lcd.setCursor(7,3);
+  if (estopEffective != lastEstop)
+  {
+    lcd.setCursor(7, 3);
     lcd.print(estopEffective ? "ENGAGED " : "OFF     ");
     lcd.print("     ");
     lastEstop = estopEffective;
