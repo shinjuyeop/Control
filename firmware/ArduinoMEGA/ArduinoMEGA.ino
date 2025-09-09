@@ -32,6 +32,8 @@ LiquidCrystal_I2C lcd(LCD_ADDR, 20, 4);
 #define RF_ESTOP_PIN  A12
 #define HALL_PIN      2       // 외부 인터럽트0
 
+const uint8_t HDR_OUT = 0xAA;     // MCU -> PC (rpm16, flags)
+const uint8_t HDR_IN = 0xAB;      // PC -> MCU (hi, lo, flags)
 /* ── 스로틀 → RPM 스케일 ── */
 const float V_MIN   = 0.8,  V_MAX   = 4.4;   // [V]
 const float RPM_MIN = 0.0,  RPM_MAX = 1000.0;
@@ -62,6 +64,8 @@ volatile Mode currentMode = AS_AUTO;
 volatile bool estopFlag   = false;
 volatile bool isManual    = true;
 volatile bool reverseFlag = false;
+
+volatile bool estopGate   = false;
 
 /* ── 전역 ── */
 Servo brakeServo;
@@ -164,6 +168,46 @@ int readThrottle(int n = 8) {
   return sum / n;
 }
 
+/* ───────── PC -> MCU 시리얼 수신(0xAB) ─────────
+   프레임: 0xAB, HI, LO, FLAGS (4바이트)
+   - 현재 FLAGS bit0: E-STOP 게이트(1=활성)
+*/
+void onRxFrame(uint8_t hi, uint8_t lo, uint8_t flags) {
+  bool gate = (flags & 0x01);
+  estopGate = gate;              // 외부 게이트 반영
+  if (estopGate) enterEmergency();  // 안전을 위해 즉시 비상 모드 진입
+  // hi/lo는 추후 필요 시 사용(예: 파라미터 전달)
+}
+
+// 논블로킹 상태기계로 0xAB 프레임 파싱
+void pollSerialRx() {
+  static uint8_t  state = 0;      // 0:헤더, 1:HI, 2:LO, 3:FLAGS
+  static uint8_t  buf[3];
+  static uint32_t lastByteMs = 0;
+  const  uint32_t RX_TIMEOUT_MS = 50;  // 바이트 간 타임아웃 시 재동기
+
+  while (Serial.available() > 0) {
+    uint8_t b = (uint8_t)Serial.read();
+    uint32_t now = millis();
+    if (now - lastByteMs > RX_TIMEOUT_MS) state = 0;  // 시간 벌어지면 리셋
+    lastByteMs = now;
+
+    switch (state) {
+      case 0:  // 헤더
+        if (b == HDR_IN) state = 1;
+        break;
+      case 1:  // HI
+        buf[0] = b; state = 2; break;
+      case 2:  // LO
+        buf[1] = b; state = 3; break;
+      case 3:  // FLAGS
+        buf[2] = b; state = 0;
+        onRxFrame(buf[0], buf[1], buf[2]);
+        break;
+    }
+  }
+}
+
 /* ───────── SETUP ───────── */
 void setup() {
   Serial.begin(115200);
@@ -186,7 +230,7 @@ void setup() {
   delay(200);           // 전원 안정화 권장
   Wire.begin();
   Wire.setClock(100000);   // 필요시 50000으로 낮출 수 있음
-  lcd.init();
+  lcd.begin();
   lcd.backlight();
   lcd.clear();
   lcd.setCursor(0,0); lcd.print("SPEED: --.- km/h   ");
@@ -203,6 +247,8 @@ void setup() {
 /* ───────── LOOP ───────── */
 void loop() {
   const unsigned long now = millis();
+
+  pollSerialRx();
 
   /* 0) 브레이크 서보 슬루 레이트 적용 (논블로킹) */
   if (now - lastBrakeStepMs >= BRAKE_STEP_INTERVAL_MS) {
@@ -223,7 +269,8 @@ void loop() {
     tPkt = now;
 
     /* MODE 결정 */
-    if (estopFlag)        enterEmergency();
+    bool estopEffective = (estopFlag || estopGate);
+    if (estopEffective)   enterEmergency();
     else if (isManual)    enterManual();
     else                  enterAutomatic();
 
@@ -237,11 +284,11 @@ void loop() {
     uint16_t rpm16 = uint16_t(rpm_f + 1e-6f);
 
     uint8_t flags =
-      (reverseFlag << 2) |
-      (estopFlag   << 1) |
-      (isManual    << 0);
+      (reverseFlag                      << 2) |
+      ((estopFlag || estopGate ? 1:0)   << 1) |
+      (isManual                         << 0);
 
-    Serial.write(0xAA);
+    Serial.write(HDR_OUT);
     Serial.write(uint8_t(rpm16 >> 8));
     Serial.write(uint8_t(rpm16 & 0xFF));
     Serial.write(flags);
@@ -306,11 +353,11 @@ void loop() {
     lcd.print("     ");
     lastGearRv = reverseFlag;
   }
-
-  if (estopFlag != lastEstop) {
+  bool estopEffective = (estopFlag || estopGate);
+  if (estopEffective != lastEstop) {
     lcd.setCursor(7,3);
-    lcd.print(estopFlag ? "ENGAGED " : "OFF     ");
+    lcd.print(estopEffective ? "ENGAGED " : "OFF     ");
     lcd.print("     ");
-    lastEstop = estopFlag;
+    lastEstop = estopEffective;
   }
 }
