@@ -35,7 +35,7 @@ LiquidCrystal_I2C lcd(LCD_ADDR, 20, 4);
 const uint8_t HDR_OUT = 0xAA; // MCU -> PC (rpm16, flags)
 const uint8_t HDR_IN = 0xAB;  // PC -> MCU (hi, lo, flags)
 /* ── 스로틀 → RPM 스케일 ── */
-const float V_MIN = 0.8, V_MAX = 4.4; // [V]
+const float V_MIN = 0.8, V_MAX = 4.0; // [V]
 const float RPM_MIN = 0.0, RPM_MAX = 1000.0;
 
 /* ── 주기 ── */
