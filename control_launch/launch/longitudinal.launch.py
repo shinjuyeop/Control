@@ -13,6 +13,15 @@ from launch_ros.actions import Node
             output='screen',
             parameters=[{'rpm': LaunchConfiguration('rpm')}],
         ),
+
+        # speed_monitor 필요 시 아래에 추가
+        Node(
+            package='speed_monitor_cpp',
+            executable='speed_monitor_node',
+            name='speed_monitor',
+            output='screen',
+        ),
+        
 """
 
 def generate_launch_description():
@@ -59,10 +68,5 @@ def generate_launch_description():
             arguments=[can0],
         ),
 
-        Node(
-            package='speed_monitor_cpp',
-            executable='speed_monitor_node',
-            name='speed_monitor',
-            output='screen',
-        ),
+
     ])

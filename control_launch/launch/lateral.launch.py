@@ -10,6 +10,15 @@ from launch_ros.actions import Node
             name='steering_command_publisher',
             output='screen',
         ),
+
+        # steering_monitor_node 필요 시 아래에 추가
+        # 터미널 3: steering_monitor_node
+        Node(
+            package='steering_monitor_cpp',
+            executable='steering_monitor_node',
+            name='steering_monitor',
+            output='screen',
+        ),
 """
 
 def generate_launch_description():
@@ -32,11 +41,4 @@ def generate_launch_description():
             arguments=['can1'],
         ),
 
-        # 터미널 3: steering_monitor_node
-        Node(
-            package='steering_monitor_cpp',
-            executable='steering_monitor_node',
-            name='steering_monitor',
-            output='screen',
-        ),
     ])

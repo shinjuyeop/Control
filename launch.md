@@ -74,3 +74,15 @@ ros2 run steering_control steering_command_publisher_node
 ```bash
 ros2 run throttle_serial_py throttle_serial_node
 ```
+
+5. 모니터 노드 (/ctrl/speed, /ctrl/steer 확인)
+
+```bash
+# /ctrl/speed
+ros2 run speed_monitor_cpp speed_monitor_node
+```
+
+```bash
+# /ctrl/steer
+ros2 run steering_monitor_cpp steering_monitor_node
+```
