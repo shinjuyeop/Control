@@ -62,7 +62,7 @@ ros2 launch control_launch lateral.launch.py
 ros2 run motor_control_cpp speed_publisher   # 250rpm
 
 # 속도 조정
-# ros2 run motor_control_cpp speed_publisher --ros-args -p rpm:=200
+# ros2 run motor_control_cpp speed_publisher --ros-args -p rpm:=200.0
 ```
 
 ```bash
@@ -85,4 +85,13 @@ ros2 run speed_monitor_cpp speed_monitor_node
 ```bash
 # /ctrl/steer
 ros2 run steering_monitor_cpp steering_monitor_node
+```
+6. 펌웨어 업로드
+```bash
+ls /dev/ttyACM* /dev/ttyUSB*
+```
+```bash
+#Desktop
+arduino-cli compile -b arduino:avr:mega:cpu=atmega2560 firmware/ArduinoMEGA
+arduino-cli upload  -b arduino:avr:mega:cpu=atmega2560 -p /dev/ttyACM1 firmware/ArduinoMEGA
 ```
