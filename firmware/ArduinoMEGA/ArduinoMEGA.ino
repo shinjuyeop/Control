@@ -36,7 +36,7 @@ const uint8_t HDR_OUT = 0xAA; // MCU -> PC (rpm16, flags)
 const uint8_t HDR_IN = 0xAB;  // PC -> MCU (hi, lo, flags)
 /* ── 스로틀 → RPM 스케일 ── */
 const float V_MIN = 0.8, V_MAX = 4.0; // [V]
-const float RPM_MIN = 0.0, RPM_MAX = 1000.0;
+const float RPM_MIN = 0.0, RPM_MAX = 4000.0;
 
 /* ── 주기 ── */
 const uint32_t PERIOD_MS = 10;     // 100 Hz 시리얼 패킷
