@@ -2,34 +2,35 @@
 #include "std_msgs/msg/float32.hpp"
 #include <vector>
 
-class SteeringCommandPublisher : public rclcpp::Node {
+class SteeringCommandPublisher : public rclcpp::Node
+{
 public:
     SteeringCommandPublisher()
-    : Node("steering_command_publisher"), index_(0)
+        : Node("steering_command_publisher"), index_(0)
     {
         publisher_ = this->create_publisher<std_msgs::msg::Float32>("/cmd/steer", 10);
 
-        // 테스트용 명령 시퀀스 (degree): 15 -> 0 -> -15 -> 0, 각 2초 유지
-        commands_ = {10.0f, 0.0f, -10.0f, 0.0f};
+        // 테스트용 명령 시퀀스 (degree): 5 -> 0 -> 5 -> 0, 각 2초 유지
+        commands_ = {5.0f, 0.0f, 5.0f, 0.0f};
 
         // 2초 간격으로 다음 명령으로 전환
         timer_ = this->create_wall_timer(
             std::chrono::seconds(2),
-            std::bind(&SteeringCommandPublisher::publish_command, this)
-        );
+            std::bind(&SteeringCommandPublisher::publish_command, this));
 
         RCLCPP_INFO(this->get_logger(), "SteeringCommandPublisher started");
     }
 
 private:
-    void publish_command() {
+    void publish_command()
+    {
         std_msgs::msg::Float32 msg;
         msg.data = commands_[index_];
         publisher_->publish(msg);
 
         RCLCPP_INFO(this->get_logger(), "Published steering command: %.2f", msg.data);
 
-        index_ = (index_ + 1) % commands_.size();  // 순환
+        index_ = (index_ + 1) % commands_.size(); // 순환
     }
 
     rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr publisher_;
@@ -38,7 +39,8 @@ private:
     size_t index_;
 };
 
-int main(int argc, char * argv[]) {
+int main(int argc, char *argv[])
+{
     rclcpp::init(argc, argv);
     rclcpp::spin(std::make_shared<SteeringCommandPublisher>());
     rclcpp::shutdown();
