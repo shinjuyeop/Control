@@ -80,12 +80,20 @@ ros2 run throttle_serial_py throttle_serial_node
 ```bash
 # /ctrl/speed
 ros2 run speed_monitor_cpp speed_monitor_node
+# 시작 rpm 설정, 미설정시 250rpm
+# ros2 run motor_control_cpp speed_publisher -p rpm:=400
+
+# 실행 중 rpm 확인
+# ros2 param get /speed_publisher rpm
+# 실행 중 rpm 변경
+# ros2 param set /speed_publisher rpm 500.0
 ```
 
 ```bash
 # /ctrl/steer
 ros2 run steering_monitor_cpp steering_monitor_node
 ```
+
 6. 펌웨어 업로드
 ```bash
 ls /dev/ttyACM* /dev/ttyUSB*
