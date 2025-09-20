@@ -18,7 +18,7 @@ from std_msgs.msg import Int32
 
 HDR_RX   = 0xAA          # 패킷 헤더
 HDR_TX   = 0xAB
-RPM_MAX  = 4000.0
+RPM_MAX  = 3000.0
 STEP_RPM = RPM_MAX / 15  # 33 rpm 단계 (현재 미사용)
 
 
