@@ -43,8 +43,9 @@ const uint32_t PERIOD_MS = 10;     // 100 Hz 시리얼 패킷
 const uint32_t SPD_INTERVAL = 300; // ★ 0.3 s (기존 500ms → 더 빠른 응답)
 
 /* ── 서보 각도 ── */
-#define ANG_BRAKE 40 // 튜닝 필요
+#define ANG_BRAKE 35 // 튜닝 필요
 #define ANG_RELEASE 70
+
 /* ── 속도 계산 ── */
 const int PPR = 12;
 const float TIRE_DIAM_CM = 47.0;
