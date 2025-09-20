@@ -68,8 +68,10 @@ public:
     flt[1].can_mask = (CAN_EFF_MASK | CAN_EFF_FLAG);
 
     setsockopt(sock_, SOL_CAN_RAW, CAN_RAW_FILTER, &flt, sizeof(flt));
-    /* ── 퍼블리셔 생성 (/current_speed/control in m/s) ───────────── */
-    speed_pub_ = create_publisher<std_msgs::msg::Float32>("/ctrl/speed", 10);
+
+    /* ── 퍼블리셔 생성 (/ctrl/rpm, /ctrl/speed) ───────────────────── */
+    rpm_pub_   = create_publisher<std_msgs::msg::Int32>("/ctrl/rpm",   10); // 모터 RPM
+    speed_pub_ = create_publisher<std_msgs::msg::Float32>("/ctrl/speed", 10); // m/s
 
     /* ── 수신 쓰레드 시작 ─────────────────────────────────────────── */
     rx_thread_ = std::thread([this]{ receive_loop(); });
@@ -130,10 +132,17 @@ private:
         int rpm_ct  = static_cast<int>(rpm_u16)  - kRPM_OFFSET;    // => 카운트
 
         // 물리량으로 변환
-        float busV = busV_u16 * 0.1f;             // V
-        float busI = static_cast<float>(busI_ct) * 0.1f; // A
-        float phaI = static_cast<float>(phaI_ct) * 0.1f; // A
-        int   rpm  = rpm_ct;                       // motor rpm
+        float busV = busV_u16 * 0.1f;                     // V
+        float busI = static_cast<float>(busI_ct) * 0.1f;  // A
+        float phaI = static_cast<float>(phaI_ct) * 0.1f;  // A
+        int   rpm  = rpm_ct;                               // motor rpm (부호 포함)
+
+        // === 1) RPM 먼저 퍼블리시 (/ctrl/rpm) ===
+        {
+          std_msgs::msg::Int32 rpm_msg;
+          rpm_msg.data = rpm;
+          rpm_pub_->publish(rpm_msg);
+        }
 
         // m/s로 변환: wheel_rpm = motor_rpm / kGearRatio
         // v [m/s] = wheel_rpm [rev/min] * (pi * D_m) / 60
@@ -141,8 +150,13 @@ private:
         const float wheel_rpm  = static_cast<float>(rpm) / kGearRatio;
         const float speed_mps  = wheel_rpm * (3.1415926f * D_m) / 60.0f;
 
-        // Publish m/s
-        std_msgs::msg::Float32 msg; msg.data = speed_mps; speed_pub_->publish(msg);
+        // === 2) 그 다음 속도 퍼블리시 (/ctrl/speed, m/s) ===
+        {
+          std_msgs::msg::Float32 msg;
+          msg.data = speed_mps;
+          speed_pub_->publish(msg);
+        }
+
         // 터미널 출력 (쓰로틀링: 500ms)
         RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 500,
           "[PART1] V=%.1fV, I=%.1fA, Ph=%.1fA, RPM=%d, Speed=%.3f m/s",
@@ -184,11 +198,13 @@ private:
       }
     }
   }
+
   /* ── members ──────────────────────────────────────────────────── */
   int sock_{-1};
   std::thread                               rx_thread_;
   std::atomic<bool>                         running_{true};
-  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr speed_pub_;  // m/s publisher
+  rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr   rpm_pub_;   // /ctrl/rpm (motor rpm)
+  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr speed_pub_; // /ctrl/speed (m/s)
 };
 
 int main(int argc, char ** argv)
@@ -204,3 +220,4 @@ int main(int argc, char ** argv)
   rclcpp::shutdown();
   return 0;
 }
+
