@@ -14,11 +14,11 @@ import serial.tools.list_ports
 import rclpy
 from rclpy.node import Node
 from throttle_msgs.msg import ThrottleData
-from std_msgs.msg import Int32
+from std_msgs.msg import Int32, UInt8
 
 HDR_RX   = 0xAA          # 패킷 헤더
 HDR_TX   = 0xAB
-RPM_MAX  = 4000.0
+RPM_MAX  = 3000.0
 STEP_RPM = RPM_MAX / 15  # 33 rpm 단계 (현재 미사용)
 
 
@@ -51,7 +51,7 @@ class ThrottleSerialNode(Node):
 
         # /aeb 구독 (std_msgs/Int32, 0 또는 1 기대)
         aeb_topic = self.get_parameter('aeb_topic').value
-        self.create_subscription(Int32, aeb_topic, self._cb_aeb, 10)
+        self.create_subscription(UInt8, aeb_topic, self._cb_aeb, 10)
 
         # 100 Hz 주기 읽기
         self.create_timer(0.01, self.read_once)
@@ -132,7 +132,7 @@ class ThrottleSerialNode(Node):
         return False
 
     # ─────────────────────────────────────────────────────────────
-    def _cb_aeb(self, msg: Int32):
+    def _cb_aeb(self, msg: UInt8):
         """/aeb (0/1) 수신 시 아두이노로 전달 패킷 전송.
           - STATE: 0=해제, 1=활성
         """

@@ -34,7 +34,7 @@ public:
     rpm_rev_max_ = declare_parameter<int>("rpm_rev_max", 1500);
 
     // ★ 가속/감속 분리 램프 스텝
-    accel_step_rpm_ = declare_parameter<int>("accel_step_rpm", 80); // 가속 시 한 틱(50ms)당 rpm
+    accel_step_rpm_ = declare_parameter<int>("accel_step_rpm", 100); // 가속 시 한 틱(50ms)당 rpm
     decel_step_rpm_ = declare_parameter<int>("decel_step_rpm", 10); // 감속 시 한 틱(50ms)당 rpm
 
     brake_hyst_rpm_ = declare_parameter<int>("brake_hyst_rpm", 150); // 경계 히스테리시스(권장 상향)
@@ -182,8 +182,8 @@ private:
   double regen_limit_a_{0.0};
   int rpm_fwd_max_{4500};
   int rpm_rev_max_{1500};
-  int accel_step_rpm_{80};
-  int decel_step_rpm_{10};
+  int accel_step_rpm_{100}; // 가속 시
+  int decel_step_rpm_{10}; // 감속 시
   int brake_hyst_rpm_{150};
 
   double ctrl_temp_derate_start_{58.0}, ctrl_temp_derate_cut_{70.0};

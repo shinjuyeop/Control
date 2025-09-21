@@ -68,10 +68,9 @@ public:
     flt[1].can_mask = (CAN_EFF_MASK | CAN_EFF_FLAG);
 
     setsockopt(sock_, SOL_CAN_RAW, CAN_RAW_FILTER, &flt, sizeof(flt));
-
-    /* ── 퍼블리셔 생성 (/ctrl/rpm, /ctrl/speed) ───────────────────── */
-    rpm_pub_   = create_publisher<std_msgs::msg::Int32>("/ctrl/rpm",   10); // 모터 RPM
-    speed_pub_ = create_publisher<std_msgs::msg::Float32>("/ctrl/speed", 10); // m/s
+  /* ── 퍼블리셔 생성 (/ctrl/speed in m/s, /ctrl/rpm in wheel rpm) ───────────── */
+  speed_pub_ = create_publisher<std_msgs::msg::Float32>("/ctrl/speed", 10);
+  rpm_pub_   = create_publisher<std_msgs::msg::Float32>("/ctrl/rpm", 10);
 
     /* ── 수신 쓰레드 시작 ─────────────────────────────────────────── */
     rx_thread_ = std::thread([this]{ receive_loop(); });
@@ -150,17 +149,14 @@ private:
         const float wheel_rpm  = static_cast<float>(rpm) / kGearRatio;
         const float speed_mps  = wheel_rpm * (3.1415926f * D_m) / 60.0f;
 
-        // === 2) 그 다음 속도 퍼블리시 (/ctrl/speed, m/s) ===
-        {
-          std_msgs::msg::Float32 msg;
-          msg.data = speed_mps;
-          speed_pub_->publish(msg);
-        }
-
+        // Publish m/s
+        std_msgs::msg::Float32 msg_speed; msg_speed.data = speed_mps; speed_pub_->publish(msg_speed);
+        // Publish motor rpm (not wheel_rpm)
+        std_msgs::msg::Float32 msg_rpm; msg_rpm.data = static_cast<float>(rpm); rpm_pub_->publish(msg_rpm);
         // 터미널 출력 (쓰로틀링: 500ms)
         RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 500,
-          "[PART1] V=%.1fV, I=%.1fA, Ph=%.1fA, RPM=%d, Speed=%.3f m/s",
-          busV, busI, phaI, rpm, speed_mps);
+          "[PART1] V=%.1fV, I=%.1fA, Ph=%.1fA, RPM=%d, Speed=%.3f m/s, WheelRPM=%.2f",
+          busV, busI, phaI, rpm, speed_mps, wheel_rpm);
       }
       else if (id == ID_MCU_PART2 && frame.can_dlc == 8) {
         // Part II: 0:CtrlTemp, 1:MotorTemp (°C = raw-40), 2:Status(bit0 RUN, bit1 SpeedMode), 3:Error, 4:Fault1, 5:Fault2
@@ -203,8 +199,8 @@ private:
   int sock_{-1};
   std::thread                               rx_thread_;
   std::atomic<bool>                         running_{true};
-  rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr   rpm_pub_;   // /ctrl/rpm (motor rpm)
-  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr speed_pub_; // /ctrl/speed (m/s)
+  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr speed_pub_;  // m/s publisher
+  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr rpm_pub_;
 };
 
 int main(int argc, char ** argv)
