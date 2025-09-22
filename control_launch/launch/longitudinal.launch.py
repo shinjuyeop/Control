@@ -25,25 +25,10 @@ from launch_ros.actions import Node
 """
 
 def generate_launch_description():
-    rpm_arg = DeclareLaunchArgument(
-        'rpm',
-        default_value='250',
-        description='Initial RPM for motor_control_cpp/speed_publisher'
-    )
 
     can0 = 'can0'
 
     return LaunchDescription([
-        rpm_arg,
-
-
-
-        Node(
-            package='throttle_serial_py',
-            executable='throttle_serial_node',
-            name='throttle_serial',
-            output='screen',
-        ),
 
         Node(
             package='throttle_serial_py',
@@ -66,6 +51,14 @@ def generate_launch_description():
             name='can_speed_receiver',
             output='screen',
             arguments=[can0],
+        ),
+
+
+        Node(
+            package='throttle_serial_py',
+            executable='throttle_serial_node',
+            name='throttle_serial',
+            output='screen',
         ),
 
 

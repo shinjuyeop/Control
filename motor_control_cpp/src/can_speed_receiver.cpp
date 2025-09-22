@@ -138,8 +138,8 @@ private:
 
         // === 1) RPM 먼저 퍼블리시 (/ctrl/rpm) ===
         {
-          std_msgs::msg::Int32 rpm_msg;
-          rpm_msg.data = rpm;
+          std_msgs::msg::Float32 rpm_msg;
+          rpm_msg.data = static_cast<float>(rpm);
           rpm_pub_->publish(rpm_msg);
         }
 
