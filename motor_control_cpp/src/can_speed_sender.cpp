@@ -34,7 +34,7 @@ public:
     rpm_rev_max_ = declare_parameter<int>("rpm_rev_max", 1500);
 
     // ★ 가속/감속 분리 램프 스텝
-    accel_step_rpm_ = declare_parameter<int>("accel_step_rpm", 100); // 가속 시 한 틱(50ms)당 rpm
+    accel_step_rpm_ = declare_parameter<int>("accel_step_rpm", 80); // 가속 시 한 틱(50ms)당 rpm
     decel_step_rpm_ = declare_parameter<int>("decel_step_rpm", 10); // 감속 시 한 틱(50ms)당 rpm
 
     brake_hyst_rpm_ = declare_parameter<int>("brake_hyst_rpm", 150); // 경계 히스테리시스(권장 상향)
@@ -51,16 +51,16 @@ public:
 
     // Blend & Slew(코스팅→유지 경계 연속화)
     brake_blend_rpm_ = declare_parameter<double>("brake_blend_rpm", 180.0);
-    i_limit_tau_ms_  = declare_parameter<double>("i_limit_tau_ms", 200.0);
+    i_limit_tau_ms_ = declare_parameter<double>("i_limit_tau_ms", 200.0);
 
     // ==== PID front-end (parameters) ====
-    pid_enable_        = declare_parameter<bool>("pid_enable", true);
-    pid_kp_            = declare_parameter<double>("pid_kp", 0.0);
-    pid_ki_            = declare_parameter<double>("pid_ki", 0.0);
-    pid_kd_            = declare_parameter<double>("pid_kd", 0.0);
-    pid_out_limit_rpm_ = declare_parameter<double>("pid_out_limit_rpm", 800.0);  // |Δrpm| 상한
-    pid_i_limit_       = declare_parameter<double>("pid_i_limit", 2000.0);       // ∫e dt 제한
-    pid_d_tau_ms_      = declare_parameter<double>("pid_d_tau_ms", 100.0);       // D 저역통과 상수
+    pid_enable_ = declare_parameter<bool>("pid_enable", true);
+    pid_kp_ = declare_parameter<double>("pid_kp", 0.0);
+    pid_ki_ = declare_parameter<double>("pid_ki", 0.0);
+    pid_kd_ = declare_parameter<double>("pid_kd", 0.0);
+    pid_out_limit_rpm_ = declare_parameter<double>("pid_out_limit_rpm", 800.0); // |Δrpm| 상한
+    pid_i_limit_ = declare_parameter<double>("pid_i_limit", 2000.0);            // ∫e dt 제한
+    pid_d_tau_ms_ = declare_parameter<double>("pid_d_tau_ms", 100.0);           // D 저역통과 상수
 
     // ===== SocketCAN init =====
     sock_ = socket(PF_CAN, SOCK_RAW, CAN_RAW);
@@ -182,7 +182,7 @@ private:
   double regen_limit_a_{0.0};
   int rpm_fwd_max_{4500};
   int rpm_rev_max_{1500};
-  int accel_step_rpm_{100}; // 가속 시
+  int accel_step_rpm_{80}; // 가속 시
   int decel_step_rpm_{10}; // 감속 시
   int brake_hyst_rpm_{150};
 
@@ -198,11 +198,10 @@ private:
   // Blend & Slew
   double i_limit_tau_ms_{200.0};
   double brake_blend_rpm_{180.0};
-  double i_limit_tau_ms_{300.0};
   double i_max_smooth_{0.0};
 
   // ==== PID front-end ====
-  bool   pid_enable_{true};
+  bool pid_enable_{true};
   double pid_kp_{0.0}, pid_ki_{0.0}, pid_kd_{0.0};
   double pid_out_limit_rpm_{800.0};
   double pid_i_limit_{2000.0};
