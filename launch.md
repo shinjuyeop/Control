@@ -3,7 +3,7 @@
 1. Control 선택 후 클린 빌드
 
 ```bash
-cd ~/KAI_ws
+cd ~/KAI_ws 
 
 # Control 아래 패키지 이름들 확인
 PKGS=$(colcon list --base-paths src/Control --names-only)

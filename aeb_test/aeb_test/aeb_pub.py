@@ -4,7 +4,7 @@ import threading
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Int32
+from std_msgs.msg import UInt8
 
 
 class AebPublisher(Node):
@@ -12,7 +12,7 @@ class AebPublisher(Node):
         super().__init__('aeb_pub')
         self.declare_parameter('topic', '/aeb')
         topic = self.get_parameter('topic').value
-        self.pub = self.create_publisher(Int32, topic, 10)
+        self.pub = self.create_publisher(UInt8, topic, 10)
 
         self.last_value = 0  # 기본 값
         self.timer = self.create_timer(0.5, self._timer_publish)  # 0.5초마다 반복 발행
@@ -24,7 +24,7 @@ class AebPublisher(Node):
         )
 
     def _timer_publish(self):
-        self.pub.publish(Int32(data=self.last_value))
+        self.pub.publish(UInt8(data=self.last_value))
 
     def input_loop(self):
         while rclpy.ok():
