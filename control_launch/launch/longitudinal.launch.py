@@ -60,6 +60,4 @@ def generate_launch_description():
             name='throttle_serial',
             output='screen',
         ),
-
-
     ])

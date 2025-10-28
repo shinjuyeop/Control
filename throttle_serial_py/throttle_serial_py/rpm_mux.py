@@ -92,10 +92,10 @@ class RpmMux(Node):
         # 발행 (핸들 보관)
         self.pub = self.create_publisher(Int32, 'target_rpm', 10)
 
-        # 서비스 (/green) (핸들 보관)
-        self.srv_green = self.create_service(
-            Trigger, '/green', self.on_green
-        )
+        # # 서비스 (/green) (핸들 보관)
+        # self.srv_green = self.create_service(
+        #     Trigger, '/green', self.on_green
+        # )
 
         # 100 Hz 주기 발행 안전망 (핸들 보관)
         self.timer = self.create_timer(0.01, self.tick)
