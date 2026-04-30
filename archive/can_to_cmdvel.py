@@ -7,6 +7,7 @@ import threading
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry
 
 # can_io.py에서 가져온 상수들
 CAN_EFF_FLAG = 0x80000000
@@ -33,9 +34,18 @@ class CanToCmdVel(Node):
 
         self.current_rpm = 0.0
         self.current_steer = 0.0
+        self.current_pos_x = 0.0
+        self.current_pos_y = 0.0
+        self.current_vel = 0.0
 
         # 10Hz로 /cmd_vel 퍼블리시
         self.timer = self.create_timer(0.1, self.publish_cmdvel)
+        self.odom_sub = self.create_subscription(
+            Odometry,
+            '/odom',
+            self.odom_callback,
+            10
+        )
 
         # vcan 수신 스레드
         threading.Thread(target=self.can_rx_loop, args=('vcan0',), daemon=True).start()
@@ -66,6 +76,8 @@ class CanToCmdVel(Node):
 
             # 모터 RPM 파싱 (STAT1)
             if can_id == ID_MOTOR_STAT1 and len(data) >= 8:
+                if data == b"\x55" * 8:
+                    continue
                 rpm_raw = int.from_bytes(data[6:8], 'little')
                 self.current_rpm = float(rpm_raw - MOTOR_RPM_OFFSET)
                 self.get_logger().debug(f'RPM: {self.current_rpm:.1f}')
@@ -90,6 +102,14 @@ class CanToCmdVel(Node):
         self.pub.publish(msg)
         self.get_logger().info(
             f'cmd_vel → linear.x={msg.linear.x:.3f} m/s, angular.z={msg.angular.z:.3f} rad'
+        )
+
+    def odom_callback(self, msg):
+        self.current_pos_x = msg.pose.pose.position.x
+        self.current_pos_y = msg.pose.pose.position.y
+        self.current_vel = msg.twist.twist.linear.x
+        self.get_logger().info(
+            f'odom → x={self.current_pos_x:.2f}, y={self.current_pos_y:.2f}, vel={self.current_vel:.2f}'
         )
 
 
