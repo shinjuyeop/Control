@@ -25,7 +25,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from rcl_interfaces.msg import SetParametersResult
-from std_msgs.msg import Float64
+from std_msgs.msg import Float64, Bool
 
 from .pid_channel import PidChannel
 
@@ -86,6 +86,7 @@ class PidGazeboNode(Node):
         self._sp_steer_deg: float = 0.0
         self._odom_mps: float = 0.0
         self._odom_yaw: float = 0.0
+        self._odom_received: bool = False
         self._last_sp_t: float = 0.0       # monotonic time of last setpoint
         self._sp_seen: bool = False
 
@@ -104,6 +105,17 @@ class PidGazeboNode(Node):
         # ── publisher ─────────────────────────────────────────────────
         cmd_t = self.get_parameter('cmd_vel_topic').value
         self._cmd_pub = self.create_publisher(Twist, cmd_t, 10)
+
+        # ── debug publishers (rqt_plot 용) ───────────────────────────
+        self._dbg_lon_sp  = self.create_publisher(Float64, '~/lon/setpoint',  10)
+        self._dbg_lon_fb  = self.create_publisher(Float64, '~/lon/feedback',  10)
+        self._dbg_lon_err = self.create_publisher(Float64, '~/lon/error',     10)
+        self._dbg_lon_out = self.create_publisher(Float64, '~/lon/output',    10)
+        self._dbg_str_sp  = self.create_publisher(Float64, '~/str/setpoint',  10)
+        self._dbg_str_fb  = self.create_publisher(Float64, '~/str/feedback',  10)
+        self._dbg_str_err = self.create_publisher(Float64, '~/str/error',     10)
+        self._dbg_str_out = self.create_publisher(Float64, '~/str/output',    10)
+        self._dbg_odom_ok = self.create_publisher(Bool,    '~/odom_received', 10)
 
         # ── control timer ─────────────────────────────────────────────
         self.create_timer(self._dt, self._tick)
@@ -150,6 +162,9 @@ class PidGazeboNode(Node):
     def _odom_cb(self, msg: Odometry) -> None:
         self._odom_mps = msg.twist.twist.linear.x
         self._odom_yaw = _quat_to_yaw(msg.pose.pose.orientation)
+        if not self._odom_received:
+            self._odom_received = True
+            self.get_logger().info('odom feedback connected')
 
     def _rpm_cb(self, msg: Float64) -> None:
         self._sp_rpm = msg.data
@@ -197,6 +212,19 @@ class PidGazeboNode(Node):
         cmd.linear.x = lon_out
         cmd.angular.z = str_out
         self._cmd_pub.publish(cmd)
+
+        # ── Debug topics ───────────────────────────────────────────
+        def _f(v): m = Float64(); m.data = float(v); return m
+        self._dbg_lon_sp.publish(_f(sp_mps))
+        self._dbg_lon_fb.publish(_f(fb_mps))
+        self._dbg_lon_err.publish(_f(lon_err))
+        self._dbg_lon_out.publish(_f(lon_out))
+        self._dbg_str_sp.publish(_f(sp_yaw))
+        self._dbg_str_fb.publish(_f(self._odom_yaw))
+        self._dbg_str_err.publish(_f(str_err))
+        self._dbg_str_out.publish(_f(str_out))
+        ok = Bool(); ok.data = self._odom_received
+        self._dbg_odom_ok.publish(ok)
 
     # ──────────────────────────────────────────────────────────────────
     # Live parameter update
