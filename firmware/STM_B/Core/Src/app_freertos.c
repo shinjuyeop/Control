@@ -25,7 +25,15 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <rcl/rcl.h>
+#include <rclc/rclc.h>
+#include <std_msgs/msg/int32.h>
+#include "rmw_microros/rmw_microros.h"
 
+bool cubemx_transport_open(struct uxrCustomTransport * transport);
+bool cubemx_transport_close(struct uxrCustomTransport * transport);
+size_t cubemx_transport_write(struct uxrCustomTransport* transport, const uint8_t * buf, size_t len, uint8_t * err);
+size_t cubemx_transport_read(struct uxrCustomTransport* transport, uint8_t* buf, size_t len, int timeout, uint8_t* err);
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -216,10 +224,39 @@ void StartEStop(void *argument)
 void StartuROS(void *argument)
 {
   /* USER CODE BEGIN StartuROS */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
+  extern UART_HandleTypeDef hlpuart1;
+
+  rmw_uros_set_custom_transport(
+      true, (void *)&hlpuart1,
+      cubemx_transport_open,
+      cubemx_transport_close,
+      cubemx_transport_write,
+      cubemx_transport_read
+  );
+
+  rcl_allocator_t allocator = rcl_get_default_allocator();
+  rclc_support_t support;
+  rcl_node_t node;
+  rcl_publisher_t publisher;
+  std_msgs__msg__Int32 msg;
+
+  while (rmw_uros_ping_agent(100, 1) != RMW_RET_OK) {
+      osDelay(500);
+  }
+
+  rclc_support_init(&support, 0, NULL, &allocator);
+  rclc_node_init_default(&node, "stmB_node", "", &support);
+  rclc_publisher_init_default(
+      &publisher, &node,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32),
+      "stmB_counter"
+  );
+
+  msg.data = 0;
+  for (;;) {
+      rcl_publish(&publisher, &msg, NULL);
+      msg.data++;
+      osDelay(100);
   }
   /* USER CODE END StartuROS */
 }

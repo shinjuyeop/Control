@@ -24,6 +24,17 @@ set(CMAKE_PROJECT_NAME stmB0430)
 # Enable compile command to ease indexing with e.g. clangd
 set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 
+set(MCU_FLAGS
+    -mcpu=cortex-m4
+    -mthumb
+    -mfpu=fpv4-sp-d16
+    -mfloat-abi=hard
+    -fdata-sections
+    -ffunction-sections
+)
+add_compile_options(${MCU_FLAGS})
+add_link_options(${MCU_FLAGS} -Wl,--gc-sections)
+
 # Core project settings
 project(${CMAKE_PROJECT_NAME})
 message("Build type: " ${CMAKE_BUILD_TYPE})
@@ -42,14 +53,25 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined library search paths
 )
 
+set(MICROROS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/Middlewares/micro_ros)
+
+file(GLOB_RECURSE MICROROS_EXTRA_SOURCES "${MICROROS_DIR}/extra_sources/*.c")
+
+# usb_cdc, udp transport 제외 (해당 드라이버 미사용)
+list(FILTER MICROROS_EXTRA_SOURCES EXCLUDE REGEX "usb_cdc_transport\\.c$")
+list(FILTER MICROROS_EXTRA_SOURCES EXCLUDE REGEX "udp_transport\\.c$")
+list(FILTER MICROROS_EXTRA_SOURCES EXCLUDE REGEX "it_transport\\.c$")
+
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
-    # Add user sources here
+    ${MICROROS_EXTRA_SOURCES}
 )
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
-    # Add user defined include paths
+    Core/Inc
+    ${MICROROS_DIR}/microros_include
+    ${MICROROS_DIR}/extra_sources
 )
 
 # Add project symbols (macros)
@@ -62,7 +84,9 @@ list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)
 
 # Add linked libraries
 target_link_libraries(${CMAKE_PROJECT_NAME}
+    ${MICROROS_DIR}/libmicroros.a
     stm32cubemx
-
-    # Add user defined libraries
+    m
+    c
+    nosys
 )
