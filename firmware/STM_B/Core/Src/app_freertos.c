@@ -52,9 +52,12 @@ size_t cubemx_transport_read(struct uxrCustomTransport* transport, uint8_t* buf,
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-/* USER CODE BEGIN Variables */
 
+/* USER CODE BEGIN Variables */
+volatile uint8_t g_estop_state = 0;   // EStop 상태 공유 변수
+static uint8_t b_tx_buf[4];
 /* USER CODE END Variables */
+
 /* Definitions for Brake */
 osThreadId_t BrakeHandle;
 const osThreadAttr_t Brake_attributes = {
@@ -325,10 +328,20 @@ void StartARx(void *argument)
 void StartATx(void *argument)
 {
   /* USER CODE BEGIN StartATx */
-  /* Infinite loop */
+  extern UART_HandleTypeDef huart1;
+
   for(;;)
   {
-    osDelay(1);
+    // 500ms마다 0→1→0 토글 (테스트용)
+    g_estop_state ^= 1;
+
+    b_tx_buf[0] = 0xAA;          // 헤더
+    b_tx_buf[1] = 0x01;          // 타입: EStop
+    b_tx_buf[2] = g_estop_state; // 0 or 1
+    b_tx_buf[3] = b_tx_buf[0] ^ b_tx_buf[1] ^ b_tx_buf[2]; // checksum
+
+    HAL_UART_Transmit_DMA(&huart1, b_tx_buf, 4);
+    osDelay(500);
   }
   /* USER CODE END StartATx */
 }
