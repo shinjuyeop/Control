@@ -47,5 +47,7 @@ log/
 Thumbs.db
 ehthumbs.db
 Desktop.ini
-compile_commands.jsonbags/
+compile_commands.json
+bags/
 analysis/
+*.mcap
