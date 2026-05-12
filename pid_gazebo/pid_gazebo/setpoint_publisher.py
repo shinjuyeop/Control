@@ -24,7 +24,7 @@ class SetpointPublisher(Node):
     def __init__(self) -> None:
         super().__init__('setpoint_publisher')
 
-        self.declare_parameter('rpm', 300.0)
+        self.declare_parameter('rpm', 10.0)
         self.declare_parameter('steer_deg', 0.0)
         self.declare_parameter('hz', 10.0)
 

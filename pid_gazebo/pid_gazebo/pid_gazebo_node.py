@@ -62,7 +62,7 @@ class PidGazeboNode(Node):
         self.declare_parameter('lon_kd', 0.02)
         self.declare_parameter('lon_out_max', 3.0)    # [m/s]
         self.declare_parameter('lon_i_limit', 50.0)   # integral windup limit [rpm·s]
-        self.declare_parameter('wheel_radius', 0.1)   # [m]  – used for RPM ↔ m/s
+        self.declare_parameter('wheel_radius', 0.4)   # [m]  – used for RPM ↔ m/s
 
         # ── steering PID parameters ───────────────────────────────────
         self.declare_parameter('str_kp', 1.0)
@@ -193,7 +193,9 @@ class PidGazeboNode(Node):
                 self.get_logger().warn('setpoint timeout – stopping')
                 self._sp_seen = False
             return
-
+        if not self._odom_received:
+            self.get_logger().warn('waiting for /odom...', throttle_duration_sec=1.0)
+            return
         r = self.get_parameter('wheel_radius').value
 
         # ── Channel 1: longitudinal ────────────────────────────────
