@@ -47,4 +47,5 @@ log/
 Thumbs.db
 ehthumbs.db
 Desktop.ini
-compile_commands.json
+compile_commands.jsonbags/
+analysis/
