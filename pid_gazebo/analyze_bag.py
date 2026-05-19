@@ -12,18 +12,40 @@ import glob
 import sys
 import os
 
+WORK_DIR = '/home/junhyeon/workspace/Control/pid_gazebo'
+
 # 저장 폴더 생성
-os.makedirs('analysis', exist_ok=True)
+os.makedirs(os.path.join(WORK_DIR, 'analysis'), exist_ok=True)
 
 # 가장 최근 bag 자동 선택
-bags = sorted(glob.glob('sils_bag_*/*.mcap'))
+#bags = sorted(glob.glob('sils_bag_*/*.mcap'))
 #bags = sorted(glob.glob('sils_bag_step4/*.mcap'))
-if not bags:
-    print("bag 파일 없음")
-    sys.exit(1)
+#if not bags:
+ #   print("bag 파일 없음")
+ #   sys.exit(1)
 
-bag_path = bags[-1]
-bag_name = bag_path.split('/')[0]
+#bag_path = bags[-1]
+#bag_name = bag_path.split('/')[0]
+
+# 수정 - 인자로 bag 절대경로 받으면 해당 bag 분석, 없으면 최신 bag 자동 선택
+if len(sys.argv) > 1:
+    bag_abs_path = sys.argv[1]  # 절대경로로 받음
+    bag_name = os.path.basename(bag_abs_path)  # 폴더명만 추출
+    # 폴더 안에서 mcap 파일 자동 찾기 (파일명이 폴더명과 다를 수 있음)
+    mcap_files = glob.glob(f'{bag_abs_path}/*.mcap')
+    if not mcap_files:
+        print(f"mcap 파일 없음: {bag_abs_path}")
+        sys.exit(1)
+    bag_path = mcap_files[0]
+else:
+    # 절대경로로 최신 bag 자동 선택
+    bags = sorted(glob.glob(os.path.join(WORK_DIR, 'sils_bag_run_*', '*.mcap')))
+    if not bags:
+        print("bag 파일 없음")
+        sys.exit(1)
+    bag_path = bags[-1]
+    bag_name = bag_path.split('/')[-2]  # 폴더명 추출
+
 print(f"읽는 파일: {bag_path}")
 
 records = {
@@ -60,8 +82,8 @@ df_cmd  = df_cmd.sort_values('t')
 df_merged = pd.merge_asof(df_sp, df_odom, on='t', direction='nearest')
 df_merged = pd.merge_asof(df_merged, df_cmd, on='t', direction='nearest')
 
-# 저장
-out_path = f'analysis/{bag_name}.csv'
+# 저장 (절대경로 + bag 이름으로 구분)
+out_path = os.path.join(WORK_DIR, 'analysis', f'{bag_name}.csv')
 df_merged.to_csv(out_path, index=False)
 print(f"\nCSV 저장 완료: {out_path}")
 print(f"rows: {len(df_merged)}, columns: {list(df_merged.columns)}")
