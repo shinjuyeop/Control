@@ -60,7 +60,7 @@
         <model name="sign_pole"><static>true</static><pose>-15 4.5 1.5 0 0 0</pose><link name="link"><visual name="v"><geometry><cylinder><radius>0.08</radius><length>3.0</length></cylinder></geometry><material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material></visual><collision name="c"><geometry><cylinder><radius>0.08</radius><length>3.0</length></cylinder></geometry></collision></link></model>
         <model name="sign_board"><static>true</static><pose>-15 4.3 2.8 0 0 0</pose><link name="link"><visual name="v"><geometry><box><size>0.05 0.8 0.8</size></box></geometry><material><ambient>0 0.2 0.8 1</ambient><diffuse>0 0.2 0.8 1</diffuse></material></visual></link></model>
 
-        <!-- ========== 실차 EV 모델 ========== -->
+        <!-- ========== 실차 모델 ========== -->
         <model name="vehicle_blue" canonical_link="chassis">
             <pose>0 0 0.5 0 0 0</pose>
             <link name="chassis">
@@ -114,7 +114,7 @@
                 <right_joint>right_wheel_joint</right_joint>
                 <wheel_separation>1.3</wheel_separation>
                 <wheel_radius>0.3</wheel_radius>
-                <odom_publish_frequency>10</odom_publish_frequency>
+                <odom_publish_frequency>20</odom_publish_frequency>
                 <odom_topic>odom</odom_topic>
                 <topic>cmd_vel</topic>
             </plugin>
