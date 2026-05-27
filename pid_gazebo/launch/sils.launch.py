@@ -4,9 +4,6 @@ from launch.actions import ExecuteProcess, DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 
 def generate_launch_description():
-    # RPM 인자 선언
-    rpm_arg = DeclareLaunchArgument('rpm', default_value='30.0')
-    
     # 회차 번호 인자 선언
     run_id_arg = DeclareLaunchArgument('run_id', default_value='1')
 
@@ -24,22 +21,9 @@ def generate_launch_description():
         package='pid_gazebo',
         executable='pid_gazebo_node',
         parameters=[{
-            'wheel_radius': 0.4,
-            #'lon_kp': 0.1,
-            #'lon_ki': 0.0,
-            #'lon_kd': 0.0,
-        }],
-        output='screen'
-    )
-
-    setpoint = Node(
-        package='pid_gazebo',
-        executable='setpoint_publisher',
-        parameters=[{
-            #'rpm': 30.0,
-            'rpm': LaunchConfiguration('rpm'),  # 외부 인자 받음
-            'steer_deg': 0.0,
-            'hz': 10.0,
+            'wheel_radius': 0.3,
+            'lon_i_limit': 5.0,   # 적분 누적 한계 축소 (50 → 5)
+            'lon_out_max': 1.5,   # 출력 제한 축소 (3.0 → 1.5)
         }],
         output='screen'
     )
@@ -52,9 +36,9 @@ def generate_launch_description():
             '/odom',
             '/setpoint/rpm',
             '/setpoint/steer_deg',
-            '-o', ['/home/junhyeon/workspace/Control/pid_gazebo/sils_bag_run_', LaunchConfiguration('run_id')],  # 절대경로 + 회차 번호
+            '-o', ['/home/junhyeon/workspace/Control/pid_gazebo/sils_bag_run_', LaunchConfiguration('run_id')],
         ],
         output='screen'
     )
 
-    return LaunchDescription([rpm_arg, run_id_arg, bridge, pid_node, setpoint, bag_record])
+    return LaunchDescription([run_id_arg, bridge, pid_node, bag_record])

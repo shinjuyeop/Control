@@ -13,7 +13,7 @@ end
 csv_path = fullfile(analysis_dir, csv_files(idx).name);
 fprintf('읽는 파일: %s\n', csv_path);
 data = readtable(csv_path);
-step_time = min(data.t(data.setpoint_rpm == 0));
+step_time = max(data.t(data.setpoint_rpm == 0));
 df_after = data(data.t > step_time, :);
 t_rel = df_after.t - step_time;
 % 전체 데이터의 마지막 10% 사용
