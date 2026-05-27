@@ -16,7 +16,7 @@ import os
 os.makedirs('analysis', exist_ok=True)
 
 # 가장 최근 bag 자동 선택
-bags = sorted(glob.glob('sils_bag_*/*.mcap'))
+bags = sorted(glob.glob('bags/sils_bag_*/*.mcap'))
 if not bags:
     print("bag 파일 없음")
     sys.exit(1)

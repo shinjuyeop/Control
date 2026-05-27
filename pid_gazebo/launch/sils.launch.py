@@ -17,7 +17,7 @@ def generate_launch_description():
         package='pid_gazebo',
         executable='pid_gazebo_node',
         parameters=[{
-            'wheel_radius': 0.4,
+            'wheel_radius': 0.3,
             'lon_kp': 0.1,
             'lon_ki': 0.0,
             'lon_kd': 0.0,
@@ -43,7 +43,7 @@ def generate_launch_description():
             '/odom',
             '/setpoint/rpm',
             '/setpoint/steer_deg',
-            '-o', f'sils_bag_{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}',
+            '-o', f'bags/sils_bag_{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}',
         ],
         output='screen'
     )
