@@ -1,0 +1,2746 @@
+<?xml version="1.0" ?>
+<sdf version="1.7">
+  <model name="EV_Assy">
+    <static>false</static>
+    <link name="Dashboard_assy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Dashboard_assy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Dashboard_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Dashboard_assy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Dashboard_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="bumper_real_last_R">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="bumper_real_last_R_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/bumper_real_last_R.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="bumper_real_last_R_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/bumper_real_last_R.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="FW_OuterBracket">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="FW_OuterBracket_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/FW_OuterBracket.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="FW_OuterBracket_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/FW_OuterBracket.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="fu_arm_ass">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="fu_arm_ass_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/fu_arm_ass.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="fu_arm_ass_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/fu_arm_ass.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="knuckle_front_ass_1">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="knuckle_front_ass_1_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/knuckle_front_ass_1.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="knuckle_front_ass_1_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/knuckle_front_ass_1.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="rear_susp_bracket_assy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="rear_susp_bracket_assy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/rear_susp_bracket_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="rear_susp_bracket_assy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/rear_susp_bracket_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="FW_InnerBracket">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="FW_InnerBracket_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/FW_InnerBracket.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="FW_InnerBracket_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/FW_InnerBracket.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="ch160_case">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="ch160_case_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/ch160_case.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="ch160_case_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/ch160_case.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="rl_arm_ass">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="rl_arm_ass_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/rl_arm_ass.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="rl_arm_ass_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/rl_arm_ass.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="M8_Spherical">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="M8_Spherical_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/M8_Spherical.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="M8_Spherical_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/M8_Spherical.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Bell_Rear">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Bell_Rear_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Bell_Rear.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Bell_Rear_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Bell_Rear.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="pinionbracket_1">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="pinionbracket_1_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/pinionbracket_1.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="pinionbracket_1_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/pinionbracket_1.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Wheel_Tyre_Assy_R">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Wheel_Tyre_Assy_R_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Wheel_Tyre_Assy_R.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Wheel_Tyre_Assy_R_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Wheel_Tyre_Assy_R.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="For_Steering_Mount">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="For_Steering_Mount_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/For_Steering_Mount.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="For_Steering_Mount_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/For_Steering_Mount.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="v2">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="v2_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/v2.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="v2_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/v2.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Steering_Wheel">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Steering_Wheel_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Steering_Wheel.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Steering_Wheel_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Steering_Wheel.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Terminal_Block_bracket_assyy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Terminal_Block_bracket_assyy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Terminal_Block_bracket_assyy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Terminal_Block_bracket_assyy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Terminal_Block_bracket_assyy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="fl_arm_ass">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="fl_arm_ass_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/fl_arm_ass.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="fl_arm_ass_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/fl_arm_ass.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="gps_antenna_assy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="gps_antenna_assy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/gps_antenna_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="gps_antenna_assy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/gps_antenna_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="motor_mount_assy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="motor_mount_assy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/motor_mount_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="motor_mount_assy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/motor_mount_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="motor_mount_assy_2">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="motor_mount_assy_2_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/motor_mount_assy_2.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="motor_mount_assy_2_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/motor_mount_assy_2.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="pinionbracket">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="pinionbracket_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/pinionbracket.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="pinionbracket_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/pinionbracket.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="steering_assy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="steering_assy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/steering_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="steering_assy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/steering_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="LV_DMR202DSK703">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="LV_DMR202DSK703_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/LV_DMR202DSK703.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="LV_DMR202DSK703_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/LV_DMR202DSK703.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="HVbox_controller_mount_total">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="HVbox_controller_mount_total_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/HVbox_controller_mount_total.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="HVbox_controller_mount_total_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/HVbox_controller_mount_total.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="push_rod_rear1">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="push_rod_rear1_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/push_rod_rear1.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="push_rod_rear1_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/push_rod_rear1.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Rear_Bracket_2">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Rear_Bracket_2_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Rear_Bracket_2.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Rear_Bracket_2_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Rear_Bracket_2.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="ld_assem">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="ld_assem_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/ld_assem.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="ld_assem_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/ld_assem.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Brake_Mount_assy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Brake_Mount_assy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Brake_Mount_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Brake_Mount_assy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Brake_Mount_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="M8_Spherical_assy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="M8_Spherical_assy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/M8_Spherical_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="M8_Spherical_assy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/M8_Spherical_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="v7_1">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="v7_1_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/v7_1.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="v7_1_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/v7_1.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Rear_Bracket_3">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Rear_Bracket_3_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Rear_Bracket_3.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Rear_Bracket_3_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Rear_Bracket_3.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="fl_arm_ass_R">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="fl_arm_ass_R_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/fl_arm_ass_R.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="fl_arm_ass_R_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/fl_arm_ass_R.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="EV_Controller_Box_cover_final">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="EV_Controller_Box_cover_final_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/EV_Controller_Box_cover_final.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="EV_Controller_Box_cover_final_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/EV_Controller_Box_cover_final.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Inverter_Mount">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Inverter_Mount_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Inverter_Mount.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Inverter_Mount_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Inverter_Mount.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="motor_mount_assy_1">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="motor_mount_assy_1_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/motor_mount_assy_1.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="motor_mount_assy_1_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/motor_mount_assy_1.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="front_bellcrank_topol_assy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="front_bellcrank_topol_assy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/front_bellcrank_topol_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="front_bellcrank_topol_assy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/front_bellcrank_topol_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Front_Bracket">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Front_Bracket_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Front_Bracket.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Front_Bracket_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Front_Bracket.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="JMT_8R_rod_end_assy1">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="JMT_8R_rod_end_assy1_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/JMT_8R_rod_end_assy1.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="JMT_8R_rod_end_assy1_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/JMT_8R_rod_end_assy1.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="KnucleBracket4">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="KnucleBracket4_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/KnucleBracket4.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="KnucleBracket4_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/KnucleBracket4.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Wheel_assy_RL">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Wheel_assy_RL_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Wheel_assy_RL.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Wheel_assy_RL_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Wheel_assy_RL.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="EV_Controller_Box_new_final">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="EV_Controller_Box_new_final_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/EV_Controller_Box_new_final.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="EV_Controller_Box_new_final_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/EV_Controller_Box_new_final.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="HX19_J2_Toggle_assy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="HX19_J2_Toggle_assy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/HX19_J2_Toggle_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="HX19_J2_Toggle_assy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/HX19_J2_Toggle_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="motor_mount_assy_3">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="motor_mount_assy_3_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/motor_mount_assy_3.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="motor_mount_assy_3_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/motor_mount_assy_3.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="E_GZWL8">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="E_GZWL8_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/E_GZWL8.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="E_GZWL8_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/E_GZWL8.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Wheel_Tyre_Assy_R_1">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Wheel_Tyre_Assy_R_1_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Wheel_Tyre_Assy_R_1.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Wheel_Tyre_Assy_R_1_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Wheel_Tyre_Assy_R_1.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="DesktopMount">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="DesktopMount_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/DesktopMount.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="DesktopMount_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/DesktopMount.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Brake_Pedal_Assy_0328">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Brake_Pedal_Assy_0328_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Brake_Pedal_Assy_0328.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Brake_Pedal_Assy_0328_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Brake_Pedal_Assy_0328.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="LV_battery_box">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="LV_battery_box_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/LV_battery_box.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="LV_battery_box_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/LV_battery_box.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="link_10kw">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="link_10kw_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/link_10kw.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="link_10kw_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/link_10kw.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="tie_rod_rear1">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="tie_rod_rear1_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/tie_rod_rear1.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="tie_rod_rear1_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/tie_rod_rear1.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="susp_bracket_assy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="susp_bracket_assy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/susp_bracket_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="susp_bracket_assy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/susp_bracket_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="display_cover">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="display_cover_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/display_cover.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="display_cover_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/display_cover.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Accel_mount_front_assy_2">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Accel_mount_front_assy_2_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Accel_mount_front_assy_2.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Accel_mount_front_assy_2_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Accel_mount_front_assy_2.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="low_battery_mount_250624">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="low_battery_mount_250624_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/low_battery_mount_250624.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="low_battery_mount_250624_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/low_battery_mount_250624.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="vsd_case_assembly">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="vsd_case_assembly_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/vsd_case_assembly.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="vsd_case_assembly_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/vsd_case_assembly.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Ouster_OS_1_Assembly">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Ouster_OS_1_Assembly_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Ouster_OS_1_Assembly.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Ouster_OS_1_Assembly_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Ouster_OS_1_Assembly.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="brake_assy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="brake_assy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/brake_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="brake_assy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/brake_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="GP200_Caliper_Assembly">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="GP200_Caliper_Assembly_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/GP200_Caliper_Assembly.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="GP200_Caliper_Assembly_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/GP200_Caliper_Assembly.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Super400_housing_cover">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Super400_housing_cover_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Super400_housing_cover.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Super400_housing_cover_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Super400_housing_cover.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Push_Switch_assy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Push_Switch_assy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Push_Switch_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Push_Switch_assy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Push_Switch_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="tie_rod_front">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="tie_rod_front_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/tie_rod_front.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="tie_rod_front_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/tie_rod_front.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Dashboard_Frame_assy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Dashboard_Frame_assy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Dashboard_Frame_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Dashboard_Frame_assy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Dashboard_Frame_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Steering_Mount_Rackpinion">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Steering_Mount_Rackpinion_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Steering_Mount_Rackpinion.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Steering_Mount_Rackpinion_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Steering_Mount_Rackpinion.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="ASSEMBLY_1">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="ASSEMBLY_1_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/ASSEMBLY_1.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="ASSEMBLY_1_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/ASSEMBLY_1.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="push_rod_front1">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="push_rod_front1_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/push_rod_front1.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="push_rod_front1_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/push_rod_front1.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Steel_Plate_For_Inc">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Steel_Plate_For_Inc_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Steel_Plate_For_Inc.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Steel_Plate_For_Inc_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Steel_Plate_For_Inc.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="knuckle_rear_ass_R">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="knuckle_rear_ass_R_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/knuckle_rear_ass_R.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="knuckle_rear_ass_R_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/knuckle_rear_ass_R.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="EV_DT_ASSY">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="EV_DT_ASSY_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/EV_DT_ASSY.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="EV_DT_ASSY_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/EV_DT_ASSY.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="ASSEMBLY">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="ASSEMBLY_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/ASSEMBLY.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="ASSEMBLY_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/ASSEMBLY.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="EV_Controller_Box_low_final">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="EV_Controller_Box_low_final_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/EV_Controller_Box_low_final.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="EV_Controller_Box_low_final_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/EV_Controller_Box_low_final.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="A3K1C_QuickConnect">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="A3K1C_QuickConnect_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/A3K1C_QuickConnect.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="A3K1C_QuickConnect_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/A3K1C_QuickConnect.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Wheel_Tyre_Assy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Wheel_Tyre_Assy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Wheel_Tyre_Assy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Wheel_Tyre_Assy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Wheel_Tyre_Assy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="connector_case_assy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="connector_case_assy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/connector_case_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="connector_case_assy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/connector_case_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="knuckle_front_ass">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="knuckle_front_ass_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/knuckle_front_ass.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="knuckle_front_ass_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/knuckle_front_ass.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Wheel_assy_RR">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Wheel_assy_RR_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Wheel_assy_RR.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Wheel_assy_RR_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Wheel_assy_RR.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="EV_HV_Controller_mount_assy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="EV_HV_Controller_mount_assy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/EV_HV_Controller_mount_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="EV_HV_Controller_mount_assy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/EV_HV_Controller_mount_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="EV_Controller_Box_cover_final_2">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="EV_Controller_Box_cover_final_2_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/EV_Controller_Box_cover_final_2.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="EV_Controller_Box_cover_final_2_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/EV_Controller_Box_cover_final_2.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="sideswitch_mount">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="sideswitch_mount_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/sideswitch_mount.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="sideswitch_mount_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/sideswitch_mount.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Wheel_assy_FR">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Wheel_assy_FR_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Wheel_assy_FR.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Wheel_assy_FR_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Wheel_assy_FR.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="knuckle_rear_ass">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="knuckle_rear_ass_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/knuckle_rear_ass.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="knuckle_rear_ass_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/knuckle_rear_ass.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Firewall">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Firewall_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Firewall.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Firewall_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Firewall.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Arduino_box_assy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Arduino_box_assy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Arduino_box_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Arduino_box_assy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Arduino_box_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="E_GZWL8_1">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="E_GZWL8_1_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/E_GZWL8_1.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="E_GZWL8_1_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/E_GZWL8_1.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Desktop_inverter_Mount">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Desktop_inverter_Mount_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Desktop_inverter_Mount.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Desktop_inverter_Mount_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Desktop_inverter_Mount.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="ru_arm_ass">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="ru_arm_ass_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/ru_arm_ass.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="ru_arm_ass_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/ru_arm_ass.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="bumper_real_last_F">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="bumper_real_last_F_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/bumper_real_last_F.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="bumper_real_last_F_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/bumper_real_last_F.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Rear_Bracktet">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Rear_Bracktet_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Rear_Bracktet.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Rear_Bracktet_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Rear_Bracktet.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Front_Bracket_2">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Front_Bracket_2_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Front_Bracket_2.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Front_Bracket_2_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Front_Bracket_2.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Wheel_Tyre_Assy_1">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Wheel_Tyre_Assy_1_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Wheel_Tyre_Assy_1.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Wheel_Tyre_Assy_1_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Wheel_Tyre_Assy_1.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="EV_LV_Box_assy_final">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="EV_LV_Box_assy_final_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/EV_LV_Box_assy_final.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="EV_LV_Box_assy_final_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/EV_LV_Box_assy_final.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Load_Resistor_assy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Load_Resistor_assy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Load_Resistor_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Load_Resistor_assy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Load_Resistor_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="EV_HV_Box_n">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="EV_HV_Box_n_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/EV_HV_Box_n.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="EV_HV_Box_n_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/EV_HV_Box_n.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Terminal_Block_assy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Terminal_Block_assy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Terminal_Block_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Terminal_Block_assy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Terminal_Block_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="LV_box_mount">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="LV_box_mount_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/LV_box_mount.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="LV_box_mount_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/LV_box_mount.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Pedal">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Pedal_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Pedal.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Pedal_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Pedal.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Toggle_assy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Toggle_assy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Toggle_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Toggle_assy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Toggle_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="For_Steering_Mount_assy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="For_Steering_Mount_assy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/For_Steering_Mount_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="For_Steering_Mount_assy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/For_Steering_Mount_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="PedalBox_Assy_Final_0327">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="PedalBox_Assy_Final_0327_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/PedalBox_Assy_Final_0327.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="PedalBox_Assy_Final_0327_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/PedalBox_Assy_Final_0327.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Desktop_bracket_assy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Desktop_bracket_assy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Desktop_bracket_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Desktop_bracket_assy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Desktop_bracket_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Terminal_Block_assy_1">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Terminal_Block_assy_1_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Terminal_Block_assy_1.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Terminal_Block_assy_1_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Terminal_Block_assy_1.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="M6_Rod_end_right_assy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="M6_Rod_end_right_assy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/M6_Rod_end_right_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="M6_Rod_end_right_assy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/M6_Rod_end_right_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="ru_arm_ass_R">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="ru_arm_ass_R_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/ru_arm_ass_R.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="ru_arm_ass_R_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/ru_arm_ass_R.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="GP200_Caliper_Assembly_R">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="GP200_Caliper_Assembly_R_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/GP200_Caliper_Assembly_R.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="GP200_Caliper_Assembly_R_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/GP200_Caliper_Assembly_R.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="side_switch_bracket">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="side_switch_bracket_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/side_switch_bracket.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="side_switch_bracket_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/side_switch_bracket.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="EV_Assy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="EV_Assy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/EV_Assy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="EV_Assy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/EV_Assy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Bottom_Plate">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Bottom_Plate_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Bottom_Plate.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Bottom_Plate_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Bottom_Plate.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Sensor_Bundle">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Sensor_Bundle_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Sensor_Bundle.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Sensor_Bundle_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Sensor_Bundle.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Push_Rotate">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Push_Rotate_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Push_Rotate.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Push_Rotate_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Push_Rotate.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Super400">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Super400_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Super400.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Super400_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Super400.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="DMR_202_assy">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="DMR_202_assy_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/DMR_202_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="DMR_202_assy_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/DMR_202_assy.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <link name="Wheel_assy_FL">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+      </inertial>
+      <visual name="Wheel_assy_FL_visual">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Wheel_assy_FL.stl</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Wheel_assy_FL_collision">
+        <geometry>
+          <mesh>
+            <uri>model://ev_assy/meshes/Wheel_assy_FL.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="joint_EV_Assy_Rear_Bracktet" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>Rear_Bracktet</child>
+    </joint>
+    <joint name="joint_EV_Assy_Rear_Bracket_3" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>Rear_Bracket_3</child>
+    </joint>
+    <joint name="joint_EV_Assy_Rear_Bracket_2" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>Rear_Bracket_2</child>
+    </joint>
+    <joint name="joint_EV_Assy_Front_Bracket_2" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>Front_Bracket_2</child>
+    </joint>
+    <joint name="joint_EV_Assy_Front_Bracket" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>Front_Bracket</child>
+    </joint>
+    <joint name="joint_EV_Assy_tie_rod_rear1" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>tie_rod_rear1</child>
+    </joint>
+    <joint name="joint_EV_Assy_ru_arm_ass" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>ru_arm_ass</child>
+    </joint>
+    <joint name="joint_EV_Assy_rl_arm_ass" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>rl_arm_ass</child>
+    </joint>
+    <joint name="joint_EV_Assy_fu_arm_ass" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>fu_arm_ass</child>
+    </joint>
+    <joint name="joint_EV_Assy_fl_arm_ass" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>fl_arm_ass</child>
+    </joint>
+    <joint name="joint_EV_Assy_fl_arm_ass_R" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>fl_arm_ass_R</child>
+    </joint>
+    <joint name="joint_EV_Assy_ru_arm_ass_R" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>ru_arm_ass_R</child>
+    </joint>
+    <joint name="joint_EV_Assy_Brake_Mount_assy" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>Brake_Mount_assy</child>
+    </joint>
+    <joint name="joint_EV_Assy_steering_assy" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>steering_assy</child>
+    </joint>
+    <joint name="joint_EV_Assy_susp_bracket_assy" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>susp_bracket_assy</child>
+    </joint>
+    <joint name="joint_EV_Assy_front_bellcrank_topol_assy" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>front_bellcrank_topol_assy</child>
+    </joint>
+    <joint name="joint_EV_Assy_rear_susp_bracket_assy" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>rear_susp_bracket_assy</child>
+    </joint>
+    <joint name="joint_EV_Assy_Bell_Rear" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>Bell_Rear</child>
+    </joint>
+    <joint name="joint_EV_Assy_push_rod_front1" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>push_rod_front1</child>
+    </joint>
+    <joint name="joint_EV_Assy_push_rod_rear1" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>push_rod_rear1</child>
+    </joint>
+    <joint name="joint_EV_Assy_EV_DT_ASSY" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>EV_DT_ASSY</child>
+    </joint>
+    <joint name="joint_EV_Assy_tie_rod_front" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>tie_rod_front</child>
+    </joint>
+    <joint name="joint_EV_Assy_Firewall" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>Firewall</child>
+    </joint>
+    <joint name="joint_EV_Assy_Wheel_assy_RL" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>Wheel_assy_RL</child>
+    </joint>
+    <joint name="joint_EV_Assy_Wheel_assy_RR" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>Wheel_assy_RR</child>
+    </joint>
+    <joint name="joint_EV_Assy_Wheel_assy_FR" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>Wheel_assy_FR</child>
+    </joint>
+    <joint name="joint_EV_Assy_Wheel_assy_FL" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>Wheel_assy_FL</child>
+    </joint>
+    <joint name="joint_EV_Assy_Steering_Wheel" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>Steering_Wheel</child>
+    </joint>
+    <joint name="joint_EV_Assy_Steel_Plate_For_Inc" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>Steel_Plate_For_Inc</child>
+    </joint>
+    <joint name="joint_EV_Assy_LV_battery_box" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>LV_battery_box</child>
+    </joint>
+    <joint name="joint_EV_Assy_ld_assem" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>ld_assem</child>
+    </joint>
+    <joint name="joint_EV_Assy_EV_LV_Box_assy_final" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>EV_LV_Box_assy_final</child>
+    </joint>
+    <joint name="joint_EV_Assy_vsd_case_assembly" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>vsd_case_assembly</child>
+    </joint>
+    <joint name="joint_EV_Assy_EV_HV_Controller_mount_assy" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>EV_HV_Controller_mount_assy</child>
+    </joint>
+    <joint name="joint_EV_Assy_Desktop_inverter_Mount" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>Desktop_inverter_Mount</child>
+    </joint>
+    <joint name="joint_EV_Assy_low_battery_mount_250624" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>low_battery_mount_250624</child>
+    </joint>
+    <joint name="joint_EV_Assy_Sensor_Bundle" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>Sensor_Bundle</child>
+    </joint>
+    <joint name="joint_EV_Assy_bumper_real_last_F" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>bumper_real_last_F</child>
+    </joint>
+    <joint name="joint_EV_Assy_bumper_real_last_R" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>bumper_real_last_R</child>
+    </joint>
+    <joint name="joint_EV_Assy_gps_antenna_assy" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>gps_antenna_assy</child>
+    </joint>
+    <joint name="joint_EV_Assy_display_cover" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>display_cover</child>
+    </joint>
+    <joint name="joint_EV_Assy_sideswitch_mount" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>sideswitch_mount</child>
+    </joint>
+    <joint name="joint_EV_Assy_EV_HV_Box_n" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>EV_HV_Box_n</child>
+    </joint>
+    <joint name="joint_EV_Assy_Terminal_Block_bracket_assyy" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>Terminal_Block_bracket_assyy</child>
+    </joint>
+    <joint name="joint_EV_Assy_Bottom_Plate" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>Bottom_Plate</child>
+    </joint>
+    <joint name="joint_EV_Assy_Dashboard_Frame_assy" type="fixed">
+      <parent>EV_Assy</parent>
+      <child>Dashboard_Frame_assy</child>
+    </joint>
+    <joint name="joint_tie_rod_rear1_JMT_8R_rod_end_assy1" type="fixed">
+      <parent>tie_rod_rear1</parent>
+      <child>JMT_8R_rod_end_assy1</child>
+    </joint>
+    <joint name="joint_ru_arm_ass_M6_Rod_end_right_assy" type="fixed">
+      <parent>ru_arm_ass</parent>
+      <child>M6_Rod_end_right_assy</child>
+    </joint>
+    <joint name="joint_ru_arm_ass_M8_Spherical_assy" type="fixed">
+      <parent>ru_arm_ass</parent>
+      <child>M8_Spherical_assy</child>
+    </joint>
+    <joint name="joint_M8_Spherical_assy_M8_Spherical" type="fixed">
+      <parent>M8_Spherical_assy</parent>
+      <child>M8_Spherical</child>
+    </joint>
+    <joint name="joint_rl_arm_ass_M6_Rod_end_right_assy" type="fixed">
+      <parent>rl_arm_ass</parent>
+      <child>M6_Rod_end_right_assy</child>
+    </joint>
+    <joint name="joint_rl_arm_ass_M8_Spherical_assy" type="fixed">
+      <parent>rl_arm_ass</parent>
+      <child>M8_Spherical_assy</child>
+    </joint>
+    <joint name="joint_fu_arm_ass_M8_Spherical_assy" type="fixed">
+      <parent>fu_arm_ass</parent>
+      <child>M8_Spherical_assy</child>
+    </joint>
+    <joint name="joint_fu_arm_ass_M6_Rod_end_right_assy" type="fixed">
+      <parent>fu_arm_ass</parent>
+      <child>M6_Rod_end_right_assy</child>
+    </joint>
+    <joint name="joint_fl_arm_ass_M6_Rod_end_right_assy" type="fixed">
+      <parent>fl_arm_ass</parent>
+      <child>M6_Rod_end_right_assy</child>
+    </joint>
+    <joint name="joint_fl_arm_ass_M8_Spherical_assy" type="fixed">
+      <parent>fl_arm_ass</parent>
+      <child>M8_Spherical_assy</child>
+    </joint>
+    <joint name="joint_fl_arm_ass_R_M6_Rod_end_right_assy" type="fixed">
+      <parent>fl_arm_ass_R</parent>
+      <child>M6_Rod_end_right_assy</child>
+    </joint>
+    <joint name="joint_fl_arm_ass_R_M8_Spherical_assy" type="fixed">
+      <parent>fl_arm_ass_R</parent>
+      <child>M8_Spherical_assy</child>
+    </joint>
+    <joint name="joint_ru_arm_ass_R_M6_Rod_end_right_assy" type="fixed">
+      <parent>ru_arm_ass_R</parent>
+      <child>M6_Rod_end_right_assy</child>
+    </joint>
+    <joint name="joint_ru_arm_ass_R_M8_Spherical_assy" type="fixed">
+      <parent>ru_arm_ass_R</parent>
+      <child>M8_Spherical_assy</child>
+    </joint>
+    <joint name="joint_PedalBox_Assy_Final_0327_Pedal" type="fixed">
+      <parent>PedalBox_Assy_Final_0327</parent>
+      <child>Pedal</child>
+    </joint>
+    <joint name="joint_PedalBox_Assy_Final_0327_Push_Rotate" type="fixed">
+      <parent>PedalBox_Assy_Final_0327</parent>
+      <child>Push_Rotate</child>
+    </joint>
+    <joint name="joint_PedalBox_Assy_Final_0327_Accel_mount_front_assy_2" type="fixed">
+      <parent>PedalBox_Assy_Final_0327</parent>
+      <child>Accel_mount_front_assy_2</child>
+    </joint>
+    <joint name="joint_PedalBox_Assy_Final_0327_brake_assy" type="fixed">
+      <parent>PedalBox_Assy_Final_0327</parent>
+      <child>brake_assy</child>
+    </joint>
+    <joint name="joint_PedalBox_Assy_Final_0327_Brake_Pedal_Assy_0328" type="fixed">
+      <parent>PedalBox_Assy_Final_0327</parent>
+      <child>Brake_Pedal_Assy_0328</child>
+    </joint>
+    <joint name="joint_Brake_Mount_assy_PedalBox_Assy_Final_0327" type="fixed">
+      <parent>Brake_Mount_assy</parent>
+      <child>PedalBox_Assy_Final_0327</child>
+    </joint>
+    <joint name="joint_Brake_Mount_assy_Super400" type="fixed">
+      <parent>Brake_Mount_assy</parent>
+      <child>Super400</child>
+    </joint>
+    <joint name="joint_Brake_Mount_assy_Steering_Mount_Rackpinion" type="fixed">
+      <parent>Brake_Mount_assy</parent>
+      <child>Steering_Mount_Rackpinion</child>
+    </joint>
+    <joint name="joint_Brake_Mount_assy_For_Steering_Mount_assy" type="fixed">
+      <parent>Brake_Mount_assy</parent>
+      <child>For_Steering_Mount_assy</child>
+    </joint>
+    <joint name="joint_Super400_Super400_housing_cover" type="fixed">
+      <parent>Super400</parent>
+      <child>Super400_housing_cover</child>
+    </joint>
+    <joint name="joint_For_Steering_Mount_assy_For_Steering_Mount" type="fixed">
+      <parent>For_Steering_Mount_assy</parent>
+      <child>For_Steering_Mount</child>
+    </joint>
+    <joint name="joint_steering_assy_pinionbracket" type="fixed">
+      <parent>steering_assy</parent>
+      <child>pinionbracket</child>
+    </joint>
+    <joint name="joint_steering_assy_pinionbracket_1" type="fixed">
+      <parent>steering_assy</parent>
+      <child>pinionbracket_1</child>
+    </joint>
+    <joint name="joint_push_rod_front1_JMT_8R_rod_end_assy1" type="fixed">
+      <parent>push_rod_front1</parent>
+      <child>JMT_8R_rod_end_assy1</child>
+    </joint>
+    <joint name="joint_push_rod_rear1_JMT_8R_rod_end_assy1" type="fixed">
+      <parent>push_rod_rear1</parent>
+      <child>JMT_8R_rod_end_assy1</child>
+    </joint>
+    <joint name="joint_EV_DT_ASSY_motor_mount_assy" type="fixed">
+      <parent>EV_DT_ASSY</parent>
+      <child>motor_mount_assy</child>
+    </joint>
+    <joint name="joint_EV_DT_ASSY_motor_mount_assy_1" type="fixed">
+      <parent>EV_DT_ASSY</parent>
+      <child>motor_mount_assy_1</child>
+    </joint>
+    <joint name="joint_EV_DT_ASSY_motor_mount_assy_2" type="fixed">
+      <parent>EV_DT_ASSY</parent>
+      <child>motor_mount_assy_2</child>
+    </joint>
+    <joint name="joint_EV_DT_ASSY_motor_mount_assy_3" type="fixed">
+      <parent>EV_DT_ASSY</parent>
+      <child>motor_mount_assy_3</child>
+    </joint>
+    <joint name="joint_EV_DT_ASSY_link_10kw" type="fixed">
+      <parent>EV_DT_ASSY</parent>
+      <child>link_10kw</child>
+    </joint>
+    <joint name="joint_EV_DT_ASSY_E_GZWL8" type="fixed">
+      <parent>EV_DT_ASSY</parent>
+      <child>E_GZWL8</child>
+    </joint>
+    <joint name="joint_EV_DT_ASSY_E_GZWL8_1" type="fixed">
+      <parent>EV_DT_ASSY</parent>
+      <child>E_GZWL8_1</child>
+    </joint>
+    <joint name="joint_tie_rod_front_JMT_8R_rod_end_assy1" type="fixed">
+      <parent>tie_rod_front</parent>
+      <child>JMT_8R_rod_end_assy1</child>
+    </joint>
+    <joint name="joint_Wheel_assy_RL_Wheel_Tyre_Assy" type="fixed">
+      <parent>Wheel_assy_RL</parent>
+      <child>Wheel_Tyre_Assy</child>
+    </joint>
+    <joint name="joint_Wheel_assy_RL_knuckle_rear_ass" type="fixed">
+      <parent>Wheel_assy_RL</parent>
+      <child>knuckle_rear_ass</child>
+    </joint>
+    <joint name="joint_Wheel_assy_RR_Wheel_Tyre_Assy_R" type="fixed">
+      <parent>Wheel_assy_RR</parent>
+      <child>Wheel_Tyre_Assy_R</child>
+    </joint>
+    <joint name="joint_Wheel_assy_RR_knuckle_rear_ass_R" type="fixed">
+      <parent>Wheel_assy_RR</parent>
+      <child>knuckle_rear_ass_R</child>
+    </joint>
+    <joint name="joint_Wheel_assy_FR_Wheel_Tyre_Assy_R_1" type="fixed">
+      <parent>Wheel_assy_FR</parent>
+      <child>Wheel_Tyre_Assy_R_1</child>
+    </joint>
+    <joint name="joint_Wheel_assy_FR_GP200_Caliper_Assembly_R" type="fixed">
+      <parent>Wheel_assy_FR</parent>
+      <child>GP200_Caliper_Assembly_R</child>
+    </joint>
+    <joint name="joint_Wheel_assy_FL_Wheel_Tyre_Assy_1" type="fixed">
+      <parent>Wheel_assy_FL</parent>
+      <child>Wheel_Tyre_Assy_1</child>
+    </joint>
+    <joint name="joint_Wheel_assy_FL_GP200_Caliper_Assembly" type="fixed">
+      <parent>Wheel_assy_FL</parent>
+      <child>GP200_Caliper_Assembly</child>
+    </joint>
+    <joint name="joint_Wheel_assy_FL_knuckle_front_ass" type="fixed">
+      <parent>Wheel_assy_FL</parent>
+      <child>knuckle_front_ass</child>
+    </joint>
+    <joint name="joint_knuckle_front_ass_knuckle_front_ass_1" type="fixed">
+      <parent>knuckle_front_ass</parent>
+      <child>knuckle_front_ass_1</child>
+    </joint>
+    <joint name="joint_knuckle_front_ass_KnucleBracket4" type="fixed">
+      <parent>knuckle_front_ass</parent>
+      <child>KnucleBracket4</child>
+    </joint>
+    <joint name="joint_EV_LV_Box_assy_final_LV_box_mount" type="fixed">
+      <parent>EV_LV_Box_assy_final</parent>
+      <child>LV_box_mount</child>
+    </joint>
+    <joint name="joint_EV_LV_Box_assy_final_Terminal_Block_assy" type="fixed">
+      <parent>EV_LV_Box_assy_final</parent>
+      <child>Terminal_Block_assy</child>
+    </joint>
+    <joint name="joint_EV_LV_Box_assy_final_LV_DMR202DSK703" type="fixed">
+      <parent>EV_LV_Box_assy_final</parent>
+      <child>LV_DMR202DSK703</child>
+    </joint>
+    <joint name="joint_LV_DMR202DSK703_DMR_202_assy" type="fixed">
+      <parent>LV_DMR202DSK703</parent>
+      <child>DMR_202_assy</child>
+    </joint>
+    <joint name="joint_EV_HV_Controller_mount_assy_HVbox_controller_mount_total" type="fixed">
+      <parent>EV_HV_Controller_mount_assy</parent>
+      <child>HVbox_controller_mount_total</child>
+    </joint>
+    <joint name="joint_EV_HV_Controller_mount_assy_EV_Controller_Box_new_final" type="fixed">
+      <parent>EV_HV_Controller_mount_assy</parent>
+      <child>EV_Controller_Box_new_final</child>
+    </joint>
+    <joint name="joint_EV_Controller_Box_cover_final_EV_Controller_Box_cover_final_2" type="fixed">
+      <parent>EV_Controller_Box_cover_final</parent>
+      <child>EV_Controller_Box_cover_final_2</child>
+    </joint>
+    <joint name="joint_EV_Controller_Box_new_final_EV_Controller_Box_cover_final" type="fixed">
+      <parent>EV_Controller_Box_new_final</parent>
+      <child>EV_Controller_Box_cover_final</child>
+    </joint>
+    <joint name="joint_EV_Controller_Box_new_final_EV_Controller_Box_low_final" type="fixed">
+      <parent>EV_Controller_Box_new_final</parent>
+      <child>EV_Controller_Box_low_final</child>
+    </joint>
+    <joint name="joint_EV_Controller_Box_new_final_Arduino_box_assy" type="fixed">
+      <parent>EV_Controller_Box_new_final</parent>
+      <child>Arduino_box_assy</child>
+    </joint>
+    <joint name="joint_Desktop_inverter_Mount_ch160_case" type="fixed">
+      <parent>Desktop_inverter_Mount</parent>
+      <child>ch160_case</child>
+    </joint>
+    <joint name="joint_Desktop_inverter_Mount_Inverter_Mount" type="fixed">
+      <parent>Desktop_inverter_Mount</parent>
+      <child>Inverter_Mount</child>
+    </joint>
+    <joint name="joint_Desktop_inverter_Mount_Desktop_bracket_assy" type="fixed">
+      <parent>Desktop_inverter_Mount</parent>
+      <child>Desktop_bracket_assy</child>
+    </joint>
+    <joint name="joint_Desktop_bracket_assy_DesktopMount" type="fixed">
+      <parent>Desktop_bracket_assy</parent>
+      <child>DesktopMount</child>
+    </joint>
+    <joint name="joint_Desktop_bracket_assy_FW_OuterBracket" type="fixed">
+      <parent>Desktop_bracket_assy</parent>
+      <child>FW_OuterBracket</child>
+    </joint>
+    <joint name="joint_Desktop_bracket_assy_FW_InnerBracket" type="fixed">
+      <parent>Desktop_bracket_assy</parent>
+      <child>FW_InnerBracket</child>
+    </joint>
+    <joint name="joint_Sensor_Bundle_ASSEMBLY" type="fixed">
+      <parent>Sensor_Bundle</parent>
+      <child>ASSEMBLY</child>
+    </joint>
+    <joint name="joint_Sensor_Bundle_ASSEMBLY_1" type="fixed">
+      <parent>Sensor_Bundle</parent>
+      <child>ASSEMBLY_1</child>
+    </joint>
+    <joint name="joint_Sensor_Bundle_v2" type="fixed">
+      <parent>Sensor_Bundle</parent>
+      <child>v2</child>
+    </joint>
+    <joint name="joint_v7_1_Ouster_OS_1_Assembly" type="fixed">
+      <parent>v7_1</parent>
+      <child>Ouster_OS_1_Assembly</child>
+    </joint>
+    <joint name="joint_v2_v7_1" type="fixed">
+      <parent>v2</parent>
+      <child>v7_1</child>
+    </joint>
+    <joint name="joint_sideswitch_mount_HX19_J2_Toggle_assy" type="fixed">
+      <parent>sideswitch_mount</parent>
+      <child>HX19_J2_Toggle_assy</child>
+    </joint>
+    <joint name="joint_sideswitch_mount_side_switch_bracket" type="fixed">
+      <parent>sideswitch_mount</parent>
+      <child>side_switch_bracket</child>
+    </joint>
+    <joint name="joint_EV_HV_Box_n_A3K1C_QuickConnect" type="fixed">
+      <parent>EV_HV_Box_n</parent>
+      <child>A3K1C_QuickConnect</child>
+    </joint>
+    <joint name="joint_EV_HV_Box_n_connector_case_assy" type="fixed">
+      <parent>EV_HV_Box_n</parent>
+      <child>connector_case_assy</child>
+    </joint>
+    <joint name="joint_EV_HV_Box_n_Load_Resistor_assy" type="fixed">
+      <parent>EV_HV_Box_n</parent>
+      <child>Load_Resistor_assy</child>
+    </joint>
+    <joint name="joint_Terminal_Block_bracket_assyy_Terminal_Block_assy_1" type="fixed">
+      <parent>Terminal_Block_bracket_assyy</parent>
+      <child>Terminal_Block_assy_1</child>
+    </joint>
+    <joint name="joint_Dashboard_assy_Toggle_assy" type="fixed">
+      <parent>Dashboard_assy</parent>
+      <child>Toggle_assy</child>
+    </joint>
+    <joint name="joint_Dashboard_assy_Push_Switch_assy" type="fixed">
+      <parent>Dashboard_assy</parent>
+      <child>Push_Switch_assy</child>
+    </joint>
+    <joint name="joint_Dashboard_assy_HX19_J2_Toggle_assy" type="fixed">
+      <parent>Dashboard_assy</parent>
+      <child>HX19_J2_Toggle_assy</child>
+    </joint>
+    <joint name="joint_Dashboard_Frame_assy_Dashboard_assy" type="fixed">
+      <parent>Dashboard_Frame_assy</parent>
+      <child>Dashboard_assy</child>
+    </joint>
+  </model>
+</sdf>

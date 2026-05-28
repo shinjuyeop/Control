@@ -1,0 +1,10 @@
+23:12:20 **** Incremental Build of configuration Debug for project STM_A_HILS ****
+make -j22 all 
+arm-none-eabi-size  STM_A_HILS.elf 
+   text	   data	    bss	    dec	    hex	filename
+  89960	    272	 128272	 218504	  35588	STM_A_HILS.elf
+Finished building: default.size.stdout
+ 
+
+23:12:20 Build Finished. 0 errors, 0 warnings. (took 70ms)
+
