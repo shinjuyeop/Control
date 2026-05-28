@@ -13,6 +13,7 @@ def generate_launch_description():
         ],
         output='screen'
     )
+
     pid_node = Node(
         package='pid_gazebo',
         executable='pid_gazebo_node',
@@ -35,14 +36,30 @@ def generate_launch_description():
         }],
         output='screen'
     )
+
     bag_record = ExecuteProcess(
         cmd=[
             'ros2', 'bag', 'record',
             '--storage', 'mcap',
+            # ── SILS 토픽 ──
             '/cmd_vel',
             '/odom',
             '/setpoint/rpm',
             '/setpoint/steer_deg',
+            # ── 하드웨어 토픽 (연결 시 자동 수집) ──
+            '/cmd/speed',
+            '/current/speed',
+            '/target/rpm',
+            '/cmd/steer',
+            '/current/steer',
+            '/gear',
+            '/mode',
+            '/aeb',
+            '/estop/status',
+            '/estop/rf',
+            '/pedal',
+            '/brake/target',
+            '/brake/current',
             '-o', f'bags/sils_bag_{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}',
         ],
         output='screen'
