@@ -60,7 +60,7 @@ def generate_launch_description():
             '/pedal',
             '/brake/target',
             '/brake/current',
-            '-o', f'bags/sils_bag_{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}',
+            '-o', f'/home/seo/KAI_26/workspace/Control/pid_gazebo/bags/sils_bag_{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}',
         ],
         output='screen'
     )
