@@ -25,7 +25,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from rcl_interfaces.msg import SetParametersResult
-from std_msgs.msg import Float64, Bool
+from std_msgs.msg import Float64, Bool, UInt8
 
 from .pid_channel import PidChannel
 
@@ -89,6 +89,7 @@ class PidGazeboNode(Node):
         self._odom_received: bool = False
         self._last_sp_t: float = 0.0       # monotonic time of last setpoint
         self._sp_seen: bool = False
+        self._estop = False
 
         hz = self.get_parameter('control_hz').value
         self._dt: float = 1.0 / max(hz, 1.0)
@@ -101,6 +102,8 @@ class PidGazeboNode(Node):
         self.create_subscription(Odometry, odom_t, self._odom_cb, 10)
         self.create_subscription(Float64, rpm_t, self._rpm_cb, 10)
         self.create_subscription(Float64, str_t, self._steer_cb, 10)
+
+        self.create_subscription(UInt8, '/estop/status', self._estop_cb, 10)
 
         # ── publisher ─────────────────────────────────────────────────
         cmd_t = self.get_parameter('cmd_vel_topic').value
@@ -176,11 +179,19 @@ class PidGazeboNode(Node):
         self._last_sp_t = time.monotonic()
         self._sp_seen = True
 
+    def _estop_cb(self, msg: UInt8) -> None:
+        self._estop = (msg.data == 1)
+
     # ──────────────────────────────────────────────────────────────────
     # Control tick
     # ──────────────────────────────────────────────────────────────────
 
     def _tick(self) -> None:
+        if self._estop:
+            self._lon_pid.reset()
+            self._str_pid.reset()
+            self._cmd_pub.publish(Twist())
+            return
         timeout = self.get_parameter('target_timeout_s').value
         fresh = self._sp_seen and (time.monotonic() - self._last_sp_t) < timeout
 
