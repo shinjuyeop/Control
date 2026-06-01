@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 
+# ★ cube-cmake 컴파일러 테스트 링크 오류 방지
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 #
 # This file is generated only once,
 # and is not re-generated if converter is called multiple times.
@@ -24,6 +26,10 @@ set(CMAKE_PROJECT_NAME STM_B)
 # Enable compile command to ease indexing with e.g. clangd
 set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 
+# Core project settings
+project(${CMAKE_PROJECT_NAME})
+message("Build type: " ${CMAKE_BUILD_TYPE})
+
 set(MCU_FLAGS
     -mcpu=cortex-m4
     -mthumb
@@ -35,9 +41,6 @@ set(MCU_FLAGS
 add_compile_options(${MCU_FLAGS})
 add_link_options(${MCU_FLAGS} -Wl,--gc-sections)
 
-# Core project settings
-project(${CMAKE_PROJECT_NAME})
-message("Build type: " ${CMAKE_BUILD_TYPE})
 
 # Enable CMake support for ASM and C languages
 enable_language(C ASM)
