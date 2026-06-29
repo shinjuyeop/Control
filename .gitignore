@@ -53,3 +53,12 @@ analysis/
 *.mcap
 firmware/STM_A_HILS/micro_ros_stm32cubemx_utils/
 micro_ros_stm32cubemx_utils/
+# Large files
+*.stl
+*.STL
+# Build outputs
+firmware/STM_A_HILS/Debug/
+firmware/STM_A_HILS/*.elf
+firmware/STM_A_HILS/*.map
+firmware/STM_A_HILS/*.list
+firmware/.metadata/

@@ -366,13 +366,13 @@ void StartuROS(void *argument)
       &publisher,
       &node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8),
-      "estop/status");
+      "/estop/status");
 
   msg.data = 0;
 
   for(;;)
   {
-      // PB0 읽기 (PULLUP이라 눌리면 LOW → RESET)
+      // PB0 읽기 (PULLUP이라 눌리면 LOW → RESET) ESTOP_DASH_GPIO_Port = GPIOB ESTOP_DASH_Pin = PB0
       GPIO_PinState pin = HAL_GPIO_ReadPin(ESTOP_DASH_GPIO_Port, ESTOP_DASH_Pin);
       msg.data = (pin == GPIO_PIN_RESET) ? 1 : 0;
 

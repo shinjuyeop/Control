@@ -37,6 +37,7 @@ def generate_launch_description():
         output='screen'
     )
 
+    # launch 파일 종료 시 mcap record 함께 종료 
     bag_record = ExecuteProcess(
         cmd=[
             'ros2', 'bag', 'record',
