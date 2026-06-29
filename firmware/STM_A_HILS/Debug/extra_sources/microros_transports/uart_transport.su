@@ -1,4 +1,0 @@
-/home/seo/KAI_26/workspace/Control/firmware/STM_A_HILS/micro_ros_stm32cubemx_utils/extra_sources/microros_transports/uart_transport.c:9:6:cubemx_transport_open	16	static
-/home/seo/KAI_26/workspace/Control/firmware/STM_A_HILS/micro_ros_stm32cubemx_utils/extra_sources/microros_transports/uart_transport.c:13:6:cubemx_transport_close	16	static
-/home/seo/KAI_26/workspace/Control/firmware/STM_A_HILS/micro_ros_stm32cubemx_utils/extra_sources/microros_transports/uart_transport.c:17:8:cubemx_transport_write	32	static
-/home/seo/KAI_26/workspace/Control/firmware/STM_A_HILS/micro_ros_stm32cubemx_utils/extra_sources/microros_transports/uart_transport.c:23:8:cubemx_transport_read	32	static
