@@ -430,7 +430,7 @@ void StartBRx(void *argument)
       uint8_t chk = s_brx_buf[0] ^ s_brx_buf[1] ^ s_brx_buf[2];
       // Checksum이 일치할 때만 반영
       if (chk == s_brx_buf[3])
-        ESTOP_FROM_B = s_brx_buf[2];ㄴ
+        ESTOP_FROM_B = s_brx_buf[2];
     }
     osDelay(10);
   }
