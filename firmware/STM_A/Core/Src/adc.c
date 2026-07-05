@@ -67,7 +67,6 @@ void MX_ADC1_Init(void)
   /* USER CODE END ADC1_Init 2 */
 }
 
-//////////////////////////////////////////////////////////////////////////////////여기서부터 다시 내일...............아졸려
 void HAL_ADC_MspInit(ADC_HandleTypeDef* adcHandle)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
@@ -78,28 +77,29 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* adcHandle)
   /* USER CODE BEGIN ADC1_MspInit 0 */
   /* USER CODE END ADC1_MspInit 0 */
     PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC12;
-    PeriphClkInit.Adc12ClockSelection  = RCC_ADC12CLKSOURCE_SYSCLK;
+    PeriphClkInit.Adc12ClockSelection  = RCC_ADC12CLKSOURCE_SYSCLK; //ADC 클럭원
     if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK) Error_Handler();
-
+    
+    // ADC 클럭원 활성화
     __HAL_RCC_ADC12_CLK_ENABLE();
     __HAL_RCC_GPIOA_CLK_ENABLE();
 
-    GPIO_InitStruct.Pin  = GPIO_PIN_0;
-    GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Pin  = GPIO_PIN_0;          // PA0
+    GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;    // 아날로그 모드 설정
+    GPIO_InitStruct.Pull = GPIO_NOPULL;         // 아날로그 모드 -> 풀업, 풀다운 없음
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-    hdma_adc1.Instance                 = DMA1_Channel5;
-    hdma_adc1.Init.Request             = DMA_REQUEST_ADC1;
-    hdma_adc1.Init.Direction           = DMA_PERIPH_TO_MEMORY;
+    hdma_adc1.Instance                 = DMA1_Channel5;             // DMA1 채널5
+    hdma_adc1.Init.Request             = DMA_REQUEST_ADC1;          
+    hdma_adc1.Init.Direction           = DMA_PERIPH_TO_MEMORY;      // ADC→메모리
     hdma_adc1.Init.PeriphInc           = DMA_PINC_DISABLE;
-    hdma_adc1.Init.MemInc              = DMA_MINC_ENABLE;
-    hdma_adc1.Init.PeriphDataAlignment = DMA_PDATAALIGN_HALFWORD;
+    hdma_adc1.Init.MemInc              = DMA_MINC_ENABLE;           // 메모리 주소 증가
+    hdma_adc1.Init.PeriphDataAlignment = DMA_PDATAALIGN_HALFWORD;   // 16비트
     hdma_adc1.Init.MemDataAlignment    = DMA_MDATAALIGN_HALFWORD;
-    hdma_adc1.Init.Mode                = DMA_CIRCULAR;
+    hdma_adc1.Init.Mode                = DMA_CIRCULAR;              // 순환 모드
     hdma_adc1.Init.Priority            = DMA_PRIORITY_LOW;
     if (HAL_DMA_Init(&hdma_adc1) != HAL_OK) Error_Handler();
-    __HAL_LINKDMA(adcHandle, DMA_Handle, hdma_adc1);
+    __HAL_LINKDMA(adcHandle, DMA_Handle, hdma_adc1);                // ADC <-> DMA 연결
   /* USER CODE BEGIN ADC1_MspInit 1 */
   /* USER CODE END ADC1_MspInit 1 */
   }
