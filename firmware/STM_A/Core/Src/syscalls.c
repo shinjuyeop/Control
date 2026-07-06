@@ -242,3 +242,13 @@ __strong_reference(_kill, kill);
 __strong_reference(_getpid, getpid);
 
 #endif //__PICOLIBC__
+
+/* ── micro-ROS rclc_sleep_ms 요구: usleep stub ─────────────────────────── */
+#include "cmsis_os.h"
+int usleep(unsigned int usec)
+{
+  uint32_t ms = (usec + 999u) / 1000u;
+  if (ms == 0u) ms = 1u;
+  osDelay(ms);
+  return 0;
+}
