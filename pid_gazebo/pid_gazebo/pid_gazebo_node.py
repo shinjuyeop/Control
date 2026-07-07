@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import math
 import time
+import csv
+import os
 
 import rclpy
 from rclpy.node import Node
@@ -55,14 +57,26 @@ class PidGazeboNode(Node):
 
     def __init__(self) -> None:
         super().__init__('pid_gazebo')
+        # MATLAB pid_gains.csv 자동 로드
+        gains_path = os.path.join(os.path.dirname(__file__),'../../../../../../pid_gazebo/pid_analysis/pid_gains.csv')
+        if os.path.exists(gains_path):
+            with open(gains_path) as f:
+                row = next(csv.reader(f))
+                lon_kp_init = float(row[0])
+                lon_ki_init = float(row[1])
+                lon_kd_init = float(row[2])
+            print(f'MATLAB gains loaded: Kp={lon_kp_init} Ki={lon_ki_init} Kd={lon_kd_init}')
+        
+        else:
+            print('pid_gains.csv load failed')
 
         # ── longitudinal PID parameters ──────────────────────────────
-        self.declare_parameter('lon_kp', 0.5)
-        self.declare_parameter('lon_ki', 0.05)
-        self.declare_parameter('lon_kd', 0.02)
+        self.declare_parameter('lon_kp', lon_kp_init)
+        self.declare_parameter('lon_ki', lon_ki_init)
+        self.declare_parameter('lon_kd', lon_kd_init)
         self.declare_parameter('lon_out_max', 3.0)    # [m/s]
         self.declare_parameter('lon_i_limit', 50.0)   # integral windup limit [rpm·s]
-        self.declare_parameter('wheel_radius', 0.4)   # [m]  – used for RPM ↔ m/s
+        self.declare_parameter('wheel_radius', 0.3)   # [m]  – used for RPM ↔ m/s
 
         # ── steering PID parameters ───────────────────────────────────
         self.declare_parameter('str_kp', 1.0)

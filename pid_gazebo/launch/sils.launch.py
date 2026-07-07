@@ -19,9 +19,8 @@ def generate_launch_description():
         executable='pid_gazebo_node',
         parameters=[{
             'wheel_radius': 0.3,
-            'lon_kp': 0.1,
-            'lon_ki': 0.0,
-            'lon_kd': 0.0,
+            'lon_i_limit': 5.0,   # 적분 누적 한계 축소 (50 → 5)
+            'lon_out_max': 1.5,   # 출력 제한 축소 (3.0 → 1.5)
         }],
         output='screen'
     )

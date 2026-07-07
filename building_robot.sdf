@@ -1,0 +1,129 @@
+<?xml version="1.0" ?>
+<sdf version="1.9">
+    <world name="car_world">
+        <physics name="1ms" type="ignored">
+            <max_step_size>0.001</max_step_size>
+            <real_time_factor>1.0</real_time_factor>
+        </physics>
+        <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+        <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+        <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+
+        <light type="directional" name="sun">
+            <cast_shadows>true</cast_shadows>
+            <pose>0 0 10 0 0 0</pose>
+            <diffuse>0.9 0.9 0.9 1</diffuse>
+            <specular>0.3 0.3 0.3 1</specular>
+            <attenuation><range>1000</range><constant>0.9</constant><linear>0.01</linear><quadratic>0.001</quadratic></attenuation>
+            <direction>-0.5 0.1 -0.9</direction>
+        </light>
+
+        <!-- 지면 -->
+        <model name="ground_plane"><static>true</static><link name="link"><collision name="collision"><geometry><plane><normal>0 0 1</normal></plane></geometry></collision><visual name="visual"><geometry><plane><normal>0 0 1</normal><size>200 200</size></plane></geometry><material><ambient>0.2 0.2 0.2 1</ambient><diffuse>0.2 0.2 0.2 1</diffuse></material></visual></link></model>
+
+        <!-- 도로 -->
+        <model name="road"><static>true</static><pose>0 0 0.01 0 0 0</pose><link name="link"><visual name="visual"><geometry><box><size>60 8 0.01</size></box></geometry><material><ambient>0.3 0.3 0.3 1</ambient><diffuse>0.3 0.3 0.3 1</diffuse></material></visual><collision name="collision"><geometry><box><size>60 8 0.01</size></box></geometry></collision></link></model>
+
+        <!-- 중앙선 -->
+        <model name="center_line"><static>true</static><pose>0 0 0.02 0 0 0</pose><link name="link"><visual name="visual"><geometry><box><size>60 0.2 0.01</size></box></geometry><material><ambient>1.0 0.9 0.0 1</ambient><diffuse>1.0 0.9 0.0 1</diffuse></material></visual></link></model>
+
+        <!-- 차선 왼쪽 -->
+        <model name="ll1"><static>true</static><pose>-20 2 0.02 0 0 0</pose><link name="link"><visual name="v"><geometry><box><size>4 0.15 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+        <model name="ll2"><static>true</static><pose>-10 2 0.02 0 0 0</pose><link name="link"><visual name="v"><geometry><box><size>4 0.15 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+        <model name="ll3"><static>true</static><pose>0 2 0.02 0 0 0</pose><link name="link"><visual name="v"><geometry><box><size>4 0.15 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+        <model name="ll4"><static>true</static><pose>10 2 0.02 0 0 0</pose><link name="link"><visual name="v"><geometry><box><size>4 0.15 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+        <model name="ll5"><static>true</static><pose>20 2 0.02 0 0 0</pose><link name="link"><visual name="v"><geometry><box><size>4 0.15 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+
+        <!-- 차선 오른쪽 -->
+        <model name="lr1"><static>true</static><pose>-20 -2 0.02 0 0 0</pose><link name="link"><visual name="v"><geometry><box><size>4 0.15 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+        <model name="lr2"><static>true</static><pose>-10 -2 0.02 0 0 0</pose><link name="link"><visual name="v"><geometry><box><size>4 0.15 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+        <model name="lr3"><static>true</static><pose>0 -2 0.02 0 0 0</pose><link name="link"><visual name="v"><geometry><box><size>4 0.15 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+        <model name="lr4"><static>true</static><pose>10 -2 0.02 0 0 0</pose><link name="link"><visual name="v"><geometry><box><size>4 0.15 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+        <model name="lr5"><static>true</static><pose>20 -2 0.02 0 0 0</pose><link name="link"><visual name="v"><geometry><box><size>4 0.15 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+
+        <!-- 도로 가장자리 -->
+        <model name="edge_l"><static>true</static><pose>0 3.9 0.02 0 0 0</pose><link name="link"><visual name="v"><geometry><box><size>60 0.2 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+        <model name="edge_r"><static>true</static><pose>0 -3.9 0.02 0 0 0</pose><link name="link"><visual name="v"><geometry><box><size>60 0.2 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+
+        <!-- 가드레일 -->
+        <model name="gr_l"><static>true</static><pose>0 5.5 0.5 0 0 0</pose><link name="link"><visual name="v"><geometry><box><size>60 0.2 0.5</size></box></geometry><material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse></material></visual><collision name="c"><geometry><box><size>60 0.2 0.5</size></box></geometry></collision></link></model>
+        <model name="gr_r"><static>true</static><pose>0 -5.5 0.5 0 0 0</pose><link name="link"><visual name="v"><geometry><box><size>60 0.2 0.5</size></box></geometry><material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse></material></visual><collision name="c"><geometry><box><size>60 0.2 0.5</size></box></geometry></collision></link></model>
+
+        <!-- 신호등 -->
+        <model name="tl_pole"><static>true</static><pose>15 4.5 2 0 0 0</pose><link name="link"><visual name="v"><geometry><cylinder><radius>0.1</radius><length>4.0</length></cylinder></geometry><material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material></visual><collision name="c"><geometry><cylinder><radius>0.1</radius><length>4.0</length></cylinder></geometry></collision></link></model>
+        <model name="tl_box"><static>true</static><pose>15 4.5 3.5 0 0 0</pose><link name="link"><visual name="v"><geometry><box><size>0.4 0.4 1.0</size></box></geometry><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual></link></model>
+        <model name="tl_red"><static>true</static><pose>15 4.28 3.8 0 1.5707 0</pose><link name="link"><visual name="v"><geometry><sphere><radius>0.12</radius></sphere></geometry><material><ambient>1 0 0 1</ambient><diffuse>1 0 0 1</diffuse><emissive>1 0 0 1</emissive></material></visual></link></model>
+        <model name="tl_yellow"><static>true</static><pose>15 4.28 3.5 0 1.5707 0</pose><link name="link"><visual name="v"><geometry><sphere><radius>0.12</radius></sphere></geometry><material><ambient>0.3 0.3 0 1</ambient><diffuse>0.3 0.3 0 1</diffuse></material></visual></link></model>
+        <model name="tl_green"><static>true</static><pose>15 4.28 3.2 0 1.5707 0</pose><link name="link"><visual name="v"><geometry><sphere><radius>0.12</radius></sphere></geometry><material><ambient>0 1 0 1</ambient><diffuse>0 1 0 1</diffuse><emissive>0 0.8 0 1</emissive></material></visual></link></model>
+
+        <!-- 표지판 -->
+        <model name="sign_pole"><static>true</static><pose>-15 4.5 1.5 0 0 0</pose><link name="link"><visual name="v"><geometry><cylinder><radius>0.08</radius><length>3.0</length></cylinder></geometry><material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material></visual><collision name="c"><geometry><cylinder><radius>0.08</radius><length>3.0</length></cylinder></geometry></collision></link></model>
+        <model name="sign_board"><static>true</static><pose>-15 4.3 2.8 0 0 0</pose><link name="link"><visual name="v"><geometry><box><size>0.05 0.8 0.8</size></box></geometry><material><ambient>0 0.2 0.8 1</ambient><diffuse>0 0.2 0.8 1</diffuse></material></visual></link></model>
+
+        <!-- ========== 실차 모델 ========== -->
+        <model name="vehicle_blue" canonical_link="chassis">
+            <pose>0 0 0.5 0 0 0</pose>
+            <link name="chassis">
+                <pose>0 0 0.4 0 0 0</pose>
+                <inertial>
+                    <mass>50.0</mass>
+                    <inertia><ixx>5.0</ixx><ixy>0</ixy><ixz>0</ixz><iyy>10.0</iyy><iyz>0</iyz><izz>12.0</izz></inertia>
+                </inertial>
+                <visual name="visual">
+                    <geometry>
+                        <mesh>
+                            <uri>model://ev_assy/meshes/EV_Assy_simplified.stl</uri>
+                            <scale>0.001 0.001 0.001</scale>
+                        </mesh>
+                    </geometry>
+                    <material><ambient>0.2 0.2 0.2 1</ambient><diffuse>0.3 0.3 0.3 1</diffuse><specular>0.5 0.5 0.5 1</specular></material>
+                </visual>
+                <collision name="collision">
+                    <geometry><box><size>2.6 1.2 1.3</size></box></geometry>
+                </collision>
+            </link>
+
+            <link name="left_wheel">
+                <pose>-0.5 0.65 0 -1.5707 0 0</pose>
+                <inertial><mass>2</mass><inertia><ixx>0.1</ixx><ixy>0</ixy><ixz>0</ixz><iyy>0.1</iyy><iyz>0</iyz><izz>0.15</izz></inertia></inertial>
+                <visual name="visual"><geometry><cylinder><radius>0.3</radius><length>0.2</length></cylinder></geometry><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual>
+                <collision name="collision"><geometry><cylinder><radius>0.3</radius><length>0.2</length></cylinder></geometry></collision>
+            </link>
+
+            <link name="right_wheel">
+                <pose>-0.5 -0.65 0 -1.5707 0 0</pose>
+                <inertial><mass>2</mass><inertia><ixx>0.1</ixx><ixy>0</ixy><ixz>0</ixz><iyy>0.1</iyy><iyz>0</iyz><izz>0.15</izz></inertia></inertial>
+                <visual name="visual"><geometry><cylinder><radius>0.3</radius><length>0.2</length></cylinder></geometry><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual>
+                <collision name="collision"><geometry><cylinder><radius>0.3</radius><length>0.2</length></cylinder></geometry></collision>
+            </link>
+
+            <frame name="caster_frame" attached_to="chassis"><pose>1.0 0 -0.1 0 0 0</pose></frame>
+            <link name="caster">
+                <pose relative_to="caster_frame"/>
+                <inertial><mass>1</mass><inertia><ixx>0.016</ixx><ixy>0</ixy><ixz>0</ixz><iyy>0.016</iyy><iyz>0</iyz><izz>0.016</izz></inertia></inertial>
+                <visual name="visual"><geometry><sphere><radius>0.2</radius></sphere></geometry><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual>
+                <collision name="collision"><geometry><sphere><radius>0.2</radius></sphere></geometry></collision>
+            </link>
+
+            <joint name="left_wheel_joint" type="revolute"><pose relative_to="left_wheel"/><parent>chassis</parent><child>left_wheel</child><axis><xyz expressed_in="__model__">0 1 0</xyz><limit><lower>-1.79769e+308</lower><upper>1.79769e+308</upper></limit></axis></joint>
+            <joint name="right_wheel_joint" type="revolute"><pose relative_to="right_wheel"/><parent>chassis</parent><child>right_wheel</child><axis><xyz expressed_in="__model__">0 1 0</xyz><limit><lower>-1.79769e+308</lower><upper>1.79769e+308</upper></limit></axis></joint>
+            <joint name="caster_wheel" type="ball"><parent>chassis</parent><child>caster</child></joint>
+
+            <plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">
+                <left_joint>left_wheel_joint</left_joint>
+                <right_joint>right_wheel_joint</right_joint>
+                <wheel_separation>1.3</wheel_separation>
+                <wheel_radius>0.3</wheel_radius>
+                <odom_publish_frequency>20</odom_publish_frequency>
+                <odom_topic>odom</odom_topic>
+                <topic>cmd_vel</topic>
+            </plugin>
+
+            <plugin filename="gz-sim-triggered-publisher-system" name="gz::sim::systems::TriggeredPublisher"><input type="gz.msgs.Int32" topic="/keyboard/keypress"><match field="data">16777235</match></input><output type="gz.msgs.Twist" topic="/cmd_vel">linear: {x: 0.5}, angular: {z: 0.0}</output></plugin>
+            <plugin filename="gz-sim-triggered-publisher-system" name="gz::sim::systems::TriggeredPublisher"><input type="gz.msgs.Int32" topic="/keyboard/keypress"><match field="data">16777234</match></input><output type="gz.msgs.Twist" topic="/cmd_vel">linear: {x: 0.0}, angular: {z: 0.5}</output></plugin>
+            <plugin filename="gz-sim-triggered-publisher-system" name="gz::sim::systems::TriggeredPublisher"><input type="gz.msgs.Int32" topic="/keyboard/keypress"><match field="data">16777237</match></input><output type="gz.msgs.Twist" topic="/cmd_vel">linear: {x: -0.5}, angular: {z: 0.0}</output></plugin>
+            <plugin filename="gz-sim-triggered-publisher-system" name="gz::sim::systems::TriggeredPublisher"><input type="gz.msgs.Int32" topic="/keyboard/keypress"><match field="data">16777236</match></input><output type="gz.msgs.Twist" topic="/cmd_vel">linear: {x: 0.0}, angular: {z: -0.5}</output></plugin>
+            <plugin filename="gz-sim-triggered-publisher-system" name="gz::sim::systems::TriggeredPublisher"><input type="gz.msgs.Int32" topic="/keyboard/keypress"><match field="data">83</match></input><output type="gz.msgs.Twist" topic="/cmd_vel">linear: {x: 0.0}, angular: {z: 0.0}</output></plugin>
+        </model>
+    </world>
+</sdf>
