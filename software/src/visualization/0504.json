@@ -1,0 +1,203 @@
+{
+  "configById": {
+    "Plot!44yv6gf": {
+      "foxglovePanelTitle": "목표 속도",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/cmd/speed.data",
+          "enabled": true,
+          "color": "#4e98e2",
+          "id": "ebd3d44e-a971-4e31-82bd-caedb0dfd278",
+          "label": ""
+        }
+      ],
+      "yAxisLabel": "km/h",
+      "showYAxisLabels": true,
+      "maxYValue": 40,
+      "minYValue": 0
+    },
+    "Plot!1s027nr": {
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/current/speed.data",
+          "enabled": true,
+          "color": "#4e98e2",
+          "id": "26ca514d-4f53-4d0b-84bb-eeb4d95ebc93"
+        }
+      ],
+      "foxglovePanelTitle": "현재 속도",
+      "minYValue": 0,
+      "maxYValue": 20,
+      "yAxisLabel": "km/h"
+    },
+    "Plot!4b76938": {
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/cmd/steer.data",
+          "enabled": true,
+          "color": "#4e98e2",
+          "id": "d5e305bd-b5c8-44b1-b6bf-4c29568c5cdd"
+        }
+      ]
+    },
+    "Plot!w612t7": {
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/current/str.data",
+          "enabled": true,
+          "color": "#4e98e2",
+          "id": "a236720d-1b93-44cb-ae20-52bd96bd0de9"
+        }
+      ]
+    },
+    "Indicator!1x2iak2": {
+      "path": "/gear.data",
+      "style": "bulb",
+      "fontSize": 36,
+      "fallbackColor": "#f1c40f",
+      "fallbackLabel": "REVERSE",
+      "rules": [
+        {
+          "operator": "=",
+          "rawValue": "0",
+          "color": "#2ecc71",
+          "label": "DRIVE"
+        }
+      ],
+      "foxglovePanelTitle": "gear"
+    },
+    "Indicator!i2w7hf": {
+      "path": "/mode.data",
+      "style": "bulb",
+      "fontSize": 36,
+      "fallbackColor": "#95a5a6",
+      "fallbackLabel": "MANUAL",
+      "rules": [
+        {
+          "operator": "=",
+          "rawValue": "1",
+          "color": "#2ecc71",
+          "label": "AUTO"
+        }
+      ],
+      "foxglovePanelTitle": "mode"
+    },
+    "Indicator!3ttpbo1": {
+      "path": "/estop.data",
+      "style": "bulb",
+      "fontSize": 36,
+      "fallbackColor": "#95a5a6",
+      "fallbackLabel": "NORMAL",
+      "rules": [
+        {
+          "operator": "=",
+          "rawValue": "1",
+          "color": "#e74c3c",
+          "label": "EMERGENCY!"
+        }
+      ],
+      "foxglovePanelTitle": "estop"
+    },
+    "Indicator!1vnbk68": {
+      "path": "/aeb.data",
+      "style": "bulb",
+      "fontSize": 36,
+      "fallbackColor": "#95a5a6",
+      "fallbackLabel": "NORMAL",
+      "rules": [
+        {
+          "operator": "=",
+          "rawValue": "1",
+          "color": "#e74c3c",
+          "label": "EMERGENCY!"
+        }
+      ],
+      "foxglovePanelTitle": "aeb"
+    },
+    "Tab!18ptled": {
+      "activeTabIdx": 0,
+      "tabs": [
+        {
+          "title": "Motor",
+          "layout": {
+            "first": {
+              "first": "Plot!44yv6gf",
+              "second": "Plot!1s027nr",
+              "direction": "column"
+            },
+            "second": {
+              "first": "Plot!4b76938",
+              "second": "Plot!w612t7",
+              "direction": "column"
+            },
+            "direction": "column"
+          }
+        }
+      ]
+    },
+    "Tab!1cfle5t": {
+      "activeTabIdx": 0,
+      "tabs": [
+        {
+          "title": "Status",
+          "layout": {
+            "first": {
+              "first": "Indicator!1x2iak2",
+              "second": "Indicator!i2w7hf",
+              "direction": "row"
+            },
+            "second": {
+              "first": "Indicator!3ttpbo1",
+              "second": "Indicator!1vnbk68",
+              "direction": "row"
+            },
+            "direction": "row"
+          }
+        }
+      ]
+    },
+    "=!3g89kfv": {
+      "zoomLevel": 17,
+      "customTileUrl": "",
+      "disabledTopics": [],
+      "followTopic": "",
+      "followFrame": "",
+      "layer": "satellite",
+      "topicColors": {},
+      "maxNativeZoom": 18,
+      "topicConfig": {
+        "/gps/fix": {
+          "historyMode": "none",
+          "pointSize": 6
+        }
+      },
+      "layers": []
+    },
+    "Parameters!ppa2t3": {}
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": {
+    "speed": 1
+  },
+  "layout": {
+    "first": {
+      "first": "Tab!18ptled",
+      "second": "Tab!1cfle5t",
+      "direction": "column",
+      "splitPercentage": 81.91807719148836
+    },
+    "second": {
+      "first": "map!3g89kfv",
+      "second": "Parameters!ppa2t3",
+      "direction": "column",
+      "splitPercentage": 54.592161151664676
+    },
+    "direction": "row",
+    "splitPercentage": 64.96408619313647
+  }
+}
