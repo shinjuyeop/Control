@@ -3,7 +3,7 @@
 <package format="3">
   <name>control_launch</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>Launch files for Control vehicle stacks.</description>
   <maintainer email="shinjp02@gmail.com">shinjuyeop</maintainer>
   <license>TODO: License declaration</license>
 
