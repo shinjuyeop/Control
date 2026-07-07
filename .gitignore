@@ -63,3 +63,5 @@ firmware/STM_A_HILS/*.map
 firmware/STM_A_HILS/*.list
 firmware/.metadata/
 firmware/STM_A_HILS/.settings/
+
+/setup.bash
