@@ -1,12 +1,15 @@
 import pandas as pd
 import matplotlib.pyplot as plt
-import glob
-import os
+from pathlib import Path
 
-files = sorted(glob.glob('analysis/sils_bag_run_*.csv'))
+PACKAGE_DIR = Path(__file__).resolve().parent
+ANALYSIS_DIR = PACKAGE_DIR / 'analysis'
+PLOTS_DIR = PACKAGE_DIR / 'plots'
+
+files = sorted(ANALYSIS_DIR.glob('sils_bag_run_*.csv'))
 rpm_map = {1:10, 2:10, 3:20, 4:20, 5:30, 6:30, 7:40, 8:40, 9:50, 10:50}
 
-os.makedirs('plots', exist_ok=True)
+PLOTS_DIR.mkdir(exist_ok=True)
 
 for i, path in enumerate(files):
     run_id = i + 1
@@ -28,7 +31,7 @@ for i, path in enumerate(files):
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3)
 
-    save_path = f'plots/step_response_run_{run_id}_rpm{rpm}.png'
+    save_path = PLOTS_DIR / f'step_response_run_{run_id}_rpm{rpm}.png'
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
     plt.close()
     print(f"저장: {save_path}")

@@ -6,20 +6,36 @@ SILS + HILS bag 분석 스크립트
 
 from mcap_ros2.reader import read_ros2_messages
 import pandas as pd
-import glob
 import sys
-import os
+from pathlib import Path
 
-os.makedirs('analysis', exist_ok=True)
+PACKAGE_DIR = Path(__file__).resolve().parent
+ANALYSIS_DIR = PACKAGE_DIR / 'analysis'
+BAGS_DIR = PACKAGE_DIR / 'bags'
 
-# 마지막 bag analyze
-bags = sorted(glob.glob('/home/seo/KAI_26/workspace/Control/pid_gazebo/bags/sils_bag_*/*.mcap'))
-if not bags:
+ANALYSIS_DIR.mkdir(exist_ok=True)
+
+
+def _resolve_bag_path() -> Path | None:
+    if len(sys.argv) > 1:
+        candidate = Path(sys.argv[1]).expanduser().resolve()
+        if candidate.is_file():
+            return candidate
+        if candidate.is_dir():
+            files = sorted(candidate.glob('*.mcap'))
+            return files[-1] if files else None
+        return None
+
+    bags = sorted(BAGS_DIR.glob('sils_bag_*/*.mcap'))
+    return bags[-1] if bags else None
+
+
+bag_path = _resolve_bag_path()
+if bag_path is None:
     print("bag 파일 없음")
     sys.exit(1)
 
-bag_path = bags[-1]
-bag_name = os.path.basename(os.path.dirname(bag_path))
+bag_name = bag_path.parent.name
 print(f"읽는 파일: {bag_path}")
 
 records = {
@@ -42,7 +58,7 @@ records = {
     '/brake/current':   [],
 }
 
-for msg in read_ros2_messages(bag_path):
+for msg in read_ros2_messages(str(bag_path)):
     topic = msg.channel.topic
     t = msg.log_time.timestamp()
     m = msg.ros_msg
@@ -82,7 +98,7 @@ for topic, df in dfs.items():
         continue
     merged = pd.merge_asof(merged, df, on='t', direction='nearest')
 
-out_path = f'analysis/{bag_name}.csv'
+out_path = ANALYSIS_DIR / f'{bag_name}.csv'
 merged.to_csv(out_path, index=False)
 print(f"\nCSV 저장: {out_path}")
 print(f"rows: {len(merged)}, columns: {list(merged.columns)}")

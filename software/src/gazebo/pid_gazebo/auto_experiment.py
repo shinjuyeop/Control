@@ -11,7 +11,7 @@ import time
 import os
 import signal
 import shutil
-import glob
+from pathlib import Path
 
 # 실험 설정
 rpm_list = [10, 10, 20, 20, 30, 30, 40, 40, 50, 50]
@@ -19,10 +19,11 @@ record_duration = 15  # 녹화 시간 (초)
 wait_between = 3      # 회차 간 대기 시간 (초)
 zero_duration = 3     # RPM=0 유지 시간 (초)
 
-WORK_DIR = '/home/junhyeon/workspace/Control/pid_gazebo'
-MATLAB_SCRIPT = '/home/junhyeon/workspace/Control/pid_gazebo/pid_analysis/auto_pid_tuning.m'
-PID_GAINS_PATH = os.path.join(WORK_DIR, 'pid_analysis/pid_gains.csv')
+WORK_DIR = Path(__file__).resolve().parent
+MATLAB_SCRIPT = WORK_DIR / 'pid_analysis' / 'auto_pid_tuning.m'
+PID_GAINS_PATH = WORK_DIR / 'pid_analysis' / 'pid_gains.csv'
 PID_GAINS_DEFAULT = '0.5,0.05,0.02'  # 데이터 수집용 안정적인 기본값
+BAG_DIR = WORK_DIR / 'bags'
 
 print("=== 완전 자동화 실험 시작 ===")
 print(f"총 {len(rpm_list)}회 실험 | 각 {record_duration}초 녹화")
@@ -34,13 +35,13 @@ print("잔존 setpoint_publisher 종료 완료!")
 
 # 기존 실험 데이터 삭제
 print("\n기존 실험 데이터 삭제 중...")
-for folder in glob.glob(os.path.join(WORK_DIR, 'sils_bag_run_*')):
+for folder in BAG_DIR.glob('sils_bag_run_*'):
     shutil.rmtree(folder)
-for csv in glob.glob(os.path.join(WORK_DIR, 'analysis/sils_bag_run_*.csv')):
-    os.remove(csv)
-result_path = os.path.join(WORK_DIR, 'pid_analysis/pid_results.csv')
-if os.path.exists(result_path):
-    os.remove(result_path)
+for csv_path in (WORK_DIR / 'analysis').glob('sils_bag_run_*.csv'):
+    csv_path.unlink()
+result_path = WORK_DIR / 'pid_analysis' / 'pid_results.csv'
+if result_path.exists():
+    result_path.unlink()
 print("기존 실험 데이터 삭제 완료!")
 
 for i, rpm in enumerate(rpm_list):
@@ -54,18 +55,20 @@ for i, rpm in enumerate(rpm_list):
     print(f"pid_gains.csv 기본값으로 리셋: {PID_GAINS_DEFAULT}")
 
     # 2. current_rpm.txt에 rpm 값 저장 (MATLAB에서 읽어감)
-    with open(os.path.join(WORK_DIR, 'current_rpm.txt'), 'w') as f:
+    with open(WORK_DIR / 'current_rpm.txt', 'w') as f:
         f.write(str(rpm))
 
     # 3. 회차 번호로 bag 이름 생성 (절대경로 기준 폴더명)
     bag_name = f'sils_bag_run_{i+1}'
-    bag_abs_path = os.path.join(WORK_DIR, bag_name)
+    bag_abs_path = BAG_DIR / bag_name
+    env = os.environ.copy()
+    env['PID_GAZEBO_BAG_DIR'] = str(BAG_DIR)
+    env['PID_GAZEBO_BAG_NAME'] = bag_name
 
     # 4. launch 실행 (브릿지 + pid노드 + rosbag만)
     proc = subprocess.Popen([
-        'ros2', 'launch', 'pid_gazebo', 'sils.launch.py',
-        f'run_id:={i+1}'
-    ])
+        'ros2', 'launch', 'pid_gazebo', 'sils.launch.py'
+    ], cwd=WORK_DIR, env=env)
 
     # 5. RPM=0 지속 발행 (3초간 → 약 30개 데이터)
     print(f"RPM=0 정지 중... {zero_duration}초 대기")
@@ -104,8 +107,9 @@ for i, rpm in enumerate(rpm_list):
     # 9. analyze_bag.py 자동 실행 → 절대경로로 bag 전달
     print("bag 분석 중...")
     subprocess.run(
-        ['python3', 'analyze_bag.py', bag_abs_path],
-        cwd=WORK_DIR
+        ['python3', 'analyze_bag.py', str(bag_abs_path)],
+        cwd=WORK_DIR,
+        check=True,
     )
     print("CSV 생성 완료!")
 
@@ -114,7 +118,7 @@ for i, rpm in enumerate(rpm_list):
     subprocess.run([
         'matlab', '-nodisplay', '-nosplash', '-nodesktop',
         '-r', f"run('{MATLAB_SCRIPT}'); exit;"
-    ])
+    ], check=True)
     print(f"=== 회차 {i+1} PID 추출 완료 ===")
 
     if i < len(rpm_list) - 1:

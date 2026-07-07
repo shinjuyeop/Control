@@ -2,8 +2,18 @@ from launch import LaunchDescription
 from launch_ros.actions import Node
 from launch.actions import ExecuteProcess
 import datetime
+import os
+from pathlib import Path
 
 def generate_launch_description():
+    bag_root = Path(os.environ.get('PID_GAZEBO_BAG_DIR', Path.cwd() / 'bags')).expanduser()
+    bag_root.mkdir(parents=True, exist_ok=True)
+    bag_name = os.environ.get(
+        'PID_GAZEBO_BAG_NAME',
+        f'sils_bag_{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}',
+    )
+    bag_path = bag_root / bag_name
+
     bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
@@ -60,7 +70,7 @@ def generate_launch_description():
             '/pedal',
             '/brake/target',
             '/brake/current',
-            '-o', f'/home/seo/KAI_26/workspace/Control/pid_gazebo/bags/sils_bag_{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}',
+            '-o', str(bag_path),
         ],
         output='screen'
     )

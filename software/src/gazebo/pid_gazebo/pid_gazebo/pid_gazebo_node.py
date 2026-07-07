@@ -20,7 +20,7 @@ from __future__ import annotations
 import math
 import time
 import csv
-import os
+from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
@@ -58,17 +58,24 @@ class PidGazeboNode(Node):
     def __init__(self) -> None:
         super().__init__('pid_gazebo')
         # MATLAB pid_gains.csv 자동 로드
-        gains_path = os.path.join(os.path.dirname(__file__),'../../../../../../pid_gazebo/pid_analysis/pid_gains.csv')
-        if os.path.exists(gains_path):
-            with open(gains_path) as f:
-                row = next(csv.reader(f))
-                lon_kp_init = float(row[0])
-                lon_ki_init = float(row[1])
-                lon_kd_init = float(row[2])
-            print(f'MATLAB gains loaded: Kp={lon_kp_init} Ki={lon_ki_init} Kd={lon_kd_init}')
-        
+        gains_path = Path(__file__).resolve().parents[1] / 'pid_analysis' / 'pid_gains.csv'
+        lon_kp_init = 0.5
+        lon_ki_init = 0.05
+        lon_kd_init = 0.02
+        if gains_path.exists():
+            try:
+                with open(gains_path) as f:
+                    row = next(csv.reader(f))
+                    lon_kp_init = float(row[0])
+                    lon_ki_init = float(row[1])
+                    lon_kd_init = float(row[2])
+                self.get_logger().info(
+                    f'MATLAB gains loaded: Kp={lon_kp_init} Ki={lon_ki_init} Kd={lon_kd_init}'
+                )
+            except (OSError, StopIteration, ValueError, IndexError) as exc:
+                self.get_logger().warning(f'pid_gains.csv load failed: {exc}')
         else:
-            print('pid_gains.csv load failed')
+            self.get_logger().warning(f'pid_gains.csv not found: {gains_path}')
 
         # ── longitudinal PID parameters ──────────────────────────────
         self.declare_parameter('lon_kp', lon_kp_init)
