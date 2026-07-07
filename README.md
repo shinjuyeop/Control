@@ -11,6 +11,9 @@ Control/
 │   └── STM_B/
 └── software/
     └── src/
+        ├── can_lab/
+        │   ├── teamkai_can_lab/
+        │   └── tests/
         ├── control_launch/
         │   └── launch/
         ├── gazebo/
@@ -29,11 +32,19 @@ Control/
 ## ROS 2 Packages
 
 - `control_launch`: 전체 제어 스택을 묶는 launch 파일을 두는 패키지입니다.
+- `can_lab/teamkai_can_lab`: `vcan` 기반 종방향/횡방향 CAN 테스트용 시뮬레이터입니다.
 - `lateral_ctrl`: 횡방향 제어 노드를 위한 C++ 패키지입니다.
 - `longitudinal_ctrl`: 종방향 제어 노드를 위한 C++ 패키지입니다.
 - `gazebo/pid_gazebo`: Gazebo에서 PID 제어를 단독 테스트하는 Python 패키지입니다.
 - `gazebo/assets`: Gazebo SDF, STL 등 시뮬레이션 리소스를 모아둔 폴더입니다.
 - `visualization`: Foxglove 등 시각화 보조 노드를 위한 Python 패키지입니다.
+
+`can_lab/teamkai_can_lab`는 실제 제어 노드가 CAN으로 내보내는 명령을 로컬 `vcan`에서 확인하기 위한 도구입니다. 종방향 제어는 `vcan0`, 횡방향 제어는 `vcan1`에 연결하는 흐름을 기본으로 둡니다.
+
+```text
+longitudinal_ctrl -> vcan0 -> teamkai_can_lab motor sim
+lateral_ctrl      -> vcan1 -> teamkai_can_lab steering sim
+```
 
 `gazebo/pid_gazebo` 내부는 역할별로 나눕니다.
 
@@ -71,6 +82,18 @@ ros2 launch pid_gazebo sils.launch.py
 ```
 
 추후 실제 차량 제어 스택 launch 파일은 `software/src/control_launch/launch/` 아래에 추가합니다.
+
+CAN lab 시뮬레이터:
+
+```bash
+python3 software/src/can_lab/teamkai_can_lab/teamkai_can_lab.py --motor-iface vcan0 --steer-iface vcan1
+```
+
+GUI 없이 빠르게 확인:
+
+```bash
+python3 software/src/can_lab/teamkai_can_lab/teamkai_can_lab.py --motor-iface vcan0 --steer-iface vcan1 --no-gui --headless-demo --duration 5
+```
 
 ## Generated Data
 
