@@ -24,16 +24,28 @@ ENV/
 build/
 install/
 log/
+logs/
 
 # Rosbag2 기록 파일 (용량 큼)
 *.db3
 *.mcap
 *.bag
+*.sqlite
+*.sqlite3
 
 # SILS 로그 (경로 한정 — 다른 위치의 동명 폴더/파일 오삭제 방지)
+/driving_data/
+/software/bags/
+**/rosbag2_*/
 pid_gazebo/sils_bag_*/
 pid_gazebo/analysis/*.csv
+pid_gazebo/analysis_RUN*_backup/
+pid_gazebo/analysis_run*_backup/
 pid_gazebo/bags/
+pid_gazebo/current_rpm.txt
+pid_gazebo/pid_analysis/*_backup.csv
+pid_gazebo/pid_analysis/pid_results.csv
+pid_gazebo/plots/
 
 ##################################
 # 3) IDE · 편집기 설정
@@ -43,6 +55,7 @@ pid_gazebo/bags/
 .claude/
 *.swp
 *~
+.~lock.*#
 compile_commands.json
 
 ##################################
