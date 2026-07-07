@@ -8,28 +8,42 @@ __pycache__/
 *.pyd
 
 # 빌드·배포 산출물
-build/
 dist/
 *.egg-info/
 *.egg
 
 # 가상환경
-# (당신의 venv_gui 폴더 등)
 .venv/
 venv*/
 env/
 ENV/
 
 ##################################
-# 2) ROS2 (colcon) 빌드 산출물
+# 2) ROS2 (colcon) 빌드 산출물
 ##################################
 build/
 install/
 log/
+logs/
 
 # Rosbag2 기록 파일 (용량 큼)
 *.db3
-# (ROS1이면 *.bag)
+*.mcap
+*.bag
+*.sqlite
+*.sqlite3
+
+# SILS 로그 (경로 한정 — 다른 위치의 동명 폴더/파일 오삭제 방지)
+/driving_data/
+/software/bags/
+**/rosbag2_*/
+software/src/gazebo/pid_gazebo/sils_bag_*/
+software/src/gazebo/pid_gazebo/analysis/*.csv
+software/src/gazebo/pid_gazebo/analysis_RUN*_backup/
+software/src/gazebo/pid_gazebo/analysis_run*_backup/
+software/src/gazebo/pid_gazebo/bags/
+software/src/gazebo/pid_gazebo/current_rpm.txt
+software/src/gazebo/pid_gazebo/plots/
 
 ##################################
 # 3) IDE · 편집기 설정
@@ -39,12 +53,36 @@ log/
 .claude/
 *.swp
 *~
+.~lock.*#
+compile_commands.json
 
 ##################################
-# 4) OS 및 기타 잡파일
+# 4) OS 및 기타 잡파일
 ##################################
 .DS_Store
 Thumbs.db
 ehthumbs.db
 Desktop.ini
-compile_commands.json
+
+##################################
+# 5) 대용량 3D/CAD 파일
+##################################
+*.stl
+*.STL
+
+##################################
+# 6) STM32 펌웨어 빌드 산출물 / IDE 메타데이터
+##################################
+firmware/.metadata/
+firmware/STM_A_HILS/Debug/
+firmware/STM_A_HILS/*.elf
+firmware/STM_A_HILS/*.map
+firmware/STM_A_HILS/*.list
+firmware/STM_A_HILS/.settings/
+
+##################################
+# 7) micro-ROS 유틸리티 (재생성 가능)
+##################################
+firmware/STM_A_HILS/micro_ros_stm32cubemx_utils/
+micro_ros_stm32cubemx_utils/
+/setup.bash

@@ -7,11 +7,13 @@
   */
 /* USER CODE END Header */
 
+/* Includes ------------------------------------------------------------------*/
 #include "FreeRTOS.h"
 #include "task.h"
 #include "main.h"
 #include "cmsis_os.h"
 
+/* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <math.h>
 #include <stdio.h>
@@ -36,78 +38,175 @@ size_t cubemx_transport_read(struct uxrCustomTransport *transport,
                               int timeout, uint8_t *err);
 /* USER CODE END Includes */
 
-/* USER CODE BEGIN Variables */
-static volatile uint8_t s_rf_toggle = 0;
-static uint8_t s_arx_buf[4];
-/* USER CODE END Variables */
+/* Private typedef -----------------------------------------------------------*/
+/* USER CODE BEGIN PTD */
 
-/* ── 태스크 속성 ── */
+/* USER CODE END PTD */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+#define ANG_BRAKE 35 // 제동 각도 [deg] - 실차 기구 검증 후 조정 필요 
+#define ANG_RELEASE 70
+#define BRAKE_STEP_MS 20
+/* USER CODE END PD */
+
+/* Private macro -------------------------------------------------------------*/
+/* USER CODE BEGIN PM */
+
+/* USER CODE END PM */
+
+/* Private variables ---------------------------------------------------------*/
+/* USER CODE BEGIN Variables */
+static volatile uint8_t s_rf_toggle = 0; 
+// static -> 이 파일 안에서만 volatile -> EXT1 Callback 이 값을 바꾸기에 항상 최신 값 유지  
+static uint8_t s_arx_buf[4];
+
+/* micro-ROS 구독 메시지 버퍼 */
+static std_msgs__msg__Float32 s_cmd_msg;
+static std_msgs__msg__Float32 s_cur_msg;
+static std_msgs__msg__UInt8   s_aeb_msg;
+static std_msgs__msg__UInt8   s_gear_msg;
+static std_msgs__msg__UInt8   s_mode_msg;
+
+/* 구독 콜백: 수신값을 전역변수에 반영 */
+static void cb_cmd (const void *m){ COMMAND_SPEED = ((const std_msgs__msg__Float32 *)m)->data; }
+static void cb_cur (const void *m){ CURRENT_SPEED = ((const std_msgs__msg__Float32 *)m)->data; }
+static void cb_aeb (const void *m){ AEB  = ((const std_msgs__msg__UInt8 *)m)->data; }
+static void cb_gear(const void *m){ GEAR = ((const std_msgs__msg__UInt8 *)m)->data; }
+static void cb_mode(const void *m){ MODE = ((const std_msgs__msg__UInt8 *)m)->data; }
+
+/* USER CODE END Variables */
+/* Definitions for Brake */
 osThreadId_t BrakeHandle;
 const osThreadAttr_t Brake_attributes = {
-  .name = "Brake", .priority = (osPriority_t)osPriorityRealtime, .stack_size = 512*4 };
+  .name = "Brake",
+  .priority = (osPriority_t) osPriorityRealtime,
+  .stack_size = 512 * 4
+};
+/* Definitions for EStop */
 osThreadId_t EStopHandle;
 const osThreadAttr_t EStop_attributes = {
-  .name = "EStop", .priority = (osPriority_t)osPriorityHigh,     .stack_size = 256*4 };
+  .name = "EStop",
+  .priority = (osPriority_t) osPriorityHigh,
+  .stack_size = 256 * 4
+};
+/* Definitions for uROS */
 osThreadId_t uROSHandle;
 const osThreadAttr_t uROS_attributes = {
-  .name = "uROS",  .priority = (osPriority_t)osPriorityNormal,   .stack_size = 1280*4 };
+  .name = "uROS",
+  .priority = (osPriority_t) osPriorityNormal,
+  .stack_size = 1280 * 4
+};
+/* Definitions for VESS */
 osThreadId_t VESSHandle;
 const osThreadAttr_t VESS_attributes = {
-  .name = "VESS",  .priority = (osPriority_t)osPriorityBelowNormal, .stack_size = 256*4 };
+  .name = "VESS",
+  .priority = (osPriority_t) osPriorityBelowNormal,
+  .stack_size = 256 * 4
+};
+/* Definitions for Display */
 osThreadId_t DisplayHandle;
 const osThreadAttr_t Display_attributes = {
-  .name = "Display", .priority = (osPriority_t)osPriorityLow,    .stack_size = 512*4 };
+  .name = "Display",
+  .priority = (osPriority_t) osPriorityLow,
+  .stack_size = 512 * 4
+};
+/* Definitions for ARx */
 osThreadId_t ARxHandle;
 const osThreadAttr_t ARx_attributes = {
-  .name = "ARx",   .priority = (osPriority_t)osPriorityAboveNormal, .stack_size = 256*4 };
+  .name = "ARx",
+  .priority = (osPriority_t) osPriorityAboveNormal,
+  .stack_size = 256 * 4
+};
+/* Definitions for ATx */
 osThreadId_t ATxHandle;
 const osThreadAttr_t ATx_attributes = {
-  .name = "ATx",   .priority = (osPriority_t)osPriorityHigh,     .stack_size = 256*4 };
+  .name = "ATx",
+  .priority = (osPriority_t) osPriorityHigh,
+  .stack_size = 256 * 4
+};
 
-void StartBrake(void *argument);   void StartEStop(void *argument);
-void StartuROS(void *argument);    void StartVESS(void *argument);
-void StartDisplay(void *argument); void StartARx(void *argument);
+/* Private function prototypes -----------------------------------------------*/
+/* USER CODE BEGIN FunctionPrototypes */
+
+/* USER CODE END FunctionPrototypes */
+
+void StartBrake(void *argument);
+void StartEStop(void *argument);
+void StartuROS(void *argument);
+void StartVESS(void *argument);
+void StartDisplay(void *argument);
+void StartARx(void *argument);
 void StartATx(void *argument);
 
+void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
+
+/**
+  * @brief  FreeRTOS initialization
+  * @param  None
+  * @retval None
+  */
 void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN Init */
   /* USER CODE END Init */
-  BrakeHandle   = osThreadNew(StartBrake,   NULL, &Brake_attributes);
-  EStopHandle   = osThreadNew(StartEStop,   NULL, &EStop_attributes);
-  uROSHandle    = osThreadNew(StartuROS,    NULL, &uROS_attributes);
-  VESSHandle    = osThreadNew(StartVESS,    NULL, &VESS_attributes);
+
+  /* USER CODE BEGIN RTOS_MUTEX */
+  /* add mutexes, ... */
+  /* USER CODE END RTOS_MUTEX */
+
+  /* USER CODE BEGIN RTOS_SEMAPHORES */
+  /* add semaphores, ... */
+  /* USER CODE END RTOS_SEMAPHORES */
+
+  /* USER CODE BEGIN RTOS_TIMERS */
+  /* start timers, add new ones, ... */
+  /* USER CODE END RTOS_TIMERS */
+
+  /* USER CODE BEGIN RTOS_QUEUES */
+  /* add queues, ... */
+  /* USER CODE END RTOS_QUEUES */
+
+  /* Create the thread(s) */
+  /* creation of Brake */
+  BrakeHandle = osThreadNew(StartBrake, NULL, &Brake_attributes);
+
+  /* creation of EStop */
+  EStopHandle = osThreadNew(StartEStop, NULL, &EStop_attributes);
+
+  /* creation of uROS */
+  uROSHandle = osThreadNew(StartuROS, NULL, &uROS_attributes);
+
+  /* creation of VESS */
+  VESSHandle = osThreadNew(StartVESS, NULL, &VESS_attributes);
+
+  /* creation of Display */
   DisplayHandle = osThreadNew(StartDisplay, NULL, &Display_attributes);
-  ARxHandle     = osThreadNew(StartARx,     NULL, &ARx_attributes);
-  ATxHandle     = osThreadNew(StartATx,     NULL, &ATx_attributes);
+
+  /* creation of ARx */
+  ARxHandle = osThreadNew(StartARx, NULL, &ARx_attributes);
+
+  /* creation of ATx */
+  ATxHandle = osThreadNew(StartATx, NULL, &ATx_attributes);
+
+  /* USER CODE BEGIN RTOS_THREADS */
+  /* add threads, ... */
+  /* USER CODE END RTOS_THREADS */
+
+  /* USER CODE BEGIN RTOS_EVENTS */
+  /* add events, ... */
+  /* USER CODE END RTOS_EVENTS */
+
 }
 
-/* RF EXTI 콜백 (ISR) */
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+/* USER CODE BEGIN Header_StartBrake */
+/**
+  * @brief  Function implementing the Brake thread.
+  * @param  argument: Not used
+  * @retval None
+  */
+/* USER CODE END Header_StartBrake */
+void StartBrake(void *argument)
 {
-  /* USER CODE BEGIN EXTI */
-  /* Pinmap 기준 RF_Remote = PB4. main.h의 ESTOP_BTN_Pin을 PB4로 맞출 것 */
-  if (GPIO_Pin == ESTOP_BTN_Pin)
-    s_rf_toggle ^= 1u;
-  /* USER CODE END EXTI */
-}
-
-/* EStop */
-void StartEStop(void *argument) {
-  /* USER CODE BEGIN StartEStop */
-  for (;;) {
-    ESTOP_RF     = s_rf_toggle;
-    ESTOP_STATUS = ESTOP_RF | AEB | ESTOP_FROM_A;
-    osDelay(10);
-  }
-  /* USER CODE END StartEStop */
-}
-
-/* Brake */
-#define ANG_BRAKE    35
-#define ANG_RELEASE  70
-#define BRAKE_STEP_MS 20
-
-void StartBrake(void *argument) {
   /* USER CODE BEGIN StartBrake */
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
   int cur = ANG_RELEASE, tgt = ANG_RELEASE;
@@ -127,46 +226,33 @@ void StartBrake(void *argument) {
   /* USER CODE END StartBrake */
 }
 
-/* ARx */
-void StartARx(void *argument) {
-  /* USER CODE BEGIN StartARx */
-  extern UART_HandleTypeDef huart1;
-  HAL_UART_Receive_DMA(&huart1, s_arx_buf, 4);
+/* USER CODE BEGIN Header_StartEStop */
+/**
+* @brief Function implementing the EStop thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartEStop */
+void StartEStop(void *argument)
+{
+  /* USER CODE BEGIN StartEStop */
   for (;;) {
-    if (s_arx_buf[0] == 0xAAu && s_arx_buf[1] == 0x01u) {
-      uint8_t chk = s_arx_buf[0] ^ s_arx_buf[1] ^ s_arx_buf[2];
-      if (chk == s_arx_buf[3]) ESTOP_FROM_A = s_arx_buf[2];
-    }
+    ESTOP_RF     = s_rf_toggle;
+    ESTOP_STATUS = ESTOP_RF | AEB | ESTOP_FROM_A;
     osDelay(10);
   }
-  /* USER CODE END StartARx */
+  /* USER CODE END StartEStop */
 }
 
-/* ATx */
-void StartATx(void *argument) {
-  /* USER CODE BEGIN StartATx */
-  extern UART_HandleTypeDef huart1;
-  for (;;) {
-    uint8_t pkt[4];
-    pkt[0] = 0xAAu; pkt[1] = 0x01u;
-    pkt[2] = ESTOP_RF;
-    pkt[3] = pkt[0] ^ pkt[1] ^ pkt[2];
-    HAL_UART_Transmit(&huart1, pkt, 4, 10);
-    osDelay(20);
-  }
-  /* USER CODE END StartATx */
-}
-
-/* uROS */
-static std_msgs__msg__Float32 s_cmd_msg, s_cur_msg;
-static std_msgs__msg__UInt8   s_aeb_msg, s_gear_msg, s_mode_msg;
-static void cb_cmd (const void *m){COMMAND_SPEED=((const std_msgs__msg__Float32*)m)->data;}
-static void cb_cur (const void *m){CURRENT_SPEED=((const std_msgs__msg__Float32*)m)->data;}
-static void cb_aeb (const void *m){AEB =((const std_msgs__msg__UInt8*)m)->data;}
-static void cb_gear(const void *m){GEAR=((const std_msgs__msg__UInt8*)m)->data;}
-static void cb_mode(const void *m){MODE=((const std_msgs__msg__UInt8*)m)->data;}
-
-void StartuROS(void *argument) {
+/* USER CODE BEGIN Header_StartuROS */
+/**
+* @brief Function implementing the uROS thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartuROS */
+void StartuROS(void *argument)
+{
   /* USER CODE BEGIN StartuROS */
   extern UART_HandleTypeDef hlpuart1;
   rmw_uros_set_custom_transport(true,(void*)&hlpuart1,
@@ -205,23 +291,37 @@ void StartuROS(void *argument) {
   /* USER CODE END StartuROS */
 }
 
-/* VESS */
-void StartVESS(void *argument) {
+/* USER CODE BEGIN Header_StartVESS */
+/**
+* @brief Function implementing the VESS thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartVESS */
+void StartVESS(void *argument)
+{
   /* USER CODE BEGIN StartVESS */
-  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
   for (;;) {
     float kmh = CURRENT_SPEED * 3.6f;
     if (kmh < 0.0f) kmh = 0.0f;
     if (kmh > 100.0f) kmh = 100.0f;
     uint32_t pulse = 1600u + (uint32_t)((kmh/100.0f)*400.0f);
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, pulse);
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, pulse);
     osDelay(100);
   }
   /* USER CODE END StartVESS */
 }
 
-/* Display — LCD 드라이버 연동 후 내부 구현 */
-void StartDisplay(void *argument) {
+/* USER CODE BEGIN Header_StartDisplay */
+/**
+* @brief Function implementing the Display thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartDisplay */
+void StartDisplay(void *argument)
+{
   /* USER CODE BEGIN StartDisplay */
   /* TODO: LCD_Init() 호출 후 아래 스니펫으로 채울 것
      char buf[20];
@@ -236,5 +336,51 @@ void StartDisplay(void *argument) {
   /* USER CODE END StartDisplay */
 }
 
+/* USER CODE BEGIN Header_StartARx */
+/**
+* @brief Function implementing the ARx thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartARx */
+void StartARx(void *argument)
+{
+  /* USER CODE BEGIN StartARx */
+  extern UART_HandleTypeDef huart1;
+  HAL_UART_Receive_DMA(&huart1, s_arx_buf, 4);
+  for (;;) {
+    if (s_arx_buf[0] == 0xAAu && s_arx_buf[1] == 0x01u) {
+      uint8_t chk = s_arx_buf[0] ^ s_arx_buf[1] ^ s_arx_buf[2];
+      if (chk == s_arx_buf[3]) ESTOP_FROM_A = s_arx_buf[2];
+    }
+    osDelay(10);
+  }
+  /* USER CODE END StartARx */
+}
+
+/* USER CODE BEGIN Header_StartATx */
+/**
+* @brief Function implementing the ATx thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartATx */
+void StartATx(void *argument)
+{
+  /* USER CODE BEGIN StartATx */
+  extern UART_HandleTypeDef huart1;
+  for (;;) {
+    uint8_t pkt[4];
+    pkt[0] = 0xAAu; pkt[1] = 0x01u;
+    pkt[2] = ESTOP_RF;
+    pkt[3] = pkt[0] ^ pkt[1] ^ pkt[2];
+    HAL_UART_Transmit(&huart1, pkt, 4, 10);
+    osDelay(20);
+  }
+  /* USER CODE END StartATx */
+}
+
+/* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
 /* USER CODE END Application */
+
