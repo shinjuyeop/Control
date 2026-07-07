@@ -48,3 +48,10 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 compile_commands.json
+
+# Rosbag2 기록 파일 (용량 큼)
+*.mcap
+*.bag
+# SILS 로그
+pid_gazebo/sils_bag_*/
+pid_gazebo/analysis/*.csv
