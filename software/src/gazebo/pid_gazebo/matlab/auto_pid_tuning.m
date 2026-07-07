@@ -7,6 +7,7 @@ rpm_input = str2double(fileread(rpm_file));
 fprintf('현재 RPM: %.1f\n', rpm_input);
 % 가장 최근 sils_bag_run_* CSV 자동 선택
 analysis_dir = fullfile(package_dir, 'analysis');
+config_dir = fullfile(package_dir, 'config');
 csv_files = dir(fullfile(analysis_dir, 'sils_bag_run_*.csv'));  % ← 패턴 변경
 if isempty(csv_files)
     error('sils_bag_run_*.csv 파일 없음');
@@ -60,13 +61,13 @@ figure(4)
 step(feedback(L_after, 1))
 title('보상 후 스텝 응답 (폐루프)')
 %% 6. CSV 저장
-save_dir = script_dir;
-mkdir(save_dir);
+mkdir(config_dir);
 gains = [C_after.Kp, C_after.Ki, C_after.Kd];
-writematrix(gains, fullfile(save_dir, 'pid_gains.csv'));
+writematrix(gains, fullfile(config_dir, 'pid_gains.csv'));
 disp('save completion')
 %% 7. 결과 누적 저장
-result_path = fullfile(save_dir, 'pid_results.csv');
+mkdir(analysis_dir);
+result_path = fullfile(analysis_dir, 'pid_results.csv');
 % 헤더 생성 (처음 한 번만)
 if ~isfile(result_path)
     header = {'rpm', 'K', 'zeta', 'wn', 'wc', 'PM', 'Kp', 'Ki', 'Kd'};

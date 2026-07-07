@@ -56,7 +56,7 @@ step(feedback(L_after, 1))
 title('보상 후 스텝 응답 (폐루프)')
 
 %% 6. CSV 저장
-save_dir = script_dir;
+save_dir = fullfile(package_dir, 'config');
 mkdir(save_dir);
 gains = [C_after.Kp, C_after.Ki, C_after.Kd];
 writematrix(gains, fullfile(save_dir, 'pid_gains.csv'));

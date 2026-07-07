@@ -43,8 +43,6 @@ software/src/gazebo/pid_gazebo/analysis_RUN*_backup/
 software/src/gazebo/pid_gazebo/analysis_run*_backup/
 software/src/gazebo/pid_gazebo/bags/
 software/src/gazebo/pid_gazebo/current_rpm.txt
-software/src/gazebo/pid_gazebo/pid_analysis/*_backup.csv
-software/src/gazebo/pid_gazebo/pid_analysis/pid_results.csv
 software/src/gazebo/pid_gazebo/plots/
 
 ##################################

@@ -3,7 +3,7 @@
 완전 자동화 실험 스크립트
 - RPM을 바꿔가며 10회 주행 데이터 자동 녹화
 - 각 회차마다 analyze_bag.py 자동 실행 → CSV 생성
-- MATLAB pid_analysis.m 자동 실행 → PID 파라미터 추출
+- MATLAB 튜닝 스크립트 자동 실행 → PID 파라미터 추출
 """
 
 import subprocess
@@ -19,11 +19,13 @@ record_duration = 15  # 녹화 시간 (초)
 wait_between = 3      # 회차 간 대기 시간 (초)
 zero_duration = 3     # RPM=0 유지 시간 (초)
 
-WORK_DIR = Path(__file__).resolve().parent
-MATLAB_SCRIPT = WORK_DIR / 'pid_analysis' / 'auto_pid_tuning.m'
-PID_GAINS_PATH = WORK_DIR / 'pid_analysis' / 'pid_gains.csv'
+SCRIPT_DIR = Path(__file__).resolve().parent
+WORK_DIR = SCRIPT_DIR.parent
+MATLAB_SCRIPT = WORK_DIR / 'matlab' / 'auto_pid_tuning.m'
+PID_GAINS_PATH = WORK_DIR / 'config' / 'pid_gains.csv'
 PID_GAINS_DEFAULT = '0.5,0.05,0.02'  # 데이터 수집용 안정적인 기본값
 BAG_DIR = WORK_DIR / 'bags'
+ANALYSIS_DIR = WORK_DIR / 'analysis'
 
 print("=== 완전 자동화 실험 시작 ===")
 print(f"총 {len(rpm_list)}회 실험 | 각 {record_duration}초 녹화")
@@ -35,11 +37,14 @@ print("잔존 setpoint_publisher 종료 완료!")
 
 # 기존 실험 데이터 삭제
 print("\n기존 실험 데이터 삭제 중...")
+BAG_DIR.mkdir(exist_ok=True)
+ANALYSIS_DIR.mkdir(exist_ok=True)
+PID_GAINS_PATH.parent.mkdir(exist_ok=True)
 for folder in BAG_DIR.glob('sils_bag_run_*'):
     shutil.rmtree(folder)
-for csv_path in (WORK_DIR / 'analysis').glob('sils_bag_run_*.csv'):
+for csv_path in ANALYSIS_DIR.glob('sils_bag_run_*.csv'):
     csv_path.unlink()
-result_path = WORK_DIR / 'pid_analysis' / 'pid_results.csv'
+result_path = ANALYSIS_DIR / 'pid_results.csv'
 if result_path.exists():
     result_path.unlink()
 print("기존 실험 데이터 삭제 완료!")
@@ -107,13 +112,13 @@ for i, rpm in enumerate(rpm_list):
     # 9. analyze_bag.py 자동 실행 → 절대경로로 bag 전달
     print("bag 분석 중...")
     subprocess.run(
-        ['python3', 'analyze_bag.py', str(bag_abs_path)],
+        ['python3', str(SCRIPT_DIR / 'analyze_bag.py'), str(bag_abs_path)],
         cwd=WORK_DIR,
         check=True,
     )
     print("CSV 생성 완료!")
 
-    # 10. MATLAB pid_analysis.m 자동 실행
+    # 10. MATLAB 튜닝 스크립트 자동 실행
     print("MATLAB PID 튜닝 중...")
     subprocess.run([
         'matlab', '-nodisplay', '-nosplash', '-nodesktop',
@@ -126,4 +131,4 @@ for i, rpm in enumerate(rpm_list):
         time.sleep(wait_between)
 
 print("\n=== 전체 실험 완료! ===")
-print(f"{WORK_DIR}/pid_analysis/pid_results.csv")
+print(f"{ANALYSIS_DIR}/pid_results.csv")

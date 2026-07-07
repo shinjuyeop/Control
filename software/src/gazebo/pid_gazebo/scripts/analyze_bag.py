@@ -9,7 +9,7 @@ import pandas as pd
 import sys
 from pathlib import Path
 
-PACKAGE_DIR = Path(__file__).resolve().parent
+PACKAGE_DIR = Path(__file__).resolve().parents[1]
 ANALYSIS_DIR = PACKAGE_DIR / 'analysis'
 BAGS_DIR = PACKAGE_DIR / 'bags'
 

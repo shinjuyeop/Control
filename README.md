@@ -14,9 +14,13 @@ Control/
         ├── control_launch/
         │   └── launch/
         ├── gazebo/
-        │   ├── gz_ws/
+        │   ├── assets/
         │   └── pid_gazebo/
-        │       └── launch/
+        │       ├── config/
+        │       ├── launch/
+        │       ├── matlab/
+        │       ├── pid_gazebo/
+        │       └── scripts/
         ├── lateral_ctrl/
         ├── longitudinal_ctrl/
         └── visualization/
@@ -28,8 +32,16 @@ Control/
 - `lateral_ctrl`: 횡방향 제어 노드를 위한 C++ 패키지입니다.
 - `longitudinal_ctrl`: 종방향 제어 노드를 위한 C++ 패키지입니다.
 - `gazebo/pid_gazebo`: Gazebo에서 PID 제어를 단독 테스트하는 Python 패키지입니다.
-- `gazebo/gz_ws`: Gazebo SDF, STL 등 시뮬레이션 리소스를 모아둔 폴더입니다.
+- `gazebo/assets`: Gazebo SDF, STL 등 시뮬레이션 리소스를 모아둔 폴더입니다.
 - `visualization`: Foxglove 등 시각화 보조 노드를 위한 Python 패키지입니다.
+
+`gazebo/pid_gazebo` 내부는 역할별로 나눕니다.
+
+- `config/`: PID gain 등 실행 설정 파일을 둡니다.
+- `launch/`: `pid_gazebo` 단독 실행과 SILS 실행 launch 파일을 둡니다.
+- `matlab/`: PID 튜닝용 MATLAB 스크립트를 둡니다.
+- `pid_gazebo/`: 실제 ROS 2 Python 노드 코드를 둡니다.
+- `scripts/`: bag 분석, 자동 실험, plot 생성 같은 개발 보조 스크립트를 둡니다.
 
 ## Build
 

@@ -24,12 +24,25 @@ from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
+from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from rcl_interfaces.msg import SetParametersResult
 from std_msgs.msg import Float64, Bool, UInt8
 
 from .pid_channel import PidChannel
+
+
+def _find_default_gains_path() -> Path | None:
+    source_path = Path(__file__).resolve().parents[1] / 'config' / 'pid_gains.csv'
+    if source_path.exists():
+        return source_path
+
+    try:
+        share_path = Path(get_package_share_directory('pid_gazebo')) / 'config' / 'pid_gains.csv'
+    except PackageNotFoundError:
+        return None
+    return share_path if share_path.exists() else None
 
 
 def _quat_to_yaw(q) -> float:
@@ -58,11 +71,11 @@ class PidGazeboNode(Node):
     def __init__(self) -> None:
         super().__init__('pid_gazebo')
         # MATLAB pid_gains.csv 자동 로드
-        gains_path = Path(__file__).resolve().parents[1] / 'pid_analysis' / 'pid_gains.csv'
+        gains_path = _find_default_gains_path()
         lon_kp_init = 0.5
         lon_ki_init = 0.05
         lon_kd_init = 0.02
-        if gains_path.exists():
+        if gains_path is not None:
             try:
                 with open(gains_path) as f:
                     row = next(csv.reader(f))
@@ -75,7 +88,7 @@ class PidGazeboNode(Node):
             except (OSError, StopIteration, ValueError, IndexError) as exc:
                 self.get_logger().warning(f'pid_gains.csv load failed: {exc}')
         else:
-            self.get_logger().warning(f'pid_gains.csv not found: {gains_path}')
+            self.get_logger().warning('pid_gains.csv not found; using default gains')
 
         # ── longitudinal PID parameters ──────────────────────────────
         self.declare_parameter('lon_kp', lon_kp_init)
