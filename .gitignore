@@ -86,3 +86,15 @@ firmware/STM_A_HILS/.settings/
 firmware/STM_A_HILS/micro_ros_stm32cubemx_utils/
 micro_ros_stm32cubemx_utils/
 /setup.bash
+
+##################################
+# 8) 데이터 및 로그 파일 (추가)
+##################################
+# 프로젝트 내의 어느 폴더에 있든 모든 csv, yaml 파일 제외
+*.csv
+*.yaml
+*.yml
+
+# 만약 pid_gazebo 폴더 안의 내용물을 통째로 제외하고 싶다면 (추천)
+pid_gazebo/analysis/
+pid_gazebo/bags/
