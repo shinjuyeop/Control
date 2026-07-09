@@ -262,6 +262,7 @@ void StartuROS(void *argument)
   rcl_allocator_t alloc = rcl_get_default_allocator();
   rclc_support_t sup; rcl_node_t node;
   rcl_subscription_t sub_cmd,sub_cur,sub_aeb,sub_gear,sub_mode;
+  rcl_publisher_t pub_estop, pub_rf, pub_from_a;
 
   while (rmw_uros_ping_agent(100,1) != RMW_RET_OK) osDelay(500);
 
@@ -279,6 +280,13 @@ void StartuROS(void *argument)
   rclc_subscription_init_default(&sub_mode,&node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs,msg,UInt8),"/mode");
 
+  rclc_publisher_init_default(&pub_estop, &node,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs,msg,UInt8),"/stm_b/estop/status");
+  rclc_publisher_init_default(&pub_rf, &node,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs,msg,UInt8),"/stm_b/estop/rf");
+  rclc_publisher_init_default(&pub_from_a, &node,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs,msg,UInt8),"/stm_b/estop/from_a");
+
   rclc_executor_t exec;
   rclc_executor_init(&exec,&sup.context,5,&alloc);
   rclc_executor_add_subscription(&exec,&sub_cmd, &s_cmd_msg, &cb_cmd, ON_NEW_DATA);
@@ -287,7 +295,16 @@ void StartuROS(void *argument)
   rclc_executor_add_subscription(&exec,&sub_gear,&s_gear_msg,&cb_gear,ON_NEW_DATA);
   rclc_executor_add_subscription(&exec,&sub_mode,&s_mode_msg,&cb_mode,ON_NEW_DATA);
 
-  for(;;){ rclc_executor_spin_some(&exec,RCL_MS_TO_NS(10)); osDelay(10); }
+  for(;;){
+    rclc_executor_spin_some(&exec,RCL_MS_TO_NS(10));
+
+    std_msgs__msg__UInt8 u;
+    u.data = ESTOP_STATUS; rcl_publish(&pub_estop, &u, NULL);
+    u.data = ESTOP_RF;     rcl_publish(&pub_rf, &u, NULL);
+    u.data = ESTOP_FROM_A; rcl_publish(&pub_from_a, &u, NULL);
+
+    osDelay(10);
+  }
   /* USER CODE END StartuROS */
 }
 
@@ -382,5 +399,14 @@ void StartATx(void *argument)
 
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  if (GPIO_Pin == ESTOP_BTN_Pin) {
+    s_rf_toggle = 1u;
+    ESTOP_RF = 1u;
+    ESTOP_STATUS = ESTOP_RF | AEB | ESTOP_FROM_A;
+  }
+}
+
 /* USER CODE END Application */
 
