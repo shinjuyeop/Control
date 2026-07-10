@@ -57,8 +57,9 @@ size_t cubemx_transport_read(struct uxrCustomTransport *transport,
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
-static volatile uint8_t s_rf_toggle = 0; 
-// static -> 이 파일 안에서만 volatile -> EXT1 Callback 이 값을 바꾸기에 항상 최신 값 유지  
+static volatile uint8_t s_rf_toggle = 0;
+// static -> 이 파일 안에서만 volatile -> EXT1 Callback 이 값을 바꾸기에 항상 최신 값 유지
+static volatile uint8_t s_rf_level = 0; // RF(PB4) 실시간 레벨 상태 - 스위치 상태를 그대로 반영 (BTN의 래치와는 분리)
 static uint8_t s_arx_buf[4];
 
 /* micro-ROS 구독 메시지 버퍼 */
@@ -237,7 +238,7 @@ void StartEStop(void *argument)
 {
   /* USER CODE BEGIN StartEStop */
   for (;;) {
-    ESTOP_RF     = s_rf_toggle;
+    ESTOP_RF     = s_rf_toggle | s_rf_level;
     ESTOP_STATUS = ESTOP_RF | AEB | ESTOP_FROM_A;
     osDelay(10);
   }
@@ -403,9 +404,14 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
   if (GPIO_Pin == ESTOP_BTN_Pin) {
     s_rf_toggle = 1u;
-    ESTOP_RF = 1u;
-    ESTOP_STATUS = ESTOP_RF | AEB | ESTOP_FROM_A;
+  } else if (GPIO_Pin == ESTOP_RF_Pin) {
+    /* level-follow: RF switch state mirrors the pin directly (LOW = active, pull-up idle HIGH) */
+    s_rf_level = (HAL_GPIO_ReadPin(ESTOP_RF_GPIO_Port, ESTOP_RF_Pin) == GPIO_PIN_RESET) ? 1u : 0u;
+  } else {
+    return;
   }
+  ESTOP_RF = s_rf_toggle | s_rf_level;
+  ESTOP_STATUS = ESTOP_RF | AEB | ESTOP_FROM_A;
 }
 
 /* USER CODE END Application */
