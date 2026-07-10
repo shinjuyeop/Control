@@ -210,6 +210,7 @@ void StartBrake(void *argument)
 {
   /* USER CODE BEGIN StartBrake */
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
   int cur = ANG_RELEASE, tgt = ANG_RELEASE;
   uint32_t last = 0;
   for (;;) {
@@ -221,6 +222,7 @@ void StartBrake(void *argument)
       else if (cur > tgt) cur--;
       uint32_t pulse = 1000u + (uint32_t)((cur * 1000) / 180);
       __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, pulse);
+      __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, pulse);
     }
     osDelay(5);
   }
