@@ -209,7 +209,6 @@ void MX_FREERTOS_Init(void) {
 void StartBrake(void *argument)
 {
   /* USER CODE BEGIN StartBrake */
-  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
   int cur = ANG_RELEASE, tgt = ANG_RELEASE;
   uint32_t last = 0;
@@ -321,7 +320,7 @@ void StartuROS(void *argument)
 void StartVESS(void *argument)
 {
   /* USER CODE BEGIN StartVESS */
-  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
   for (;;) {
     float kmh = CURRENT_SPEED * 3.6f;
     if (kmh < 0.0f) kmh = 0.0f;
