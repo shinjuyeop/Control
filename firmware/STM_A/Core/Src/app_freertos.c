@@ -8,7 +8,6 @@ STM A의 6개 Task에 대한 로직.
 - BRx     (AboveNormal): STM_B의 RF ESTOP를 UART 수신
 - BTx     (BelowNormal): 물리버튼 ESTOP를 STM_B로 UART 송신
 */
-
 /* USER CODE BEGIN Header */
 /**
   ******************************************************************************
@@ -20,11 +19,13 @@ STM A의 6개 Task에 대한 로직.
   */
 /* USER CODE END Header */
 
+/* Includes ------------------------------------------------------------------*/
 #include "FreeRTOS.h"
 #include "task.h"
 #include "main.h"
 #include "cmsis_os.h"
 
+/* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <math.h>     
 #include "globals.h"
@@ -49,6 +50,22 @@ size_t cubemx_transport_read(struct uxrCustomTransport *transport,
                               int timeout, uint8_t *err);
 /* USER CODE END Includes */
 
+/* Private typedef -----------------------------------------------------------*/
+/* USER CODE BEGIN PTD */
+
+/* USER CODE END PTD */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+
+/* USER CODE END PD */
+
+/* Private macro -------------------------------------------------------------*/
+/* USER CODE BEGIN PM */
+
+/* USER CODE END PM */
+
+/* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
 /* BRx DMA 수신 버퍼 (4바이트 프레임) */
 static uint8_t s_brx_buf[4];
@@ -105,21 +122,9 @@ FreeRTOS 초기화
 main.c에서 스케줄러 시작 전 호출
 */
 
-void MX_FREERTOS_Init(void)
-{
+void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN Init */
-  /* USER CODE END Init */
-
-  // 6개 Task 스레드 생성
-  ControlHandle = osThreadNew(StartControl, NULL, &Control_attributes);
-  InputsHandle  = osThreadNew(StartInputs,  NULL, &Inputs_attributes);
-  MotorRxHandle = osThreadNew(StartMotorRx, NULL, &MotorRx_attributes);
-  uROSHandle    = osThreadNew(StartuROS,    NULL, &uROS_attributes);
-  BRxHandle     = osThreadNew(StartBRx,     NULL, &BRx_attributes);
-  BTxHandle     = osThreadNew(StartBTx,     NULL, &BTx_attributes);
-}
-
-// 모터 상수
+  // 모터 상수
 #define TIRE_DIAM_M    0.47f    // 타이어 지름
 #define GEAR_RATIO     4.60f    // 감속비 (모터 회전 : 바퀴 회전)
 #define RPM_FWD_MAX    4500     // 전진 최대 RPM
@@ -216,9 +221,62 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan,
 /* Task: Control — 모터 제어 (osPriorityRealtime) */
 /* ============================================ */
 
+/* ====================================================== */
+/* Task: Inputs — 페달 + 버튼 + ESTOP 통합 (osPriorityHigh1) */
+/* ====================================================== */
+#define PEDAL_ADC_MIN 200   // 페달 최소 ADC
+#define PEDAL_ADC_MAX 3900  // 페달 최대 ADC
+
+  /* USER CODE END Init */
+
+  /* USER CODE BEGIN RTOS_MUTEX */
+  /* add mutexes, ... */
+  /* USER CODE END RTOS_MUTEX */
+
+  /* USER CODE BEGIN RTOS_SEMAPHORES */
+  /* add semaphores, ... */
+  /* USER CODE END RTOS_SEMAPHORES */
+
+  /* USER CODE BEGIN RTOS_TIMERS */
+  /* start timers, add new ones, ... */
+  /* USER CODE END RTOS_TIMERS */
+
+  /* USER CODE BEGIN RTOS_QUEUES */
+  /* add queues, ... */
+  /* USER CODE END RTOS_QUEUES */
+
+  /* Create the thread(s) */
+  /* creation of Control */
+  // 6개 Task 스레드 생성
+  ControlHandle = osThreadNew(StartControl, NULL, &Control_attributes);
+  InputsHandle  = osThreadNew(StartInputs,  NULL, &Inputs_attributes);
+  MotorRxHandle = osThreadNew(StartMotorRx, NULL, &MotorRx_attributes);
+  uROSHandle    = osThreadNew(StartuROS,    NULL, &uROS_attributes);
+  BRxHandle     = osThreadNew(StartBRx,     NULL, &BRx_attributes);
+  BTxHandle     = osThreadNew(StartBTx,     NULL, &BTx_attributes);
+}
+
+  /* USER CODE BEGIN RTOS_THREADS */
+  /* add threads, ... */
+  /* USER CODE END RTOS_THREADS */
+
+  /* USER CODE BEGIN RTOS_EVENTS */
+  /* add events, ... */
+  /* USER CODE END RTOS_EVENTS */
+
+}
+
+/* USER CODE BEGIN Header_StartControl */
+/**
+  * @brief  Function implementing the Control thread.
+  * @param  argument: Not used
+  * @retval None
+  */
+/* USER CODE END Header_StartControl */
 void StartControl(void *argument)
 {
   /* USER CODE BEGIN StartControl */
+
   /* FDCAN 필터 설정 -> 0x1801D0EF만 FIFO0으로 받도록 설정 */
   FDCAN_FilterTypeDef f;
   f.IdType       = FDCAN_EXTENDED_ID;
@@ -260,17 +318,20 @@ void StartControl(void *argument)
   /* USER CODE END StartControl */
 }
 
-/* ====================================================== */
-/* Task: Inputs — 페달 + 버튼 + ESTOP 통합 (osPriorityHigh1) */
-/* ====================================================== */
-#define PEDAL_ADC_MIN 200   // 페달 최소 ADC
-#define PEDAL_ADC_MAX 3900  // 페달 최대 ADC
-
+/* USER CODE BEGIN Header_StartInputs */
+/**
+* @brief Function implementing the Inputs thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartInputs */
 void StartInputs(void *argument)
 {
   /* USER CODE BEGIN StartInputs */
   for (;;)
   {
+    HAL_GPIO_TogglePin(LED2_GPIO_PORT, LED2_PIN); // TASK 먹통 확인 위한 LED 디버깅
+
     /* 페달 ADC 8회 평균 */
     uint32_t sum = 0;
     for (int i = 0; i < 8; i++) {
@@ -304,15 +365,24 @@ void StartInputs(void *argument)
     // ESTOP 전체 통합
     ESTOP_STATUS = AEB | ESTOP_DASHBOARD | ESTOP_SIDE | ESTOP_FROM_B;
 
-    osDelay(10);
+    osDelay(50); // LED 확인 위해 주기 느리게 했음. 
   }
   /* USER CODE END StartInputs */
 }
+
+/* USER CODE BEGIN Header_StartMotorRx */
+/**
+* @brief Function implementing the MotorRx thread.
+* @param argument: Not used
+* @retval None
+*/
 
 /* ========================================================== */
 /* Task: MotorRx — Rx는 콜백 처리, 태스크 최소화 (osPriorityHigh2) */
 /* 수신은 콜백이 하므로 대기만 수행*/
 /* ========================================================== */
+
+/* USER CODE END Header_StartMotorRx */
 void StartMotorRx(void *argument)
 {
   /* USER CODE BEGIN StartMotorRx */
@@ -320,25 +390,33 @@ void StartMotorRx(void *argument)
   /* USER CODE END StartMotorRx */
 }
 
-/* ============================================ */
-/* Task: uROS — PC 양방향 통신 (osPriorityNormal) */
-/* ============================================ */
-/* 구독 메시지 저장 버퍼*/
-static std_msgs__msg__Float32 s_cmd_msg;
-static std_msgs__msg__UInt8   s_aeb_msg;
-
-/* uROS Callback : 전역변수 저장 */
-// /cmd/speed -> COMMAND_SPEED
-static void cb_cmd(const void *m)
-{ COMMAND_SPEED = ((const std_msgs__msg__Float32 *)m)->data; }
-
-// /aeb -> AEB
-static void cb_aeb(const void *m)
-{ AEB = ((const std_msgs__msg__UInt8 *)m)->data; }
-
+/* USER CODE BEGIN Header_StartuROS */
+/**
+* @brief Function implementing the uROS thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartuROS */
 void StartuROS(void *argument)
 {
   /* USER CODE BEGIN StartuROS */
+
+  /* ============================================ */
+  /* Task: uROS — PC 양방향 통신 (osPriorityNormal) */
+  /* ============================================ */
+  /* 구독 메시지 저장 버퍼*/
+  static std_msgs__msg__Float32 s_cmd_msg;
+  static std_msgs__msg__UInt8   s_aeb_msg;
+
+  /* uROS Callback : 전역변수 저장 */
+  // /cmd/speed -> COMMAND_SPEED
+  static void cb_cmd(const void *m)
+  { COMMAND_SPEED = ((const std_msgs__msg__Float32 *)m)->data; }
+
+  // /aeb -> AEB
+  static void cb_aeb(const void *m)
+  { AEB = ((const std_msgs__msg__UInt8 *)m)->data; }
+
   extern UART_HandleTypeDef hlpuart1; // uROS UART
 
   // uROS가 LPUAR1으로 통신하도록 transport 등록
@@ -363,9 +441,19 @@ void StartuROS(void *argument)
   while (rmw_uros_ping_agent(100, 1) != RMW_RET_OK)
     osDelay(500);
   
-    // 노드 생성
-  rclc_support_init(&sup, 0, NULL, &alloc);
-  rclc_node_init_default(&node, "stm_a_node", "", &sup);
+  // 노드 생성 순서 바껴야된다는데 ? 반드시 node 생성 first 이후 support sup 이 빈 상태에서 노드 생성 불가 
+  // rclc_support_init(&sup, 0, NULL, &alloc);
+  // rclc_node_init_default(&node, "stm_a_node", "", &sup);
+
+  // ✨ [수정] 올바른 순서: Support 초기화 -> Node 초기화
+  if (rclc_support_init(&sup, 0, NULL, &alloc) != RCL_RET_OK) {
+  // 여기에 걸리면 초기화 실패 (디버깅용 브레이크포인트 지정 추천)
+    for(;;); 
+  }
+  
+  if (rclc_node_init_default(&node, "stm_a_node", "", &sup) != RCL_RET_OK) {
+    for(;;);
+  }
 
   // Subscriber 2개 초기화
   rclc_subscription_init_default(&sub_cmd, &node,
@@ -411,9 +499,17 @@ void StartuROS(void *argument)
   /* USER CODE END StartuROS */
 }
 
+/* USER CODE BEGIN Header_StartBRx */
+/**
+* @brief Function implementing the BRx thread.
+* @param argument: Not used
+* @retval None
+*/
+
 /* ========================================================= */ 
 /* Task: BRx — STM_B -> A 수신 (RF 상태)  (osPriorityAboveNormal) */
 /* ========================================================= */
+/* USER CODE END Header_StartBRx */
 void StartBRx(void *argument)
 {
   /* USER CODE BEGIN StartBRx */
@@ -437,9 +533,17 @@ void StartBRx(void *argument)
   /* USER CODE END StartBRx */
 }
 
+/* USER CODE BEGIN Header_StartBTx */
+/**
+* @brief Function implementing the BTx thread.
+* @param argument: Not used
+* @retval None
+*/
+
 /* ================================================================ */ 
 /* Task: BTx — A -> STM_B 송신 (물리버튼 2개)  (osPriorityBelowNormal) */
 /* ================================================================ */
+/* USER CODE END Header_StartBTx */
 void StartBTx(void *argument)
 {
   /* USER CODE BEGIN StartBTx */
@@ -460,5 +564,7 @@ void StartBTx(void *argument)
   /* USER CODE END StartBTx */
 }
 
+/* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
 /* USER CODE END Application */
+
