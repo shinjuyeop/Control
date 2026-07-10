@@ -62,6 +62,10 @@ void Error_Handler(void);
 #define ESTOP_BTN_Pin GPIO_PIN_0
 #define ESTOP_BTN_GPIO_Port GPIOC
 #define ESTOP_BTN_EXTI_IRQn EXTI0_IRQn
+#define uROS_TX_Pin GPIO_PIN_2
+#define uROS_TX_GPIO_Port GPIOA
+#define uROS_RX_Pin GPIO_PIN_3
+#define uROS_RX_GPIO_Port GPIOA
 #define LCD_CS_Pin GPIO_PIN_0
 #define LCD_CS_GPIO_Port GPIOB
 #define LCD_RST_Pin GPIO_PIN_1
@@ -70,6 +74,9 @@ void Error_Handler(void);
 #define LCD_DC_GPIO_Port GPIOB
 #define LCD_BL_Pin GPIO_PIN_10
 #define LCD_BL_GPIO_Port GPIOB
+#define ESTOP_RF_Pin GPIO_PIN_4
+#define ESTOP_RF_GPIO_Port GPIOB
+#define ESTOP_RF_EXTI_IRQn EXTI4_IRQn
 
 /* USER CODE BEGIN Private defines */
 
