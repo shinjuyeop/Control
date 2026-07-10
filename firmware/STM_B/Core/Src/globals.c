@@ -3,6 +3,8 @@
 * 전역변수 초기값 선언
 */
 
+#include <stdint.h>
+
  volatile float   CURRENT_SPEED = 0.0f; // 현재 속도(m/s) / write : uROS / read : VESS, Display
  volatile float   COMMAND_SPEED = 0.0f; // 목표 속도(m/s) / write : uROS / read : (미사용)
  
