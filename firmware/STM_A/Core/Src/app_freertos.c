@@ -220,8 +220,8 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan,
 /* ====================================================== */
 /* Task: Inputs — 페달 + 버튼 + ESTOP 통합 (osPriorityHigh1) */
 /* ====================================================== */
-#define PEDAL_ADC_MIN 200   // 페달 최소 ADC
-#define PEDAL_ADC_MAX 3900  // 페달 최대 ADC
+#define PEDAL_ADC_MIN 546   // 페달 최소 ADC (released, 440mV)
+#define PEDAL_ADC_MAX 2730  // 페달 최대 ADC (pressed, 2.2V)
 
 /* uROS 구독 콜백 (StartuROS 태스크에서 사용, 파일 스코프로 이동) */
 // /cmd/speed -> COMMAND_SPEED
