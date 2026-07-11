@@ -93,7 +93,6 @@ void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef* fdcanHandle)
     PeriphClkInit.FdcanClockSelection = RCC_FDCANCLKSOURCE_PCLK1;
     if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)      // FDCAN 클럭원 = PCLK1
     {
-    {
       Error_Handler();
     }
 
