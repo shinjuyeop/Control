@@ -133,10 +133,7 @@ void StartBTx     (void *argument);
 FreeRTOS 초기화
 main.c에서 스케줄러 시작 전 호출
 */
-
-void MX_FREERTOS_Init(void) {
-  /* USER CODE BEGIN Init */
-  // 모터 상수
+// 모터 상수
 #define TIRE_DIAM_M    0.47f    // 타이어 지름
 #define GEAR_RATIO     4.60f    // 감속비 (모터 회전 : 바퀴 회전)
 #define RPM_FWD_MAX    4500     // 전진 최대 RPM
