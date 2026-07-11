@@ -39,6 +39,7 @@ STM A의 6개 Task에 대한 로직.
 #include <rclc/executor.h>
 #include <std_msgs/msg/float32.h>
 #include <std_msgs/msg/u_int8.h>
+#include <std_msgs/msg/int32.h>
 #include "rmw_microros/rmw_microros.h"
 
 bool cubemx_transport_open(struct uxrCustomTransport *transport);
@@ -69,6 +70,8 @@ size_t cubemx_transport_read(struct uxrCustomTransport *transport,
 /* USER CODE BEGIN Variables */
 /* BRx DMA 수신 버퍼 (4바이트 프레임) */
 static uint8_t s_brx_buf[4];
+/* TEMP DEBUG: 클램핑 전 raw ADC 값 저장 (StartInputs가 쓰고, StartuROS가 읽어서 발행) */
+static volatile int32_t s_pedal_raw_dbg = 0;
 /* USER CODE END Variables */
 
 /* ── 태스크 속성 ── */
@@ -354,6 +357,8 @@ void StartInputs(void *argument)
       sum += HAL_ADC_GetValue(&hadc1);
     }
     int raw = (int)(sum / 8u);
+    // TEMP DEBUG: 클램핑 전 raw 값을 그대로 저장 (디버깅 끝나면 이 줄 삭제)
+    s_pedal_raw_dbg = (int32_t)raw;
     // 데드밴드 클램핑 (무반응 구간, 유격감안)
     if (raw < PEDAL_ADC_MIN) raw = PEDAL_ADC_MIN;
     if (raw > PEDAL_ADC_MAX) raw = PEDAL_ADC_MAX;
@@ -441,6 +446,8 @@ void StartuROS(void *argument)
   rcl_subscription_t sub_cmd, sub_aeb;
   // Publisher 생성
   rcl_publisher_t    pub_spd, pub_estop, pub_gear, pub_mode;
+  rcl_publisher_t    pub_dbg_pedal;       // 변환된 페달값
+  rcl_publisher_t    pub_dbg_pedal_raw;   // 변환전 페달값
   
   // PC와 연결될 때까지 0.5초 간격으로 ping (???)
   while (rmw_uros_ping_agent(100, 1) != RMW_RET_OK)
@@ -475,6 +482,11 @@ void StartuROS(void *argument)
       ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8), "/gear");
   rclc_publisher_init_default(&pub_mode, &node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8), "/mode");
+  // TEMP DEBUG: pedal debug
+  rclc_publisher_init_default(&pub_dbg_pedal, &node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8), "/debug/pedal");
+  rclc_publisher_init_default(&pub_dbg_pedal_raw, &node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32), "/debug/pedal_raw");
 
   // Subscriber 콜백 관리
   rclc_executor_t exec;
@@ -498,6 +510,10 @@ void StartuROS(void *argument)
     u.data = ESTOP_STATUS; rcl_publish(&pub_estop, &u, NULL);
     u.data = GEAR;         rcl_publish(&pub_gear,  &u, NULL);
     u.data = MODE;         rcl_publish(&pub_mode,  &u, NULL);
+    u.data = PEDAL;        rcl_publish(&pub_dbg_pedal, &u, NULL);  // TEMP DEBUG: 삭제
+
+    std_msgs__msg__Int32 ri = { .data = s_pedal_raw_dbg };
+    rcl_publish(&pub_dbg_pedal_raw, &ri, NULL);
 
     osDelay(10);
   }
