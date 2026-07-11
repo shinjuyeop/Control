@@ -117,6 +117,15 @@ void StartuROS    (void *argument);
 void StartBRx     (void *argument);
 void StartBTx     (void *argument);
 
+/* ======================================================= */
+/* FDCAN CAN Tx (EZkontrol J1939)
+ *   CAN ID : 0x0C01EFD0 (Extended)
+ *   data[0-1]: 전류 리밋  uint16, offset -3200A, 0.1A/bit
+ *   data[2-3]: 목표 RPM   uint16, offset -32000,  1rpm/bit
+ *   data[4]  : 0x03 (CTRL_RUN|CTRL_SPEED)
+ *   data[7]  : life counter (프레임마다 증가) */
+ /* ======================================================= */
+
 /* 
 FreeRTOS 초기화
 main.c에서 스케줄러 시작 전 호출
@@ -130,15 +139,6 @@ void MX_FREERTOS_Init(void) {
 #define RPM_FWD_MAX    4500     // 전진 최대 RPM
 #define RPM_REV_MAX    1500     // 후진 최대 RPM
 #define PHASE_LIMIT_A  300.0f   // 전류 Limit = 300A
-
-/* ======================================================= */
-/* FDCAN CAN Tx (EZkontrol J1939)
- *   CAN ID : 0x0C01EFD0 (Extended)
- *   data[0-1]: 전류 리밋  uint16, offset -3200A, 0.1A/bit
- *   data[2-3]: 목표 RPM   uint16, offset -32000,  1rpm/bit
- *   data[4]  : 0x03 (CTRL_RUN|CTRL_SPEED)
- *   data[7]  : life counter (프레임마다 증가) */
- /* ======================================================= */
 
 static uint8_t s_life = 0;  // life counter (0~255)
 
@@ -217,15 +217,30 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan,
   }
 }
 
-/* ============================================ */
-/* Task: Control — 모터 제어 (osPriorityRealtime) */
-/* ============================================ */
-
 /* ====================================================== */
 /* Task: Inputs — 페달 + 버튼 + ESTOP 통합 (osPriorityHigh1) */
 /* ====================================================== */
 #define PEDAL_ADC_MIN 200   // 페달 최소 ADC
 #define PEDAL_ADC_MAX 3900  // 페달 최대 ADC
+
+/* uROS 구독 콜백 (StartuROS 태스크에서 사용, 파일 스코프로 이동) */
+// /cmd/speed -> COMMAND_SPEED
+static void cb_cmd(const void *m)
+{ COMMAND_SPEED = ((const std_msgs__msg__Float32 *)m)->data; }
+
+// /aeb -> AEB
+static void cb_aeb(const void *m)
+{ AEB = ((const std_msgs__msg__UInt8 *)m)->data; }
+
+/* 
+FreeRTOS 초기화
+main.c에서 스케줄러 시작 전 호출
+*/
+
+void MX_FREERTOS_Init(void) {
+  /* USER CODE BEGIN Init */
+
+  /* Task: Control — 모터 제어 (osPriorityRealtime) */
 
   /* USER CODE END Init */
 
@@ -254,7 +269,6 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan,
   uROSHandle    = osThreadNew(StartuROS,    NULL, &uROS_attributes);
   BRxHandle     = osThreadNew(StartBRx,     NULL, &BRx_attributes);
   BTxHandle     = osThreadNew(StartBTx,     NULL, &BTx_attributes);
-}
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -407,15 +421,6 @@ void StartuROS(void *argument)
   /* 구독 메시지 저장 버퍼*/
   static std_msgs__msg__Float32 s_cmd_msg;
   static std_msgs__msg__UInt8   s_aeb_msg;
-
-  /* uROS Callback : 전역변수 저장 */
-  // /cmd/speed -> COMMAND_SPEED
-  static void cb_cmd(const void *m)
-  { COMMAND_SPEED = ((const std_msgs__msg__Float32 *)m)->data; }
-
-  // /aeb -> AEB
-  static void cb_aeb(const void *m)
-  { AEB = ((const std_msgs__msg__UInt8 *)m)->data; }
 
   extern UART_HandleTypeDef hlpuart1; // uROS UART
 
