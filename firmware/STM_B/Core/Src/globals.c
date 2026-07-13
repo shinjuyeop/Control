@@ -5,7 +5,7 @@
 
 #include <stdint.h>
 
- volatile float   CURRENT_SPEED = 0.0f; // 현재 속도(m/s) / write : uROS / read : VESS, Display
+ volatile float   CURRENT_SPEED = 0.0f; // 현재 속도(m/s) / write : uROS / read : Display
  volatile float   COMMAND_SPEED = 0.0f; // 목표 속도(m/s) / write : uROS / read : (미사용)
  
  volatile uint8_t AEB           = 0;    // AEB(판단) / write : uROS / read : EStop
