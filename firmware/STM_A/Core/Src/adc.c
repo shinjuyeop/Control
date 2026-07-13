@@ -15,6 +15,7 @@ PIN : PA0
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "adc.h"
+#include "stm32g4xx.h"
 
 /* USER CODE BEGIN 0 */
 /* USER CODE END 0 */
@@ -45,7 +46,7 @@ void MX_ADC1_Init(void)
   hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;             // 채널 1개만 사용
   hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   hadc1.Init.LowPowerAutoWait = DISABLE;  
-  hadc1.Init.ContinuousConvMode = ENABLE;                 // 연속 변환 모드 설정
+  hadc1.Init.ContinuousConvMode = DISABLE;                 // 연속 변환 모드 설정
   hadc1.Init.NbrOfConversion = 1;                         // 변환 채널 수 1개 
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;       // SW 트리거

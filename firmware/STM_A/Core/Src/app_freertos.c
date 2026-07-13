@@ -39,6 +39,7 @@ STM A의 6개 Task에 대한 로직.
 #include <rclc/executor.h>
 #include <std_msgs/msg/float32.h>
 #include <std_msgs/msg/u_int8.h>
+#include <std_msgs/msg/int32.h>
 #include "rmw_microros/rmw_microros.h"
 
 bool cubemx_transport_open(struct uxrCustomTransport *transport);
@@ -69,6 +70,8 @@ size_t cubemx_transport_read(struct uxrCustomTransport *transport,
 /* USER CODE BEGIN Variables */
 /* BRx DMA 수신 버퍼 (4바이트 프레임) */
 static uint8_t s_brx_buf[4];
+/* TEMP DEBUG: 클램핑 전 raw ADC 값 저장 (StartInputs가 쓰고, StartuROS가 읽어서 발행) */
+static volatile int32_t s_pedal_raw_dbg = 0;
 /* USER CODE END Variables */
 
 /* ── 태스크 속성 ── */
@@ -117,20 +120,6 @@ void StartuROS    (void *argument);
 void StartBRx     (void *argument);
 void StartBTx     (void *argument);
 
-/* 
-FreeRTOS 초기화
-main.c에서 스케줄러 시작 전 호출
-*/
-
-void MX_FREERTOS_Init(void) {
-  /* USER CODE BEGIN Init */
-  // 모터 상수
-#define TIRE_DIAM_M    0.47f    // 타이어 지름
-#define GEAR_RATIO     4.60f    // 감속비 (모터 회전 : 바퀴 회전)
-#define RPM_FWD_MAX    4500     // 전진 최대 RPM
-#define RPM_REV_MAX    1500     // 후진 최대 RPM
-#define PHASE_LIMIT_A  300.0f   // 전류 Limit = 300A
-
 /* ======================================================= */
 /* FDCAN CAN Tx (EZkontrol J1939)
  *   CAN ID : 0x0C01EFD0 (Extended)
@@ -139,6 +128,17 @@ void MX_FREERTOS_Init(void) {
  *   data[4]  : 0x03 (CTRL_RUN|CTRL_SPEED)
  *   data[7]  : life counter (프레임마다 증가) */
  /* ======================================================= */
+
+/* 
+FreeRTOS 초기화
+main.c에서 스케줄러 시작 전 호출
+*/
+// 모터 상수
+#define TIRE_DIAM_M    0.47f    // 타이어 지름
+#define GEAR_RATIO     4.60f    // 감속비 (모터 회전 : 바퀴 회전)
+#define RPM_FWD_MAX    4500     // 전진 최대 RPM
+#define RPM_REV_MAX    1500     // 후진 최대 RPM
+#define PHASE_LIMIT_A  300.0f   // 전류 Limit = 300A
 
 static uint8_t s_life = 0;  // life counter (0~255)
 
@@ -217,15 +217,30 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan,
   }
 }
 
-/* ============================================ */
-/* Task: Control — 모터 제어 (osPriorityRealtime) */
-/* ============================================ */
-
 /* ====================================================== */
 /* Task: Inputs — 페달 + 버튼 + ESTOP 통합 (osPriorityHigh1) */
 /* ====================================================== */
-#define PEDAL_ADC_MIN 200   // 페달 최소 ADC
-#define PEDAL_ADC_MAX 3900  // 페달 최대 ADC
+#define PEDAL_ADC_MIN 546   // 페달 최소 ADC (released, 440mV)
+#define PEDAL_ADC_MAX 2730  // 페달 최대 ADC (pressed, 2.2V)
+
+/* uROS 구독 콜백 (StartuROS 태스크에서 사용, 파일 스코프로 이동) */
+// /cmd/speed -> COMMAND_SPEED
+static void cb_cmd(const void *m)
+{ COMMAND_SPEED = ((const std_msgs__msg__Float32 *)m)->data; }
+
+// /aeb -> AEB
+static void cb_aeb(const void *m)
+{ AEB = ((const std_msgs__msg__UInt8 *)m)->data; }
+
+/* 
+FreeRTOS 초기화
+main.c에서 스케줄러 시작 전 호출
+*/
+
+void MX_FREERTOS_Init(void) {
+  /* USER CODE BEGIN Init */
+
+  /* Task: Control — 모터 제어 (osPriorityRealtime) */
 
   /* USER CODE END Init */
 
@@ -254,7 +269,6 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan,
   uROSHandle    = osThreadNew(StartuROS,    NULL, &uROS_attributes);
   BRxHandle     = osThreadNew(StartBRx,     NULL, &BRx_attributes);
   BTxHandle     = osThreadNew(StartBTx,     NULL, &BTx_attributes);
-}
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -340,6 +354,8 @@ void StartInputs(void *argument)
       sum += HAL_ADC_GetValue(&hadc1);
     }
     int raw = (int)(sum / 8u);
+    // TEMP DEBUG: 클램핑 전 raw 값을 그대로 저장 (디버깅 끝나면 이 줄 삭제)
+    s_pedal_raw_dbg = (int32_t)raw;
     // 데드밴드 클램핑 (무반응 구간, 유격감안)
     if (raw < PEDAL_ADC_MIN) raw = PEDAL_ADC_MIN;
     if (raw > PEDAL_ADC_MAX) raw = PEDAL_ADC_MAX;
@@ -408,15 +424,6 @@ void StartuROS(void *argument)
   static std_msgs__msg__Float32 s_cmd_msg;
   static std_msgs__msg__UInt8   s_aeb_msg;
 
-  /* uROS Callback : 전역변수 저장 */
-  // /cmd/speed -> COMMAND_SPEED
-  static void cb_cmd(const void *m)
-  { COMMAND_SPEED = ((const std_msgs__msg__Float32 *)m)->data; }
-
-  // /aeb -> AEB
-  static void cb_aeb(const void *m)
-  { AEB = ((const std_msgs__msg__UInt8 *)m)->data; }
-
   extern UART_HandleTypeDef hlpuart1; // uROS UART
 
   // uROS가 LPUAR1으로 통신하도록 transport 등록
@@ -436,6 +443,8 @@ void StartuROS(void *argument)
   rcl_subscription_t sub_cmd, sub_aeb;
   // Publisher 생성
   rcl_publisher_t    pub_spd, pub_estop, pub_gear, pub_mode;
+  rcl_publisher_t    pub_dbg_pedal;       // 변환된 페달값
+  rcl_publisher_t    pub_dbg_pedal_raw;   // 변환전 페달값
   
   // PC와 연결될 때까지 0.5초 간격으로 ping (???)
   while (rmw_uros_ping_agent(100, 1) != RMW_RET_OK)
@@ -470,6 +479,11 @@ void StartuROS(void *argument)
       ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8), "/gear");
   rclc_publisher_init_default(&pub_mode, &node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8), "/mode");
+  // TEMP DEBUG: pedal debug
+  rclc_publisher_init_default(&pub_dbg_pedal, &node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8), "/debug/pedal");
+  rclc_publisher_init_default(&pub_dbg_pedal_raw, &node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32), "/debug/pedal_raw");
 
   // Subscriber 콜백 관리
   rclc_executor_t exec;
@@ -493,6 +507,10 @@ void StartuROS(void *argument)
     u.data = ESTOP_STATUS; rcl_publish(&pub_estop, &u, NULL);
     u.data = GEAR;         rcl_publish(&pub_gear,  &u, NULL);
     u.data = MODE;         rcl_publish(&pub_mode,  &u, NULL);
+    u.data = PEDAL;        rcl_publish(&pub_dbg_pedal, &u, NULL);  // TEMP DEBUG: 삭제
+
+    std_msgs__msg__Int32 ri = { .data = s_pedal_raw_dbg };
+    rcl_publish(&pub_dbg_pedal_raw, &ri, NULL);
 
     osDelay(10);
   }
