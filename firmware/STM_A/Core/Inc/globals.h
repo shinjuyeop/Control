@@ -8,15 +8,16 @@
  extern volatile float   COMMAND_SPEED;   /* PC→STM  /cmd/speed   m/s */
  extern volatile float   CURRENT_SPEED;   /* 모터피드백 /current/speed m/s */
  
- /* 안전: 물리 E-stop은 STM_B Safety frame에서만 수신한다. */
- extern volatile uint8_t AEB;                          /* Host /aeb */
- extern volatile uint8_t ESTOP_DASHBOARD_FROM_B;       /* Safety bit0 */
- extern volatile uint8_t ESTOP_SIDE_FROM_B;            /* Safety bit1 */
- extern volatile uint8_t ESTOP_RF_FROM_B;              /* Safety bit2 */
- extern volatile uint8_t AEB_FROM_B;                   /* Safety bit3 */
- extern volatile uint8_t BRAKE_REQUEST_FROM_B;         /* Safety bit4 */
- extern volatile uint8_t BRAKE_COMMAND_APPLIED_FROM_B; /* Safety bit5 */
- extern volatile uint8_t DRIVE_STOP_REQUEST;            /* 최종 구동 정지 요청 */
+ /* 안전: STM_B는 통합 STOP_REQUEST만 전달한다. */
+ extern volatile uint8_t  AEB;                          /* Host /aeb */
+ extern volatile uint8_t  STOP_REQUEST_FROM_B;          /* Safety payload bit0 */
+ extern volatile uint8_t  SAFETY_FRAME_VALID_FROM_B;    /* 정상 frame + timeout 상태 */
+ extern volatile uint8_t  STM_B_COMM_TIMEOUT;           /* 100 ms Safety timeout */
+ extern volatile uint8_t  DRIVE_STOP_REQUEST;            /* 최종 구동 정지 요청 */
+ extern volatile uint32_t LAST_SAFETY_RX_MS;
+ extern volatile uint32_t SAFETY_RX_COUNT;
+ extern volatile uint32_t SAFETY_CRC_ERROR_COUNT;
+ extern volatile uint32_t SAFETY_SEQUENCE_ERROR_COUNT;
  
  /* 주행 */
  extern volatile uint8_t GEAR;            /* 0:전진  1:후진            */
