@@ -98,13 +98,6 @@ const osThreadAttr_t uROS_attributes = {
   .priority = (osPriority_t) osPriorityNormal,
   .stack_size = 1280 * 4
 };
-/* Definitions for VESS */
-osThreadId_t VESSHandle;
-const osThreadAttr_t VESS_attributes = {
-  .name = "VESS",
-  .priority = (osPriority_t) osPriorityBelowNormal,
-  .stack_size = 256 * 4
-};
 /* Definitions for Display */
 osThreadId_t DisplayHandle;
 const osThreadAttr_t Display_attributes = {
@@ -135,7 +128,6 @@ const osThreadAttr_t ATx_attributes = {
 void StartBrake(void *argument);
 void StartEStop(void *argument);
 void StartuROS(void *argument);
-void StartVESS(void *argument);
 void StartDisplay(void *argument);
 void StartARx(void *argument);
 void StartATx(void *argument);
@@ -177,9 +169,6 @@ void MX_FREERTOS_Init(void) {
   /* creation of uROS */
   uROSHandle = osThreadNew(StartuROS, NULL, &uROS_attributes);
 
-  /* creation of VESS */
-  VESSHandle = osThreadNew(StartVESS, NULL, &VESS_attributes);
-
   /* creation of Display */
   DisplayHandle = osThreadNew(StartDisplay, NULL, &Display_attributes);
 
@@ -210,6 +199,7 @@ void StartBrake(void *argument)
 {
   /* USER CODE BEGIN StartBrake */
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
   int cur = ANG_RELEASE, tgt = ANG_RELEASE;
   uint32_t last = 0;
   for (;;) {
@@ -308,28 +298,6 @@ void StartuROS(void *argument)
     osDelay(10);
   }
   /* USER CODE END StartuROS */
-}
-
-/* USER CODE BEGIN Header_StartVESS */
-/**
-* @brief Function implementing the VESS thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_StartVESS */
-void StartVESS(void *argument)
-{
-  /* USER CODE BEGIN StartVESS */
-  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
-  for (;;) {
-    float kmh = CURRENT_SPEED * 3.6f;
-    if (kmh < 0.0f) kmh = 0.0f;
-    if (kmh > 100.0f) kmh = 100.0f;
-    uint32_t pulse = 1600u + (uint32_t)((kmh/100.0f)*400.0f);
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, pulse);
-    osDelay(100);
-  }
-  /* USER CODE END StartVESS */
 }
 
 /* USER CODE BEGIN Header_StartDisplay */
