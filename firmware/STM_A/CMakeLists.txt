@@ -66,6 +66,7 @@ list(FILTER MICROROS_EXTRA_SOURCES EXCLUDE REGEX "it_transport\\.c$")
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${MICROROS_EXTRA_SOURCES}
+    Core/Src/globals.c
     # Add user sources here
 )
 

@@ -8,11 +8,15 @@
  extern volatile float   CURRENT_SPEED;   /* /current/speed m/s */
  extern volatile float   COMMAND_SPEED;   /* /cmd/speed     m/s */
  
- /* 안전 */
- extern volatile uint8_t AEB;             /* /aeb                      */
- extern volatile uint8_t ESTOP_RF;        /* RF 리모콘 토글 상태        */
- extern volatile uint8_t ESTOP_FROM_A;    /* A로부터 수신 (물리버튼2개) */
- extern volatile uint8_t ESTOP_STATUS;    /* 최종 통합                  */
+ /* 안전: EStop 태스크가 물리 입력과 Host AEB를 통합한다. */
+ extern volatile uint8_t AEB;                   /* Host /aeb 입력 */
+ extern volatile uint8_t ESTOP_DASHBOARD;       /* PC0, active-low */
+ extern volatile uint8_t ESTOP_SIDE;            /* PC1, active-low */
+ extern volatile uint8_t ESTOP_RF;              /* PB4, active-low */
+ extern volatile uint8_t ESTOP_STATUS;          /* 물리 E-stop 통합 */
+ extern volatile uint8_t SAFETY_STOP_REQUEST;   /* 물리 E-stop | AEB */
+ extern volatile uint8_t BRAKE_REQUEST;         /* 브레이크 적용 요청 */
+ extern volatile uint8_t BRAKE_COMMAND_APPLIED; /* 적용 방향 PWM 명령 상태 */
  
  /* 주행 상태 (uROS 수신) */
  extern volatile uint8_t GEAR;            /* 0:전진 1:후진 */

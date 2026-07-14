@@ -48,6 +48,10 @@ size_t cubemx_transport_read(struct uxrCustomTransport *transport,
 #define ANG_BRAKE 35 // 제동 각도 [deg] - 실차 기구 검증 후 조정 필요 
 #define ANG_RELEASE 70
 #define BRAKE_STEP_MS 20
+#define ESTOP_EVENT_DASH (1u << 0)
+#define ESTOP_EVENT_SIDE (1u << 1)
+#define ESTOP_EVENT_RF   (1u << 2)
+#define ESTOP_EVENT_MASK (ESTOP_EVENT_DASH | ESTOP_EVENT_SIDE | ESTOP_EVENT_RF)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -57,11 +61,6 @@ size_t cubemx_transport_read(struct uxrCustomTransport *transport,
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
-static volatile uint8_t s_rf_toggle = 0;
-// static -> 이 파일 안에서만 volatile -> EXT1 Callback 이 값을 바꾸기에 항상 최신 값 유지
-static volatile uint8_t s_rf_level = 0; // RF(PB4) 실시간 레벨 상태 - 스위치 상태를 그대로 반영 (BTN의 래치와는 분리)
-static uint8_t s_arx_buf[4];
-
 /* micro-ROS 구독 메시지 버퍼 */
 static std_msgs__msg__Float32 s_cmd_msg;
 static std_msgs__msg__Float32 s_cur_msg;
@@ -75,6 +74,23 @@ static void cb_cur (const void *m){ CURRENT_SPEED = ((const std_msgs__msg__Float
 static void cb_aeb (const void *m){ AEB  = ((const std_msgs__msg__UInt8 *)m)->data; }
 static void cb_gear(const void *m){ GEAR = ((const std_msgs__msg__UInt8 *)m)->data; }
 static void cb_mode(const void *m){ MODE = ((const std_msgs__msg__UInt8 *)m)->data; }
+
+static uint8_t read_active_low(GPIO_TypeDef *port, uint16_t pin)
+{
+  return (HAL_GPIO_ReadPin(port, pin) == GPIO_PIN_RESET) ? 1u : 0u;
+}
+
+static void update_safety_state(void)
+{
+  /* 세 물리 E-stop 입력은 pull-up active-low이다. */
+  ESTOP_DASHBOARD = read_active_low(ESTOP_DASH_GPIO_Port, ESTOP_DASH_Pin);
+  ESTOP_SIDE = read_active_low(ESTOP_SIDE_GPIO_Port, ESTOP_SIDE_Pin);
+  ESTOP_RF = read_active_low(ESTOP_RF_GPIO_Port, ESTOP_RF_Pin);
+
+  ESTOP_STATUS = ESTOP_DASHBOARD | ESTOP_SIDE | ESTOP_RF;
+  SAFETY_STOP_REQUEST = ESTOP_STATUS | ((AEB != 0u) ? 1u : 0u);
+  BRAKE_REQUEST = SAFETY_STOP_REQUEST;
+}
 
 /* USER CODE END Variables */
 /* Definitions for Brake */
@@ -203,7 +219,9 @@ void StartBrake(void *argument)
   int cur = ANG_RELEASE, tgt = ANG_RELEASE;
   uint32_t last = 0;
   for (;;) {
-    tgt = (ESTOP_STATUS == 1) ? ANG_BRAKE : ANG_RELEASE;
+    uint8_t brake_requested = (BRAKE_REQUEST != 0u) ? 1u : 0u;
+    BRAKE_COMMAND_APPLIED = brake_requested;
+    tgt = (brake_requested != 0u) ? ANG_BRAKE : ANG_RELEASE;
     uint32_t now = HAL_GetTick();
     if (now - last >= BRAKE_STEP_MS) {
       last = now;
@@ -228,10 +246,12 @@ void StartBrake(void *argument)
 void StartEStop(void *argument)
 {
   /* USER CODE BEGIN StartEStop */
+  /* 태스크 시작 시 인터럽트를 기다리지 않고 현재 핀 상태부터 반영한다. */
+  update_safety_state();
   for (;;) {
-    ESTOP_RF     = s_rf_toggle | s_rf_level;
-    ESTOP_STATUS = ESTOP_RF | AEB | ESTOP_FROM_A;
-    osDelay(10);
+    (void)osThreadFlagsWait(ESTOP_EVENT_MASK, osFlagsWaitAny, 10u);
+    /* timeout 주기에도 다시 읽어 누락된 edge와 Host AEB 변경을 반영한다. */
+    update_safety_state();
   }
   /* USER CODE END StartEStop */
 }
@@ -254,7 +274,7 @@ void StartuROS(void *argument)
   rcl_allocator_t alloc = rcl_get_default_allocator();
   rclc_support_t sup; rcl_node_t node;
   rcl_subscription_t sub_cmd,sub_cur,sub_aeb,sub_gear,sub_mode;
-  rcl_publisher_t pub_estop, pub_rf, pub_from_a;
+  rcl_publisher_t pub_estop, pub_rf, pub_safety_stop;
 
   while (rmw_uros_ping_agent(100,1) != RMW_RET_OK) osDelay(500);
 
@@ -276,8 +296,8 @@ void StartuROS(void *argument)
       ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs,msg,UInt8),"/stm_b/estop/status");
   rclc_publisher_init_default(&pub_rf, &node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs,msg,UInt8),"/stm_b/estop/rf");
-  rclc_publisher_init_default(&pub_from_a, &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs,msg,UInt8),"/stm_b/estop/from_a");
+  rclc_publisher_init_default(&pub_safety_stop, &node,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs,msg,UInt8),"/stm_b/safety/stop_request");
 
   rclc_executor_t exec;
   rclc_executor_init(&exec,&sup.context,5,&alloc);
@@ -293,7 +313,7 @@ void StartuROS(void *argument)
     std_msgs__msg__UInt8 u;
     u.data = ESTOP_STATUS; rcl_publish(&pub_estop, &u, NULL);
     u.data = ESTOP_RF;     rcl_publish(&pub_rf, &u, NULL);
-    u.data = ESTOP_FROM_A; rcl_publish(&pub_from_a, &u, NULL);
+    u.data = SAFETY_STOP_REQUEST; rcl_publish(&pub_safety_stop, &u, NULL);
 
     osDelay(10);
   }
@@ -333,14 +353,9 @@ void StartDisplay(void *argument)
 void StartARx(void *argument)
 {
   /* USER CODE BEGIN StartARx */
-  extern UART_HandleTypeDef huart1;
-  HAL_UART_Receive_DMA(&huart1, s_arx_buf, 4);
+  /* STM_A -> STM_B E-stop 송신은 제거되었다. 태스크 슬롯만 안전하게 유지한다. */
   for (;;) {
-    if (s_arx_buf[0] == 0xAAu && s_arx_buf[1] == 0x01u) {
-      uint8_t chk = s_arx_buf[0] ^ s_arx_buf[1] ^ s_arx_buf[2];
-      if (chk == s_arx_buf[3]) ESTOP_FROM_A = s_arx_buf[2];
-    }
-    osDelay(10);
+    osDelay(1000);
   }
   /* USER CODE END StartARx */
 }
@@ -358,8 +373,18 @@ void StartATx(void *argument)
   extern UART_HandleTypeDef huart1;
   for (;;) {
     uint8_t pkt[4];
-    pkt[0] = 0xAAu; pkt[1] = 0x01u;
-    pkt[2] = ESTOP_RF;
+    uint8_t safety_bits = 0u;
+
+    safety_bits |= (uint8_t)((ESTOP_DASHBOARD != 0u) ? (1u << 0) : 0u);
+    safety_bits |= (uint8_t)((ESTOP_SIDE != 0u) ? (1u << 1) : 0u);
+    safety_bits |= (uint8_t)((ESTOP_RF != 0u) ? (1u << 2) : 0u);
+    safety_bits |= (uint8_t)((AEB != 0u) ? (1u << 3) : 0u);
+    safety_bits |= (uint8_t)((BRAKE_REQUEST != 0u) ? (1u << 4) : 0u);
+    safety_bits |= (uint8_t)((BRAKE_COMMAND_APPLIED != 0u) ? (1u << 5) : 0u);
+
+    pkt[0] = 0xAAu;
+    pkt[1] = 0x02u;
+    pkt[2] = safety_bits;
     pkt[3] = pkt[0] ^ pkt[1] ^ pkt[2];
     HAL_UART_Transmit(&huart1, pkt, 4, 10);
     osDelay(20);
@@ -371,16 +396,23 @@ void StartATx(void *argument)
 /* USER CODE BEGIN Application */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-  if (GPIO_Pin == ESTOP_BTN_Pin) {
-    s_rf_toggle = 1u;
+  uint32_t event_flag;
+
+  if (GPIO_Pin == ESTOP_DASH_Pin) {
+    event_flag = ESTOP_EVENT_DASH;
+  } else if (GPIO_Pin == ESTOP_SIDE_Pin) {
+    event_flag = ESTOP_EVENT_SIDE;
   } else if (GPIO_Pin == ESTOP_RF_Pin) {
-    /* level-follow: RF switch state mirrors the pin directly (LOW = active, pull-up idle HIGH) */
-    s_rf_level = (HAL_GPIO_ReadPin(ESTOP_RF_GPIO_Port, ESTOP_RF_Pin) == GPIO_PIN_RESET) ? 1u : 0u;
+    event_flag = ESTOP_EVENT_RF;
   } else {
     return;
   }
-  ESTOP_RF = s_rf_toggle | s_rf_level;
-  ESTOP_STATUS = ESTOP_RF | AEB | ESTOP_FROM_A;
+
+  /* ISR에서는 상태를 계산하지 않고 EStop 태스크만 깨운다. */
+  if ((EStopHandle != NULL) &&
+      (xTaskGetSchedulerState() == taskSCHEDULER_RUNNING)) {
+    (void)osThreadFlagsSet(EStopHandle, event_flag);
+  }
 }
 
 /* USER CODE END Application */

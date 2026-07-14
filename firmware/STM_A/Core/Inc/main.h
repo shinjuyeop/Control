@@ -56,17 +56,6 @@ void Error_Handler(void);
 #define RCC_OSC_IN_GPIO_Port GPIOF
 #define RCC_OSC_OUT_Pin GPIO_PIN_1
 #define RCC_OSC_OUT_GPIO_Port GPIOF
-
-
-/* EStop 물리버튼 (PB0: 계기판, PB1: 측면) — USER CODE 추가 */
-#define ESTOP_DASH_Pin GPIO_PIN_0
-#define ESTOP_DASH_GPIO_Port GPIOB
-#define ESTOP_DASH_EXTI_IRQn EXTI0_IRQn
-#define ESTOP_SIDE_Pin GPIO_PIN_1
-#define ESTOP_SIDE_GPIO_Port GPIOB
-#define ESTOP_SIDE_EXTI_IRQn EXTI1_IRQn
-
-/* 스위치 (PA8: 자율/수동, PA9: 전진/후진) */
 #define SW_MODE_Pin GPIO_PIN_8
 #define SW_MODE_GPIO_Port GPIOA
 #define SW_GEAR_Pin GPIO_PIN_9

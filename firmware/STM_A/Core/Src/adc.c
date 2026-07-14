@@ -15,13 +15,12 @@ PIN : PA0
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "adc.h"
-#include "stm32g4xx.h"
 
 /* USER CODE BEGIN 0 */
 /* USER CODE END 0 */
 
-ADC_HandleTypeDef hadc1;          // ADC1 Handle(Global)
-DMA_HandleTypeDef hdma_adc1;      // DMA Handle for ADC
+ADC_HandleTypeDef hadc1;
+DMA_HandleTypeDef hdma_adc1;
 
 /* ADC1 init function */
 void MX_ADC1_Init(void)
@@ -39,17 +38,17 @@ void MX_ADC1_Init(void)
   /** Common config
   */
   hadc1.Instance = ADC1;
-  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;   // ADC 클럭 = PCLK / 4
-  hadc1.Init.Resolution = ADC_RESOLUTION_12B;             // 12 비트 (0~4095) -> 해상도 
-  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;             // 우측 정렬
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc1.Init.GainCompensation = 0;
-  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;             // 채널 1개만 사용
+  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
-  hadc1.Init.LowPowerAutoWait = DISABLE;  
-  hadc1.Init.ContinuousConvMode = DISABLE;                 // 연속 변환 모드 설정
-  hadc1.Init.NbrOfConversion = 1;                         // 변환 채널 수 1개 
+  hadc1.Init.LowPowerAutoWait = DISABLE;
+  hadc1.Init.ContinuousConvMode = ENABLE;
+  hadc1.Init.NbrOfConversion = 1;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
-  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;       // SW 트리거
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
   hadc1.Init.DMAContinuousRequests = DISABLE;
   hadc1.Init.Overrun = ADC_OVR_DATA_PRESERVED;
@@ -61,7 +60,6 @@ void MX_ADC1_Init(void)
 
   /** Configure the ADC multi-mode
   */
-   // ADC1 단독 사용
   multimode.Mode = ADC_MODE_INDEPENDENT;
   if (HAL_ADCEx_MultiModeConfigChannel(&hadc1, &multimode) != HAL_OK)
   {
@@ -70,10 +68,10 @@ void MX_ADC1_Init(void)
 
   /** Configure Regular Channel
   */
-  sConfig.Channel = ADC_CHANNEL_1;    // IN1 = PA0
-  sConfig.Rank = ADC_REGULAR_RANK_1;  // 변환 순서 1번  
-  sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5; // ADC가 입력 전압을 샘플링 하는 시간 -> 47.5 cycle (시간이 짦으면 커패시터 충전이 덜 되기 때문에 값이 튄다)
-  sConfig.SingleDiff = ADC_SINGLE_ENDED;  // 단극 입력
+  sConfig.Channel = ADC_CHANNEL_1;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
+  sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
@@ -98,42 +96,41 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* adcHandle)
   /** Initializes the peripherals clocks
   */
     PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC12;
-    PeriphClkInit.Adc12ClockSelection = RCC_ADC12CLKSOURCE_SYSCLK; //ADC 클럭원
+    PeriphClkInit.Adc12ClockSelection = RCC_ADC12CLKSOURCE_SYSCLK;
     if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
     {
       Error_Handler();
     }
 
     /* ADC1 clock enable */
-    // ADC 클럭원 활성화
     __HAL_RCC_ADC12_CLK_ENABLE();
 
     __HAL_RCC_GPIOA_CLK_ENABLE();
     /**ADC1 GPIO Configuration
     PA0     ------> ADC1_IN1
     */
-    GPIO_InitStruct.Pin  = GPIO_PIN_0;          // PA0
-    GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;    // 아날로그 모드 설정
-    GPIO_InitStruct.Pull = GPIO_NOPULL;         // 아날로그 모드 -> 풀업, 풀다운 없음
+    GPIO_InitStruct.Pin = GPIO_PIN_0;
+    GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
     /* ADC1 DMA Init */
     /* ADC1 Init */
-    hdma_adc1.Instance                 = DMA1_Channel5;             // DMA1 채널5
-    hdma_adc1.Init.Request             = DMA_REQUEST_ADC1;          
-    hdma_adc1.Init.Direction           = DMA_PERIPH_TO_MEMORY;      // ADC→메모리
-    hdma_adc1.Init.PeriphInc           = DMA_PINC_DISABLE;
-    hdma_adc1.Init.MemInc              = DMA_MINC_ENABLE;           // 메모리 주소 증가
-    hdma_adc1.Init.PeriphDataAlignment = DMA_PDATAALIGN_HALFWORD;   // 16비트
-    hdma_adc1.Init.MemDataAlignment    = DMA_MDATAALIGN_HALFWORD;
-    hdma_adc1.Init.Mode                = DMA_CIRCULAR;              // 순환 모드
-    hdma_adc1.Init.Priority            = DMA_PRIORITY_LOW;
+    hdma_adc1.Instance = DMA1_Channel5;
+    hdma_adc1.Init.Request = DMA_REQUEST_ADC1;
+    hdma_adc1.Init.Direction = DMA_PERIPH_TO_MEMORY;
+    hdma_adc1.Init.PeriphInc = DMA_PINC_DISABLE;
+    hdma_adc1.Init.MemInc = DMA_MINC_ENABLE;
+    hdma_adc1.Init.PeriphDataAlignment = DMA_PDATAALIGN_HALFWORD;
+    hdma_adc1.Init.MemDataAlignment = DMA_MDATAALIGN_HALFWORD;
+    hdma_adc1.Init.Mode = DMA_CIRCULAR;
+    hdma_adc1.Init.Priority = DMA_PRIORITY_LOW;
     if (HAL_DMA_Init(&hdma_adc1) != HAL_OK)
     {
       Error_Handler();
     }
 
-    __HAL_LINKDMA(adcHandle,DMA_Handle,hdma_adc1); // ADC <-> DMA 연결
+    __HAL_LINKDMA(adcHandle,DMA_Handle,hdma_adc1);
 
   /* USER CODE BEGIN ADC1_MspInit 1 */
   /* USER CODE END ADC1_MspInit 1 */
