@@ -57,7 +57,8 @@ typedef struct {
 #define GEAR_RATIO    4.60f
 #define RPM_FWD_MAX   4500
 #define RPM_REV_MAX   1500
-#define PHASE_LIMIT_A 300.0f
+#define AUTO_PHASE_LIMIT_A 300.0f
+#define MANUAL_TORQUE_LIMIT_A 175.0f
 #define PEDAL_ADC_MIN 560
 #define PEDAL_ADC_MAX 3100
 #define UART_SOF1 0xAAu
@@ -95,6 +96,8 @@ static uint8_t s_safety_sequence_initialized = 0u;
 static uint8_t s_life = 0;
 /* TEMP DEBUG: 클램핑 전 raw ADC 값 저장 (StartInputs가 쓰고, StartuROS가 읽어서 발행) */
 static volatile int32_t s_pedal_raw_dbg = 0;
+static volatile uint8_t s_motor_handshake_done = 0u;
+static volatile uint32_t s_motor_handshake_count = 0u;
 /* USER CODE END Variables */
 /* Definitions for Control */
 osThreadId_t ControlHandle;
@@ -141,7 +144,8 @@ const osThreadAttr_t BTx_attributes = {
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
-static void send_motor_can(int16_t rpm, float curr_a, uint8_t run_command);
+static void send_motor_can(int16_t rpm, float curr_a, uint8_t run_command,
+                           uint8_t speed_control);
 // static void send_motor_handshake_ack(void); 7.15 handshake 추가 
 static void cb_cmd(const void *message);
 static void cb_aeb(const void *message);
@@ -246,23 +250,40 @@ void StartControl(void *argument)
 
   for (;;)
   {
+    if (s_motor_handshake_done == 0u)
+    {
+      osDelay(10);
+      continue;
+    }
+
     if (DRIVE_STOP_REQUEST == 0u)
     {
-      // 자율주행 : PC cmd, 수동주행 : 페달비율 (최대 3m/s)
-      float spd = (MODE == 1) ? COMMAND_SPEED : ((float)PEDAL / 100.0f * 3.0f);
-      // 속도 -> 모터 RPM 변환                          
-      float wrpm   = spd * 60.0f / (3.14159f * TIRE_DIAM_M);
-      int16_t mrpm = (int16_t)(wrpm * GEAR_RATIO);
-      // 후진이면 음수 RPM
-      if (GEAR == 1) mrpm = (int16_t)-abs(mrpm);
-      // 모터 송신
-      send_motor_can(mrpm, PHASE_LIMIT_A, 1u);
+      if (MODE == 1u)
+      {
+        /* 자율주행: PC 속도 명령을 Speed control로 전달한다. */
+        float wrpm = COMMAND_SPEED * 60.0f / (3.14159f * TIRE_DIAM_M);
+        int16_t mrpm = (int16_t)(wrpm * GEAR_RATIO);
+        if (GEAR == 1u) mrpm = (int16_t)-abs(mrpm);
+        send_motor_can(mrpm, AUTO_PHASE_LIMIT_A, 1u, 1u);
+      }
+      else
+      {
+        /* 수동주행: 페달 0~100%를 설정 최대 상전류(350A)의 절반까지 매핑한다. */
+        float torque_current = ((float)PEDAL / 100.0f) * MANUAL_TORQUE_LIMIT_A;
+        int16_t rpm_limit = RPM_FWD_MAX;
+        if (GEAR == 1u)
+        {
+          torque_current = -torque_current;
+          rpm_limit = -RPM_REV_MAX;
+        }
+        send_motor_can(rpm_limit, torque_current, 1u, 0u);
+      }
     }
     // ESTOP 활성시
     else
     {
       /* 정지 시 RPM/전류뿐 아니라 RUNNING bit도 내려 HALTED를 명령한다. */
-      send_motor_can(0, 0.0f, 0u);
+      send_motor_can(0, 0.0f, 0u, (MODE == 1u) ? 1u : 0u);
     }
     // 100Hz 주기
     osDelay(10);
@@ -737,7 +758,8 @@ static void process_safety_rx_byte(uint8_t byte)
   }
 }
 
-static void send_motor_can(int16_t rpm, float curr_a, uint8_t run_command)
+static void send_motor_can(int16_t rpm, float curr_a, uint8_t run_command,
+                           uint8_t speed_control)
 {
   FDCAN_TxHeaderTypeDef hdr;
   uint8_t d[8];
@@ -762,8 +784,9 @@ static void send_motor_can(int16_t rpm, float curr_a, uint8_t run_command)
   d[1] = (uint8_t)(current_encoded >> 8);
   d[2] = (uint8_t)(speed_encoded & 0xFFu);
   d[3] = (uint8_t)(speed_encoded >> 8);
-  /* bit0: RUNNING, bit1: speed control. HALTED=0x02, RUNNING=0x03. */
-  d[4] = (uint8_t)(0x02u | ((run_command != 0u) ? 0x01u : 0x00u));
+  /* bit0: RUNNING, bit1: speed control(0이면 torque control). */
+  d[4] = (uint8_t)(((run_command != 0u) ? 0x01u : 0x00u) |
+                   ((speed_control != 0u) ? 0x02u : 0x00u));
   d[5] = 0x00u;
   d[6] = 0x00u;
   d[7] = s_life++;
@@ -771,27 +794,27 @@ static void send_motor_can(int16_t rpm, float curr_a, uint8_t run_command)
   (void)HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &hdr, d);
 }
 
-// /* EZkontrol 핸드셰이크 응답: 모터드라이버가 0x1801D0EF로 8byte 0x55(핸드셰이크 대기)를
-//  * 보내는 동안, 0x0C01EFD0으로 8byte 0xAA를 보내야 드라이버가 이후 속도/전류 명령을 실행한다.
-//  * (EZkontrol CANBUS MCU to VCU V1.0, section 4) */
-// static void send_motor_handshake_ack(void)
-// {
-//   FDCAN_TxHeaderTypeDef hdr;
-//   uint8_t d[8];
-//   for (uint8_t i = 0u; i < 8u; ++i) d[i] = 0xAAu;
+/* EZkontrol 핸드셰이크 응답: 모터드라이버가 0x1801D0EF로 8byte 0x55(핸드셰이크 대기)를
+ * 보내는 동안, 0x0C01EFD0으로 8byte 0xAA를 보내야 드라이버가 이후 속도/전류 명령을 실행한다.
+ * (EZkontrol CANBUS MCU to VCU V1.0, section 4) */
+static HAL_StatusTypeDef send_motor_handshake_ack(void)
+{
+  FDCAN_TxHeaderTypeDef hdr;
+  uint8_t d[8];
+  for (uint8_t i = 0u; i < 8u; ++i) d[i] = 0xAAu;
 
-//   hdr.Identifier = 0x0C01EFD0UL;
-//   hdr.IdType = FDCAN_EXTENDED_ID;
-//   hdr.TxFrameType = FDCAN_DATA_FRAME;
-//   hdr.DataLength = FDCAN_DLC_BYTES_8;
-//   hdr.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
-//   hdr.BitRateSwitch = FDCAN_BRS_OFF;
-//   hdr.FDFormat = FDCAN_CLASSIC_CAN;
-//   hdr.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
-//   hdr.MessageMarker = 0;
+  hdr.Identifier = 0x0C01EFD0UL;
+  hdr.IdType = FDCAN_EXTENDED_ID;
+  hdr.TxFrameType = FDCAN_DATA_FRAME;
+  hdr.DataLength = FDCAN_DLC_BYTES_8;
+  hdr.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
+  hdr.BitRateSwitch = FDCAN_BRS_OFF;
+  hdr.FDFormat = FDCAN_CLASSIC_CAN;
+  hdr.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+  hdr.MessageMarker = 0;
 
-//   (void)HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &hdr, d);
-// }
+  return HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &hdr, d);
+}
 
 static void cb_cmd(const void *message)
 {
@@ -812,15 +835,19 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan,
 
   if (HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO0, &rx_header, rx_data) == HAL_OK) {
     if (rx_header.Identifier == 0x1801D0EFUL) {
-      // /* 드라이버가 핸드셰이크 대기 중이면 8byte 전부 0x55로 온다. */
-      // uint8_t is_handshake_request = 1u;
-      // for (uint8_t i = 0u; i < 8u; ++i) {
-      //   if (rx_data[i] != 0x55u) { is_handshake_request = 0u; break; }
-      // }
-      // if (is_handshake_request != 0u) {
-      //   send_motor_handshake_ack();
-      //   return;
-      // }
+      /* 드라이버가 핸드셰이크 대기 중이면 8byte 전부 0x55로 온다. */
+      uint8_t is_handshake_request = 1u;
+      for (uint8_t i = 0u; i < 8u; ++i) {
+        if (rx_data[i] != 0x55u) { is_handshake_request = 0u; break; }
+      }
+      if (is_handshake_request != 0u) {
+        s_motor_handshake_done = 0u;
+        if (send_motor_handshake_ack() == HAL_OK) {
+          s_motor_handshake_done = 1u;
+          s_motor_handshake_count++;
+        }
+        return;
+      }
 
       uint16_t raw_rpm = (uint16_t)(rx_data[6] | ((uint16_t)rx_data[7] << 8));
       int32_t rpm = (int32_t)raw_rpm - 32000;
