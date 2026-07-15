@@ -17,6 +17,7 @@
 /* USER CODE BEGIN Includes */
 #include <math.h>
 #include <stdio.h>
+#include "display_app.h"
 #include "globals.h"
 #include "usart.h"
 #include "tim.h"
@@ -168,7 +169,6 @@ static HAL_StatusTypeDef restart_usart1_rx(UART_HandleTypeDef *huart);
 void StartBrake(void *argument);
 void StartEStop(void *argument);
 void StartuROS(void *argument);
-void StartDisplay(void *argument);
 void StartARx(void *argument);
 void StartATx(void *argument);
 
@@ -399,29 +399,6 @@ void StartuROS(void *argument)
     osDelay(5);
   }
   /* USER CODE END StartuROS */
-}
-
-/* USER CODE BEGIN Header_StartDisplay */
-/**
-* @brief Function implementing the Display thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_StartDisplay */
-void StartDisplay(void *argument)
-{
-  /* USER CODE BEGIN StartDisplay */
-  /* TODO: LCD_Init() 호출 후 아래 스니펫으로 채울 것
-     char buf[20];
-     snprintf(buf,sizeof(buf),"%.1f km/h",CURRENT_SPEED_FROM_A*3.6f);
-     LCD_DrawString(10,10,buf,...);
-     LCD_DrawString(10,40,(GEAR_FROM_A==1)?"REV":"FWD",...);
-     LCD_DrawString(10,60,(MODE_FROM_A==1)?"AUTO":"MANUAL",...);
-     if(ESTOP_STATUS) LCD_DrawString(10,90,"!! ESTOP !!",...);
-     else             LCD_DrawString(10,90,"  NORMAL   ",...);
-  */
-  for (;;) { osDelay(100); }
-  /* USER CODE END StartDisplay */
 }
 
 /* USER CODE BEGIN Header_StartARx */
