@@ -1,13 +1,3 @@
-/*
----- CODE DESCRIPTION ----
-STM A의 6개 Task에 대한 로직.
-- Control (Realtime)   : 목표속도→RPM 변환 후 모터 CAN 송신. ESTOP시 정지
-- Inputs  (High1)      : 페달 ADC 평균, 버튼·스위치 읽기, ESTOP 통합
-- MotorRx (High2)      : 모터 CAN 수신은 콜백에서 처리, 태스크는 대기
-- uROS    (Normal)     : /cmd/speed·/aeb 구독, 상태 4종 발행
-- BRx     (AboveNormal): STM_B의 RF ESTOP를 UART 수신
-- BTx     (BelowNormal): 물리버튼 ESTOP를 STM_B로 UART 송신
-*/
 /* USER CODE BEGIN Header */
 /**
   ******************************************************************************
@@ -27,7 +17,8 @@ STM A의 6개 Task에 대한 로직.
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <math.h>     
+#include <math.h>
+#include <stdlib.h>
 #include "globals.h"
 #include "usart.h"
 #include "adc.h"
@@ -53,190 +44,128 @@ size_t cubemx_transport_read(struct uxrCustomTransport *transport,
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+typedef struct {
+  uint8_t data[16];
+  uint8_t index;
+  uint8_t expected_size;
+} uart_frame_parser_t;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define TIRE_DIAM_M   0.47f
+#define GEAR_RATIO    4.60f
+#define RPM_FWD_MAX   4500
+#define RPM_REV_MAX   1500
+#define PHASE_LIMIT_A 300.0f
+#define PEDAL_ADC_MIN 560
+#define PEDAL_ADC_MAX 3100
+#define UART_SOF1 0xAAu
+#define UART_SOF2 0x55u
+#define UART_MSG_A_TO_B_VEHICLE_STATUS 0x01u
+#define UART_MSG_B_TO_A_SAFETY_STATUS  0x02u
+#define UART_VEHICLE_PAYLOAD_LEN 3u
+#define UART_SAFETY_PAYLOAD_LEN  1u
+#define UART_RX_DMA_SIZE 64u
+#define UART_RX_RING_SIZE 128u
+#define STM_B_COMM_TIMEOUT_MS 100u
+#define VEHICLE_TX_PERIOD_MS 20u
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-
+#define RCL_PUBLISH_BEST_EFFORT(pub, msg) do { \
+  rcl_ret_t publish_result = rcl_publish((pub), (msg), NULL); \
+  (void)publish_result; \
+} while (0)
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
-/* BRx DMA 수신 버퍼 (4바이트 프레임) */
-static uint8_t s_brx_buf[4];
+/* USART1 Receive-to-Idle DMA -> ISR ring buffer -> BRx parser */
+static uint8_t s_usart1_rx_dma[UART_RX_DMA_SIZE];
+static uint8_t s_usart1_rx_ring[UART_RX_RING_SIZE];
+static volatile uint16_t s_usart1_rx_head = 0u;
+static volatile uint16_t s_usart1_rx_tail = 0u;
+static volatile uint8_t s_usart1_rx_restart_requested = 0u;
+static uint16_t s_usart1_rx_dma_pos = 0u;
+static uart_frame_parser_t s_safety_parser;
+static uint8_t s_safety_last_sequence = 0u;
+static uint8_t s_safety_sequence_initialized = 0u;
+static uint8_t s_life = 0;
 /* TEMP DEBUG: 클램핑 전 raw ADC 값 저장 (StartInputs가 쓰고, StartuROS가 읽어서 발행) */
 static volatile int32_t s_pedal_raw_dbg = 0;
 /* USER CODE END Variables */
-
-/* ── 태스크 속성 ── */
+/* Definitions for Control */
 osThreadId_t ControlHandle;
 const osThreadAttr_t Control_attributes = {
-  .name       = "Control",
-  .priority   = (osPriority_t)osPriorityRealtime,   /* ★ Realtime */
+  .name = "Control",
+  .priority = (osPriority_t) osPriorityNormal,
   .stack_size = 512 * 4
 };
+/* Definitions for Inputs */
 osThreadId_t InputsHandle;
 const osThreadAttr_t Inputs_attributes = {
-  .name       = "Inputs",
-  .priority   = (osPriority_t)osPriorityHigh1,
+  .name = "Inputs",
+  .priority = (osPriority_t) osPriorityHigh1,
   .stack_size = 256 * 4
 };
+/* Definitions for MotorRx */
 osThreadId_t MotorRxHandle;
 const osThreadAttr_t MotorRx_attributes = {
-  .name       = "MotorRx",
-  .priority   = (osPriority_t)osPriorityHigh2,
+  .name = "MotorRx",
+  .priority = (osPriority_t) osPriorityHigh2,
   .stack_size = 256 * 4
 };
+/* Definitions for uROS */
 osThreadId_t uROSHandle;
 const osThreadAttr_t uROS_attributes = {
-  .name       = "uROS",
-  .priority   = (osPriority_t)osPriorityNormal,
+  .name = "uROS",
+  .priority = (osPriority_t) osPriorityNormal,
   .stack_size = 1536 * 4
 };
+/* Definitions for BRx */
 osThreadId_t BRxHandle;
 const osThreadAttr_t BRx_attributes = {
-  .name       = "BRx",
-  .priority   = (osPriority_t)osPriorityAboveNormal,
+  .name = "BRx",
+  .priority = (osPriority_t) osPriorityAboveNormal,
   .stack_size = 256 * 4
 };
+/* Definitions for BTx */
 osThreadId_t BTxHandle;
 const osThreadAttr_t BTx_attributes = {
-  .name       = "BTx",
-  .priority   = (osPriority_t)osPriorityBelowNormal, /* ★ BelowNormal */
+  .name = "BTx",
+  .priority = (osPriority_t) osPriorityLow,
   .stack_size = 256 * 4
 };
 
-/* 태스트 함수 선언*/
-void StartControl (void *argument);
-void StartInputs  (void *argument);
-void StartMotorRx (void *argument);
-void StartuROS    (void *argument);
-void StartBRx     (void *argument);
-void StartBTx     (void *argument);
+/* Private function prototypes -----------------------------------------------*/
+/* USER CODE BEGIN FunctionPrototypes */
+static void send_motor_can(int16_t rpm, float curr_a, uint8_t run_command);
+static void cb_cmd(const void *message);
+static void cb_aeb(const void *message);
+static uint8_t uart_crc8(const uint8_t *data, uint8_t length);
+static void usart1_rx_ring_push(uint8_t byte);
+static uint8_t usart1_rx_ring_pop(uint8_t *byte);
+static void reset_safety_parser(uint8_t last_byte);
+static void process_safety_rx_byte(uint8_t byte);
+static HAL_StatusTypeDef restart_usart1_rx(UART_HandleTypeDef *huart);
+/* USER CODE END FunctionPrototypes */
 
-/* ======================================================= */
-/* FDCAN CAN Tx (EZkontrol J1939)
- *   CAN ID : 0x0C01EFD0 (Extended)
- *   data[0-1]: 전류 리밋  uint16, offset -3200A, 0.1A/bit
- *   data[2-3]: 목표 RPM   uint16, offset -32000,  1rpm/bit
- *   data[4]  : 0x03 (CTRL_RUN|CTRL_SPEED)
- *   data[7]  : life counter (프레임마다 증가) */
- /* ======================================================= */
+void StartControl(void *argument);
+void StartInputs(void *argument);
+void StartMotorRx(void *argument);
+void StartuROS(void *argument);
+void StartBRx(void *argument);
+void StartBTx(void *argument);
 
-/* 
-FreeRTOS 초기화
-main.c에서 스케줄러 시작 전 호출
-*/
-// 모터 상수
-#define TIRE_DIAM_M    0.47f    // 타이어 지름
-#define GEAR_RATIO     4.60f    // 감속비 (모터 회전 : 바퀴 회전)
-#define RPM_FWD_MAX    4500     // 전진 최대 RPM
-#define RPM_REV_MAX    1500     // 후진 최대 RPM
-#define PHASE_LIMIT_A  300.0f   // 전류 Limit = 300A
+void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
-static uint8_t s_life = 0;  // life counter (0~255)
-
-// 모터 송신 함수
-static void send_motor_can(int16_t rpm, float curr_a)
-{
-  FDCAN_TxHeaderTypeDef hdr;    // CAN 프레임 헤더
-  uint8_t d[8];                 // 8바이트 데이터
-  // uint32_t mb;               // 송신 메일박스(이게 뭐지???)
-
-  // 전류 인코딩
-  // 실제 전류 -> 정수값
-  double   rc  = (curr_a - (-3200.0)) / 0.1;
-  // Clamping (0~ 65535) (왜???)
-  uint16_t cr  = (uint16_t)fmax(0.0, fmin(65535.0, rc));
-
-  // RPM 클램핑
-  // 전진 & 후진 최대치 제한
-  int32_t  rc2 = rpm >= 0
-                   ? (int32_t)fmin((float)rpm, (float)RPM_FWD_MAX)
-                   : (int32_t)fmax((float)rpm, (float)-RPM_REV_MAX);
-  // offset 인코딩
-  uint16_t sr  = (uint16_t)(rc2 + 32000);
-
-  // CAN 헤더 설정
-  hdr.Identifier          = 0x0C01EFD0UL;
-  hdr.IdType              = FDCAN_EXTENDED_ID;
-  hdr.TxFrameType         = FDCAN_DATA_FRAME;
-  hdr.DataLength          = FDCAN_DLC_BYTES_8;
-  hdr.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
-  hdr.BitRateSwitch       = FDCAN_BRS_OFF;
-  hdr.FDFormat            = FDCAN_CLASSIC_CAN;
-  hdr.TxEventFifoControl  = FDCAN_NO_TX_EVENTS;
-  hdr.MessageMarker       = 0;
-
-  // 데이터 바이트 채움 : Little Endian 방식
-  d[0] = (uint8_t)(cr & 0xFF);    
-  d[1] = (uint8_t)(cr >> 8);
-  d[2] = (uint8_t)(sr & 0xFF);
-  d[3] = (uint8_t)(sr >> 8);
-  d[4] = 0x03u;
-  d[5] = 0x00u;
-  d[6] = 0x00u;
-  d[7] = s_life++;
-
-  // CAN 송신
-  HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &hdr, d);
-}
-
-/* 
- * FDCAN Rx 콜백 — ISR (MotorRx 로직)
- *   수신 ID : 0x1801D0EF
- *   data[6-7]: 실제 RPM uint16, offset -32000
-*/
-
-// HAL이 CAN프레임 도착 시 자동 호출
-void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan,
-                                uint32_t RxFifo0ITs)
-{
-  FDCAN_RxHeaderTypeDef rxh;
-  uint8_t rxd[8];
-  if (HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO0, &rxh, rxd) == HAL_OK)
-  {
-    if (rxh.Identifier == 0x1801D0EFUL) // 모터 피드백 프레임 확인
-    {
-      // RPM 디코딩
-      // 바이트 결합
-      uint16_t ru   = (uint16_t)(rxd[6] | ((uint16_t)rxd[7] << 8));
-      // 오프셋 제거
-      int32_t  rpm  = (int32_t)ru - 32000;
-      // RPM -> Wheel RPM -> 속도 변환
-      float    wrpm = (float)rpm / GEAR_RATIO;
-      // CURREN_SPEED 전역변수 write
-      CURRENT_SPEED = wrpm * (3.14159f * TIRE_DIAM_M) / 60.0f;
-    }
-  }
-}
-
-/* ====================================================== */
-/* Task: Inputs — 페달 + 버튼 + ESTOP 통합 (osPriorityHigh1) */
-/* ====================================================== */
-#define PEDAL_ADC_MIN 546   // 페달 최소 ADC (released, 440mV)
-#define PEDAL_ADC_MAX 2730  // 페달 최대 ADC (pressed, 2.2V)
-
-/* uROS 구독 콜백 (StartuROS 태스크에서 사용, 파일 스코프로 이동) */
-// /cmd/speed -> COMMAND_SPEED
-static void cb_cmd(const void *m)
-{ COMMAND_SPEED = ((const std_msgs__msg__Float32 *)m)->data; }
-
-// /aeb -> AEB
-static void cb_aeb(const void *m)
-{ AEB = ((const std_msgs__msg__UInt8 *)m)->data; }
-
-/* 
-FreeRTOS 초기화
-main.c에서 스케줄러 시작 전 호출
-*/
-
+/**
+  * @brief  FreeRTOS initialization
+  * @param  None
+  * @retval None
+  */
 void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN Init */
 
@@ -262,13 +191,22 @@ void MX_FREERTOS_Init(void) {
 
   /* Create the thread(s) */
   /* creation of Control */
-  // 6개 Task 스레드 생성
   ControlHandle = osThreadNew(StartControl, NULL, &Control_attributes);
-  InputsHandle  = osThreadNew(StartInputs,  NULL, &Inputs_attributes);
+
+  /* creation of Inputs */
+  InputsHandle = osThreadNew(StartInputs, NULL, &Inputs_attributes);
+
+  /* creation of MotorRx */
   MotorRxHandle = osThreadNew(StartMotorRx, NULL, &MotorRx_attributes);
-  uROSHandle    = osThreadNew(StartuROS,    NULL, &uROS_attributes);
-  BRxHandle     = osThreadNew(StartBRx,     NULL, &BRx_attributes);
-  BTxHandle     = osThreadNew(StartBTx,     NULL, &BTx_attributes);
+
+  /* creation of uROS */
+  uROSHandle = osThreadNew(StartuROS, NULL, &uROS_attributes);
+
+  /* creation of BRx */
+  BRxHandle = osThreadNew(StartBRx, NULL, &BRx_attributes);
+
+  /* creation of BTx */
+  BTxHandle = osThreadNew(StartBTx, NULL, &BTx_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -307,8 +245,7 @@ void StartControl(void *argument)
 
   for (;;)
   {
-    // ESTOP 비활성시에만 주행
-    if (ESTOP_STATUS == 0)
+    if (DRIVE_STOP_REQUEST == 0u)
     {
       // 자율주행 : PC cmd, 수동주행 : 페달비율 (최대 3m/s)
       float spd = (MODE == 1) ? COMMAND_SPEED : ((float)PEDAL / 100.0f * 3.0f);
@@ -318,13 +255,13 @@ void StartControl(void *argument)
       // 후진이면 음수 RPM
       if (GEAR == 1) mrpm = (int16_t)-abs(mrpm);
       // 모터 송신
-      send_motor_can(mrpm, PHASE_LIMIT_A);
+      send_motor_can(mrpm, PHASE_LIMIT_A, 1u);
     }
     // ESTOP 활성시
     else
     {
-      // RPM = 0로 명령
-      send_motor_can(0, 0.0f);
+      /* 정지 시 RPM/전류뿐 아니라 RUNNING bit도 내려 HALTED를 명령한다. */
+      send_motor_can(0, 0.0f, 0u);
     }
     // 100Hz 주기
     osDelay(10);
@@ -361,25 +298,13 @@ void StartInputs(void *argument)
     if (raw > PEDAL_ADC_MAX) raw = PEDAL_ADC_MAX;
     // 0~100% 선형 매핑
     int p = (raw - PEDAL_ADC_MIN) * 100 / (PEDAL_ADC_MAX - PEDAL_ADC_MIN);
-    // 떨림 방지를 위한 미세값 보정(0으로 대체)(???)
+    // 떨림 방지를 위한 미세값 보정
     if (p < 2) p = 0;
     PEDAL = (uint8_t)p;
 
-    // 물리버튼 (PULLUP / 눌림 : RESET = LOW)
-    ESTOP_DASHBOARD = (HAL_GPIO_ReadPin(ESTOP_DASH_GPIO_Port,
-                                        ESTOP_DASH_Pin) == GPIO_PIN_RESET) ? 1u : 0u;
-    ESTOP_SIDE      = (HAL_GPIO_ReadPin(ESTOP_SIDE_GPIO_Port,
-                                        ESTOP_SIDE_Pin) == GPIO_PIN_RESET) ? 1u : 0u;
-
-    // 스위치 (눌림 : Set = High)
+    // Inputs 태스크는 페달과 모드/기어 스위치만 담당한다.
     MODE = (HAL_GPIO_ReadPin(SW_MODE_GPIO_Port, SW_MODE_Pin) == GPIO_PIN_SET) ? 1u : 0u;
     GEAR = (HAL_GPIO_ReadPin(SW_GEAR_GPIO_Port, SW_GEAR_Pin) == GPIO_PIN_SET) ? 1u : 0u;
-
-    // ESTOP 통합
-    // B로 보낼 값 (물리버튼 두 개만)
-    ESTOP_TO_B   = ESTOP_DASHBOARD | ESTOP_SIDE;
-    // ESTOP 전체 통합
-    ESTOP_STATUS = AEB | ESTOP_DASHBOARD | ESTOP_SIDE | ESTOP_FROM_B;
 
     osDelay(50); // LED 확인 위해 주기 느리게 했음. 
   }
@@ -442,9 +367,9 @@ void StartuROS(void *argument)
   // Subscriber 생성
   rcl_subscription_t sub_cmd, sub_aeb;
   // Publisher 생성
-  rcl_publisher_t    pub_spd, pub_estop, pub_gear, pub_mode;
-  rcl_publisher_t    pub_dbg_pedal;       // 변환된 페달값
-  rcl_publisher_t    pub_dbg_pedal_raw;   // 변환전 페달값
+  rcl_publisher_t pub_spd, pub_gear, pub_mode, pub_pedal;
+  rcl_publisher_t pub_pedal_raw, pub_drive_stop, pub_stop_from_b;
+  rcl_publisher_t pub_safety_valid;
   
   // PC와 연결될 때까지 0.5초 간격으로 ping (???)
   while (rmw_uros_ping_agent(100, 1) != RMW_RET_OK)
@@ -470,20 +395,23 @@ void StartuROS(void *argument)
   rclc_subscription_init_default(&sub_aeb, &node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8), "/aeb");
 
-  // Publisher 초기화 (CURRENT_SPEED / ESTOP / GEAR / MODE)
+  // Publisher 초기화
   rclc_publisher_init_default(&pub_spd, &node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32), "/current/speed");
-  rclc_publisher_init_default(&pub_estop, &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8), "/estop/status");
   rclc_publisher_init_default(&pub_gear, &node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8), "/gear");
   rclc_publisher_init_default(&pub_mode, &node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8), "/mode");
-  // TEMP DEBUG: pedal debug
-  rclc_publisher_init_default(&pub_dbg_pedal, &node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8), "/debug/pedal");
-  rclc_publisher_init_default(&pub_dbg_pedal_raw, &node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32), "/debug/pedal_raw");
+  rclc_publisher_init_default(&pub_pedal, &node,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8), "/pedal");
+  rclc_publisher_init_default(&pub_pedal_raw, &node,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32), "/pedal_raw");
+  rclc_publisher_init_default(&pub_drive_stop, &node,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8), "/drive_stop_request");
+  rclc_publisher_init_default(&pub_stop_from_b, &node,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8), "/stop_request/from_b");
+  rclc_publisher_init_default(&pub_safety_valid, &node,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8), "/frame_valid/from_b");
 
   // Subscriber 콜백 관리
   rclc_executor_t exec;
@@ -493,26 +421,84 @@ void StartuROS(void *argument)
   rclc_executor_add_subscription(&exec, &sub_aeb,
       &s_aeb_msg, &cb_aeb, ON_NEW_DATA);
 
+  uint32_t now = HAL_GetTick();
+  uint32_t last_spd = now - 50u;
+  uint32_t last_gear = now - 1000u;
+  uint32_t last_mode = now - 1000u;
+  uint32_t last_pedal = now - 200u;
+  uint32_t last_pedal_raw = now - 1000u;
+  uint32_t last_drive_stop = now - 500u;
+  uint32_t last_stop_from_b = now - 500u;
+  uint32_t last_safety_valid = now - 1000u;
+  uint8_t previous_gear = 0xFFu;
+  uint8_t previous_mode = 0xFFu;
+  uint8_t previous_drive_stop = 0xFFu;
+  uint8_t previous_stop_from_b = 0xFFu;
+
   for (;;)
   {
-    // Subscribe
-    rclc_executor_spin_some(&exec, RCL_MS_TO_NS(10));
+    rclc_executor_spin_some(&exec, RCL_MS_TO_NS(1));
+    now = HAL_GetTick();
 
-    // 현재 속도 Publish
-    std_msgs__msg__Float32 f = { .data = CURRENT_SPEED };
-    rcl_publish(&pub_spd, &f, NULL);
+    if ((uint32_t)(now - last_spd) >= 50u) {
+      std_msgs__msg__Float32 f = { .data = CURRENT_SPEED };
+      RCL_PUBLISH_BEST_EFFORT(&pub_spd, &f);
+      last_spd += 50u;
+    }
 
-    // 현재 상태 Publish(ESTOP_STATUS, GEAR, MODE)
-    std_msgs__msg__UInt8 u;
-    u.data = ESTOP_STATUS; rcl_publish(&pub_estop, &u, NULL);
-    u.data = GEAR;         rcl_publish(&pub_gear,  &u, NULL);
-    u.data = MODE;         rcl_publish(&pub_mode,  &u, NULL);
-    u.data = PEDAL;        rcl_publish(&pub_dbg_pedal, &u, NULL);  // TEMP DEBUG: 삭제
+    uint8_t gear = GEAR;
+    if (((uint32_t)(now - last_gear) >= 1000u) || (gear != previous_gear)) {
+      std_msgs__msg__UInt8 u = { .data = gear };
+      RCL_PUBLISH_BEST_EFFORT(&pub_gear, &u);
+      previous_gear = gear;
+      last_gear = now;
+    }
 
-    std_msgs__msg__Int32 ri = { .data = s_pedal_raw_dbg };
-    rcl_publish(&pub_dbg_pedal_raw, &ri, NULL);
+    uint8_t mode = MODE;
+    if (((uint32_t)(now - last_mode) >= 1000u) || (mode != previous_mode)) {
+      std_msgs__msg__UInt8 u = { .data = mode };
+      RCL_PUBLISH_BEST_EFFORT(&pub_mode, &u);
+      previous_mode = mode;
+      last_mode = now;
+    }
 
-    osDelay(10);
+    if ((uint32_t)(now - last_pedal) >= 200u) {
+      std_msgs__msg__UInt8 u = { .data = PEDAL };
+      RCL_PUBLISH_BEST_EFFORT(&pub_pedal, &u);
+      last_pedal += 200u;
+    }
+
+    if ((uint32_t)(now - last_pedal_raw) >= 1000u) {
+      std_msgs__msg__Int32 raw_msg = { .data = s_pedal_raw_dbg };
+      RCL_PUBLISH_BEST_EFFORT(&pub_pedal_raw, &raw_msg);
+      last_pedal_raw += 1000u;
+    }
+
+    uint8_t drive_stop = DRIVE_STOP_REQUEST;
+    if (((uint32_t)(now - last_drive_stop) >= 500u) ||
+        (drive_stop != previous_drive_stop)) {
+      std_msgs__msg__UInt8 u = { .data = drive_stop };
+      RCL_PUBLISH_BEST_EFFORT(&pub_drive_stop, &u);
+      previous_drive_stop = drive_stop;
+      last_drive_stop = now;
+    }
+
+    uint8_t stop_from_b = STOP_REQUEST_FROM_B;
+    if (((uint32_t)(now - last_stop_from_b) >= 500u) ||
+        (stop_from_b != previous_stop_from_b)) {
+      std_msgs__msg__UInt8 u = { .data = stop_from_b };
+      RCL_PUBLISH_BEST_EFFORT(&pub_stop_from_b, &u);
+      previous_stop_from_b = stop_from_b;
+      last_stop_from_b = now;
+    }
+
+    if ((uint32_t)(now - last_safety_valid) >= 1000u) {
+      std_msgs__msg__UInt8 u = { .data = SAFETY_FRAME_VALID_FROM_B };
+      RCL_PUBLISH_BEST_EFFORT(&pub_safety_valid, &u);
+      last_safety_valid += 1000u;
+    }
+
+    osDelay(5);
   }
   /* USER CODE END StartuROS */
 }
@@ -525,28 +511,49 @@ void StartuROS(void *argument)
 */
 
 /* ========================================================= */ 
-/* Task: BRx — STM_B -> A 수신 (RF 상태)  (osPriorityAboveNormal) */
+/* Task: BRx — STM_B -> A Safety frame 수신 (osPriorityAboveNormal) */
 /* ========================================================= */
 /* USER CODE END Header_StartBRx */
 void StartBRx(void *argument)
 {
   /* USER CODE BEGIN StartBRx */
-  // 보드간 UART
   extern UART_HandleTypeDef huart1;
-  // Circular DMA 수신 시작
-  HAL_UART_Receive_DMA(&huart1, s_brx_buf, 4);
+
+  while (restart_usart1_rx(&huart1) != HAL_OK) {
+    osDelay(10);
+  }
+  uint32_t last_restart_ms = HAL_GetTick();
 
   for (;;)
   {
-    // 프레임 확인 : [0xAA][0x01][data][XOR]
-    if (s_brx_buf[0] == 0xAAu && s_brx_buf[1] == 0x01u) {
-      // Checksum 연산
-      uint8_t chk = s_brx_buf[0] ^ s_brx_buf[1] ^ s_brx_buf[2];
-      // Checksum이 일치할 때만 반영
-      if (chk == s_brx_buf[3])
-        ESTOP_FROM_B = s_brx_buf[2];
+    uint8_t byte;
+    while (usart1_rx_ring_pop(&byte) != 0u) {
+      process_safety_rx_byte(byte);
     }
-    osDelay(10);
+
+    uint32_t now = HAL_GetTick();
+    if ((SAFETY_FRAME_VALID_FROM_B == 0u) ||
+        ((uint32_t)(now - LAST_SAFETY_RX_MS) >= STM_B_COMM_TIMEOUT_MS)) {
+      SAFETY_FRAME_VALID_FROM_B = 0u;
+      STM_B_COMM_TIMEOUT = 1u;
+    } else {
+      STM_B_COMM_TIMEOUT = 0u;
+    }
+
+    DRIVE_STOP_REQUEST = ((AEB != 0u) ||
+                          (STOP_REQUEST_FROM_B != 0u) ||
+                          (SAFETY_FRAME_VALID_FROM_B == 0u) ||
+                          (STM_B_COMM_TIMEOUT != 0u)) ? 1u : 0u;
+
+    if ((s_usart1_rx_restart_requested != 0u) ||
+        (((SAFETY_FRAME_VALID_FROM_B == 0u) &&
+          ((uint32_t)(now - last_restart_ms) >= STM_B_COMM_TIMEOUT_MS)))) {
+      if (restart_usart1_rx(&huart1) == HAL_OK) {
+        s_usart1_rx_restart_requested = 0u;
+        last_restart_ms = now;
+      }
+    }
+    osDelay(1);
   }
   /* USER CODE END StartBRx */
 }
@@ -559,30 +566,261 @@ void StartBRx(void *argument)
 */
 
 /* ================================================================ */ 
-/* Task: BTx — A -> STM_B 송신 (물리버튼 2개)  (osPriorityBelowNormal) */
+/* Task: BTx — STM_A -> STM_B Vehicle Status frame 송신 */
 /* ================================================================ */
 /* USER CODE END Header_StartBTx */
 void StartBTx(void *argument)
 {
   /* USER CODE BEGIN StartBTx */
   extern UART_HandleTypeDef huart1;
+  uint8_t sequence = 0u;
 
   for (;;)
   {
-    // 프레임 조립 : [0xAA][0x01][ESTOP_TO_B][XOR]
-    uint8_t pkt[4];
-    pkt[0] = 0xAAu;
-    pkt[1] = 0x01u;
-    pkt[2] = ESTOP_TO_B;
-    pkt[3] = pkt[0] ^ pkt[1] ^ pkt[2];
-    // 프레임 송신
-    HAL_UART_Transmit(&huart1, pkt, 4, 10);
-    osDelay(20);
+    uint8_t frame[9];
+    uint8_t status = 0u;
+    float speed_x100_f = CURRENT_SPEED * 100.0f;
+    if (speed_x100_f > 32767.0f) speed_x100_f = 32767.0f;
+    if (speed_x100_f < -32768.0f) speed_x100_f = -32768.0f;
+    int16_t speed_x100 = (int16_t)lroundf(speed_x100_f);
+
+    status |= (uint8_t)((MODE != 0u) ? (1u << 0) : 0u);
+    status |= (uint8_t)((GEAR != 0u) ? (1u << 1) : 0u);
+
+    frame[0] = UART_SOF1;
+    frame[1] = UART_SOF2;
+    frame[2] = UART_MSG_A_TO_B_VEHICLE_STATUS;
+    frame[3] = UART_VEHICLE_PAYLOAD_LEN;
+    frame[4] = sequence++;
+    frame[5] = status;
+    frame[6] = (uint8_t)((uint16_t)speed_x100 & 0xFFu);
+    frame[7] = (uint8_t)(((uint16_t)speed_x100 >> 8) & 0xFFu);
+    frame[8] = uart_crc8(&frame[2], 6u);
+
+    (void)HAL_UART_Transmit(&huart1, frame, sizeof(frame), 10u);
+    osDelay(VEHICLE_TX_PERIOD_MS);
   }
   /* USER CODE END StartBTx */
 }
 
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
+static uint8_t uart_crc8(const uint8_t *data, uint8_t length)
+{
+  uint8_t crc = 0x00u;
+  for (uint8_t i = 0u; i < length; ++i) {
+    crc ^= data[i];
+    for (uint8_t bit = 0u; bit < 8u; ++bit) {
+      crc = (crc & 0x80u) ? (uint8_t)((crc << 1) ^ 0x07u)
+                          : (uint8_t)(crc << 1);
+    }
+  }
+  return crc;
+}
+
+static void usart1_rx_ring_push(uint8_t byte)
+{
+  uint16_t next = (uint16_t)(s_usart1_rx_head + 1u);
+  if (next >= UART_RX_RING_SIZE) next = 0u;
+  if (next != s_usart1_rx_tail) {
+    s_usart1_rx_ring[s_usart1_rx_head] = byte;
+    s_usart1_rx_head = next;
+  }
+}
+
+static uint8_t usart1_rx_ring_pop(uint8_t *byte)
+{
+  uint8_t available = 0u;
+  taskENTER_CRITICAL();
+  if (s_usart1_rx_tail != s_usart1_rx_head) {
+    *byte = s_usart1_rx_ring[s_usart1_rx_tail];
+    s_usart1_rx_tail++;
+    if (s_usart1_rx_tail >= UART_RX_RING_SIZE) s_usart1_rx_tail = 0u;
+    available = 1u;
+  }
+  taskEXIT_CRITICAL();
+  return available;
+}
+
+static HAL_StatusTypeDef restart_usart1_rx(UART_HandleTypeDef *huart)
+{
+  (void)HAL_UART_AbortReceive(huart);
+  taskENTER_CRITICAL();
+  s_usart1_rx_head = 0u;
+  s_usart1_rx_tail = 0u;
+  s_usart1_rx_dma_pos = 0u;
+  reset_safety_parser(0u);
+  taskEXIT_CRITICAL();
+  return HAL_UARTEx_ReceiveToIdle_DMA(huart, s_usart1_rx_dma,
+                                     UART_RX_DMA_SIZE);
+}
+
+static void reset_safety_parser(uint8_t last_byte)
+{
+  s_safety_parser.index = 0u;
+  s_safety_parser.expected_size = 0u;
+  if (last_byte == UART_SOF1) {
+    s_safety_parser.data[0] = UART_SOF1;
+    s_safety_parser.index = 1u;
+  }
+}
+
+static void process_safety_rx_byte(uint8_t byte)
+{
+  uart_frame_parser_t *parser = &s_safety_parser;
+
+  if (parser->index == 0u) {
+    if (byte == UART_SOF1) {
+      parser->data[0] = byte;
+      parser->index = 1u;
+    }
+    return;
+  }
+
+  if (parser->index == 1u) {
+    if (byte == UART_SOF2) {
+      parser->data[1] = byte;
+      parser->index = 2u;
+    } else {
+      reset_safety_parser(byte);
+    }
+    return;
+  }
+
+  if (parser->index >= sizeof(parser->data)) {
+    reset_safety_parser(byte);
+    return;
+  }
+  parser->data[parser->index++] = byte;
+
+  if (parser->index == 4u) {
+    if ((parser->data[2] != UART_MSG_B_TO_A_SAFETY_STATUS) ||
+        (parser->data[3] != UART_SAFETY_PAYLOAD_LEN)) {
+      reset_safety_parser(byte);
+      return;
+    }
+    parser->expected_size = (uint8_t)(6u + parser->data[3]);
+  }
+
+  if ((parser->expected_size != 0u) &&
+      (parser->index == parser->expected_size)) {
+    uint8_t payload_len = parser->data[3];
+    uint8_t received_crc = parser->data[5u + payload_len];
+    uint8_t calculated_crc = uart_crc8(&parser->data[2],
+                                       (uint8_t)(3u + payload_len));
+
+    if (received_crc != calculated_crc) {
+      SAFETY_CRC_ERROR_COUNT++;
+    } else {
+      uint8_t sequence = parser->data[4];
+      if ((s_safety_sequence_initialized != 0u) &&
+          (sequence != (uint8_t)(s_safety_last_sequence + 1u))) {
+        SAFETY_SEQUENCE_ERROR_COUNT++;
+      }
+      s_safety_last_sequence = sequence;
+      s_safety_sequence_initialized = 1u;
+
+      taskENTER_CRITICAL();
+      STOP_REQUEST_FROM_B = parser->data[5] & 0x01u;
+      LAST_SAFETY_RX_MS = HAL_GetTick();
+      SAFETY_FRAME_VALID_FROM_B = 1u;
+      STM_B_COMM_TIMEOUT = 0u;
+      SAFETY_RX_COUNT++;
+      taskEXIT_CRITICAL();
+    }
+    reset_safety_parser(byte);
+  }
+}
+
+static void send_motor_can(int16_t rpm, float curr_a, uint8_t run_command)
+{
+  FDCAN_TxHeaderTypeDef hdr;
+  uint8_t d[8];
+  double raw_current = (curr_a + 3200.0) / 0.1;
+  uint16_t current_encoded = (uint16_t)fmax(0.0, fmin(65535.0, raw_current));
+  int32_t clamped_rpm = rpm >= 0
+                          ? (int32_t)fmin((float)rpm, (float)RPM_FWD_MAX)
+                          : (int32_t)fmax((float)rpm, (float)-RPM_REV_MAX);
+  uint16_t speed_encoded = (uint16_t)(clamped_rpm + 32000);
+
+  hdr.Identifier = 0x0C01EFD0UL;
+  hdr.IdType = FDCAN_EXTENDED_ID;
+  hdr.TxFrameType = FDCAN_DATA_FRAME;
+  hdr.DataLength = FDCAN_DLC_BYTES_8;
+  hdr.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
+  hdr.BitRateSwitch = FDCAN_BRS_OFF;
+  hdr.FDFormat = FDCAN_CLASSIC_CAN;
+  hdr.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+  hdr.MessageMarker = 0;
+
+  d[0] = (uint8_t)(current_encoded & 0xFFu);
+  d[1] = (uint8_t)(current_encoded >> 8);
+  d[2] = (uint8_t)(speed_encoded & 0xFFu);
+  d[3] = (uint8_t)(speed_encoded >> 8);
+  /* bit0: RUNNING, bit1: speed control. HALTED=0x02, RUNNING=0x03. */
+  d[4] = (uint8_t)(0x02u | ((run_command != 0u) ? 0x01u : 0x00u));
+  d[5] = 0x00u;
+  d[6] = 0x00u;
+  d[7] = s_life++;
+
+  (void)HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &hdr, d);
+}
+
+static void cb_cmd(const void *message)
+{
+  COMMAND_SPEED = ((const std_msgs__msg__Float32 *)message)->data;
+}
+
+static void cb_aeb(const void *message)
+{
+  AEB = ((const std_msgs__msg__UInt8 *)message)->data;
+}
+
+void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan,
+                               uint32_t RxFifo0ITs)
+{
+  FDCAN_RxHeaderTypeDef rx_header;
+  uint8_t rx_data[8];
+  (void)RxFifo0ITs;
+
+  if (HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO0, &rx_header, rx_data) == HAL_OK) {
+    if (rx_header.Identifier == 0x1801D0EFUL) {
+      uint16_t raw_rpm = (uint16_t)(rx_data[6] | ((uint16_t)rx_data[7] << 8));
+      int32_t rpm = (int32_t)raw_rpm - 32000;
+      float wheel_rpm = (float)rpm / GEAR_RATIO;
+      CURRENT_SPEED = wheel_rpm * (3.14159f * TIRE_DIAM_M) / 60.0f;
+    }
+  }
+}
+
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
+{
+  if (huart->Instance != USART1) return;
+
+  uint16_t position = Size;
+  if (position > UART_RX_DMA_SIZE) position = UART_RX_DMA_SIZE;
+
+  if (position > s_usart1_rx_dma_pos) {
+    for (uint16_t i = s_usart1_rx_dma_pos; i < position; ++i) {
+      usart1_rx_ring_push(s_usart1_rx_dma[i]);
+    }
+  } else if (position < s_usart1_rx_dma_pos) {
+    for (uint16_t i = s_usart1_rx_dma_pos; i < UART_RX_DMA_SIZE; ++i) {
+      usart1_rx_ring_push(s_usart1_rx_dma[i]);
+    }
+    for (uint16_t i = 0u; i < position; ++i) {
+      usart1_rx_ring_push(s_usart1_rx_dma[i]);
+    }
+  }
+
+  s_usart1_rx_dma_pos = position;
+}
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+  if (huart->Instance == USART1) {
+    s_usart1_rx_restart_requested = 1u;
+  }
+}
 /* USER CODE END Application */
 
