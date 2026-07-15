@@ -142,6 +142,7 @@ const osThreadAttr_t BTx_attributes = {
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
 static void send_motor_can(int16_t rpm, float curr_a, uint8_t run_command);
+// static void send_motor_handshake_ack(void); 7.15 handshake 추가 
 static void cb_cmd(const void *message);
 static void cb_aeb(const void *message);
 static uint8_t uart_crc8(const uint8_t *data, uint8_t length);
@@ -303,8 +304,12 @@ void StartInputs(void *argument)
     PEDAL = (uint8_t)p;
 
     // Inputs 태스크는 페달과 모드/기어 스위치만 담당한다.
-    MODE = (HAL_GPIO_ReadPin(SW_MODE_GPIO_Port, SW_MODE_Pin) == GPIO_PIN_SET) ? 1u : 0u;
-    GEAR = (HAL_GPIO_ReadPin(SW_GEAR_GPIO_Port, SW_GEAR_Pin) == GPIO_PIN_SET) ? 1u : 0u;
+    // SW_MODE_Pin은 내부 pull-up이라 단선/플로팅 시 HIGH가 기본값이 된다.
+
+    // MODE_Pin pull-up default value = 0 (manual)
+    MODE = (HAL_GPIO_ReadPin(SW_MODE_GPIO_Port, SW_MODE_Pin) == GPIO_PIN_RESET) ? 1u : 0u;
+    // GEAR_Pin pull-up default value = 0 (forward)
+    GEAR = (HAL_GPIO_ReadPin(SW_GEAR_GPIO_Port, SW_GEAR_Pin) == GPIO_PIN_RESET) ? 1u : 0u;
 
     osDelay(50); // LED 확인 위해 주기 느리게 했음. 
   }
@@ -766,6 +771,28 @@ static void send_motor_can(int16_t rpm, float curr_a, uint8_t run_command)
   (void)HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &hdr, d);
 }
 
+// /* EZkontrol 핸드셰이크 응답: 모터드라이버가 0x1801D0EF로 8byte 0x55(핸드셰이크 대기)를
+//  * 보내는 동안, 0x0C01EFD0으로 8byte 0xAA를 보내야 드라이버가 이후 속도/전류 명령을 실행한다.
+//  * (EZkontrol CANBUS MCU to VCU V1.0, section 4) */
+// static void send_motor_handshake_ack(void)
+// {
+//   FDCAN_TxHeaderTypeDef hdr;
+//   uint8_t d[8];
+//   for (uint8_t i = 0u; i < 8u; ++i) d[i] = 0xAAu;
+
+//   hdr.Identifier = 0x0C01EFD0UL;
+//   hdr.IdType = FDCAN_EXTENDED_ID;
+//   hdr.TxFrameType = FDCAN_DATA_FRAME;
+//   hdr.DataLength = FDCAN_DLC_BYTES_8;
+//   hdr.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
+//   hdr.BitRateSwitch = FDCAN_BRS_OFF;
+//   hdr.FDFormat = FDCAN_CLASSIC_CAN;
+//   hdr.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+//   hdr.MessageMarker = 0;
+
+//   (void)HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &hdr, d);
+// }
+
 static void cb_cmd(const void *message)
 {
   COMMAND_SPEED = ((const std_msgs__msg__Float32 *)message)->data;
@@ -785,6 +812,16 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan,
 
   if (HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO0, &rx_header, rx_data) == HAL_OK) {
     if (rx_header.Identifier == 0x1801D0EFUL) {
+      // /* 드라이버가 핸드셰이크 대기 중이면 8byte 전부 0x55로 온다. */
+      // uint8_t is_handshake_request = 1u;
+      // for (uint8_t i = 0u; i < 8u; ++i) {
+      //   if (rx_data[i] != 0x55u) { is_handshake_request = 0u; break; }
+      // }
+      // if (is_handshake_request != 0u) {
+      //   send_motor_handshake_ack();
+      //   return;
+      // }
+
       uint16_t raw_rpm = (uint16_t)(rx_data[6] | ((uint16_t)rx_data[7] << 8));
       int32_t rpm = (int32_t)raw_rpm - 32000;
       float wheel_rpm = (float)rpm / GEAR_RATIO;
