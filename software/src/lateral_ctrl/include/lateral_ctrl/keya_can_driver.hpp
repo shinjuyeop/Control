@@ -21,6 +21,7 @@ public:
   bool sendEnable();
   bool sendDisable();
   bool sendPositionCount(int32_t count);
+  bool sendAbsolutePositionMode();
   bool requestEncoderPosition();
   bool requestMotorSpeed();
   bool requestMotorCurrent();
@@ -33,6 +34,7 @@ public:
   static std::array<uint8_t, 8> enablePayload();
   static std::array<uint8_t, 8> disablePayload();
   static std::array<uint8_t, 8> positionPayload(int32_t count);
+  static std::array<uint8_t, 8> absolutePositionModePayload();
   void parseFrameForTest(uint32_t can_id, const std::array<uint8_t, 8> & data);
 
 private:

@@ -43,6 +43,13 @@ TeamKAI-DL 차량의 KEYA 조향 액추에이터를 제어하는 ROS 2 Humble �
 모터가 Enable될 수 있는 상태는 `ACTIVE`뿐입니다. `WAIT_CMD`에서는 Enable frame,
 position frame, holding torque, tracking update를 전송하지 않습니다.
 
+CAN을 연 직후에는 Disable frame 다음 `03 0D 20 31 00 00 00 00`을 보내 KEYA를
+absolute position mode로 전환합니다. Mode 명령의 CAN 전송이 성공하기 전에는 `INIT`에서
+모든 조향 명령과 Enable을 차단합니다. 제공된 데이터시트에는 이 system-code 명령의
+ACK가 정의돼 있지 않고 실제 장비도 ACK를 보내지 않았으므로, ACK는 수신되는 firmware에서만
+보조 진단값으로 기록합니다. Position payload는 장비 데이터시트에 따라 signed 32-bit
+big-endian 순서를 사용합니다.
+
 E-STOP, AEB, MANUAL/invalid mode, mode timeout, steer command timeout, CAN/position
 feedback 손실, motor fault가 발생하면 모터를 즉시 Disable하고 현재 target, pending
 target, command generation/timestamp, tracking integral/correction을 모두 폐기합니다.
@@ -185,8 +192,9 @@ Disable이어야 합니다. 새 `/cmd/steer`를 받은 뒤에만 `ACTIVE`가 됩
 
 - 실제 `can0` actuator output 활성
 - `/mode=AUTO`를 100 ms 주기로 발행
-- 3초 뒤 절대 바퀴각 `[0, 5, 0, -5, 0]` degree 발행
-- 명령 간격 3초, 반복 없음
+- 3초 뒤 절대 바퀴각 `[0, 1, 0, -1, 0]` degree 시퀀스 시작
+- 현재 목표각을 20ms마다 50Hz로 계속 발행
+- 목표 index만 3초마다 변경하고 시퀀스 반복
 - actuator rate limit 5 deg/s
 - test E-STOP/AEB 토픽 발행 활성; 초기 값은 둘 다 false
 
@@ -235,6 +243,17 @@ ros2 launch lateral_ctrl steering_bench_test.launch.py \
 벗어나 있으면 첫 0도 명령에서 큰 이동이 발생할 수 있습니다. 벤치 노드가 종료되면
 MANUAL과 test safety false를 best-effort 발행하며, launch는 actuator 노드도 함께
 종료시킵니다.
+
+벤치 시퀀스의 핵심 파라미터는 다음과 같습니다.
+
+```yaml
+steer_command_publish_period_ms: 20
+steer_target_change_interval_ms: 3000
+steer_sequence_repeat: true
+```
+
+`steer_command_publish_period_ms`는 actuator의 기본 200ms command timeout보다 충분히
+짧아야 합니다. 목표 변경 간격과 command 발행 주기는 서로 독립적입니다.
 
 ## vcan 확인
 

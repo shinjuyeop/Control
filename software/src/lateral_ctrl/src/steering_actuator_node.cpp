@@ -90,6 +90,7 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
       RCLCPP_ERROR(get_logger(), "Failed to open SocketCAN interface '%s'", can_interface.c_str());
     } else {
       can_driver_->sendDisable();
+      can_driver_->sendAbsolutePositionMode();
       RCLCPP_WARN(
         get_logger(),
         "HARDWARE OUTPUT ARMED: hardware_can_enabled and actuator_output_enabled are both true");
@@ -287,6 +288,26 @@ void SteeringActuatorNode::controlTick()
   feedback_timeout_ = !motor.position_valid || position_age_ms > feedback_timeout_ms_;
   const bool feedback_valid = !feedback_timeout_ && !can_timeout_;
   const bool motor_fault = (motor.fault_bits & static_cast<uint16_t>(~uint16_t{1})) != 0;
+  if (!motor.absolute_position_mode_commanded) {
+    if (tick_count_ % 25 == 0) {
+      can_driver_->sendDisable();
+      can_driver_->sendAbsolutePositionMode();
+    }
+    if (movement_target_valid_ || pending_command_valid_ || enabled_commanded_) {
+      discardAllSteeringCommands();
+    }
+    if (enabled_commanded_ && can_driver_->isOpen()) can_driver_->sendDisable();
+    enabled_commanded_ = false;
+    state_ = SteeringState::INIT;
+    disable_reason_ = SteeringDisableReason::NONE;
+    steering_rate_deg_s_ = 0.0;
+    tracking_controller_.reset();
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 2000,
+      "Waiting to transmit KEYA absolute-position-mode command");
+    publishState(position_age_ms, mode_age_ms, steer_age_ms);
+    return;
+  }
   steer_command_timeout_ = state_ == SteeringState::ACTIVE &&
     (!std::isfinite(steer_age_ms) || steer_age_ms > steer_command_timeout_ms_);
   disable_reason_ = selectDisableReason(
@@ -365,6 +386,8 @@ void SteeringActuatorNode::publishState(
   status.estop_active = safety_.effectiveEstop();
   status.aeb_active = safety_.effectiveAeb();
   status.communication_ok = motor.communication_ok && !can_timeout_;
+  status.absolute_position_mode_commanded = motor.absolute_position_mode_commanded;
+  status.absolute_position_mode_acknowledged = motor.absolute_position_mode_acknowledged;
   status.can_timeout = can_timeout_;
   status.feedback_valid =
     motor.position_valid &&

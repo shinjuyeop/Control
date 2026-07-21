@@ -82,6 +82,10 @@ std::array<uint8_t, 8> KeyaCanDriver::positionPayload(int32_t count)
     static_cast<uint8_t>(value >> 16), static_cast<uint8_t>(value >> 8),
     static_cast<uint8_t>(value)};
 }
+std::array<uint8_t, 8> KeyaCanDriver::absolutePositionModePayload()
+{
+  return {0x03, 0x0D, 0x20, 0x31, 0, 0, 0, 0};
+}
 bool KeyaCanDriver::send(const std::array<uint8_t, 8> & data)
 {
   if (socket_fd_ < 0) return false;
@@ -94,6 +98,12 @@ bool KeyaCanDriver::send(const std::array<uint8_t, 8> & data)
 bool KeyaCanDriver::sendEnable() { return send(enablePayload()); }
 bool KeyaCanDriver::sendDisable() { return send(disablePayload()); }
 bool KeyaCanDriver::sendPositionCount(int32_t count) { return send(positionPayload(count)); }
+bool KeyaCanDriver::sendAbsolutePositionMode()
+{
+  const bool sent = send(absolutePositionModePayload());
+  if (sent) state_.absolute_position_mode_commanded = true;
+  return sent;
+}
 bool KeyaCanDriver::requestEncoderPosition()
 {
   return send({0x40, 0x04, 0x21, 0x02, 0, 0, 0, 0});
@@ -150,6 +160,12 @@ void KeyaCanDriver::parseFrame(const can_frame & frame)
     state_.fault_bits = static_cast<uint16_t>(
       (static_cast<uint16_t>(frame.data[6]) << 8) | frame.data[7]);
     state_.speed_valid = state_.current_valid = true;
+    return;
+  }
+  if (frame.data[0] == 0x63 && frame.data[1] == 0x0D && frame.data[2] == 0x20 &&
+    frame.data[3] == 0x31)
+  {
+    state_.absolute_position_mode_acknowledged = true;
     return;
   }
   if (frame.data[0] != 0x60) return;

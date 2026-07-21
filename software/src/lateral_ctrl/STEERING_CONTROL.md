@@ -58,6 +58,13 @@ to true. Tracking control defaults false. Existing wheel limit, 60 deg/s rate li
 angle converter, and optional tracking controller remain in place. A command governor,
 acceleration/jerk limiter, speed-dependent limits, and new PID tuning are future work.
 
+At CAN startup the node sends Disable followed by the KEYA absolute-position-mode command
+`03 0D 20 31 00 00 00 00`. It remains in `INIT` until that frame is transmitted
+successfully. The supplied datasheet does not define an acknowledgement for this system-code
+command and the tested hardware did not emit one, so an optional `63 0D 20 31 ...` response is
+recorded for diagnostics but is not an activation gate. Position command data remains signed
+32-bit big-endian, as specified by the supplied motor datasheet.
+
 The required version-controlled configuration files are:
 
 - `config/steering_actuator.yaml`
@@ -103,8 +110,10 @@ ros2 launch lateral_ctrl steering_bench_test.launch.py \
   drive_mode_publish_enabled:=false
 ```
 
-The bench sequence is absolute wheel angle `[0, 5, 0, -5, 0]` degrees, begins after 3 s,
-uses a 3 s interval, and does not repeat. `bench_test_enabled` no longer exists: starting
+The bench sequence is absolute wheel angle `[0, 1, 0, -1, 0]` degrees and begins after 3 s.
+The selected target is published every 20 ms (50 Hz), the target index changes every 3 s,
+and the sequence repeats. This keeps `/cmd/steer` fresh relative to the 200 ms actuator
+timeout. `bench_test_enabled` no longer exists: starting
 the bench launch is the explicit test action. Before running, lift the wheels, clear all
 people from the mechanism, prepare the physical E-STOP, and verify the steering is near
 mechanical center. The first absolute 0-degree command can cause a large movement when it

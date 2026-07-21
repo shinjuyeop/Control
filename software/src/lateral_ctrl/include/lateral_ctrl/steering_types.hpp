@@ -31,6 +31,8 @@ struct KeyaMotorState
   bool voltage_valid{false};
   bool temperature_valid{false};
   bool communication_ok{false};
+  bool absolute_position_mode_commanded{false};
+  bool absolute_position_mode_acknowledged{false};
   bool enabled_feedback{false};
   bool enabled_feedback_valid{false};
   std::chrono::steady_clock::time_point last_feedback{};

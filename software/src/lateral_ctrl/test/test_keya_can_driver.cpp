@@ -20,6 +20,19 @@ TEST(KeyaCanDriver, EncodesSignedPositionBigEndian)
     lateral_ctrl::KeyaCanDriver::positionPayload(-1217),
     (std::array<uint8_t, 8>{0x23, 0x02, 0x20, 0x01, 0xFF, 0xFF, 0xFB, 0x3F}));
 }
+TEST(KeyaCanDriver, BuildsAbsolutePositionModeFrame)
+{
+  EXPECT_EQ(
+    lateral_ctrl::KeyaCanDriver::absolutePositionModePayload(),
+    (std::array<uint8_t, 8>{0x03, 0x0D, 0x20, 0x31, 0, 0, 0, 0}));
+}
+TEST(KeyaCanDriver, ParsesAbsolutePositionModeAcknowledgement)
+{
+  lateral_ctrl::KeyaCanDriver driver("vcan0", 1);
+  driver.parseFrameForTest(
+    0x05800001, {0x63, 0x0D, 0x20, 0x31, 0, 0, 0, 0});
+  EXPECT_TRUE(driver.motorState().absolute_position_mode_acknowledged);
+}
 TEST(KeyaCanDriver, ParsesAuthoritativeEncoderQuery)
 {
   lateral_ctrl::KeyaCanDriver driver("vcan0", 1);

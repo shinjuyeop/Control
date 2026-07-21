@@ -25,8 +25,11 @@ public:
     drive_mode_publish_period_ms_ = declare_parameter("drive_mode_publish_period_ms", 100);
     steer_sequence_publish_enabled_ = declare_parameter("steer_sequence_publish_enabled", true);
     sequence_ = declare_parameter("steer_sequence_deg", defaultBenchSequence());
-    steer_command_interval_ms_ = declare_parameter("steer_command_interval_ms", 3000);
-    sequence_repeat_ = declare_parameter("steer_sequence_repeat", false);
+    steer_command_publish_period_ms_ =
+      declare_parameter("steer_command_publish_period_ms", 20);
+    steer_target_change_interval_ms_ =
+      declare_parameter("steer_target_change_interval_ms", 3000);
+    sequence_repeat_ = declare_parameter("steer_sequence_repeat", true);
     sequence_start_delay_sec_ = declare_parameter("steer_sequence_start_delay_sec", 3.0);
     safety_injection_enabled_ = declare_parameter("safety_injection_enabled", true);
     test_estop_active_ = declare_parameter("test_estop_active", false);
@@ -44,7 +47,8 @@ public:
       drive_mode_publish_enabled_ = false;
       RCLCPP_ERROR(get_logger(), "drive_mode_publish_period_ms must be greater than zero");
     }
-    if (steer_command_interval_ms_ <= 0 || !std::isfinite(sequence_start_delay_sec_) ||
+    if (steer_command_publish_period_ms_ <= 0 || steer_target_change_interval_ms_ <= 0 ||
+      !std::isfinite(sequence_start_delay_sec_) ||
       sequence_start_delay_sec_ < 0.0)
     {
       steer_sequence_publish_enabled_ = false;
@@ -56,12 +60,13 @@ public:
     estop_pub_ = create_publisher<std_msgs::msg::UInt8>("/steering/test/estop", 10);
     aeb_pub_ = create_publisher<std_msgs::msg::UInt8>("/steering/test/aeb", 10);
     sequence_enabled_at_ = std::chrono::steady_clock::now();
-    last_mode_publish_ = last_sequence_publish_ = sequence_enabled_at_;
+    last_mode_publish_ = last_safety_publish_ = sequence_enabled_at_;
+    next_steer_command_publish_ = last_target_change_ = sequence_enabled_at_;
 
     parameter_callback_ = add_on_set_parameters_callback(
       std::bind(&SteeringBenchTestNode::onParameters, this, std::placeholders::_1));
     timer_ = create_wall_timer(
-      std::chrono::milliseconds(50), std::bind(&SteeringBenchTestNode::tick, this));
+      std::chrono::milliseconds(5), std::bind(&SteeringBenchTestNode::tick, this));
     RCLCPP_WARN(
       get_logger(),
       "BENCH SAFETY: confirm the wheels are near mechanical center. This sequence uses ABSOLUTE "
@@ -99,7 +104,8 @@ private:
         return result;
       }
       if ((name == "drive_mode_publish_period_ms" ||
-        name == "steer_command_interval_ms") && parameter.as_int() <= 0)
+        name == "steer_command_publish_period_ms" ||
+        name == "steer_target_change_interval_ms") && parameter.as_int() <= 0)
       {
         result.successful = false;
         result.reason = name + " must be greater than zero";
@@ -128,8 +134,10 @@ private:
       } else if (name == "steer_sequence_deg") {
         sequence_ = parameter.as_double_array();
         resetSequence();
-      } else if (name == "steer_command_interval_ms") {
-        steer_command_interval_ms_ = parameter.as_int();
+      } else if (name == "steer_command_publish_period_ms") {
+        steer_command_publish_period_ms_ = parameter.as_int();
+      } else if (name == "steer_target_change_interval_ms") {
+        steer_target_change_interval_ms_ = parameter.as_int();
       } else if (name == "steer_sequence_repeat") {
         sequence_repeat_ = parameter.as_bool();
       } else if (name == "steer_sequence_start_delay_sec") {
@@ -166,8 +174,11 @@ private:
   void resetSequence()
   {
     sequence_index_ = 0;
+    current_target_wheel_angle_deg_ = 0.0;
+    target_selected_ = false;
+    sequence_complete_ = false;
     sequence_enabled_at_ = std::chrono::steady_clock::now();
-    last_sequence_publish_ = sequence_enabled_at_;
+    next_steer_command_publish_ = last_target_change_ = sequence_enabled_at_;
   }
 
   void tick()
@@ -183,37 +194,60 @@ private:
       mode_pub_->publish(mode);
       last_mode_publish_ = now;
     }
-    if (safety_injection_enabled_) {
+    if (safety_injection_enabled_ &&
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+        now - last_safety_publish_).count() >= 50)
+    {
       std_msgs::msg::UInt8 value;
       value.data = test_estop_active_ ? 1 : 0;
       estop_pub_->publish(value);
       value.data = test_aeb_active_ ? 1 : 0;
       aeb_pub_->publish(value);
+      last_safety_publish_ = now;
     }
     if (!steer_sequence_publish_enabled_ || sequence_.empty()) return;
     if (std::chrono::duration<double>(now - sequence_enabled_at_).count() <
       sequence_start_delay_sec_) return;
-    if (std::chrono::duration_cast<std::chrono::milliseconds>(
-        now - last_sequence_publish_).count() < steer_command_interval_ms_) return;
-    if (sequence_index_ >= sequence_.size()) {
-      if (!sequence_repeat_) return;
+    if (!target_selected_) {
       sequence_index_ = 0;
+      current_target_wheel_angle_deg_ = sequence_[sequence_index_];
+      target_selected_ = true;
+      last_target_change_ = now;
+      next_steer_command_publish_ = now;
+    } else if (std::chrono::duration_cast<std::chrono::milliseconds>(
+        now - last_target_change_).count() >= steer_target_change_interval_ms_)
+    {
+      ++sequence_index_;
+      if (sequence_index_ >= sequence_.size()) {
+        if (sequence_repeat_) sequence_index_ = 0;
+        else sequence_complete_ = true;
+      }
+      if (!sequence_complete_) current_target_wheel_angle_deg_ = sequence_[sequence_index_];
+      last_target_change_ = now;
     }
+    if (sequence_complete_) return;
+    if (now < next_steer_command_publish_) return;
     std_msgs::msg::Float32 command;
-    command.data = static_cast<float>(sequence_[sequence_index_++]);
+    command.data = static_cast<float>(current_target_wheel_angle_deg_);
     steer_pub_->publish(command);
-    last_sequence_publish_ = now;
+    do {
+      next_steer_command_publish_ +=
+        std::chrono::milliseconds(steer_command_publish_period_ms_);
+    } while (next_steer_command_publish_ <= now);
   }
 
   std::mutex mutex_;
   bool drive_mode_publish_enabled_, steer_sequence_publish_enabled_;
   bool sequence_repeat_, safety_injection_enabled_, test_estop_active_, test_aeb_active_;
-  int64_t test_drive_mode_, drive_mode_publish_period_ms_, steer_command_interval_ms_;
-  double sequence_start_delay_sec_, max_abs_sequence_deg_;
+  int64_t test_drive_mode_, drive_mode_publish_period_ms_;
+  int64_t steer_command_publish_period_ms_, steer_target_change_interval_ms_;
+  double sequence_start_delay_sec_, max_abs_sequence_deg_, current_target_wheel_angle_deg_{0.0};
   std::vector<double> sequence_;
   size_t sequence_index_{0};
+  bool target_selected_{false}, sequence_complete_{false};
   std::chrono::steady_clock::time_point sequence_enabled_at_;
-  std::chrono::steady_clock::time_point last_mode_publish_, last_sequence_publish_;
+  std::chrono::steady_clock::time_point last_mode_publish_, last_safety_publish_;
+  std::chrono::steady_clock::time_point next_steer_command_publish_, last_target_change_;
   rclcpp::Publisher<std_msgs::msg::UInt8>::SharedPtr mode_pub_, estop_pub_, aeb_pub_;
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr steer_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
