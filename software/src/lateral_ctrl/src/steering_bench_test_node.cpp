@@ -28,7 +28,7 @@ public:
     steer_command_interval_ms_ = declare_parameter("steer_command_interval_ms", 3000);
     sequence_repeat_ = declare_parameter("steer_sequence_repeat", false);
     sequence_start_delay_sec_ = declare_parameter("steer_sequence_start_delay_sec", 3.0);
-    safety_injection_enabled_ = declare_parameter("safety_injection_enabled", false);
+    safety_injection_enabled_ = declare_parameter("safety_injection_enabled", true);
     test_estop_active_ = declare_parameter("test_estop_active", false);
     test_aeb_active_ = declare_parameter("test_aeb_active", false);
     max_abs_sequence_deg_ = declare_parameter("wheel_limit_deg", 30.0);

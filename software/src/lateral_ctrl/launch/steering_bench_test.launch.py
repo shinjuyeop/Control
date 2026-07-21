@@ -51,7 +51,7 @@ def generate_launch_description():
         DeclareLaunchArgument('actuator_output_enabled', default_value='true'),
         DeclareLaunchArgument('drive_mode_publish_enabled', default_value='true'),
         DeclareLaunchArgument('steer_sequence_publish_enabled', default_value='true'),
-        DeclareLaunchArgument('safety_injection_enabled', default_value='false'),
+        DeclareLaunchArgument('safety_injection_enabled', default_value='true'),
         actuator,
         bench,
         RegisterEventHandler(

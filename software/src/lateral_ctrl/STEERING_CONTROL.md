@@ -108,7 +108,8 @@ uses a 3 s interval, and does not repeat. `bench_test_enabled` no longer exists:
 the bench launch is the explicit test action. Before running, lift the wheels, clear all
 people from the mechanism, prepare the physical E-STOP, and verify the steering is near
 mechanical center. The first absolute 0-degree command can cause a large movement when it
-is not centered. Test E-STOP/AEB injection remains disabled by default.
+is not centered. Test E-STOP/AEB publishing is enabled by default with both values false;
+toggle `test_estop_active` and `test_aeb_active` on `steering_bench_test_node` at runtime.
 
 On normal bench-node shutdown it best-effort publishes MANUAL and clears test E-STOP/AEB.
 The launch shuts down the actuator if the bench node exits; actuator destruction sends a

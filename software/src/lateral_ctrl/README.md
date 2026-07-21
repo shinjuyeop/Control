@@ -188,7 +188,7 @@ Disable이어야 합니다. 새 `/cmd/steer`를 받은 뒤에만 `ACTIVE`가 됩
 - 3초 뒤 절대 바퀴각 `[0, 5, 0, -5, 0]` degree 발행
 - 명령 간격 3초, 반복 없음
 - actuator rate limit 5 deg/s
-- test E-STOP/AEB injection 비활성
+- test E-STOP/AEB 토픽 발행 활성; 초기 값은 둘 다 false
 
 ```bash
 ros2 launch lateral_ctrl steering_bench_test.launch.py
@@ -208,6 +208,27 @@ ros2 topic pub --once /cmd/steer std_msgs/msg/Float32 '{data: 1.0}'
 ```bash
 ros2 launch lateral_ctrl steering_bench_test.launch.py \
   drive_mode_publish_enabled:=false
+```
+
+Test E-STOP/AEB는 벤치 launch에서 기본적으로 50 ms마다 false를 발행합니다. 다음
+runtime parameter로 활성/해제를 시험합니다. test safety가 true인 동안에는 모든
+조향 명령이 폐기되고 모터가 Disable됩니다.
+
+```bash
+# E-STOP 활성/해제
+ros2 param set /steering_bench_test_node test_estop_active true
+ros2 param set /steering_bench_test_node test_estop_active false
+
+# AEB 활성/해제
+ros2 param set /steering_bench_test_node test_aeb_active true
+ros2 param set /steering_bench_test_node test_aeb_active false
+```
+
+자동 test safety publisher를 사용하지 않으려면:
+
+```bash
+ros2 launch lateral_ctrl steering_bench_test.launch.py \
+  safety_injection_enabled:=false
 ```
 
 벤치 명령은 현재각 기준 offset이 아니라 절대 바퀴각입니다. 현재 바퀴가 중앙에서
