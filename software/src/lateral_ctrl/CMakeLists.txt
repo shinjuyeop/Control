@@ -52,18 +52,6 @@ install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
 install(FILES STEERING_CONTROL.md DESTINATION share/${PROJECT_NAME})
 
-add_executable(steering_control_node src/steering_control_node.cpp)
-ament_target_dependencies(steering_control_node rclcpp std_msgs)
-
-add_executable(steering_feedback_node src/steering_feedback_node.cpp)
-ament_target_dependencies(steering_feedback_node rclcpp std_msgs)
-
-install(TARGETS
-  steering_control_node
-  steering_feedback_node
-  DESTINATION lib/${PROJECT_NAME}
-)
-
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_keya_can_driver test/test_keya_can_driver.cpp)
