@@ -12,8 +12,6 @@ bool movement_target_valid
 bool estop_active
 bool aeb_active
 bool communication_ok
-bool absolute_position_mode_commanded
-bool absolute_position_mode_acknowledged
 bool can_timeout
 bool feedback_valid
 bool enabled_commanded

@@ -71,7 +71,7 @@ private:
   int control_period_ms_{20};
   int can_timeout_ms_{500};
   int feedback_timeout_ms_{500};
-  int mode_timeout_ms_{1000};
+  int mode_timeout_ms_{1500};
   int steer_command_timeout_ms_{200};
   uint64_t tick_count_{0};
   uint64_t steer_command_generation_{0};

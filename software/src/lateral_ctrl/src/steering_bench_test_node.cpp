@@ -55,10 +55,9 @@ public:
       RCLCPP_ERROR(get_logger(), "Invalid sequence interval/start delay; sequence disabled");
     }
 
-    mode_pub_ = create_publisher<std_msgs::msg::UInt8>("/mode", 10);
     steer_pub_ = create_publisher<std_msgs::msg::Float32>("/cmd/steer", 10);
-    estop_pub_ = create_publisher<std_msgs::msg::UInt8>("/steering/test/estop", 10);
-    aeb_pub_ = create_publisher<std_msgs::msg::UInt8>("/steering/test/aeb", 10);
+    if (drive_mode_publish_enabled_) ensureModePublisher();
+    if (safety_injection_enabled_) ensureSafetyPublishers();
     sequence_enabled_at_ = std::chrono::steady_clock::now();
     last_mode_publish_ = last_safety_publish_ = sequence_enabled_at_;
     next_steer_command_publish_ = last_target_change_ = sequence_enabled_at_;
@@ -70,7 +69,7 @@ public:
     RCLCPP_WARN(
       get_logger(),
       "BENCH SAFETY: confirm the wheels are near mechanical center. This sequence uses ABSOLUTE "
-      "wheel angles; the first 0 deg command can cause a large movement if steering is not centered.");
+      "wheel angles; the first 5 deg command can cause a large movement if steering is not centered.");
   }
 
   ~SteeringBenchTestNode() override
@@ -122,7 +121,10 @@ private:
     for (const auto & parameter : parameters) {
       const auto & name = parameter.get_name();
       if (name == "drive_mode_publish_enabled") {
-        drive_mode_publish_enabled_ = parameter.as_bool();
+        const bool enabled = parameter.as_bool();
+        if (enabled) ensureModePublisher();
+        else mode_pub_.reset();
+        drive_mode_publish_enabled_ = enabled;
       } else if (name == "test_drive_mode") {
         test_drive_mode_ = parameter.as_int();
       } else if (name == "drive_mode_publish_period_ms") {
@@ -143,8 +145,15 @@ private:
       } else if (name == "steer_sequence_start_delay_sec") {
         sequence_start_delay_sec_ = parameter.as_double();
       } else if (name == "safety_injection_enabled") {
-        if (safety_injection_enabled_ && !parameter.as_bool()) clearTestSafety();
-        safety_injection_enabled_ = parameter.as_bool();
+        const bool enabled = parameter.as_bool();
+        if (enabled) {
+          ensureSafetyPublishers();
+        } else if (safety_injection_enabled_) {
+          clearTestSafety();
+          estop_pub_.reset();
+          aeb_pub_.reset();
+        }
+        safety_injection_enabled_ = enabled;
       } else if (name == "test_estop_active") {
         test_estop_active_ = parameter.as_bool();
       } else if (name == "test_aeb_active") {
@@ -154,12 +163,27 @@ private:
     return result;
   }
 
+  void ensureModePublisher()
+  {
+    if (!mode_pub_) mode_pub_ = create_publisher<std_msgs::msg::UInt8>("/mode", 10);
+  }
+
+  void ensureSafetyPublishers()
+  {
+    if (!estop_pub_) {
+      estop_pub_ = create_publisher<std_msgs::msg::UInt8>("/steering/test/estop", 10);
+    }
+    if (!aeb_pub_) {
+      aeb_pub_ = create_publisher<std_msgs::msg::UInt8>("/steering/test/aeb", 10);
+    }
+  }
+
   void clearTestSafety()
   {
     std_msgs::msg::UInt8 value;
     value.data = 0;
-    estop_pub_->publish(value);
-    aeb_pub_->publish(value);
+    if (estop_pub_) estop_pub_->publish(value);
+    if (aeb_pub_) aeb_pub_->publish(value);
     test_estop_active_ = false;
     test_aeb_active_ = false;
   }
@@ -186,6 +210,7 @@ private:
     std::lock_guard<std::mutex> lock(mutex_);
     const auto now = std::chrono::steady_clock::now();
     if (drive_mode_publish_enabled_ &&
+      mode_pub_ &&
       std::chrono::duration_cast<std::chrono::milliseconds>(now - last_mode_publish_).count() >=
       drive_mode_publish_period_ms_)
     {
@@ -195,6 +220,7 @@ private:
       last_mode_publish_ = now;
     }
     if (safety_injection_enabled_ &&
+      estop_pub_ && aeb_pub_ &&
       std::chrono::duration_cast<std::chrono::milliseconds>(
         now - last_safety_publish_).count() >= 50)
     {

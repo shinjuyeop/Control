@@ -111,11 +111,11 @@ TEST(SteeringSafetyLogic, PriorityIsDeterministic)
     lateral_ctrl::selectDisableReason(true, DriveMode::AUTO, safety, true, true, false),
     SteeringDisableReason::CAN_TIMEOUT);
 }
-TEST(SteeringSafetyLogic, BenchSequenceIsAbsoluteAndConservative)
+TEST(SteeringSafetyLogic, BenchSequenceAlternatesFiveDegrees)
 {
   EXPECT_EQ(
     lateral_ctrl::defaultBenchSequence(),
-    (std::vector<double>{0.0, 1.0, 0.0, -1.0, 0.0}));
+    (std::vector<double>{5.0, -5.0}));
 }
 TEST(SteeringSafetyLogic, RateLimiterBoundsMovement)
 {

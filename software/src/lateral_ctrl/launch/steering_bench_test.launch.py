@@ -24,7 +24,6 @@ def generate_launch_description():
                 'hardware_can_enabled': LaunchConfiguration('hardware_can_enabled'),
                 'actuator_output_enabled': LaunchConfiguration('actuator_output_enabled'),
                 'test_input_injection_enabled': True,
-                'max_steering_rate_deg_s': 5.0,
             },
         ],
     )
