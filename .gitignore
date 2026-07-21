@@ -94,6 +94,11 @@ micro_ros_stm32cubemx_utils/
 *.csv
 *.yaml
 *.yml
+!software/src/lateral_ctrl/config/
+!software/src/lateral_ctrl/config/*.yaml
+!software/src/lateral_ctrl/config/*.yml
+*.local.yaml
+*.local.yml
 
 # 만약 pid_gazebo 폴더 안의 내용물을 통째로 제외하고 싶다면 (추천)
 pid_gazebo/analysis/

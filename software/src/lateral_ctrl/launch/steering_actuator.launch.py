@@ -10,8 +10,9 @@ def generate_launch_description():
     config = os.path.join(
         get_package_share_directory('lateral_ctrl'), 'config', 'steering_actuator.yaml')
     return LaunchDescription([
-        DeclareLaunchArgument('hardware_can_enabled', default_value='false'),
-        DeclareLaunchArgument('actuator_output_enabled', default_value='false'),
+        DeclareLaunchArgument('can_interface', default_value='can0'),
+        DeclareLaunchArgument('hardware_can_enabled', default_value='true'),
+        DeclareLaunchArgument('actuator_output_enabled', default_value='true'),
         Node(
             package='lateral_ctrl',
             executable='steering_actuator_node',
@@ -20,6 +21,7 @@ def generate_launch_description():
             parameters=[
                 config,
                 {
+                    'can_interface': LaunchConfiguration('can_interface'),
                     'hardware_can_enabled': LaunchConfiguration('hardware_can_enabled'),
                     'actuator_output_enabled': LaunchConfiguration('actuator_output_enabled'),
                     'test_input_injection_enabled': False,

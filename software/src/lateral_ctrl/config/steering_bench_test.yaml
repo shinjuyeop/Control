@@ -1,0 +1,13 @@
+steering_bench_test_node:
+  ros__parameters:
+    drive_mode_publish_enabled: true
+    test_drive_mode: 1
+    drive_mode_publish_period_ms: 100
+    steer_sequence_publish_enabled: true
+    steer_sequence_deg: [0.0, 1.0, 0.0, -1.0, 0.0]
+    steer_command_interval_ms: 3000
+    steer_sequence_repeat: false
+    steer_sequence_start_delay_sec: 3.0
+    safety_injection_enabled: false
+    test_estop_active: false
+    test_aeb_active: false

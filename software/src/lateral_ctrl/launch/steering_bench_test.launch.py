@@ -20,6 +20,7 @@ def generate_launch_description():
         parameters=[
             actuator_config,
             {
+                'can_interface': LaunchConfiguration('can_interface'),
                 'hardware_can_enabled': LaunchConfiguration('hardware_can_enabled'),
                 'actuator_output_enabled': LaunchConfiguration('actuator_output_enabled'),
                 'test_input_injection_enabled': True,
@@ -35,7 +36,6 @@ def generate_launch_description():
         parameters=[
             bench_config,
             {
-                'bench_test_enabled': LaunchConfiguration('bench_test_enabled'),
                 'drive_mode_publish_enabled': LaunchConfiguration(
                     'drive_mode_publish_enabled'),
                 'steer_sequence_publish_enabled': LaunchConfiguration(
@@ -46,11 +46,11 @@ def generate_launch_description():
         ],
     )
     return LaunchDescription([
-        DeclareLaunchArgument('hardware_can_enabled', default_value='false'),
-        DeclareLaunchArgument('actuator_output_enabled', default_value='false'),
-        DeclareLaunchArgument('bench_test_enabled', default_value='false'),
-        DeclareLaunchArgument('drive_mode_publish_enabled', default_value='false'),
-        DeclareLaunchArgument('steer_sequence_publish_enabled', default_value='false'),
+        DeclareLaunchArgument('can_interface', default_value='can0'),
+        DeclareLaunchArgument('hardware_can_enabled', default_value='true'),
+        DeclareLaunchArgument('actuator_output_enabled', default_value='true'),
+        DeclareLaunchArgument('drive_mode_publish_enabled', default_value='true'),
+        DeclareLaunchArgument('steer_sequence_publish_enabled', default_value='true'),
         DeclareLaunchArgument('safety_injection_enabled', default_value='false'),
         actuator,
         bench,

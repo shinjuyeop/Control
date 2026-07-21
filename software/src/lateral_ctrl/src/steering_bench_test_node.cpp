@@ -20,11 +20,10 @@ public:
   SteeringBenchTestNode()
   : Node("steering_bench_test_node")
   {
-    bench_test_enabled_ = declare_parameter("bench_test_enabled", false);
-    drive_mode_publish_enabled_ = declare_parameter("drive_mode_publish_enabled", false);
+    drive_mode_publish_enabled_ = declare_parameter("drive_mode_publish_enabled", true);
     test_drive_mode_ = declare_parameter("test_drive_mode", 1);
     drive_mode_publish_period_ms_ = declare_parameter("drive_mode_publish_period_ms", 100);
-    steer_sequence_publish_enabled_ = declare_parameter("steer_sequence_publish_enabled", false);
+    steer_sequence_publish_enabled_ = declare_parameter("steer_sequence_publish_enabled", true);
     sequence_ = declare_parameter("steer_sequence_deg", defaultBenchSequence());
     steer_command_interval_ms_ = declare_parameter("steer_command_interval_ms", 3000);
     sequence_repeat_ = declare_parameter("steer_sequence_repeat", false);
@@ -116,11 +115,7 @@ private:
     }
     for (const auto & parameter : parameters) {
       const auto & name = parameter.get_name();
-      if (name == "bench_test_enabled") {
-        const bool enabling = !bench_test_enabled_ && parameter.as_bool();
-        bench_test_enabled_ = parameter.as_bool();
-        if (enabling) resetSequence();
-      } else if (name == "drive_mode_publish_enabled") {
+      if (name == "drive_mode_publish_enabled") {
         drive_mode_publish_enabled_ = parameter.as_bool();
       } else if (name == "test_drive_mode") {
         test_drive_mode_ = parameter.as_int();
@@ -178,7 +173,6 @@ private:
   void tick()
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!bench_test_enabled_) return;
     const auto now = std::chrono::steady_clock::now();
     if (drive_mode_publish_enabled_ &&
       std::chrono::duration_cast<std::chrono::milliseconds>(now - last_mode_publish_).count() >=
@@ -212,7 +206,7 @@ private:
   }
 
   std::mutex mutex_;
-  bool bench_test_enabled_, drive_mode_publish_enabled_, steer_sequence_publish_enabled_;
+  bool drive_mode_publish_enabled_, steer_sequence_publish_enabled_;
   bool sequence_repeat_, safety_injection_enabled_, test_estop_active_, test_aeb_active_;
   int64_t test_drive_mode_, drive_mode_publish_period_ms_, steer_command_interval_ms_;
   double sequence_start_delay_sec_, max_abs_sequence_deg_;
