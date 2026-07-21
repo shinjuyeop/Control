@@ -61,14 +61,14 @@ TEST(SteeringSafetyLogic, TestFalseCannotClearRealTrue)
   EXPECT_TRUE(safety.effectiveEstop());
   EXPECT_TRUE(safety.effectiveAeb());
 }
-TEST(SteeringSafetyLogic, AutoWithoutInhibitMapsToAutoReady)
+TEST(SteeringSafetyLogic, AutoWithoutInhibitMapsToWaitCommand)
 {
   SafetyInputs safety;
   const auto reason =
     lateral_ctrl::selectDisableReason(true, DriveMode::AUTO, safety, false, false, true);
   EXPECT_EQ(reason, SteeringDisableReason::NONE);
   EXPECT_EQ(
-    lateral_ctrl::stateForDisableReason(reason), lateral_ctrl::SteeringState::AUTO_READY);
+    lateral_ctrl::stateForDisableReason(reason), lateral_ctrl::SteeringState::WAIT_CMD);
 }
 TEST(SteeringSafetyLogic, InvalidModeDisables)
 {
@@ -136,7 +136,7 @@ TEST(SteeringSafetyLogic, DisableReasonsMapToStates)
 {
   EXPECT_EQ(
     lateral_ctrl::stateForDisableReason(SteeringDisableReason::NONE),
-    lateral_ctrl::SteeringState::AUTO_READY);
+    lateral_ctrl::SteeringState::WAIT_CMD);
   EXPECT_EQ(
     lateral_ctrl::stateForDisableReason(SteeringDisableReason::ESTOP),
     lateral_ctrl::SteeringState::ESTOP);
@@ -146,4 +146,42 @@ TEST(SteeringSafetyLogic, DisableReasonsMapToStates)
   EXPECT_EQ(
     lateral_ctrl::stateForDisableReason(SteeringDisableReason::MOTOR_FAULT),
     lateral_ctrl::SteeringState::FAULT);
+}
+
+TEST(SteeringSafetyLogic, ActiveIsTheOnlyMotorEnabledState)
+{
+  EXPECT_TRUE(lateral_ctrl::shouldMotorBeEnabled(lateral_ctrl::SteeringState::ACTIVE));
+  EXPECT_FALSE(lateral_ctrl::shouldMotorBeEnabled(lateral_ctrl::SteeringState::WAIT_CMD));
+  EXPECT_FALSE(lateral_ctrl::shouldMotorBeEnabled(lateral_ctrl::SteeringState::DISABLED));
+  EXPECT_FALSE(lateral_ctrl::shouldMotorBeEnabled(lateral_ctrl::SteeringState::ESTOP));
+}
+
+TEST(SteeringSafetyLogic, CommandMustBeReceivedAfterRecoveryBoundary)
+{
+  EXPECT_FALSE(lateral_ctrl::pendingCommandIsEligible(true, 4, 5, true));
+  EXPECT_TRUE(lateral_ctrl::pendingCommandIsEligible(true, 5, 5, true));
+  EXPECT_FALSE(lateral_ctrl::pendingCommandIsEligible(true, 5, 5, false));
+  EXPECT_FALSE(lateral_ctrl::pendingCommandIsEligible(false, 5, 5, true));
+}
+
+TEST(SteeringSafetyLogic, ModeAndSteerTimeoutsMapSafely)
+{
+  SafetyInputs safety;
+  EXPECT_EQ(
+    lateral_ctrl::selectDisableReason(
+      true, true, DriveMode::AUTO, safety, false, false, true, false),
+    SteeringDisableReason::MODE_TIMEOUT);
+  EXPECT_EQ(
+    lateral_ctrl::selectDisableReason(
+      true, false, DriveMode::AUTO, safety, false, false, true, true),
+    SteeringDisableReason::STEER_COMMAND_TIMEOUT);
+  EXPECT_EQ(
+    lateral_ctrl::stateForDisableReason(SteeringDisableReason::STEER_COMMAND_TIMEOUT),
+    lateral_ctrl::SteeringState::WAIT_CMD);
+  EXPECT_EQ(
+    lateral_ctrl::stateForDisableReason(SteeringDisableReason::MODE_TIMEOUT),
+    lateral_ctrl::SteeringState::DISABLED);
+  EXPECT_EQ(
+    lateral_ctrl::stateForDisableReason(SteeringDisableReason::FEEDBACK_INVALID),
+    lateral_ctrl::SteeringState::FEEDBACK_LOST);
 }

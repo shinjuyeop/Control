@@ -28,6 +28,9 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
   tracking_enabled_ = get_parameter("tracking_control_enabled").as_bool();
   control_period_ms_ = declare_parameter("control_period_ms", 20);
   can_timeout_ms_ = declare_parameter("can_timeout_ms", 500);
+  feedback_timeout_ms_ = declare_parameter("feedback_timeout_ms", 500);
+  mode_timeout_ms_ = declare_parameter("mode_timeout_ms", 1000);
+  steer_command_timeout_ms_ = declare_parameter("steer_command_timeout_ms", 200);
   max_steering_rate_deg_s_ = declare_parameter("max_steering_rate_deg_s", 60.0);
   tracking_error_warning_deg_ = declare_parameter("tracking_error_warning_deg", 1.0);
   tracking_error_fault_deg_ = declare_parameter("tracking_error_fault_deg", 3.0);
@@ -37,7 +40,7 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
   actuator_output_enabled_ = declare_parameter("actuator_output_enabled", false);
   test_input_injection_enabled_ = declare_parameter("test_input_injection_enabled", false);
   legacy_throttle_input_enabled_ = declare_parameter("legacy_throttle_input_enabled", false);
-  const auto can_interface = declare_parameter("can_interface", std::string("can1"));
+  const auto can_interface = declare_parameter("can_interface", std::string("can0"));
   const auto node_id = declare_parameter("node_id", 1);
 
   const auto steer_topic = declare_parameter("steer_command_topic", std::string("/cmd/steer"));
@@ -111,21 +114,23 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
 
 SteeringActuatorNode::~SteeringActuatorNode()
 {
+  discardAllSteeringCommands();
   if (can_driver_ && can_driver_->isOpen()) can_driver_->sendDisable();
 }
 
 void SteeringActuatorNode::onSteer(const std_msgs::msg::Float32::SharedPtr input)
 {
   if (!std::isfinite(input->data)) return;
-  if (state_ != SteeringState::AUTO_READY && state_ != SteeringState::ACTIVE) return;
-  target_wheel_angle_deg_ = converter_.clampWheelDeg(input->data);
-  movement_target_valid_ = true;
-  new_command_pending_ = true;
+  pending_target_wheel_angle_deg_ = converter_.clampWheelDeg(input->data);
+  pending_command_valid_ = true;
+  last_steer_command_time_ = std::chrono::steady_clock::now();
+  pending_command_generation_ = ++steer_command_generation_;
 }
 
 void SteeringActuatorNode::onMode(const std_msgs::msg::UInt8::SharedPtr input)
 {
   mode_received_ = true;
+  last_mode_time_ = std::chrono::steady_clock::now();
   if (input->data == static_cast<uint8_t>(DriveMode::MANUAL)) drive_mode_ = DriveMode::MANUAL;
   else if (input->data == static_cast<uint8_t>(DriveMode::AUTO)) drive_mode_ = DriveMode::AUTO;
   else drive_mode_ = DriveMode::UNKNOWN;
@@ -160,54 +165,77 @@ void SteeringActuatorNode::onAeb(
 
 void SteeringActuatorNode::requestImmediateDisable(SteeringDisableReason reason)
 {
-  invalidateMovementTarget();
-  tracking_controller_.reset();
+  discardAllSteeringCommands();
   if (enabled_commanded_ && can_driver_->isOpen()) can_driver_->sendDisable();
   enabled_commanded_ = false;
   requested_disable_reason_ = reason;
 }
 
-void SteeringActuatorNode::invalidateMovementTarget()
+void SteeringActuatorNode::discardAllSteeringCommands()
 {
   target_wheel_angle_deg_ = actual_wheel_angle_deg_;
   commanded_wheel_angle_deg_ = actual_wheel_angle_deg_;
   corrected_wheel_angle_deg_ = actual_wheel_angle_deg_;
   movement_target_valid_ = false;
-  new_command_pending_ = false;
+  pending_command_valid_ = false;
+  pending_target_wheel_angle_deg_ = actual_wheel_angle_deg_;
+  pending_command_generation_ = 0;
+  minimum_accepted_command_generation_ = steer_command_generation_ + 1;
+  last_steer_command_time_ = {};
+  tracking_controller_.reset();
 }
 
-bool SteeringActuatorNode::enterAutoReady()
+void SteeringActuatorNode::enterWaitCommand(SteeringDisableReason reason)
 {
-  resetMotionTargetForRecovery(
-    actual_wheel_angle_deg_, target_wheel_angle_deg_, commanded_wheel_angle_deg_,
-    movement_target_valid_);
+  discardAllSteeringCommands();
+  if (enabled_commanded_ && can_driver_->isOpen()) can_driver_->sendDisable();
+  enabled_commanded_ = false;
+  disable_reason_ = reason;
+  state_ = SteeringState::WAIT_CMD;
+}
+
+bool SteeringActuatorNode::tryEnterActiveFromPendingCommand(
+  std::chrono::steady_clock::time_point now)
+{
+  const bool fresh = last_steer_command_time_.time_since_epoch().count() != 0 &&
+    std::chrono::duration<double, std::milli>(now - last_steer_command_time_).count() <=
+    steer_command_timeout_ms_;
+  if (!pendingCommandIsEligible(
+      pending_command_valid_, pending_command_generation_,
+      minimum_accepted_command_generation_, fresh))
+  {
+    return false;
+  }
+  commanded_wheel_angle_deg_ = actual_wheel_angle_deg_;
   corrected_wheel_angle_deg_ = actual_wheel_angle_deg_;
-  new_command_pending_ = false;
+  target_wheel_angle_deg_ = pending_target_wheel_angle_deg_;
   tracking_controller_.reset();
-  if (!enabled_commanded_ && can_driver_->isOpen() && can_driver_->sendEnable()) {
-    enabled_commanded_ = true;
+  if (!can_driver_->isOpen() || !can_driver_->sendEnable()) {
+    discardAllSteeringCommands();
+    return false;
   }
-  if (enabled_commanded_) {
-    can_driver_->sendPositionCount(
-      converter_.motorDegToCount(converter_.wheelToMotorDeg(actual_wheel_angle_deg_)));
+  enabled_commanded_ = true;
+  const int32_t actual_count =
+    converter_.motorDegToCount(converter_.wheelToMotorDeg(actual_wheel_angle_deg_));
+  if (!can_driver_->sendPositionCount(actual_count)) {
+    can_driver_->sendDisable();
+    enabled_commanded_ = false;
+    discardAllSteeringCommands();
+    return false;
   }
-  return enabled_commanded_;
+  movement_target_valid_ = true;
+  pending_command_valid_ = false;
+  state_ = SteeringState::ACTIVE;
+  return true;
 }
 
 void SteeringActuatorNode::transitionTo(SteeringState next)
 {
   if (next == state_) return;
-  const bool next_enabled = next == SteeringState::AUTO_READY || next == SteeringState::ACTIVE;
-  if (!next_enabled) {
-    invalidateMovementTarget();
-    tracking_controller_.reset();
+  if (!shouldMotorBeEnabled(next)) {
+    discardAllSteeringCommands();
     if (enabled_commanded_ && can_driver_->isOpen()) can_driver_->sendDisable();
     enabled_commanded_ = false;
-  } else if (state_ != SteeringState::AUTO_READY && state_ != SteeringState::ACTIVE) {
-    if (!enterAutoReady()) {
-      state_ = SteeringState::CAN_LOST;
-      return;
-    }
   }
   state_ = next;
 }
@@ -233,6 +261,8 @@ void SteeringActuatorNode::controlTick()
   const auto & motor = can_driver_->motorState();
   double feedback_age_ms = std::numeric_limits<double>::infinity();
   double position_age_ms = std::numeric_limits<double>::infinity();
+  double mode_age_ms = std::numeric_limits<double>::infinity();
+  double steer_age_ms = std::numeric_limits<double>::infinity();
   if (motor.last_feedback.time_since_epoch().count() != 0) {
     feedback_age_ms =
       std::chrono::duration<double, std::milli>(now - motor.last_feedback).count();
@@ -242,34 +272,52 @@ void SteeringActuatorNode::controlTick()
       std::chrono::duration<double, std::milli>(now - motor.last_position_feedback).count();
   }
   can_timeout_ = !can_driver_->isOpen() || feedback_age_ms > can_timeout_ms_;
+  if (last_mode_time_.time_since_epoch().count() != 0) {
+    mode_age_ms = std::chrono::duration<double, std::milli>(now - last_mode_time_).count();
+  }
+  if (last_steer_command_time_.time_since_epoch().count() != 0) {
+    steer_age_ms =
+      std::chrono::duration<double, std::milli>(now - last_steer_command_time_).count();
+  }
+  mode_timeout_ = mode_received_ && mode_age_ms > mode_timeout_ms_;
   if (motor.position_valid) {
     actual_wheel_angle_deg_ =
       converter_.motorToWheelDeg(converter_.countToMotorDeg(motor.motor_position_count));
   }
-  const bool feedback_valid =
-    motor.position_valid && position_age_ms <= can_timeout_ms_ && !can_timeout_;
+  feedback_timeout_ = !motor.position_valid || position_age_ms > feedback_timeout_ms_;
+  const bool feedback_valid = !feedback_timeout_ && !can_timeout_;
   const bool motor_fault = (motor.fault_bits & static_cast<uint16_t>(~uint16_t{1})) != 0;
+  steer_command_timeout_ = state_ == SteeringState::ACTIVE &&
+    (!std::isfinite(steer_age_ms) || steer_age_ms > steer_command_timeout_ms_);
   disable_reason_ = selectDisableReason(
-    mode_received_, drive_mode_, safety_, motor_fault, can_timeout_, feedback_valid);
+    mode_received_, mode_timeout_, drive_mode_, safety_, motor_fault, can_timeout_,
+    feedback_valid, steer_command_timeout_);
   if (requested_disable_reason_ != SteeringDisableReason::NONE) {
     disable_reason_ = requested_disable_reason_;
     requested_disable_reason_ = SteeringDisableReason::NONE;
   }
 
+  bool entered_active_this_tick = false;
   if (disable_reason_ != SteeringDisableReason::NONE) {
-    transitionTo(stateForDisableReason(disable_reason_));
-  } else {
-    if (state_ != SteeringState::AUTO_READY && state_ != SteeringState::ACTIVE) {
-      transitionTo(SteeringState::AUTO_READY);
+    if (disable_reason_ == SteeringDisableReason::STEER_COMMAND_TIMEOUT) {
+      enterWaitCommand(disable_reason_);
+    } else {
+      transitionTo(stateForDisableReason(disable_reason_));
     }
-    if (new_command_pending_) {
-      state_ = SteeringState::ACTIVE;
-      new_command_pending_ = false;
+  } else {
+    if (state_ != SteeringState::WAIT_CMD && state_ != SteeringState::ACTIVE) {
+      enterWaitCommand();
+    } else if (state_ == SteeringState::WAIT_CMD) {
+      disable_reason_ = SteeringDisableReason::NONE;
+      entered_active_this_tick = tryEnterActiveFromPendingCommand(now);
+    } else if (pending_command_valid_) {
+      target_wheel_angle_deg_ = pending_target_wheel_angle_deg_;
+      pending_command_valid_ = false;
     }
   }
 
   steering_rate_deg_s_ = 0.0;
-  if (state_ == SteeringState::ACTIVE && movement_target_valid_) {
+  if (state_ == SteeringState::ACTIVE && movement_target_valid_ && !entered_active_this_tick) {
     const double previous = commanded_wheel_angle_deg_;
     commanded_wheel_angle_deg_ = rateLimit(
       previous, target_wheel_angle_deg_, max_steering_rate_deg_s_, dt);
@@ -281,18 +329,15 @@ void SteeringActuatorNode::controlTick()
       can_driver_->sendPositionCount(
         converter_.motorDegToCount(converter_.wheelToMotorDeg(corrected_wheel_angle_deg_)));
     }
-  } else if (state_ == SteeringState::AUTO_READY && enabled_commanded_) {
-    tracking_controller_.update(
-      commanded_wheel_angle_deg_, actual_wheel_angle_deg_, dt);
-    can_driver_->sendPositionCount(
-      converter_.motorDegToCount(converter_.wheelToMotorDeg(commanded_wheel_angle_deg_)));
   } else {
     tracking_controller_.reset();
   }
-  publishState(position_age_ms);
+  if (state_ != SteeringState::ACTIVE) enabled_commanded_ = false;
+  publishState(position_age_ms, mode_age_ms, steer_age_ms);
 }
 
-void SteeringActuatorNode::publishState(double feedback_age_ms)
+void SteeringActuatorNode::publishState(
+  double feedback_age_ms, double mode_age_ms, double steer_age_ms)
 {
   const auto & motor = can_driver_->motorState();
   if (motor.position_valid) {
@@ -314,6 +359,9 @@ void SteeringActuatorNode::publishState(double feedback_age_ms)
   status.disable_reason = static_cast<uint8_t>(disable_reason_);
   status.drive_mode = static_cast<uint8_t>(drive_mode_);
   status.mode_received = mode_received_;
+  status.mode_timeout = mode_timeout_;
+  status.steer_command_timeout = steer_command_timeout_;
+  status.feedback_timeout = feedback_timeout_;
   status.estop_active = safety_.effectiveEstop();
   status.aeb_active = safety_.effectiveAeb();
   status.communication_ok = motor.communication_ok && !can_timeout_;
@@ -363,6 +411,13 @@ void SteeringActuatorNode::publishState(double feedback_age_ms)
   status.feedback_age_ms =
     std::isfinite(feedback_age_ms) ? static_cast<float>(feedback_age_ms) :
     std::numeric_limits<float>::infinity();
+  status.mode_age_ms = std::isfinite(mode_age_ms) ? static_cast<float>(mode_age_ms) :
+    std::numeric_limits<float>::infinity();
+  status.steer_command_age_ms = std::isfinite(steer_age_ms) ? static_cast<float>(steer_age_ms) :
+    std::numeric_limits<float>::infinity();
+  status.steer_command_received = steer_command_generation_ != 0;
+  status.pending_command_valid = pending_command_valid_;
+  status.movement_target_valid = movement_target_valid_;
   status_pub_->publish(status);
 }
 }  // namespace lateral_ctrl

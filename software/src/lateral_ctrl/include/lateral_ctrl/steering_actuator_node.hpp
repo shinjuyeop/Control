@@ -28,11 +28,12 @@ private:
   void onEstop(const std_msgs::msg::UInt8::SharedPtr msg, bool test_input);
   void onAeb(const std_msgs::msg::UInt8::SharedPtr msg, bool test_input);
   void requestImmediateDisable(SteeringDisableReason reason);
-  void invalidateMovementTarget();
+  void discardAllSteeringCommands();
   void controlTick();
   void transitionTo(SteeringState next);
-  bool enterAutoReady();
-  void publishState(double feedback_age_ms);
+  void enterWaitCommand(SteeringDisableReason reason = SteeringDisableReason::NONE);
+  bool tryEnterActiveFromPendingCommand(std::chrono::steady_clock::time_point now);
+  void publishState(double feedback_age_ms, double mode_age_ms, double steer_age_ms);
   bool outputArmed() const { return hardware_can_enabled_ && actuator_output_enabled_; }
 
   std::unique_ptr<KeyaCanDriver> can_driver_;
@@ -46,15 +47,19 @@ private:
 
   bool mode_received_{false};
   bool movement_target_valid_{false};
-  bool new_command_pending_{false};
+  bool pending_command_valid_{false};
   bool enabled_commanded_{false};
   bool can_timeout_{true};
+  bool feedback_timeout_{true};
+  bool mode_timeout_{false};
+  bool steer_command_timeout_{false};
   bool tracking_enabled_{false};
   bool hardware_can_enabled_{false};
   bool actuator_output_enabled_{false};
   bool test_input_injection_enabled_{false};
   bool legacy_throttle_input_enabled_{false};
   double target_wheel_angle_deg_{0.0};
+  double pending_target_wheel_angle_deg_{0.0};
   double commanded_wheel_angle_deg_{0.0};
   double corrected_wheel_angle_deg_{0.0};
   double actual_wheel_angle_deg_{0.0};
@@ -65,8 +70,16 @@ private:
   int tracking_error_fault_duration_ms_{500};
   int control_period_ms_{20};
   int can_timeout_ms_{500};
+  int feedback_timeout_ms_{500};
+  int mode_timeout_ms_{1000};
+  int steer_command_timeout_ms_{200};
   uint64_t tick_count_{0};
+  uint64_t steer_command_generation_{0};
+  uint64_t pending_command_generation_{0};
+  uint64_t minimum_accepted_command_generation_{1};
   std::chrono::steady_clock::time_point previous_tick_;
+  std::chrono::steady_clock::time_point last_mode_time_{};
+  std::chrono::steady_clock::time_point last_steer_command_time_{};
   std::chrono::steady_clock::time_point tracking_fault_since_{};
 
   rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr steer_sub_;

@@ -3,6 +3,12 @@ uint8 state
 uint8 disable_reason
 uint8 drive_mode
 bool mode_received
+bool mode_timeout
+bool steer_command_timeout
+bool feedback_timeout
+bool steer_command_received
+bool pending_command_valid
+bool movement_target_valid
 bool estop_active
 bool aeb_active
 bool communication_ok
@@ -30,3 +36,5 @@ float32 bus_voltage_v
 float32 driver_temperature_c
 uint16 fault_bits
 float32 feedback_age_ms
+float32 mode_age_ms
+float32 steer_command_age_ms

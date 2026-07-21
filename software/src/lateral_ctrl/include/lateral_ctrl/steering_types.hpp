@@ -10,11 +10,11 @@ namespace lateral_ctrl
 {
 enum class DriveMode : uint8_t { MANUAL = 0, AUTO = 1, UNKNOWN = 255 };
 enum class SteeringState : uint8_t {
-  INIT, DISABLED, AUTO_READY, ACTIVE, ESTOP, AEB, CAN_LOST, FAULT
+  INIT, DISABLED, WAIT_CMD, ACTIVE, ESTOP, AEB, CAN_LOST, FEEDBACK_LOST, FAULT
 };
 enum class SteeringDisableReason : uint8_t {
-  NONE, MODE_NOT_RECEIVED, MANUAL_MODE, INVALID_MODE, ESTOP, AEB, MOTOR_FAULT,
-  CAN_TIMEOUT, FEEDBACK_INVALID
+  NONE, MODE_NOT_RECEIVED, MODE_TIMEOUT, MANUAL_MODE, INVALID_MODE, ESTOP, AEB,
+  STEER_COMMAND_TIMEOUT, CAN_TIMEOUT, FEEDBACK_INVALID, MOTOR_FAULT
 };
 
 struct KeyaMotorState
@@ -48,28 +48,55 @@ struct SafetyInputs
 };
 
 inline SteeringDisableReason selectDisableReason(
-  bool mode_received, DriveMode mode, const SafetyInputs & safety, bool motor_fault,
-  bool can_timeout, bool feedback_valid)
+  bool mode_received, bool mode_timeout, DriveMode mode, const SafetyInputs & safety,
+  bool motor_fault, bool can_timeout, bool feedback_valid, bool steer_command_timeout)
 {
   if (safety.effectiveEstop()) return SteeringDisableReason::ESTOP;
   if (can_timeout) return SteeringDisableReason::CAN_TIMEOUT;
   if (motor_fault) return SteeringDisableReason::MOTOR_FAULT;
   if (safety.effectiveAeb()) return SteeringDisableReason::AEB;
+  if (!feedback_valid) return SteeringDisableReason::FEEDBACK_INVALID;
+  if (mode_timeout) return SteeringDisableReason::MODE_TIMEOUT;
   if (!mode_received) return SteeringDisableReason::MODE_NOT_RECEIVED;
   if (mode == DriveMode::MANUAL) return SteeringDisableReason::MANUAL_MODE;
   if (mode != DriveMode::AUTO) return SteeringDisableReason::INVALID_MODE;
-  if (!feedback_valid) return SteeringDisableReason::FEEDBACK_INVALID;
+  if (steer_command_timeout) return SteeringDisableReason::STEER_COMMAND_TIMEOUT;
   return SteeringDisableReason::NONE;
+}
+
+inline SteeringDisableReason selectDisableReason(
+  bool mode_received, DriveMode mode, const SafetyInputs & safety, bool motor_fault,
+  bool can_timeout, bool feedback_valid)
+{
+  return selectDisableReason(
+    mode_received, false, mode, safety, motor_fault, can_timeout, feedback_valid, false);
 }
 
 inline SteeringState stateForDisableReason(SteeringDisableReason reason)
 {
-  if (reason == SteeringDisableReason::NONE) return SteeringState::AUTO_READY;
+  if (reason == SteeringDisableReason::NONE ||
+    reason == SteeringDisableReason::STEER_COMMAND_TIMEOUT)
+  {
+    return SteeringState::WAIT_CMD;
+  }
   if (reason == SteeringDisableReason::ESTOP) return SteeringState::ESTOP;
   if (reason == SteeringDisableReason::AEB) return SteeringState::AEB;
   if (reason == SteeringDisableReason::CAN_TIMEOUT) return SteeringState::CAN_LOST;
+  if (reason == SteeringDisableReason::FEEDBACK_INVALID) return SteeringState::FEEDBACK_LOST;
   if (reason == SteeringDisableReason::MOTOR_FAULT) return SteeringState::FAULT;
   return SteeringState::DISABLED;
+}
+
+inline bool shouldMotorBeEnabled(SteeringState state)
+{
+  return state == SteeringState::ACTIVE;
+}
+
+inline bool pendingCommandIsEligible(
+  bool pending_valid, uint64_t command_generation, uint64_t minimum_generation,
+  bool command_fresh)
+{
+  return pending_valid && command_generation >= minimum_generation && command_fresh;
 }
 
 inline double rateLimit(
