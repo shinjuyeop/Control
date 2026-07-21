@@ -154,6 +154,7 @@ ros2 launch lateral_ctrl steering_actuator.launch.py --show-args
 ros2 launch lateral_ctrl steering_bench_test.launch.py --show-args
 ```
 
-After merging current `main` into `Shin`, resolve `CMakeLists.txt`, `package.xml`, source,
-launch, and config conflicts file by file. Keep `SteeringActuatorNode` as the owner of the
-motor and rerun build, unit, vcan, and physical bench tests before opening a PR.
+Current `main` has been merged into `Shin`. The legacy `steering_control_node` and
+`steering_feedback_node` sources/targets were removed from the integrated result so that
+`SteeringActuatorNode` remains the sole CAN owner. If `main` changes again, resolve future
+conflicts file by file and rerun build, unit, vcan, and physical bench tests before merge.
