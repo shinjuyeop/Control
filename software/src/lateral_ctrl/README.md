@@ -33,15 +33,15 @@ launch를 둘 이상 동시에 실행하면 안 됩니다.
 
 | 버전 | 목적 | `/mode` | `/estop` | `/aeb` | `/cmd/steer` |
 | --- | --- | --- | --- | --- | --- |
-| **A-1 순수 벤치** | STM 없이 조향 장치만 시험 | 벤치 노드 | `/steering/test/estop` | `/steering/test/aeb` | 벤치 노드 |
-| **A-2 혼합 벤치** | 실제 STM 안전 신호와 모터 연동 시험 | STM_A | STM_B | 판단 노드 또는 미발행 | 벤치 노드 |
-| **B 실전** | 전체 차량 시스템 통합 | STM_A | STM_B | 판단 노드 | 판단 노드 |
+| **A 실전** | 전체 차량 시스템 통합 | STM_A | STM_B | 판단 노드 | 판단 노드 |
+| **B-1 순수 벤치** | STM 없이 조향 장치만 시험 | 벤치 노드 | `/steering/test/estop` | `/steering/test/aeb` | 벤치 노드 |
+| **B-2 혼합 벤치** | 실제 STM 안전 신호와 모터 연동 시험 | STM_A | STM_B | 판단 노드 또는 미발행 | 벤치 노드 |
 
 선택 기준은 간단합니다.
 
-- STM 없이 모터와 안전 상태 머신만 시험하려면 **A-1 순수 벤치**를 사용합니다.
-- STM_A의 mode와 STM_B의 E-STOP까지 함께 시험하려면 **A-2 혼합 벤치**를 사용합니다.
-- 판단 노드가 `/cmd/steer`와 `/aeb`까지 발행한다면 **B 실전**을 사용합니다.
+- 판단 노드가 `/cmd/steer`와 `/aeb`까지 발행한다면 **A 실전**을 사용합니다.
+- STM 없이 모터와 안전 상태 머신만 시험하려면 **B-1 순수 벤치**를 사용합니다.
+- STM_A의 mode와 STM_B의 E-STOP까지 함께 시험하려면 **B-2 혼합 벤치**를 사용합니다.
 
 각 버전의 핵심 실행 명령은 다음과 같습니다. 모든 새 터미널에서 먼저 ROS 환경을
 설정해야 합니다.
@@ -53,24 +53,24 @@ source install/setup.bash
 export ROS_DOMAIN_ID=0
 ```
 
-**A-1 순수 벤치:**
+**A 실전:**
+
+```bash
+ros2 launch lateral_ctrl steering_actuator.launch.py
+```
+
+**B-1 순수 벤치:**
 
 ```bash
 ros2 launch lateral_ctrl steering_bench_test.launch.py
 ```
 
-**A-2 혼합 벤치:**
+**B-2 혼합 벤치:**
 
 ```bash
 ros2 launch lateral_ctrl steering_bench_test.launch.py \
   drive_mode_publish_enabled:=false \
   safety_injection_enabled:=false
-```
-
-**B 실전:**
-
-```bash
-ros2 launch lateral_ctrl steering_actuator.launch.py
 ```
 
 혼합 벤치의 `drive_mode_publish_enabled:=false`는 벤치 노드의 시험 `/mode`
@@ -216,7 +216,7 @@ ip -details link show can0
 candump -L can0
 ```
 
-## B 실전 실행
+## A 실전 실행
 
 실제 차량 입력만 사용하는 정상 실행입니다. STM_A가 `/mode`, STM_B가 `/estop`,
 판단/경로 추종 노드가 `/aeb`와 `/cmd/steer`를 발행해야 합니다. 이 launch는 벤치
@@ -262,7 +262,7 @@ candump -L can0
 AUTO mode와 유효 CAN/position feedback만 들어온 상태는 `WAIT_CMD`이며 계속
 Disable이어야 합니다. 새 `/cmd/steer`를 받은 뒤에만 `ACTIVE`가 됩니다.
 
-## A-1 순수 벤치 시험
+## B-1 순수 벤치 시험
 
 STM_A/STM_B micro-ROS agent 없이 조향 모터와 상태 머신만 시험하는 구성입니다.
 실제 STM agent가 실행 중이면 실제 안전 입력도 함께 적용되므로 순수 벤치 시험에서는
@@ -328,7 +328,7 @@ ros2 topic pub -r 50 /cmd/steer std_msgs/msg/Float32 '{data: 5.0}'
 수동 조향 시험에서도 위처럼 50 Hz로 계속 발행하고, 발행 명령을 종료하면 actuator가
 timeout으로 Disable되는지 확인하십시오.
 
-## A-2 혼합 벤치 시험
+## B-2 혼합 벤치 시험
 
 STM_A의 실제 `/mode`와 STM_B의 실제 `/estop`을 사용하고, 벤치 노드는 `/cmd/steer`
 시퀀스만 발행하는 구성입니다.
@@ -412,8 +412,8 @@ E-STOP을 해제하면 먼저 `WAIT_CMD`를 거치고, 복구 이후 수신한 �
 
 ## 벤치 안전 입력과 파라미터 시험
 
-A-1 순수 벤치에서는 Test E-STOP/AEB를 기본적으로 50 ms마다 발행합니다. 다음
-runtime parameter로 활성/해제를 시험할 수 있습니다. A-2 혼합 벤치는
+B-1 순수 벤치에서는 Test E-STOP/AEB를 기본적으로 50 ms마다 발행합니다. 다음
+runtime parameter로 활성/해제를 시험할 수 있습니다. B-2 혼합 벤치는
 `safety_injection_enabled=false`이므로 이 시험 파라미터 대신 STM_B의 물리 E-STOP과
 판단 노드의 실제 AEB를 사용합니다. 안전 입력이 true인 동안에는 모든 조향 명령이
 폐기되고 모터가 Disable됩니다.
