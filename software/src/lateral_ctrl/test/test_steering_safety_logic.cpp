@@ -115,7 +115,7 @@ TEST(SteeringSafetyLogic, BenchSequenceIsAbsoluteAndConservative)
 {
   EXPECT_EQ(
     lateral_ctrl::defaultBenchSequence(),
-    (std::vector<double>{0.0, 1.0, 0.0, -1.0, 0.0}));
+    (std::vector<double>{0.0, 5.0, 0.0, -5.0, 0.0}));
 }
 TEST(SteeringSafetyLogic, RateLimiterBoundsMovement)
 {

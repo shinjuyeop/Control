@@ -185,7 +185,7 @@ Disable이어야 합니다. 새 `/cmd/steer`를 받은 뒤에만 `ACTIVE`가 됩
 
 - 실제 `can0` actuator output 활성
 - `/mode=AUTO`를 100 ms 주기로 발행
-- 3초 뒤 절대 바퀴각 `[0, 1, 0, -1, 0]` degree 발행
+- 3초 뒤 절대 바퀴각 `[0, 5, 0, -5, 0]` degree 발행
 - 명령 간격 3초, 반복 없음
 - actuator rate limit 5 deg/s
 - test E-STOP/AEB injection 비활성

@@ -103,7 +103,7 @@ ros2 launch lateral_ctrl steering_bench_test.launch.py \
   drive_mode_publish_enabled:=false
 ```
 
-The bench sequence is absolute wheel angle `[0, 1, 0, -1, 0]` degrees, begins after 3 s,
+The bench sequence is absolute wheel angle `[0, 5, 0, -5, 0]` degrees, begins after 3 s,
 uses a 3 s interval, and does not repeat. `bench_test_enabled` no longer exists: starting
 the bench launch is the explicit test action. Before running, lift the wheels, clear all
 people from the mechanism, prepare the physical E-STOP, and verify the steering is near
