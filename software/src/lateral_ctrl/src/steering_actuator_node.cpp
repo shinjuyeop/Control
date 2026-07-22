@@ -421,13 +421,20 @@ void SteeringActuatorNode::publishState(
     static_cast<float>(target_wheel_angle_deg_ * kDegToCanonicalRad);
   status.commanded_wheel_angle_rad =
     static_cast<float>(commanded_wheel_angle_deg_ * kDegToCanonicalRad);
+  status.corrected_wheel_angle_rad =
+    static_cast<float>(corrected_wheel_angle_deg_ * kDegToCanonicalRad);
   status.actual_wheel_angle_rad =
     static_cast<float>(actual_wheel_angle_deg_ * kDegToCanonicalRad);
   status.tracking_error_rad =
     static_cast<float>(tracking_controller_.errorDeg() * kDegToCanonicalRad);
+  status.tracking_correction_rad =
+    static_cast<float>(tracking_controller_.correctionDeg() * kDegToCanonicalRad);
   status.steering_rate_radps =
     static_cast<float>(steering_rate_deg_s_ * kDegToCanonicalRad);
   status.motor_position_count = motor.motor_position_count;
+  // 모터축 원시 진단값 — 로드휠 부호 변환을 적용하지 않는다
+  status.motor_angle_deg =
+    static_cast<float>(converter_.countToMotorDeg(motor.motor_position_count));
   status.motor_speed_rpm = motor.motor_speed_rpm;
   status.motor_current_a = motor.motor_current_a;
   status.bus_voltage_v = motor.bus_voltage_v;
@@ -441,6 +448,8 @@ void SteeringActuatorNode::publishState(
   status.steer_command_age_ms = std::isfinite(steer_age_ms) ? static_cast<float>(steer_age_ms) :
     std::numeric_limits<float>::infinity();
   status.steer_command_received = steer_command_generation_ != 0;
+  status.pending_command_valid = pending_command_valid_;
+  status.movement_target_valid = movement_target_valid_;
   status_pub_->publish(status);
 }
 }  // namespace lateral_ctrl
