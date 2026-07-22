@@ -28,9 +28,9 @@
 #include <rcl/rcl.h>
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
-#include <std_msgs/msg/float32.h>
-#include <std_msgs/msg/u_int8.h>
-#include <std_msgs/msg/int32.h>
+#include <kaiev26_msgs/msg/actuator_command.h>
+#include <kaiev26_msgs/msg/aeb_state.h>
+#include <kaiev26_msgs/msg/drive_actuator_status.h>
 #include "rmw_microros/rmw_microros.h"
 
 bool cubemx_transport_open(struct uxrCustomTransport *transport);
@@ -96,6 +96,9 @@ static uint8_t s_safety_sequence_initialized = 0u;
 static uint8_t s_life = 0;
 /* TEMP DEBUG: 클램핑 전 raw ADC 값 저장 (StartInputs가 쓰고, StartuROS가 읽어서 발행) */
 static volatile int32_t s_pedal_raw_dbg = 0;
+static volatile float s_motor_rpm = 0.0f;
+static volatile uint8_t s_command_received = 0u;
+static volatile uint32_t s_last_command_tick = 0u;
 static volatile uint8_t s_motor_handshake_done = 0u;
 static volatile uint32_t s_motor_handshake_count = 0u;
 /* USER CODE END Variables */
@@ -371,9 +374,26 @@ void StartuROS(void *argument)
   /* ============================================ */
   /* Task: uROS — PC 양방향 통신 (osPriorityNormal) */
   /* ============================================ */
-  /* 구독 메시지 저장 버퍼*/
-  static std_msgs__msg__Float32 s_cmd_msg;
-  static std_msgs__msg__UInt8   s_aeb_msg;
+  /* 구독 메시지 저장 버퍼. micro-ROS 구독 메시지의 string 필드에는
+   * 정적 버퍼를 미리 할당해야 역직렬화가 가능하다. */
+  static kaiev26_msgs__msg__ActuatorCommand s_cmd_msg;
+  static kaiev26_msgs__msg__AEBState s_aeb_msg;
+  static char s_cmd_frame_id[16];
+  static char s_aeb_frame_id[16];
+  static char s_aeb_state_str[32];
+  static char s_aeb_reason_str[64];
+  s_cmd_msg.header.frame_id.data = s_cmd_frame_id;
+  s_cmd_msg.header.frame_id.size = 0u;
+  s_cmd_msg.header.frame_id.capacity = sizeof(s_cmd_frame_id);
+  s_aeb_msg.header.frame_id.data = s_aeb_frame_id;
+  s_aeb_msg.header.frame_id.size = 0u;
+  s_aeb_msg.header.frame_id.capacity = sizeof(s_aeb_frame_id);
+  s_aeb_msg.state.data = s_aeb_state_str;
+  s_aeb_msg.state.size = 0u;
+  s_aeb_msg.state.capacity = sizeof(s_aeb_state_str);
+  s_aeb_msg.reason.data = s_aeb_reason_str;
+  s_aeb_msg.reason.size = 0u;
+  s_aeb_msg.reason.capacity = sizeof(s_aeb_reason_str);
 
   extern UART_HandleTypeDef hlpuart1; // uROS UART
 
@@ -392,10 +412,8 @@ void StartuROS(void *argument)
 
   // Subscriber 생성
   rcl_subscription_t sub_cmd, sub_aeb;
-  // Publisher 생성
-  rcl_publisher_t pub_spd, pub_gear, pub_mode, pub_pedal;
-  rcl_publisher_t pub_pedal_raw, pub_drive_stop, pub_stop_from_b;
-  rcl_publisher_t pub_safety_valid;
+  // Publisher 생성: 통합 /drive/status 하나가 개별 상태 토픽들을 대체한다
+  rcl_publisher_t pub_drive_status;
   
   // PC와 연결될 때까지 0.5초 간격으로 ping (???)
   while (rmw_uros_ping_agent(100, 1) != RMW_RET_OK)
@@ -415,29 +433,18 @@ void StartuROS(void *argument)
     for(;;);
   }
 
-  // Subscriber 2개 초기화
+  // Subscriber 2개 초기화: canonical 통합 명령 + AEB 안전 경로
   rclc_subscription_init_default(&sub_cmd, &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32), "/cmd/speed");
+      ROSIDL_GET_MSG_TYPE_SUPPORT(kaiev26_msgs, msg, ActuatorCommand),
+      "/vehicle/actuator_command");
   rclc_subscription_init_default(&sub_aeb, &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8), "/aeb");
+      ROSIDL_GET_MSG_TYPE_SUPPORT(kaiev26_msgs, msg, AEBState),
+      "/safety/aeb_state");
 
   // Publisher 초기화
-  rclc_publisher_init_default(&pub_spd, &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32), "/current/speed");
-  rclc_publisher_init_default(&pub_gear, &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8), "/gear");
-  rclc_publisher_init_default(&pub_mode, &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8), "/mode");
-  rclc_publisher_init_default(&pub_pedal, &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8), "/pedal");
-  rclc_publisher_init_default(&pub_pedal_raw, &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32), "/pedal_raw");
-  rclc_publisher_init_default(&pub_drive_stop, &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8), "/drive_stop_request");
-  rclc_publisher_init_default(&pub_stop_from_b, &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8), "/stop_request/from_b");
-  rclc_publisher_init_default(&pub_safety_valid, &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8), "/frame_valid/from_b");
+  rclc_publisher_init_default(&pub_drive_status, &node,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(kaiev26_msgs, msg, DriveActuatorStatus),
+      "/drive/status");
 
   // Subscriber 콜백 관리
   rclc_executor_t exec;
@@ -447,81 +454,37 @@ void StartuROS(void *argument)
   rclc_executor_add_subscription(&exec, &sub_aeb,
       &s_aeb_msg, &cb_aeb, ON_NEW_DATA);
 
+  static kaiev26_msgs__msg__DriveActuatorStatus s_status_msg;
+  static char s_status_frame_id[4];
+  s_status_msg.header.frame_id.data = s_status_frame_id;
+  s_status_msg.header.frame_id.size = 0u;
+  s_status_msg.header.frame_id.capacity = sizeof(s_status_frame_id);
+
   uint32_t now = HAL_GetTick();
-  uint32_t last_spd = now - 50u;
-  uint32_t last_gear = now - 1000u;
-  uint32_t last_mode = now - 1000u;
-  uint32_t last_pedal = now - 200u;
-  uint32_t last_pedal_raw = now - 1000u;
-  uint32_t last_drive_stop = now - 500u;
-  uint32_t last_stop_from_b = now - 500u;
-  uint32_t last_safety_valid = now - 1000u;
-  uint8_t previous_gear = 0xFFu;
-  uint8_t previous_mode = 0xFFu;
-  uint8_t previous_drive_stop = 0xFFu;
-  uint8_t previous_stop_from_b = 0xFFu;
+  uint32_t last_status = now - 50u;
 
   for (;;)
   {
     rclc_executor_spin_some(&exec, RCL_MS_TO_NS(1));
     now = HAL_GetTick();
 
-    if ((uint32_t)(now - last_spd) >= 50u) {
-      std_msgs__msg__Float32 f = { .data = CURRENT_SPEED };
-      RCL_PUBLISH_BEST_EFFORT(&pub_spd, &f);
-      last_spd += 50u;
-    }
-
-    uint8_t gear = GEAR;
-    if (((uint32_t)(now - last_gear) >= 1000u) || (gear != previous_gear)) {
-      std_msgs__msg__UInt8 u = { .data = gear };
-      RCL_PUBLISH_BEST_EFFORT(&pub_gear, &u);
-      previous_gear = gear;
-      last_gear = now;
-    }
-
-    uint8_t mode = MODE;
-    if (((uint32_t)(now - last_mode) >= 1000u) || (mode != previous_mode)) {
-      std_msgs__msg__UInt8 u = { .data = mode };
-      RCL_PUBLISH_BEST_EFFORT(&pub_mode, &u);
-      previous_mode = mode;
-      last_mode = now;
-    }
-
-    if ((uint32_t)(now - last_pedal) >= 200u) {
-      std_msgs__msg__UInt8 u = { .data = PEDAL };
-      RCL_PUBLISH_BEST_EFFORT(&pub_pedal, &u);
-      last_pedal += 200u;
-    }
-
-    if ((uint32_t)(now - last_pedal_raw) >= 1000u) {
-      std_msgs__msg__Int32 raw_msg = { .data = s_pedal_raw_dbg };
-      RCL_PUBLISH_BEST_EFFORT(&pub_pedal_raw, &raw_msg);
-      last_pedal_raw += 1000u;
-    }
-
-    uint8_t drive_stop = DRIVE_STOP_REQUEST;
-    if (((uint32_t)(now - last_drive_stop) >= 500u) ||
-        (drive_stop != previous_drive_stop)) {
-      std_msgs__msg__UInt8 u = { .data = drive_stop };
-      RCL_PUBLISH_BEST_EFFORT(&pub_drive_stop, &u);
-      previous_drive_stop = drive_stop;
-      last_drive_stop = now;
-    }
-
-    uint8_t stop_from_b = STOP_REQUEST_FROM_B;
-    if (((uint32_t)(now - last_stop_from_b) >= 500u) ||
-        (stop_from_b != previous_stop_from_b)) {
-      std_msgs__msg__UInt8 u = { .data = stop_from_b };
-      RCL_PUBLISH_BEST_EFFORT(&pub_stop_from_b, &u);
-      previous_stop_from_b = stop_from_b;
-      last_stop_from_b = now;
-    }
-
-    if ((uint32_t)(now - last_safety_valid) >= 1000u) {
-      std_msgs__msg__UInt8 u = { .data = SAFETY_FRAME_VALID_FROM_B };
-      RCL_PUBLISH_BEST_EFFORT(&pub_safety_valid, &u);
-      last_safety_valid += 1000u;
+    if ((uint32_t)(now - last_status) >= 50u) {
+      s_status_msg.mode = MODE;
+      s_status_msg.gear = GEAR;
+      s_status_msg.speed_mps = CURRENT_SPEED;
+      s_status_msg.motor_rpm = s_motor_rpm;
+      s_status_msg.tractive_commanded = (DRIVE_STOP_REQUEST == 0u);
+      /* 드라이버 RUN feedback은 아직 CAN에서 읽지 않으므로 valid=false */
+      s_status_msg.tractive_feedback = false;
+      s_status_msg.tractive_feedback_valid = false;
+      s_status_msg.stop_request = (DRIVE_STOP_REQUEST != 0u);
+      s_status_msg.fault_bits = 0u;
+      s_status_msg.fault_bits_valid = false;
+      s_status_msg.command_received = (s_command_received != 0u);
+      s_status_msg.command_age_ms = (s_command_received != 0u) ?
+          (float)((uint32_t)(now - s_last_command_tick)) : 0.0f;
+      RCL_PUBLISH_BEST_EFFORT(&pub_drive_status, &s_status_msg);
+      last_status += 50u;
     }
 
     osDelay(5);
@@ -818,12 +781,21 @@ static HAL_StatusTypeDef send_motor_handshake_ack(void)
 
 static void cb_cmd(const void *message)
 {
-  COMMAND_SPEED = ((const std_msgs__msg__Float32 *)message)->data;
+  const kaiev26_msgs__msg__ActuatorCommand *cmd =
+      (const kaiev26_msgs__msg__ActuatorCommand *)message;
+  /* 일반 제동 요청이거나 비활성 상태이면 속도 목표를 0으로 처리한다 */
+  if (cmd->brake_engage || !cmd->enable) {
+    COMMAND_SPEED = 0.0f;
+  } else {
+    COMMAND_SPEED = cmd->speed_target_mps;
+  }
+  s_command_received = 1u;
+  s_last_command_tick = HAL_GetTick();
 }
 
 static void cb_aeb(const void *message)
 {
-  AEB = ((const std_msgs__msg__UInt8 *)message)->data;
+  AEB = ((const kaiev26_msgs__msg__AEBState *)message)->active ? 1u : 0u;
 }
 
 void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan,
@@ -852,6 +824,7 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan,
       uint16_t raw_rpm = (uint16_t)(rx_data[6] | ((uint16_t)rx_data[7] << 8));
       int32_t rpm = (int32_t)raw_rpm - 32000;
       float wheel_rpm = (float)rpm / GEAR_RATIO;
+      s_motor_rpm = (float)rpm;
       CURRENT_SPEED = wheel_rpm * (3.14159f * TIRE_DIAM_M) / 60.0f;
     }
   }

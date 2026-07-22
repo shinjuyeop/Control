@@ -26,8 +26,8 @@
 #include <rcl/rcl.h>
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
-#include <std_msgs/msg/float32.h>
-#include <std_msgs/msg/u_int8.h>
+#include <kaiev26_msgs/msg/aeb_state.h>
+#include <kaiev26_msgs/msg/brake_actuator_status.h>
 #include "rmw_microros/rmw_microros.h"
 
 bool cubemx_transport_open(struct uxrCustomTransport *transport);
@@ -80,10 +80,16 @@ typedef struct {
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
 /* micro-ROS 구독 메시지 버퍼 */
-static std_msgs__msg__UInt8   s_aeb_msg;
+/* micro-ROS 구독 메시지의 string 필드에는 정적 버퍼가 필요하다 */
+static kaiev26_msgs__msg__AEBState s_aeb_msg;
+static char s_aeb_frame_id[16];
+static char s_aeb_state_str[32];
+static char s_aeb_reason_str[64];
 
 /* Host에서는 AEB만 받는다. Vehicle Status는 STM_A UART에서 수신한다. */
-static void cb_aeb (const void *m){ AEB  = ((const std_msgs__msg__UInt8 *)m)->data; }
+static void cb_aeb (const void *m){
+  AEB = ((const kaiev26_msgs__msg__AEBState *)m)->active ? 1u : 0u;
+}
 
 static uint8_t s_usart1_rx_dma[UART_RX_DMA_SIZE];
 static uint8_t s_usart1_rx_ring[UART_RX_RING_SIZE];
@@ -298,102 +304,66 @@ void StartuROS(void *argument)
   rcl_allocator_t alloc = rcl_get_default_allocator();
   rclc_support_t sup; rcl_node_t node;
   rcl_subscription_t sub_aeb;
-  rcl_publisher_t pub_estop, pub_stop_request, pub_brake_applied;
-  rcl_publisher_t pub_speed_from_a, pub_gear_from_a, pub_mode_from_a;
-  rcl_publisher_t pub_vehicle_valid;
+  // 통합 /brake/status 하나가 개별 상태 토픽들을 대체한다
+  rcl_publisher_t pub_brake_status;
 
   while (rmw_uros_ping_agent(100,1) != RMW_RET_OK) osDelay(500);
 
   rclc_support_init(&sup,0,NULL,&alloc);
   rclc_node_init_default(&node,"stm_b_node","",&sup);
 
-  rclc_subscription_init_default(&sub_aeb, &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs,msg,UInt8),"/aeb");
+  s_aeb_msg.header.frame_id.data = s_aeb_frame_id;
+  s_aeb_msg.header.frame_id.size = 0u;
+  s_aeb_msg.header.frame_id.capacity = sizeof(s_aeb_frame_id);
+  s_aeb_msg.state.data = s_aeb_state_str;
+  s_aeb_msg.state.size = 0u;
+  s_aeb_msg.state.capacity = sizeof(s_aeb_state_str);
+  s_aeb_msg.reason.data = s_aeb_reason_str;
+  s_aeb_msg.reason.size = 0u;
+  s_aeb_msg.reason.capacity = sizeof(s_aeb_reason_str);
 
-  rclc_publisher_init_default(&pub_estop, &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs,msg,UInt8),"/estop");
-  rclc_publisher_init_default(&pub_stop_request, &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs,msg,UInt8),"/stop_request");
-  rclc_publisher_init_default(&pub_brake_applied, &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs,msg,UInt8),"/brake_command_applied");
-  rclc_publisher_init_default(&pub_speed_from_a, &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs,msg,Float32),"/current/speed/from_a");
-  rclc_publisher_init_default(&pub_gear_from_a, &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs,msg,UInt8),"/gear/from_a");
-  rclc_publisher_init_default(&pub_mode_from_a, &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs,msg,UInt8),"/mode/from_a");
-  rclc_publisher_init_default(&pub_vehicle_valid, &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs,msg,UInt8),"/frame_valid/from_a");
+  rclc_subscription_init_default(&sub_aeb, &node,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(kaiev26_msgs,msg,AEBState),
+      "/safety/aeb_state");
+
+  rclc_publisher_init_default(&pub_brake_status, &node,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(kaiev26_msgs,msg,BrakeActuatorStatus),
+      "/brake/status");
 
   rclc_executor_t exec;
   rclc_executor_init(&exec,&sup.context,1,&alloc);
   rclc_executor_add_subscription(&exec,&sub_aeb, &s_aeb_msg, &cb_aeb, ON_NEW_DATA);
 
+  static kaiev26_msgs__msg__BrakeActuatorStatus s_status_msg;
+  static char s_status_frame_id[4];
+  s_status_msg.header.frame_id.data = s_status_frame_id;
+  s_status_msg.header.frame_id.size = 0u;
+  s_status_msg.header.frame_id.capacity = sizeof(s_status_frame_id);
+
   uint32_t now = HAL_GetTick();
-  uint32_t last_estop = now - 200u;
-  uint32_t last_stop = now - 200u;
-  uint32_t last_brake = now - 200u;
-  uint32_t last_speed = now - 500u;
-  uint32_t last_gear = now - 1000u;
-  uint32_t last_mode = now - 1000u;
-  uint32_t last_vehicle_valid = now - 1000u;
-  uint8_t previous_estop = 0xFFu;
-  uint8_t previous_stop = 0xFFu;
-  uint8_t previous_brake = 0xFFu;
+  uint32_t last_status = now - 50u;
+  uint8_t previous_bits = 0xFFu;
 
   for(;;){
     rclc_executor_spin_some(&exec,RCL_MS_TO_NS(1));
     now = HAL_GetTick();
 
-    uint8_t estop = ESTOP_STATUS;
-    if (((uint32_t)(now - last_estop) >= 200u) ||
-        (estop != previous_estop)) {
-      std_msgs__msg__UInt8 u = { .data = estop };
-      RCL_PUBLISH_BEST_EFFORT(&pub_estop, &u);
-      previous_estop = estop;
-      last_estop = now;
+    uint8_t reason_bits = 0u;
+    if (ESTOP_STATUS != 0u) {
+      reason_bits |= kaiev26_msgs__msg__BrakeActuatorStatus__STOP_REASON_ESTOP;
     }
-
-    uint8_t stop_request = SAFETY_STOP_REQUEST;
-    if (((uint32_t)(now - last_stop) >= 200u) ||
-        (stop_request != previous_stop)) {
-      std_msgs__msg__UInt8 u = { .data = stop_request };
-      RCL_PUBLISH_BEST_EFFORT(&pub_stop_request, &u);
-      previous_stop = stop_request;
-      last_stop = now;
+    if (AEB != 0u) {
+      reason_bits |= kaiev26_msgs__msg__BrakeActuatorStatus__STOP_REASON_AEB;
     }
-
-    uint8_t brake_applied = BRAKE_COMMAND_APPLIED;
-    if (((uint32_t)(now - last_brake) >= 200u) ||
-        (brake_applied != previous_brake)) {
-      std_msgs__msg__UInt8 u = { .data = brake_applied };
-      RCL_PUBLISH_BEST_EFFORT(&pub_brake_applied, &u);
-      previous_brake = brake_applied;
-      last_brake = now;
-    }
-
-    if ((uint32_t)(now - last_speed) >= 500u) {
-      std_msgs__msg__Float32 f = { .data = CURRENT_SPEED_FROM_A };
-      RCL_PUBLISH_BEST_EFFORT(&pub_speed_from_a, &f);
-      last_speed += 500u;
-    }
-
-    if ((uint32_t)(now - last_gear) >= 1000u) {
-      std_msgs__msg__UInt8 u = { .data = GEAR_FROM_A };
-      RCL_PUBLISH_BEST_EFFORT(&pub_gear_from_a, &u);
-      last_gear += 1000u;
-    }
-
-    if ((uint32_t)(now - last_mode) >= 1000u) {
-      std_msgs__msg__UInt8 u = { .data = MODE_FROM_A };
-      RCL_PUBLISH_BEST_EFFORT(&pub_mode_from_a, &u);
-      last_mode += 1000u;
-    }
-
-    if ((uint32_t)(now - last_vehicle_valid) >= 1000u) {
-      std_msgs__msg__UInt8 u = { .data = VEHICLE_FRAME_VALID_FROM_A };
-      RCL_PUBLISH_BEST_EFFORT(&pub_vehicle_valid, &u);
-      last_vehicle_valid += 1000u;
+    if (((uint32_t)(now - last_status) >= 50u) || (reason_bits != previous_bits)) {
+      s_status_msg.brake_commanded = (BRAKE_COMMAND_APPLIED != 0u);
+      s_status_msg.stop_reason_bits = reason_bits;
+      /* 브레이크 서보에 피드백 신호선이 없어 actual은 항구적 미지원 */
+      s_status_msg.actual_valid = false;
+      s_status_msg.command_age_ms = 0.0f;
+      RCL_PUBLISH_BEST_EFFORT(&pub_brake_status, &s_status_msg);
+      previous_bits = reason_bits;
+      last_status = now;
     }
 
     osDelay(5);
