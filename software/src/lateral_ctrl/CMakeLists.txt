@@ -34,7 +34,7 @@ ament_target_dependencies(steering_actuator_node rclcpp std_msgs kaiev26_msgs)
 
 add_executable(steering_bench_test_node src/steering_bench_test_node.cpp)
 target_include_directories(steering_bench_test_node PRIVATE include)
-ament_target_dependencies(steering_bench_test_node rclcpp std_msgs)
+ament_target_dependencies(steering_bench_test_node rclcpp std_msgs kaiev26_msgs)
 
 install(TARGETS steering_core steering_actuator_node steering_bench_test_node
   ARCHIVE DESTINATION lib

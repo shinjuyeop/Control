@@ -1,8 +1,9 @@
 #include "lateral_ctrl/bench_test_utils.hpp"
 
+#include <kaiev26_msgs/msg/actuator_command.hpp>
+#include <kaiev26_msgs/msg/drive_actuator_status.hpp>
 #include <rcl_interfaces/msg/set_parameters_result.hpp>
 #include <rclcpp/rclcpp.hpp>
-#include <std_msgs/msg/float32.hpp>
 #include <std_msgs/msg/u_int8.hpp>
 
 #include <algorithm>
@@ -55,7 +56,8 @@ public:
       RCLCPP_ERROR(get_logger(), "Invalid sequence interval/start delay; sequence disabled");
     }
 
-    steer_pub_ = create_publisher<std_msgs::msg::Float32>("/cmd/steer", 10);
+    steer_pub_ =
+      create_publisher<kaiev26_msgs::msg::ActuatorCommand>("/vehicle/actuator_command", 10);
     if (drive_mode_publish_enabled_) ensureModePublisher();
     if (safety_injection_enabled_) ensureSafetyPublishers();
     sequence_enabled_at_ = std::chrono::steady_clock::now();
@@ -74,9 +76,9 @@ public:
 
   ~SteeringBenchTestNode() override
   {
+    if (mode_pub_) publishDriveStatus(0);  // MANUAL
     std_msgs::msg::UInt8 value;
     value.data = 0;
-    if (mode_pub_) mode_pub_->publish(value);  // MANUAL
     if (estop_pub_) estop_pub_->publish(value);
     if (aeb_pub_) aeb_pub_->publish(value);
   }
@@ -165,7 +167,23 @@ private:
 
   void ensureModePublisher()
   {
-    if (!mode_pub_) mode_pub_ = create_publisher<std_msgs::msg::UInt8>("/mode", 10);
+    // 벤치에서는 STM_A의 drive status 발행(물리 모드 스위치)을 대신한다.
+    if (!mode_pub_) {
+      mode_pub_ =
+        create_publisher<kaiev26_msgs::msg::DriveActuatorStatus>("/drive/status", 10);
+    }
+  }
+
+  void publishDriveStatus(uint8_t mode_value)
+  {
+    kaiev26_msgs::msg::DriveActuatorStatus status;
+    status.header.stamp = now();
+    status.mode = mode_value;
+    status.gear = kaiev26_msgs::msg::DriveActuatorStatus::GEAR_FORWARD;
+    status.tractive_feedback_valid = false;
+    status.fault_bits_valid = false;
+    status.command_received = false;
+    mode_pub_->publish(status);
   }
 
   void ensureSafetyPublishers()
@@ -214,9 +232,7 @@ private:
       std::chrono::duration_cast<std::chrono::milliseconds>(now - last_mode_publish_).count() >=
       drive_mode_publish_period_ms_)
     {
-      std_msgs::msg::UInt8 mode;
-      mode.data = static_cast<uint8_t>(test_drive_mode_);
-      mode_pub_->publish(mode);
+      publishDriveStatus(static_cast<uint8_t>(test_drive_mode_));
       last_mode_publish_ = now;
     }
     if (safety_injection_enabled_ &&
@@ -253,8 +269,17 @@ private:
     }
     if (sequence_complete_) return;
     if (now < next_steer_command_publish_) return;
-    std_msgs::msg::Float32 command;
-    command.data = static_cast<float>(current_target_wheel_angle_deg_);
+    // 벤치 시퀀스는 deg·좌회전 음수(실차 관례)로 정의되어 있으므로
+    // canonical(rad·좌회전 양수)로 변환해 발행한다.
+    constexpr double kDegToCanonicalRad = -3.14159265358979323846 / 180.0;
+    kaiev26_msgs::msg::ActuatorCommand command;
+    command.header.stamp = this->now();
+    command.enable = true;
+    command.steering_target_rad =
+      static_cast<float>(current_target_wheel_angle_deg_ * kDegToCanonicalRad);
+    command.speed_target_mps = 0.0F;
+    command.brake_engage = false;
+    command.gear = kaiev26_msgs::msg::ActuatorCommand::GEAR_FORWARD;
     steer_pub_->publish(command);
     do {
       next_steer_command_publish_ +=
@@ -274,8 +299,9 @@ private:
   std::chrono::steady_clock::time_point sequence_enabled_at_;
   std::chrono::steady_clock::time_point last_mode_publish_, last_safety_publish_;
   std::chrono::steady_clock::time_point next_steer_command_publish_, last_target_change_;
-  rclcpp::Publisher<std_msgs::msg::UInt8>::SharedPtr mode_pub_, estop_pub_, aeb_pub_;
-  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr steer_pub_;
+  rclcpp::Publisher<kaiev26_msgs::msg::DriveActuatorStatus>::SharedPtr mode_pub_;
+  rclcpp::Publisher<std_msgs::msg::UInt8>::SharedPtr estop_pub_, aeb_pub_;
+  rclcpp::Publisher<kaiev26_msgs::msg::ActuatorCommand>::SharedPtr steer_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr parameter_callback_;
 };

@@ -39,47 +39,50 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
   hardware_can_enabled_ = declare_parameter("hardware_can_enabled", false);
   actuator_output_enabled_ = declare_parameter("actuator_output_enabled", false);
   test_input_injection_enabled_ = declare_parameter("test_input_injection_enabled", false);
-  legacy_throttle_input_enabled_ = declare_parameter("legacy_throttle_input_enabled", false);
   const auto can_interface = declare_parameter("can_interface", std::string("can0"));
   const auto node_id = declare_parameter("node_id", 1);
 
-  const auto steer_topic = declare_parameter("steer_command_topic", std::string("/cmd/steer"));
-  const auto mode_topic = declare_parameter("mode_topic", std::string("/mode"));
-  const auto estop_topic = declare_parameter("estop_topic", std::string("/estop"));
-  const auto aeb_topic = declare_parameter("aeb_topic", std::string("/aeb"));
+  // canonical 통합 인터페이스: 명령은 /vehicle/actuator_command 하나,
+  // 안전·모드 상태는 STM이 발행하는 status에서 읽는다.
+  const auto command_topic =
+    declare_parameter("command_topic", std::string("/vehicle/actuator_command"));
+  const auto drive_status_topic =
+    declare_parameter("drive_status_topic", std::string("/drive/status"));
+  const auto brake_status_topic =
+    declare_parameter("brake_status_topic", std::string("/brake/status"));
+  const auto aeb_state_topic =
+    declare_parameter("aeb_state_topic", std::string("/safety/aeb_state"));
   const auto test_estop_topic =
     declare_parameter("test_estop_topic", std::string("/steering/test/estop"));
   const auto test_aeb_topic =
     declare_parameter("test_aeb_topic", std::string("/steering/test/aeb"));
-  (void)declare_parameter("legacy_throttle_topic", std::string("throttle_data"));
   const auto angle_topic = declare_parameter("angle_topic", std::string("/steering/angle"));
-  const auto legacy_angle_topic =
-    declare_parameter("legacy_angle_topic", std::string("/ctrl/steer"));
   const auto status_topic = declare_parameter("status_topic", std::string("/steering/status"));
   const auto enable_commanded_topic =
     declare_parameter("enable_commanded_topic", std::string("/steering/enable_commanded"));
   const auto enabled_topic = declare_parameter("enabled_topic", std::string("/steering/enabled"));
 
-  steer_sub_ = create_subscription<std_msgs::msg::Float32>(
-    steer_topic, 10, std::bind(&SteeringActuatorNode::onSteer, this, std::placeholders::_1));
-  mode_sub_ = create_subscription<std_msgs::msg::UInt8>(
-    mode_topic, 10, std::bind(&SteeringActuatorNode::onMode, this, std::placeholders::_1));
-  estop_sub_ = create_subscription<std_msgs::msg::UInt8>(
-    estop_topic, 10,
-    [this](std_msgs::msg::UInt8::SharedPtr message) {onEstop(message, false);});
-  aeb_sub_ = create_subscription<std_msgs::msg::UInt8>(
-    aeb_topic, 10,
-    [this](std_msgs::msg::UInt8::SharedPtr message) {onAeb(message, false);});
+  command_sub_ = create_subscription<kaiev26_msgs::msg::ActuatorCommand>(
+    command_topic, 10,
+    std::bind(&SteeringActuatorNode::onCommand, this, std::placeholders::_1));
+  drive_status_sub_ = create_subscription<kaiev26_msgs::msg::DriveActuatorStatus>(
+    drive_status_topic, 10,
+    std::bind(&SteeringActuatorNode::onDriveStatus, this, std::placeholders::_1));
+  brake_status_sub_ = create_subscription<kaiev26_msgs::msg::BrakeActuatorStatus>(
+    brake_status_topic, 10,
+    std::bind(&SteeringActuatorNode::onBrakeStatus, this, std::placeholders::_1));
+  aeb_state_sub_ = create_subscription<kaiev26_msgs::msg::AEBState>(
+    aeb_state_topic, 10,
+    std::bind(&SteeringActuatorNode::onAebState, this, std::placeholders::_1));
   if (test_input_injection_enabled_) {
     test_estop_sub_ = create_subscription<std_msgs::msg::UInt8>(
       test_estop_topic, 10,
-      [this](std_msgs::msg::UInt8::SharedPtr message) {onEstop(message, true);});
+      [this](std_msgs::msg::UInt8::SharedPtr message) {setEstop(message->data != 0, true);});
     test_aeb_sub_ = create_subscription<std_msgs::msg::UInt8>(
       test_aeb_topic, 10,
-      [this](std_msgs::msg::UInt8::SharedPtr message) {onAeb(message, true);});
+      [this](std_msgs::msg::UInt8::SharedPtr message) {setAeb(message->data != 0, true);});
   }
   angle_pub_ = create_publisher<std_msgs::msg::Float32>(angle_topic, 10);
-  legacy_angle_pub_ = create_publisher<std_msgs::msg::Float32>(legacy_angle_topic, 10);
   status_pub_ = create_publisher<kaiev26_msgs::msg::SteeringActuatorStatus>(status_topic, 10);
   enable_commanded_pub_ = create_publisher<std_msgs::msg::Bool>(enable_commanded_topic, 10);
   enabled_pub_ = create_publisher<std_msgs::msg::Bool>(enabled_topic, 10);
@@ -100,12 +103,6 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
       "Motor output disarmed. Set BOTH hardware_can_enabled=true and "
       "actuator_output_enabled=true to permit CAN actuation.");
   }
-  if (legacy_throttle_input_enabled_) {
-    RCLCPP_ERROR(
-      get_logger(),
-      "legacy_throttle_input_enabled requested, but throttle_msgs is archived and not a build "
-      "dependency. Use direct /mode, /estop and /aeb inputs.");
-  }
   previous_tick_ = std::chrono::steady_clock::now();
   control_timer_ = create_wall_timer(
     std::chrono::milliseconds(std::max(1, control_period_ms_)),
@@ -118,21 +115,25 @@ SteeringActuatorNode::~SteeringActuatorNode()
   if (can_driver_ && can_driver_->isOpen()) can_driver_->sendDisable();
 }
 
-void SteeringActuatorNode::onSteer(const std_msgs::msg::Float32::SharedPtr input)
+void SteeringActuatorNode::onCommand(const kaiev26_msgs::msg::ActuatorCommand::SharedPtr input)
 {
-  if (!std::isfinite(input->data)) return;
-  pending_target_wheel_angle_deg_ = converter_.clampWheelDeg(input->data);
+  if (!std::isfinite(input->steering_target_rad)) return;
+  // canonical 계약 단위 변환: rad·좌회전 양수 → 내부 deg·좌회전 음수.
+  // 이 변환은 명령 수신 경계에서만 수행한다.
+  constexpr double kCanonicalRadToDeg = -180.0 / 3.14159265358979323846;
+  pending_target_wheel_angle_deg_ =
+    converter_.clampWheelDeg(input->steering_target_rad * kCanonicalRadToDeg);
   pending_command_valid_ = true;
   last_steer_command_time_ = std::chrono::steady_clock::now();
   pending_command_generation_ = ++steer_command_generation_;
 }
 
-void SteeringActuatorNode::onMode(const std_msgs::msg::UInt8::SharedPtr input)
+void SteeringActuatorNode::applyMode(uint8_t mode_value)
 {
   mode_received_ = true;
   last_mode_time_ = std::chrono::steady_clock::now();
-  if (input->data == static_cast<uint8_t>(DriveMode::MANUAL)) drive_mode_ = DriveMode::MANUAL;
-  else if (input->data == static_cast<uint8_t>(DriveMode::AUTO)) drive_mode_ = DriveMode::AUTO;
+  if (mode_value == static_cast<uint8_t>(DriveMode::MANUAL)) drive_mode_ = DriveMode::MANUAL;
+  else if (mode_value == static_cast<uint8_t>(DriveMode::AUTO)) drive_mode_ = DriveMode::AUTO;
   else drive_mode_ = DriveMode::UNKNOWN;
   if (drive_mode_ != DriveMode::AUTO) {
     requestImmediateDisable(
@@ -141,23 +142,43 @@ void SteeringActuatorNode::onMode(const std_msgs::msg::UInt8::SharedPtr input)
   }
 }
 
-void SteeringActuatorNode::onEstop(
-  const std_msgs::msg::UInt8::SharedPtr input, bool test_input)
+void SteeringActuatorNode::onDriveStatus(
+  const kaiev26_msgs::msg::DriveActuatorStatus::SharedPtr input)
+{
+  // 물리 모드 스위치 상태는 STM_A의 drive status로 전달된다.
+  applyMode(input->mode);
+}
+
+void SteeringActuatorNode::onBrakeStatus(
+  const kaiev26_msgs::msg::BrakeActuatorStatus::SharedPtr input)
+{
+  // 물리 E-stop 상태는 STM_B의 brake status 원인 bit로 전달된다.
+  setEstop(
+    (input->stop_reason_bits &
+     kaiev26_msgs::msg::BrakeActuatorStatus::STOP_REASON_ESTOP) != 0,
+    false);
+}
+
+void SteeringActuatorNode::onAebState(const kaiev26_msgs::msg::AEBState::SharedPtr input)
+{
+  setAeb(input->active, false);
+}
+
+void SteeringActuatorNode::setEstop(bool active, bool test_input)
 {
   const bool was_active = safety_.effectiveEstop();
-  if (test_input) safety_.test_estop = input->data != 0;
-  else safety_.real_estop = input->data != 0;
+  if (test_input) safety_.test_estop = active;
+  else safety_.real_estop = active;
   if (!was_active && safety_.effectiveEstop()) {
     requestImmediateDisable(SteeringDisableReason::ESTOP);
   }
 }
 
-void SteeringActuatorNode::onAeb(
-  const std_msgs::msg::UInt8::SharedPtr input, bool test_input)
+void SteeringActuatorNode::setAeb(bool active, bool test_input)
 {
   const bool was_active = safety_.effectiveAeb();
-  if (test_input) safety_.test_aeb = input->data != 0;
-  else safety_.real_aeb = input->data != 0;
+  if (test_input) safety_.test_aeb = active;
+  else safety_.real_aeb = active;
   if (!was_active && safety_.effectiveAeb()) {
     requestImmediateDisable(SteeringDisableReason::AEB);
   }
@@ -344,7 +365,6 @@ void SteeringActuatorNode::publishState(
     std_msgs::msg::Float32 angle;
     angle.data = static_cast<float>(actual_wheel_angle_deg_);
     angle_pub_->publish(angle);
-    legacy_angle_pub_->publish(angle);
   }
   std_msgs::msg::Bool commanded;
   commanded.data = enabled_commanded_;

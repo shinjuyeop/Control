@@ -1,6 +1,10 @@
 #pragma once
 
 #include "lateral_ctrl/keya_can_driver.hpp"
+#include "kaiev26_msgs/msg/actuator_command.hpp"
+#include "kaiev26_msgs/msg/aeb_state.hpp"
+#include "kaiev26_msgs/msg/brake_actuator_status.hpp"
+#include "kaiev26_msgs/msg/drive_actuator_status.hpp"
 #include "kaiev26_msgs/msg/steering_actuator_status.hpp"
 #include "lateral_ctrl/steering_angle_converter.hpp"
 #include "lateral_ctrl/steering_types.hpp"
@@ -23,10 +27,13 @@ public:
   ~SteeringActuatorNode() override;
 
 private:
-  void onSteer(const std_msgs::msg::Float32::SharedPtr msg);
-  void onMode(const std_msgs::msg::UInt8::SharedPtr msg);
-  void onEstop(const std_msgs::msg::UInt8::SharedPtr msg, bool test_input);
-  void onAeb(const std_msgs::msg::UInt8::SharedPtr msg, bool test_input);
+  void onCommand(const kaiev26_msgs::msg::ActuatorCommand::SharedPtr msg);
+  void onDriveStatus(const kaiev26_msgs::msg::DriveActuatorStatus::SharedPtr msg);
+  void onBrakeStatus(const kaiev26_msgs::msg::BrakeActuatorStatus::SharedPtr msg);
+  void onAebState(const kaiev26_msgs::msg::AEBState::SharedPtr msg);
+  void setEstop(bool active, bool test_input);
+  void setAeb(bool active, bool test_input);
+  void applyMode(uint8_t mode_value);
   void requestImmediateDisable(SteeringDisableReason reason);
   void discardAllSteeringCommands();
   void controlTick();
@@ -57,7 +64,6 @@ private:
   bool hardware_can_enabled_{false};
   bool actuator_output_enabled_{false};
   bool test_input_injection_enabled_{false};
-  bool legacy_throttle_input_enabled_{false};
   double target_wheel_angle_deg_{0.0};
   double pending_target_wheel_angle_deg_{0.0};
   double commanded_wheel_angle_deg_{0.0};
@@ -82,10 +88,12 @@ private:
   std::chrono::steady_clock::time_point last_steer_command_time_{};
   std::chrono::steady_clock::time_point tracking_fault_since_{};
 
-  rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr steer_sub_;
-  rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr mode_sub_, estop_sub_, aeb_sub_;
+  rclcpp::Subscription<kaiev26_msgs::msg::ActuatorCommand>::SharedPtr command_sub_;
+  rclcpp::Subscription<kaiev26_msgs::msg::DriveActuatorStatus>::SharedPtr drive_status_sub_;
+  rclcpp::Subscription<kaiev26_msgs::msg::BrakeActuatorStatus>::SharedPtr brake_status_sub_;
+  rclcpp::Subscription<kaiev26_msgs::msg::AEBState>::SharedPtr aeb_state_sub_;
   rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr test_estop_sub_, test_aeb_sub_;
-  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr angle_pub_, legacy_angle_pub_;
+  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr angle_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr enable_commanded_pub_, enabled_pub_;
   rclcpp::Publisher<kaiev26_msgs::msg::SteeringActuatorStatus>::SharedPtr status_pub_;
   rclcpp::TimerBase::SharedPtr control_timer_;
