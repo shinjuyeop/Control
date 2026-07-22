@@ -1,7 +1,7 @@
 #pragma once
 
 #include "lateral_ctrl/keya_can_driver.hpp"
-#include "lateral_ctrl/msg/steering_actuator_status.hpp"
+#include "kaiev26_msgs/msg/steering_actuator_status.hpp"
 #include "lateral_ctrl/steering_angle_converter.hpp"
 #include "lateral_ctrl/steering_types.hpp"
 #include "lateral_ctrl/wheel_angle_tracking_controller.hpp"
@@ -87,7 +87,7 @@ private:
   rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr test_estop_sub_, test_aeb_sub_;
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr angle_pub_, legacy_angle_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr enable_commanded_pub_, enabled_pub_;
-  rclcpp::Publisher<lateral_ctrl::msg::SteeringActuatorStatus>::SharedPtr status_pub_;
+  rclcpp::Publisher<kaiev26_msgs::msg::SteeringActuatorStatus>::SharedPtr status_pub_;
   rclcpp::TimerBase::SharedPtr control_timer_;
 };
 }  // namespace lateral_ctrl

@@ -80,7 +80,7 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
   }
   angle_pub_ = create_publisher<std_msgs::msg::Float32>(angle_topic, 10);
   legacy_angle_pub_ = create_publisher<std_msgs::msg::Float32>(legacy_angle_topic, 10);
-  status_pub_ = create_publisher<msg::SteeringActuatorStatus>(status_topic, 10);
+  status_pub_ = create_publisher<kaiev26_msgs::msg::SteeringActuatorStatus>(status_topic, 10);
   enable_commanded_pub_ = create_publisher<std_msgs::msg::Bool>(enable_commanded_topic, 10);
   enabled_pub_ = create_publisher<std_msgs::msg::Bool>(enabled_topic, 10);
 
@@ -353,7 +353,7 @@ void SteeringActuatorNode::publishState(
   enabled.data = motor.enabled_feedback_valid && motor.enabled_feedback;
   enabled_pub_->publish(enabled);
 
-  msg::SteeringActuatorStatus status;
+  kaiev26_msgs::msg::SteeringActuatorStatus status;
   status.header.stamp = now();
   status.state = static_cast<uint8_t>(state_);
   status.disable_reason = static_cast<uint8_t>(disable_reason_);
@@ -394,15 +394,20 @@ void SteeringActuatorNode::publishState(
       std::chrono::duration_cast<std::chrono::milliseconds>(
         steady_now - tracking_fault_since_).count() >= tracking_error_fault_duration_ms_;
   }
-  status.target_wheel_angle_deg = target_wheel_angle_deg_;
-  status.commanded_wheel_angle_deg = commanded_wheel_angle_deg_;
-  status.corrected_wheel_angle_deg = corrected_wheel_angle_deg_;
-  status.actual_wheel_angle_deg = actual_wheel_angle_deg_;
-  status.tracking_error_deg = tracking_controller_.errorDeg();
-  status.tracking_correction_deg = tracking_controller_.correctionDeg();
-  status.steering_rate_deg_s = steering_rate_deg_s_;
+  // canonical 계약 단위 변환: 내부 deg·좌회전 음수 → rad·좌회전 양수.
+  // 이 변환은 status 발행 경계에서만 수행한다.
+  constexpr double kDegToCanonicalRad = -3.14159265358979323846 / 180.0;
+  status.target_wheel_angle_rad =
+    static_cast<float>(target_wheel_angle_deg_ * kDegToCanonicalRad);
+  status.commanded_wheel_angle_rad =
+    static_cast<float>(commanded_wheel_angle_deg_ * kDegToCanonicalRad);
+  status.actual_wheel_angle_rad =
+    static_cast<float>(actual_wheel_angle_deg_ * kDegToCanonicalRad);
+  status.tracking_error_rad =
+    static_cast<float>(tracking_controller_.errorDeg() * kDegToCanonicalRad);
+  status.steering_rate_radps =
+    static_cast<float>(steering_rate_deg_s_ * kDegToCanonicalRad);
   status.motor_position_count = motor.motor_position_count;
-  status.motor_angle_deg = converter_.countToMotorDeg(motor.motor_position_count);
   status.motor_speed_rpm = motor.motor_speed_rpm;
   status.motor_current_a = motor.motor_current_a;
   status.bus_voltage_v = motor.bus_voltage_v;
@@ -416,8 +421,6 @@ void SteeringActuatorNode::publishState(
   status.steer_command_age_ms = std::isfinite(steer_age_ms) ? static_cast<float>(steer_age_ms) :
     std::numeric_limits<float>::infinity();
   status.steer_command_received = steer_command_generation_ != 0;
-  status.pending_command_valid = pending_command_valid_;
-  status.movement_target_valid = movement_target_valid_;
   status_pub_->publish(status);
 }
 }  // namespace lateral_ctrl

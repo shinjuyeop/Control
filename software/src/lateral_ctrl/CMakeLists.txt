@@ -15,12 +15,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
-find_package(rosidl_default_generators REQUIRED)
-
-rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/SteeringActuatorStatus.msg"
-  DEPENDENCIES std_msgs
-)
+find_package(kaiev26_msgs REQUIRED)
 
 add_library(steering_core
   src/keya_can_driver.cpp
@@ -35,9 +30,7 @@ target_include_directories(steering_core PUBLIC
 add_executable(steering_actuator_node src/steering_actuator_node.cpp)
 target_include_directories(steering_actuator_node PRIVATE include)
 target_link_libraries(steering_actuator_node steering_core)
-ament_target_dependencies(steering_actuator_node rclcpp std_msgs)
-rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
-target_link_libraries(steering_actuator_node "${cpp_typesupport_target}")
+ament_target_dependencies(steering_actuator_node rclcpp std_msgs kaiev26_msgs)
 
 add_executable(steering_bench_test_node src/steering_bench_test_node.cpp)
 target_include_directories(steering_bench_test_node PRIVATE include)
@@ -72,5 +65,4 @@ if(BUILD_TESTING)
 endif()
 
 ament_export_include_directories(include)
-ament_export_dependencies(rosidl_default_runtime)
 ament_package()
