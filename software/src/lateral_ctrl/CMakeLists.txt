@@ -65,6 +65,7 @@ install(TARGETS steering_core steering_actuator_node steering_bench_test_node
 )
 install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
+install(PROGRAMS scripts/mcap_to_csv.py DESTINATION lib/${PROJECT_NAME})
 install(FILES README.md DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
