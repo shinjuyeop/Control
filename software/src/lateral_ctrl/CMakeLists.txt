@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(lateral_ctrl)
+project(lateral_ctrl) # package name 
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -17,9 +17,13 @@ ament_target_dependencies(steering_control_node rclcpp std_msgs)
 add_executable(steering_feedback_node src/steering_feedback_node.cpp)
 ament_target_dependencies(steering_feedback_node rclcpp std_msgs)
 
+add_executable(deadzone_measure_node src/deadzone_measure_node.cpp)
+ament_target_dependencies(deadzone_measure_node rclcpp std_msgs)
+
 install(TARGETS
   steering_control_node
   steering_feedback_node
+  deadzone_measure_node
   DESTINATION lib/${PROJECT_NAME}
 )
 

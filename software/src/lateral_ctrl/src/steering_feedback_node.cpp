@@ -1,6 +1,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/float32.hpp"
 #include "std_msgs/msg/u_int8.hpp"
+#include "std_msgs/msg/u_int16.hpp"
 
 #include <linux/can.h>
 #include <linux/can/raw.h>
@@ -38,17 +39,33 @@ public:
     publish_topic_    = this->declare_parameter<std::string>("publish_topic", "/ctrl/steer");
     timer_ms_         = this->declare_parameter<int>("poll_period_ms", 20);
 
+    // ── 고정밀 위치 query (legacy 프로토콜 안에서 encoder count query, 10000/turn)
+    // 드라이버 제어모드(param 0019=CAN)는 그대로 두고, heartbeat(360/turn)보다 약 27배
+    // 촘촘한 위치를 추가로 얻기 위해 데이터시트 4.3.2절 query 명령을 주기적으로 보낸다.
+    hires_enabled_       = this->declare_parameter<bool>("hires_enabled", true);
+    hires_query_period_ms_ = this->declare_parameter<int>("hires_query_period_ms", 50);
+    hires_topic_         = this->declare_parameter<std::string>("hires_topic", "/ctrl/steer_handle_hires");
+
     // 미세 최적화: 스케일 사전 계산
     scale_deg_per_count_ = (counts_per_rev_ > 0)
       ? (360.0f / static_cast<float>(counts_per_rev_)) : 0.0f;
 
     feedback_id_ = static_cast<uint32_t>(feedback_id_i64_);
+    // heartbeat ID(0x07000000+addr)에서 드라이버 주소를 뽑아 query/reply ID를 그대로 따라가게 함
+    const uint32_t driver_addr = feedback_id_ & 0xFF;
+    sdo_query_id_ = 0x06000000u | driver_addr;
+    sdo_reply_id_ = 0x05800000u | driver_addr;
+
     encoder_pub_ = this->create_publisher<std_msgs::msg::Float32>(publish_topic_, 10);
 
     // heartbeat 프레임(8B)에 위치 외에 speed/current/fault가 같이 실려오므로 추가 트래픽 없이 퍼블리시
+    // raw_handle: 다항식 변환 전, 부호 반전만 적용한 핸들(모터축) 각도. 인코더 원시 분해능
+    // (360 count/turn) 그대로라 deadzone류 정밀 측정에는 이 값이 wheel 각도보다 더 유용하다.
+    raw_handle_pub_ = this->create_publisher<std_msgs::msg::Float32>("/ctrl/steer_handle_raw", 10);
     speed_pub_   = this->create_publisher<std_msgs::msg::Float32>("/ctrl/steer_motor_rpm", 10);
     current_pub_ = this->create_publisher<std_msgs::msg::Float32>("/ctrl/steer_motor_current", 10);
-    fault_pub_   = this->create_publisher<std_msgs::msg::UInt8>("/ctrl/steer_fault", 10);
+    fault_pub_   = this->create_publisher<std_msgs::msg::UInt16>("/ctrl/steer_fault", 10);
+    hires_pub_   = this->create_publisher<std_msgs::msg::Float32>(hires_topic_, 10);
 
     // ---- Open sockets -------------------------------------------------
     auto ifaces = split_csv(can_ifaces_csv_);
@@ -77,6 +94,16 @@ public:
       std::chrono::milliseconds(timer_ms_),
       std::bind(&SteeringFeedbackNode::drain_all, this)
     );
+
+    if (hires_enabled_) {
+      hires_query_timer_ = this->create_wall_timer(
+        std::chrono::milliseconds(hires_query_period_ms_),
+        std::bind(&SteeringFeedbackNode::send_hires_query, this)
+      );
+      RCLCPP_INFO(get_logger(),
+        "Hi-res position query enabled: query_id=0x%08X reply_id=0x%08X period=%dms -> %s",
+        sdo_query_id_, sdo_reply_id_, hires_query_period_ms_, hires_topic_.c_str());
+    }
   }
 
   ~SteeringFeedbackNode() override {
@@ -120,10 +147,13 @@ private:
       return -1;
     }
 
-    struct can_filter filter {};
-    filter.can_id   = is_eff_id_ ? (feedback_id_ & CAN_EFF_MASK) : (feedback_id_ & CAN_SFF_MASK);
-    filter.can_mask = is_eff_id_ ? CAN_EFF_MASK : CAN_SFF_MASK;
-    if (setsockopt(fd, SOL_CAN_RAW, CAN_RAW_FILTER, &filter, sizeof(filter)) < 0) {
+    // heartbeat ID + hi-res query 응답 ID(0x05800000+addr) 둘 다 하드웨어 필터로 받는다
+    struct can_filter filters[2] {};
+    filters[0].can_id   = is_eff_id_ ? (feedback_id_ & CAN_EFF_MASK) : (feedback_id_ & CAN_SFF_MASK);
+    filters[0].can_mask = is_eff_id_ ? CAN_EFF_MASK : CAN_SFF_MASK;
+    filters[1].can_id   = sdo_reply_id_ & CAN_EFF_MASK;
+    filters[1].can_mask = CAN_EFF_MASK;
+    if (setsockopt(fd, SOL_CAN_RAW, CAN_RAW_FILTER, filters, sizeof(filters)) < 0) {
       RCLCPP_WARN(get_logger(), "[%s] setsockopt(FILTER) failed: %s", iface.c_str(), std::strerror(errno));
     }
 
@@ -206,6 +236,8 @@ private:
     // (3) 퍼블리시/로그
     std_msgs::msg::Float32 msg; msg.data = wheel_deg; encoder_pub_->publish(msg);
 
+    std_msgs::msg::Float32 raw_msg; raw_msg.data = x; raw_handle_pub_->publish(raw_msg);
+
     const char* side_raw = (x_raw > 0.f) ? "RAW:LEFT(+)" : (x_raw < 0.f ? "RAW:RIGHT(-)" : "RAW:CENTER");
     const char* side_out = (x     > 0.f) ? "OUT:RIGHT(+)" : (x     < 0.f ? "OUT:LEFT(-)"  : "OUT:CENTER");
     RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 500,
@@ -213,12 +245,31 @@ private:
       raw_counts, x_raw, side_raw, x, side_out, wheel_deg);
   }
 
+  // Err_H/Err_L(16bit)는 단일 열거값이 아니라 비트마스크다 (데이터시트 5.2절,
+  // "Communication faults information table"). 여러 비트가 동시에 설 수 있고,
+  // 비트별 의미는 아래 표 그대로다. bit0은 상태(0=Enable/1=Disable)일 뿐 fault가
+  // 아니고, bit5/bit13은 Reserved/Spare라 무시한다.
+  static const char* fault_bit_name(int bit) {
+    switch (bit) {
+      case 1:  return "over-volt(>32V)";
+      case 2:  return "HW over-current";
+      case 3:  return "EEPROM error";
+      case 4:  return "under-volt(<7V)";
+      case 6:  return "SW over-current";
+      case 7:  return "control-mode fault";
+      case 8:  return "phase fail";
+      case 9:  return "stall";
+      case 10: return "over-temp";
+      case 11: return "hall fault";
+      case 12: return "current-sensor fault";
+      case 14: return "CAN disconnected";
+      case 15: return "RS232 disconnected";
+      default: return nullptr;
+    }
+  }
+
   // heartbeat 프레임(8B): [ELE-H ELE-L][speed_H speed_L][DATA_H DATA_L][Err_H Err_L]
   // 위치(ELE-H/L)는 publish_angle_from_counts에서 이미 처리하므로 나머지 3필드만 추출
-  //
-  // 에러코드(데이터시트 4.2.1 LED 표): 0=Enable/정상 1=Disable 2=과전압 3=HW과전류 4=EEPROM오류
-  // 5=저전압 6=예비 7=SW과전류 8=제어모드오류 9=상결선단선 10=스톨 11=온도경고
-  // 12=Hall고장 13=전류센서고장 14=예비 15=CAN단선 16=RS232단선
   void publish_heartbeat_telemetry(const can_frame& frame) {
     if (frame.can_dlc < 8) return;
 
@@ -235,16 +286,65 @@ private:
     std_msgs::msg::Float32 current_msg; current_msg.data = static_cast<float>(current_a);
     current_pub_->publish(current_msg);
 
-    std_msgs::msg::UInt8 fault_msg; fault_msg.data = static_cast<uint8_t>(fault_code & 0xFF);
+    std_msgs::msg::UInt16 fault_msg; fault_msg.data = fault_code;
     fault_pub_->publish(fault_msg);
 
-    // 0=Enable/정상, 1=Disable/정상(비활성) 은 실제 폴트가 아니므로 2 이상만 경고
-    if (fault_code >= 2) {
-      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
-        "Keya fault code=%u (0=enable/OK, 1=disable, 2=over-volt, 3=HW over-current, "
-        "5=under-volt, 7=SW over-current, 9=phase fail, 10=stall, 11=over-temp, "
-        "12=hall fault, 15=CAN lost — see datasheet 4.2.1)", fault_code);
+    std::ostringstream active;
+    for (int bit = 0; bit < 16; ++bit) {
+      if (!(fault_code & (1u << bit))) continue;
+      const char* name = fault_bit_name(bit);
+      if (!name) continue; // status bit(0) 또는 reserved/spare(5,13)
+      if (!active.str().empty()) active << ", ";
+      active << name << "(bit" << bit << ")";
     }
+
+    if (!active.str().empty()) {
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
+        "Keya fault bits raw=0x%04X active=[%s] (datasheet 5.2)",
+        fault_code, active.str().c_str());
+    }
+  }
+
+  // ── 고정밀 위치 query 전송 (데이터시트 4.3.2: Encoder count value query, four bytes)
+  //    23/40으로 시작하는 다른 명령들과 동일하게 big-endian, 확장(EFF) ID 사용
+  void send_hires_query() {
+    uint8_t data[8] = {0x40, 0x04, 0x21, 0x02, 0x00, 0x00, 0x00, 0x00};
+    struct can_frame frame{};
+    frame.can_id = sdo_query_id_ | CAN_EFF_FLAG;
+    frame.can_dlc = 8;
+    std::memcpy(frame.data, data, 8);
+
+    for (auto& s : sockets_) {
+      if (write(s.fd, &frame, sizeof(frame)) != (int)sizeof(frame)) {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+          "[%s] Failed to send hi-res position query: %s", s.name.c_str(), std::strerror(errno));
+      }
+    }
+  }
+
+  // ── 고정밀 위치 query 응답 처리: 60 04 21 02 DATA(4B, 10000 count/turn, big-endian 가정)
+  void handle_hires_reply(const can_frame& frame, const char* ifname) {
+    if (frame.can_dlc < 8) return;
+    if (frame.data[0] != 0x60 || frame.data[1] != 0x04 ||
+        frame.data[2] != 0x21 || frame.data[3] != 0x02) {
+      RCLCPP_DEBUG(get_logger(), "[%s] Unexpected hi-res reply payload=[%s]",
+                   ifname, bytes_hex(frame.data, frame.can_dlc).c_str());
+      return;
+    }
+
+    const int32_t raw = (static_cast<int32_t>(frame.data[4]) << 24) |
+                         (static_cast<int32_t>(frame.data[5]) << 16) |
+                         (static_cast<int32_t>(frame.data[6]) << 8) |
+                          static_cast<int32_t>(frame.data[7]);
+
+    // 10000 count = 1 circle(360°). 기존 raw_handle과 동일한 부호 규약(좌 -, 우 +) 적용
+    const float x_raw = static_cast<float>(raw) * (360.0f / 10000.0f);
+    const float x = -x_raw;
+
+    std_msgs::msg::Float32 msg; msg.data = x; hires_pub_->publish(msg);
+
+    RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 500,
+      "[%s] hires raw=%d -> handle=%.4f°", ifname, raw, x);
   }
 
   void drain_fd(int fd, const char* ifname) {
@@ -263,6 +363,12 @@ private:
 
       const bool eff = (frame.can_id & CAN_EFF_FLAG) != 0;
       const uint32_t id = eff ? (frame.can_id & CAN_EFF_MASK) : (frame.can_id & CAN_SFF_MASK);
+
+      if (hires_enabled_ && id == sdo_reply_id_) {
+        handle_hires_reply(frame, ifname);
+        continue;
+      }
+
       if (id != feedback_id_) {
         RCLCPP_DEBUG(get_logger(), "[%s] Other id=0x%08X%s dlc=%d data=[%s]",
                      ifname, id, eff ? " (EFF)" : " (SFF)", frame.can_dlc,
@@ -314,11 +420,21 @@ private:
   float    scale_deg_per_count_{0.0f};
   int      startup_debug_left_{12}; // 시작 시 12프레임 자세히 덤프
 
+  // ── 고정밀 위치 query 상태
+  bool     hires_enabled_{true};
+  int      hires_query_period_ms_{50};
+  std::string hires_topic_;
+  uint32_t sdo_query_id_{0};
+  uint32_t sdo_reply_id_{0};
+
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr encoder_pub_;
+  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr raw_handle_pub_;
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr speed_pub_;
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr current_pub_;
-  rclcpp::Publisher<std_msgs::msg::UInt8>::SharedPtr fault_pub_;
+  rclcpp::Publisher<std_msgs::msg::UInt16>::SharedPtr fault_pub_;
+  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr hires_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
+  rclcpp::TimerBase::SharedPtr hires_query_timer_;
 };
 
 int main(int argc, char* argv[]) {
