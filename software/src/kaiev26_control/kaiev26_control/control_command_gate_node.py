@@ -64,6 +64,13 @@ class ControlCommandGateNode(Node):
         self.latest_target_speed: TargetSpeed | None = None
         self.latest_vehicle_state: VehicleState | None = None
         self.latest_aeb_state: AEBState | None = None
+
+        # TODO(Control safety contract): vehicle_state와 aeb_state는 현재 수신 시각과
+        # 상위 source health를 검증하지 않고 마지막 값을 계속 사용한다. AEB의
+        # active=false heartbeat가 끊기거나 vehicle_state_publisher가 단절된 actuator
+        # status를 새 stamp로 재발행하면 통신 단절을 정상 상태로 오인할 수 있다.
+        # 실차 적용 전에 제어팀이 freshness 기준, fault latch와 reset 절차, fault 시
+        # steering과 brake 동작을 확정하고 이 입력 경계에 반영해야 한다.
         self.commanded_speed_mps = 0.0
         self.commanded_steering_rad = 0.0
         self.last_control_time = self.get_clock().now()
