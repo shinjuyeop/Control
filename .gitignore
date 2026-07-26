@@ -90,13 +90,10 @@ micro_ros_stm32cubemx_utils/
 ##################################
 # 8) 데이터 및 로그 파일 (추가)
 ##################################
-# 프로젝트 내의 어느 폴더에 있든 모든 csv, yaml 파일 제외
+# 데이터와 로그는 제외하되 노드 파라미터는 저장소가 소유한다.
+# 과거의 전역 *.yaml 제외는 실행에 필요한 config까지 삼켜서
+# clean clone에서 launch가 뜨지 않는 원인이었다.
 *.csv
-*.yaml
-*.yml
-!software/src/lateral_ctrl/config/
-!software/src/lateral_ctrl/config/*.yaml
-!software/src/lateral_ctrl/config/*.yml
 *.local.yaml
 *.local.yml
 
