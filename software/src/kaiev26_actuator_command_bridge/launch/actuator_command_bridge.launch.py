@@ -7,8 +7,10 @@ import os
 
 
 def generate_launch_description():
-    control_share = get_package_share_directory("kaiev26_control")
-    control_config = os.path.join(control_share, "config", "control_command_gate.yaml")
+    bridge_share = get_package_share_directory("kaiev26_actuator_command_bridge")
+    bridge_config = os.path.join(
+        bridge_share, "config", "actuator_command_bridge.yaml"
+    )
 
     return LaunchDescription(
         [
@@ -18,11 +20,14 @@ def generate_launch_description():
                 description="Use Gazebo/ROS simulation clock.",
             ),
             Node(
-                package="kaiev26_control",
-                executable="control_command_gate_node",
-                name="kaiev26_control_command_gate",
+                package="kaiev26_actuator_command_bridge",
+                executable="actuator_command_bridge_node",
+                name="kaiev26_actuator_command_bridge",
                 output="screen",
-                parameters=[control_config, {"use_sim_time": LaunchConfiguration("use_sim_time")}],
+                parameters=[
+                    bridge_config,
+                    {"use_sim_time": LaunchConfiguration("use_sim_time")},
+                ],
             ),
         ]
     )

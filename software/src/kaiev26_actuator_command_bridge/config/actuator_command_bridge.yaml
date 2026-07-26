@@ -1,0 +1,15 @@
+# 제어 소유 actuator 명령 발행 파라미터.
+# 분할 전 `kaiev26_control/config/control_command_gate.yaml`에서 이 절반을 옮겼다.
+# 경로추종·속도계획 절반은 판단 저장소
+# `Decision/kaiev26_motion_control/config/motion_control.yaml`에 있다.
+#
+# 분할 전 yaml은 `.gitignore`의 전역 `*.yaml` 제외에 걸려 저장소에 없었고,
+# 그래서 clean clone에서 launch가 뜨지 않았다(`0950b82`가 그 제외를 걷었다).
+kaiev26_actuator_command_bridge:
+  ros__parameters:
+    use_sim_time: true
+    publish_rate_hz: 50.0
+    # 상위 motion_control이 같은 50 Hz로 낸다. 이 값은 그 노드가 사라진 것을
+    # 판정하는 기준이며, 분할 전 planning stale 기준과 같은 값으로 둔다.
+    motion_stale_sec: 0.35
+    max_steering_rad: 0.4363

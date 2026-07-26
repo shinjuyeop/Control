@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>kaiev26_control</name>
+  <name>kaiev26_actuator_command_bridge</name>
   <version>0.1.0</version>
-  <description>Control and command gate for KAIEV26 SITL.</description>
+  <description>Sole publisher of the KAIEV26 canonical actuator command. Applies E-stop and AEB override to the desired motion produced by the decision repository.</description>
   <maintainer email="user@example.com">user1</maintainer>
   <license>TODO</license>
 
