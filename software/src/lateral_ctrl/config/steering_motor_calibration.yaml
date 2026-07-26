@@ -1,0 +1,14 @@
+# KEYA steering motor-to-wheel calibration shared by the real actuator node
+# and Gazebo CAN bridge.  The coefficients map motor degrees to the absolute
+# road-wheel angle in degrees:
+#
+#   wheel_deg = a * motor_deg^2 + b * motor_deg + c
+#
+# Update the revision whenever a bench calibration changes these values.
+revision: "keya-steering-20260726-r1"
+calibration_a: 0.0002
+calibration_b: 0.2159
+calibration_c: 0.1612
+counts_per_rev: 10000.0
+direction_sign: -1.0
+wheel_limit_deg: 30.0

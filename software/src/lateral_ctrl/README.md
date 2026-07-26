@@ -13,10 +13,13 @@ TeamKAI-DL 차량의 KEYA 조향 액추에이터를 제어하는 ROS 2 Humble �
 제어합니다. 과거의 `steering_control_node`와 `steering_feedback_node`는 제거되었으며,
 같은 CAN 모터를 제어하는 다른 노드를 동시에 실행하면 안 됩니다.
 
-> **실차 주의:** `steering_actuator.launch.py`와 `steering_bench_test.launch.py`는
-> `hardware_can_enabled=true`, `actuator_output_enabled=true`가 기본값입니다.
-> launch 전에 바퀴를 공중에 띄우고, 조향 기구 주변을 비우고, 물리 E-STOP을
-> 준비하고, CAN 인터페이스와 기계적 중앙을 확인하십시오.
+> **실차 주의:** `steering_actuator.launch.py`는 `hardware_can_enabled=true`,
+> `actuator_output_enabled=true`가 기본값입니다 — 띄우는 즉시 CAN 소켓이 열리고
+> 모터로 프레임이 나갑니다. 끄려면 두 인자를 `false`로 넘기십시오. 노드에는
+> 런타임 arm/disarm 경로가 없으므로(`outputArmed()`는 생성자에서 한 번만 읽는다)
+> 무장 여부는 기동 시점에 확정됩니다. 띄우기 전에 바퀴를 공중에 띄우고, 조향
+> 기구 주변을 비우고, 물리 E-STOP을 준비하고, CAN 인터페이스와 기계적 중앙을
+> 확인하십시오.
 
 ## 현재 구성
 
@@ -228,8 +231,8 @@ candump -L can0
 
 실제 차량 입력만 사용하는 정상 실행입니다. STM_A가 `/drive/status`, STM_B가 `/brake/status`,
 판단/경로 추종 노드가 `/safety/aeb_state`와 `/vehicle/actuator_command`를 발행해야 합니다. 이 launch는 벤치
-노드를 실행하거나 시험 publisher를 만들지 않으며, 실제 CAN과 actuator output을
-기본 활성화합니다.
+노드를 실행하거나 시험 publisher를 만들지 않습니다. 실제 CAN과 actuator output은
+기본 활성이므로 띄우는 즉시 모터로 프레임이 나갑니다.
 
 ```bash
 cd ~/Control
@@ -239,7 +242,7 @@ source install/setup.bash
 ros2 launch lateral_ctrl steering_actuator.launch.py
 ```
 
-출력을 차단한 상태로 launch 구성을 확인하려면:
+출력을 차단한 상태로 launch 구성만 확인하려면 두 인자를 `false`로 넘깁니다.
 
 ```bash
 cd ~/Control
