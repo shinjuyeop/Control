@@ -9,19 +9,26 @@
 # STM32G474(cortex-m4, fpv4-sp-d16, hard float)라서 산출물을 공유한다.
 #
 # 재실행이 필요한 경우는 펌웨어가 사용하는 kaiev26_msgs 타입이 바뀔 때뿐이다.
-# 그때는 KAIEV26_MSGS_COMMIT을 새 커밋으로 올리고 이 스크립트를 다시 돌린 뒤,
-# 산출물과 펌웨어 코드, host 코드를 한 PR로 묶어서 올린다.
+# 그때는 상위 저장소의 kaiev26_msgs 서브모듈을 새 커밋으로 올린 뒤 이 스크립트를
+# 다시 돌리고, 산출물과 펌웨어 코드, host 코드를 한 PR로 묶어서 올린다.
+#
+# kaiev26_msgs 출처는 기본이 상위 저장소의 서브모듈 체크아웃이다. 커밋을 스크립트에
+# 따로 적어 두면 서브모듈이 올라갈 때 조용히 뒤처지므로 그렇게 하지 않는다.
+# 상위 저장소 없이 돌려야 하면 KAIEV26_MSGS_DIR로 경로를 주거나
+# KAIEV26_MSGS_COMMIT으로 커밋을 명시한다.
 set -euo pipefail
 
 # 버전 고정. 바꿀 때는 아래 manifest도 함께 갱신된다.
 UTILS_REPO=https://github.com/micro-ROS/micro_ros_stm32cubemx_utils.git
 UTILS_COMMIT=${UTILS_COMMIT:-bd531b273c1bcd070b3143c5642128ec75a6f04e} # humble
 MSGS_REPO=${MSGS_REPO:-https://github.com/TeamKAI-DL/kaiev26_msgs.git}
-KAIEV26_MSGS_COMMIT=${KAIEV26_MSGS_COMMIT:-10fbff33a2fc67260f6e429aff5dca19a0001822}
+KAIEV26_MSGS_COMMIT=${KAIEV26_MSGS_COMMIT:-}
 DOCKER_IMAGE=microros/micro_ros_static_library_builder:humble
 MCU_CFLAGS="-mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -ffunction-sections -fdata-sections -Os -g0"
 
 REPO_ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+# Control은 상위 저장소의 서브모듈이므로 kaiev26_msgs는 형제 경로에 있다.
+MSGS_DIR=${KAIEV26_MSGS_DIR:-$REPO_ROOT/../kaiev26_msgs}
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
@@ -31,13 +38,29 @@ git -C "$WORK/project/micro_ros_stm32cubemx_utils" checkout -q "$UTILS_COMMIT"
 rm -rf "$WORK/project/micro_ros_stm32cubemx_utils/.git"
 
 EP="$WORK/project/micro_ros_stm32cubemx_utils/microros_static_library/library_generation/extra_packages"
-if [ -n "${KAIEV26_MSGS_DIR:-}" ]; then
-  rsync -a --exclude .git "$KAIEV26_MSGS_DIR/" "$EP/kaiev26_msgs/"
-else
+if [ -d "$MSGS_DIR/msg" ] && git -C "$MSGS_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+  # 상위 저장소의 서브모듈을 그대로 쓴다. 커밋을 여기서 확정해 manifest에 남긴다.
+  if [ -n "$(git -C "$MSGS_DIR" status --porcelain)" ]; then
+    echo "오류: $MSGS_DIR 에 커밋되지 않은 변경이 있다." >&2
+    echo "      어느 커밋으로 빌드했는지 기록할 수 없으므로 중단한다." >&2
+    exit 1
+  fi
+  MSGS_COMMIT=$(git -C "$MSGS_DIR" rev-parse HEAD)
+  MSGS_SOURCE=$MSGS_DIR
+  rsync -a --exclude .git "$MSGS_DIR/" "$EP/kaiev26_msgs/"
+elif [ -n "$KAIEV26_MSGS_COMMIT" ]; then
   git clone -q "$MSGS_REPO" "$EP/kaiev26_msgs"
   git -C "$EP/kaiev26_msgs" checkout -q "$KAIEV26_MSGS_COMMIT"
+  MSGS_COMMIT=$(git -C "$EP/kaiev26_msgs" rev-parse HEAD)
+  MSGS_SOURCE=$MSGS_REPO
   rm -rf "$EP/kaiev26_msgs/.git"
+else
+  echo "오류: kaiev26_msgs를 찾지 못했다 ($MSGS_DIR)." >&2
+  echo "      상위 저장소에서 서브모듈을 초기화하거나, KAIEV26_MSGS_DIR 또는" >&2
+  echo "      KAIEV26_MSGS_COMMIT을 지정한다." >&2
+  exit 1
 fi
+echo "      kaiev26_msgs 출처: $MSGS_SOURCE ($MSGS_COMMIT)"
 
 echo "[2/5] colcon.meta에 kaiev26_msgs 항목을 추가하고 CFLAGS 응답용 Makefile을 만든다"
 python3 - "$WORK/project/micro_ros_stm32cubemx_utils/microros_static_library/library_generation/colcon.meta" <<'PY'
@@ -75,8 +98,9 @@ generated_by=firmware/tools/regen_microros.sh
 ros_distro=humble
 docker_image=$IMAGE_DIGEST
 micro_ros_stm32cubemx_utils=$UTILS_COMMIT
-kaiev26_msgs=$KAIEV26_MSGS_COMMIT
+kaiev26_msgs=$MSGS_COMMIT
+kaiev26_msgs_source=$MSGS_SOURCE
 mcu_cflags=$MCU_CFLAGS
 MANIFEST
 
-echo "완료. PC 쪽 kaiev26_msgs 서브모듈 커밋이 $KAIEV26_MSGS_COMMIT 인지 확인할 것."
+echo "완료. kaiev26_msgs $MSGS_COMMIT 으로 생성했다."
