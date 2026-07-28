@@ -26,7 +26,7 @@
 #include <rcl/rcl.h>
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
-#include <kaiev26_msgs/msg/aeb_state.h>
+#include <kaiev26_msgs/msg/actuator_command.h>
 #include <kaiev26_msgs/msg/brake_actuator_status.h>
 #include "rmw_microros/rmw_microros.h"
 
@@ -81,14 +81,14 @@ typedef struct {
 /* USER CODE BEGIN Variables */
 /* micro-ROS 구독 메시지 버퍼 */
 /* micro-ROS 구독 메시지의 string 필드에는 정적 버퍼가 필요하다 */
-static kaiev26_msgs__msg__AEBState s_aeb_msg;
-static char s_aeb_frame_id[16];
-static char s_aeb_state_str[32];
-static char s_aeb_reason_str[64];
+static kaiev26_msgs__msg__ActuatorCommand s_cmd_msg;
+static char s_cmd_frame_id[16];
 
-/* Host에서는 AEB만 받는다. Vehicle Status는 STM_A UART에서 수신한다. */
-static void cb_aeb (const void *m){
-  AEB = ((const kaiev26_msgs__msg__AEBState *)m)->active ? 1u : 0u;
+/* Host에서는 최종 브레이크 명령만 받는다. Vehicle Status는 STM_A UART에서 수신한다. */
+static void cb_cmd(const void *m)
+{
+  COMMAND_BRAKE_REQUEST =
+      ((const kaiev26_msgs__msg__ActuatorCommand *)m)->brake_engage ? 1u : 0u;
 }
 
 static uint8_t s_usart1_rx_dma[UART_RX_DMA_SIZE];
@@ -114,7 +114,8 @@ static void update_safety_state(void)
   ESTOP_RF = read_active_low(ESTOP_RF_GPIO_Port, ESTOP_RF_Pin);
 
   ESTOP_STATUS = ESTOP_DASHBOARD | ESTOP_SIDE | ESTOP_RF;
-  SAFETY_STOP_REQUEST = ESTOP_STATUS | ((AEB != 0u) ? 1u : 0u);
+  SAFETY_STOP_REQUEST =
+      ESTOP_STATUS | ((COMMAND_BRAKE_REQUEST != 0u) ? 1u : 0u);
   BRAKE_REQUEST = SAFETY_STOP_REQUEST;
 }
 
@@ -280,7 +281,7 @@ void StartEStop(void *argument)
   update_safety_state();
   for (;;) {
     (void)osThreadFlagsWait(ESTOP_EVENT_MASK, osFlagsWaitAny, 10u);
-    /* timeout 주기에도 다시 읽어 누락된 edge와 Host AEB 변경을 반영한다. */
+    /* timeout 주기에도 다시 읽어 누락된 edge와 명령 브레이크 변경을 반영한다. */
     update_safety_state();
   }
   /* USER CODE END StartEStop */
@@ -303,7 +304,7 @@ void StartuROS(void *argument)
 
   rcl_allocator_t alloc = rcl_get_default_allocator();
   rclc_support_t sup; rcl_node_t node;
-  rcl_subscription_t sub_aeb;
+  rcl_subscription_t sub_cmd;
   // 통합 /brake/status 하나가 개별 상태 토픽들을 대체한다
   rcl_publisher_t pub_brake_status;
 
@@ -312,19 +313,13 @@ void StartuROS(void *argument)
   rclc_support_init(&sup,0,NULL,&alloc);
   rclc_node_init_default(&node,"stm_b_node","",&sup);
 
-  s_aeb_msg.header.frame_id.data = s_aeb_frame_id;
-  s_aeb_msg.header.frame_id.size = 0u;
-  s_aeb_msg.header.frame_id.capacity = sizeof(s_aeb_frame_id);
-  s_aeb_msg.state.data = s_aeb_state_str;
-  s_aeb_msg.state.size = 0u;
-  s_aeb_msg.state.capacity = sizeof(s_aeb_state_str);
-  s_aeb_msg.reason.data = s_aeb_reason_str;
-  s_aeb_msg.reason.size = 0u;
-  s_aeb_msg.reason.capacity = sizeof(s_aeb_reason_str);
+  s_cmd_msg.header.frame_id.data = s_cmd_frame_id;
+  s_cmd_msg.header.frame_id.size = 0u;
+  s_cmd_msg.header.frame_id.capacity = sizeof(s_cmd_frame_id);
 
-  rclc_subscription_init_default(&sub_aeb, &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(kaiev26_msgs,msg,AEBState),
-      "/safety/aeb_state");
+  rclc_subscription_init_default(&sub_cmd, &node,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(kaiev26_msgs,msg,ActuatorCommand),
+      "/vehicle/command");
 
   rclc_publisher_init_default(&pub_brake_status, &node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(kaiev26_msgs,msg,BrakeActuatorStatus),
@@ -332,7 +327,7 @@ void StartuROS(void *argument)
 
   rclc_executor_t exec;
   rclc_executor_init(&exec,&sup.context,1,&alloc);
-  rclc_executor_add_subscription(&exec,&sub_aeb, &s_aeb_msg, &cb_aeb, ON_NEW_DATA);
+  rclc_executor_add_subscription(&exec,&sub_cmd, &s_cmd_msg, &cb_cmd, ON_NEW_DATA);
 
   static kaiev26_msgs__msg__BrakeActuatorStatus s_status_msg;
   static char s_status_frame_id[4];
@@ -352,8 +347,9 @@ void StartuROS(void *argument)
     if (ESTOP_STATUS != 0u) {
       reason_bits |= kaiev26_msgs__msg__BrakeActuatorStatus__STOP_REASON_ESTOP;
     }
-    if (AEB != 0u) {
-      reason_bits |= kaiev26_msgs__msg__BrakeActuatorStatus__STOP_REASON_AEB;
+    if (COMMAND_BRAKE_REQUEST != 0u) {
+      reason_bits |=
+          kaiev26_msgs__msg__BrakeActuatorStatus__STOP_REASON_COMMAND_BRAKE;
     }
     if (((uint32_t)(now - last_status) >= 50u) || (reason_bits != previous_bits)) {
       s_status_msg.brake_commanded = (BRAKE_COMMAND_APPLIED != 0u);
@@ -631,4 +627,3 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 }
 
 /* USER CODE END Application */
-

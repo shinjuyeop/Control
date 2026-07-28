@@ -29,7 +29,6 @@
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
 #include <kaiev26_msgs/msg/actuator_command.h>
-#include <kaiev26_msgs/msg/aeb_state.h>
 #include <kaiev26_msgs/msg/drive_actuator_status.h>
 #include "rmw_microros/rmw_microros.h"
 
@@ -57,6 +56,8 @@ typedef struct {
 #define GEAR_RATIO    4.60f
 #define RPM_FWD_MAX   4500
 #define RPM_REV_MAX   1500
+#define AUTO_SPEED_MAX_MPS \
+  ((float)RPM_FWD_MAX * 3.14159f * TIRE_DIAM_M / (60.0f * GEAR_RATIO))
 #define AUTO_PHASE_LIMIT_A 300.0f
 #define MANUAL_TORQUE_LIMIT_A 175.0f
 #define PEDAL_ADC_MIN 560
@@ -147,11 +148,10 @@ const osThreadAttr_t BTx_attributes = {
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
-static void send_motor_can(int16_t rpm, float curr_a, uint8_t run_command,
+static void send_motor_can(int32_t rpm, float curr_a, uint8_t run_command,
                            uint8_t speed_control);
 // static void send_motor_handshake_ack(void); 7.15 handshake 추가 
 static void cb_cmd(const void *message);
-static void cb_aeb(const void *message);
 static uint8_t uart_crc8(const uint8_t *data, uint8_t length);
 static void usart1_rx_ring_push(uint8_t byte);
 static uint8_t usart1_rx_ring_pop(uint8_t *byte);
@@ -265,8 +265,8 @@ void StartControl(void *argument)
       {
         /* 자율주행: PC 속도 명령을 Speed control로 전달한다. */
         float wrpm = COMMAND_SPEED * 60.0f / (3.14159f * TIRE_DIAM_M);
-        int16_t mrpm = (int16_t)(wrpm * GEAR_RATIO);
-        if (GEAR == 1u) mrpm = (int16_t)-abs(mrpm);
+        int32_t mrpm = (int32_t)(wrpm * GEAR_RATIO);
+        if (GEAR == 1u) mrpm = -mrpm;
         send_motor_can(mrpm, AUTO_PHASE_LIMIT_A, 1u, 1u);
       }
       else
@@ -377,23 +377,10 @@ void StartuROS(void *argument)
   /* 구독 메시지 저장 버퍼. micro-ROS 구독 메시지의 string 필드에는
    * 정적 버퍼를 미리 할당해야 역직렬화가 가능하다. */
   static kaiev26_msgs__msg__ActuatorCommand s_cmd_msg;
-  static kaiev26_msgs__msg__AEBState s_aeb_msg;
   static char s_cmd_frame_id[16];
-  static char s_aeb_frame_id[16];
-  static char s_aeb_state_str[32];
-  static char s_aeb_reason_str[64];
   s_cmd_msg.header.frame_id.data = s_cmd_frame_id;
   s_cmd_msg.header.frame_id.size = 0u;
   s_cmd_msg.header.frame_id.capacity = sizeof(s_cmd_frame_id);
-  s_aeb_msg.header.frame_id.data = s_aeb_frame_id;
-  s_aeb_msg.header.frame_id.size = 0u;
-  s_aeb_msg.header.frame_id.capacity = sizeof(s_aeb_frame_id);
-  s_aeb_msg.state.data = s_aeb_state_str;
-  s_aeb_msg.state.size = 0u;
-  s_aeb_msg.state.capacity = sizeof(s_aeb_state_str);
-  s_aeb_msg.reason.data = s_aeb_reason_str;
-  s_aeb_msg.reason.size = 0u;
-  s_aeb_msg.reason.capacity = sizeof(s_aeb_reason_str);
 
   extern UART_HandleTypeDef hlpuart1; // uROS UART
 
@@ -411,7 +398,7 @@ void StartuROS(void *argument)
   rcl_node_t      node;
 
   // Subscriber 생성
-  rcl_subscription_t sub_cmd, sub_aeb;
+  rcl_subscription_t sub_cmd;
   // Publisher 생성: 통합 /drive/status 하나가 개별 상태 토픽들을 대체한다
   rcl_publisher_t pub_drive_status;
   
@@ -433,13 +420,10 @@ void StartuROS(void *argument)
     for(;;);
   }
 
-  // Subscriber 2개 초기화: canonical 통합 명령 + AEB 안전 경로
+  // Decision의 최종 차량 명령 하나만 구독한다.
   rclc_subscription_init_default(&sub_cmd, &node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(kaiev26_msgs, msg, ActuatorCommand),
-      "/vehicle/actuator_command");
-  rclc_subscription_init_default(&sub_aeb, &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(kaiev26_msgs, msg, AEBState),
-      "/safety/aeb_state");
+      "/vehicle/command");
 
   // Publisher 초기화
   rclc_publisher_init_default(&pub_drive_status, &node,
@@ -448,11 +432,9 @@ void StartuROS(void *argument)
 
   // Subscriber 콜백 관리
   rclc_executor_t exec;
-  rclc_executor_init(&exec, &sup.context, 2, &alloc);
+  rclc_executor_init(&exec, &sup.context, 1, &alloc);
   rclc_executor_add_subscription(&exec, &sub_cmd,
       &s_cmd_msg, &cb_cmd, ON_NEW_DATA);
-  rclc_executor_add_subscription(&exec, &sub_aeb,
-      &s_aeb_msg, &cb_aeb, ON_NEW_DATA);
 
   static kaiev26_msgs__msg__DriveActuatorStatus s_status_msg;
   static char s_status_frame_id[4];
@@ -529,8 +511,7 @@ void StartBRx(void *argument)
       STM_B_COMM_TIMEOUT = 0u;
     }
 
-    DRIVE_STOP_REQUEST = ((AEB != 0u) ||
-                          (STOP_REQUEST_FROM_B != 0u) ||
+    DRIVE_STOP_REQUEST = ((STOP_REQUEST_FROM_B != 0u) ||
                           (SAFETY_FRAME_VALID_FROM_B == 0u) ||
                           (STM_B_COMM_TIMEOUT != 0u)) ? 1u : 0u;
 
@@ -721,7 +702,7 @@ static void process_safety_rx_byte(uint8_t byte)
   }
 }
 
-static void send_motor_can(int16_t rpm, float curr_a, uint8_t run_command,
+static void send_motor_can(int32_t rpm, float curr_a, uint8_t run_command,
                            uint8_t speed_control)
 {
   FDCAN_TxHeaderTypeDef hdr;
@@ -783,19 +764,15 @@ static void cb_cmd(const void *message)
 {
   const kaiev26_msgs__msg__ActuatorCommand *cmd =
       (const kaiev26_msgs__msg__ActuatorCommand *)message;
-  /* 일반 제동 요청이거나 비활성 상태이면 속도 목표를 0으로 처리한다 */
-  if (cmd->brake_engage || !cmd->enable) {
+  /* 명령 경계에서 물리적으로 가능한 전진 속도 범위로 한 번만 제한한다. */
+  if (cmd->brake_engage || !isfinite(cmd->speed_target_mps)) {
     COMMAND_SPEED = 0.0f;
   } else {
-    COMMAND_SPEED = cmd->speed_target_mps;
+    COMMAND_SPEED = fmaxf(0.0f,
+        fminf(cmd->speed_target_mps, AUTO_SPEED_MAX_MPS));
   }
   s_command_received = 1u;
   s_last_command_tick = HAL_GetTick();
-}
-
-static void cb_aeb(const void *message)
-{
-  AEB = ((const kaiev26_msgs__msg__AEBState *)message)->active ? 1u : 0u;
 }
 
 void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan,
@@ -860,4 +837,3 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
   }
 }
 /* USER CODE END Application */
-
