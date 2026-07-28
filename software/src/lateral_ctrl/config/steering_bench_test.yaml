@@ -11,4 +11,3 @@ steering_bench_test_node:
     steer_sequence_start_delay_sec: 3.0
     safety_injection_enabled: true
     test_estop_active: false
-    test_aeb_active: false

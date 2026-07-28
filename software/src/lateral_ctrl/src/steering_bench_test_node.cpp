@@ -34,7 +34,6 @@ public:
     sequence_start_delay_sec_ = declare_parameter("steer_sequence_start_delay_sec", 3.0);
     safety_injection_enabled_ = declare_parameter("safety_injection_enabled", true);
     test_estop_active_ = declare_parameter("test_estop_active", false);
-    test_aeb_active_ = declare_parameter("test_aeb_active", false);
     max_abs_sequence_deg_ = declare_parameter("wheel_limit_deg", 30.0);
     if (!validSequence(sequence_)) {
       steer_sequence_publish_enabled_ = false;
@@ -57,7 +56,7 @@ public:
     }
 
     steer_pub_ =
-      create_publisher<kaiev26_msgs::msg::ActuatorCommand>("/vehicle/actuator_command", 10);
+      create_publisher<kaiev26_msgs::msg::ActuatorCommand>("/vehicle/command", 10);
     if (drive_mode_publish_enabled_) ensureModePublisher();
     if (safety_injection_enabled_) ensureSafetyPublishers();
     sequence_enabled_at_ = std::chrono::steady_clock::now();
@@ -80,7 +79,6 @@ public:
     std_msgs::msg::UInt8 value;
     value.data = 0;
     if (estop_pub_) estop_pub_->publish(value);
-    if (aeb_pub_) aeb_pub_->publish(value);
   }
 
 private:
@@ -153,13 +151,10 @@ private:
         } else if (safety_injection_enabled_) {
           clearTestSafety();
           estop_pub_.reset();
-          aeb_pub_.reset();
         }
         safety_injection_enabled_ = enabled;
       } else if (name == "test_estop_active") {
         test_estop_active_ = parameter.as_bool();
-      } else if (name == "test_aeb_active") {
-        test_aeb_active_ = parameter.as_bool();
       }
     }
     return result;
@@ -191,9 +186,6 @@ private:
     if (!estop_pub_) {
       estop_pub_ = create_publisher<std_msgs::msg::UInt8>("/steering/test/estop", 10);
     }
-    if (!aeb_pub_) {
-      aeb_pub_ = create_publisher<std_msgs::msg::UInt8>("/steering/test/aeb", 10);
-    }
   }
 
   void clearTestSafety()
@@ -201,9 +193,7 @@ private:
     std_msgs::msg::UInt8 value;
     value.data = 0;
     if (estop_pub_) estop_pub_->publish(value);
-    if (aeb_pub_) aeb_pub_->publish(value);
     test_estop_active_ = false;
-    test_aeb_active_ = false;
   }
 
   bool validSequence(const std::vector<double> & sequence) const
@@ -236,15 +226,13 @@ private:
       last_mode_publish_ = now;
     }
     if (safety_injection_enabled_ &&
-      estop_pub_ && aeb_pub_ &&
+      estop_pub_ &&
       std::chrono::duration_cast<std::chrono::milliseconds>(
         now - last_safety_publish_).count() >= 50)
     {
       std_msgs::msg::UInt8 value;
       value.data = test_estop_active_ ? 1 : 0;
       estop_pub_->publish(value);
-      value.data = test_aeb_active_ ? 1 : 0;
-      aeb_pub_->publish(value);
       last_safety_publish_ = now;
     }
     if (!steer_sequence_publish_enabled_ || sequence_.empty()) return;
@@ -274,12 +262,10 @@ private:
     constexpr double kDegToCanonicalRad = -3.14159265358979323846 / 180.0;
     kaiev26_msgs::msg::ActuatorCommand command;
     command.header.stamp = this->now();
-    command.enable = true;
     command.steering_target_rad =
       static_cast<float>(current_target_wheel_angle_deg_ * kDegToCanonicalRad);
     command.speed_target_mps = 0.0F;
     command.brake_engage = false;
-    command.gear = kaiev26_msgs::msg::ActuatorCommand::GEAR_FORWARD;
     steer_pub_->publish(command);
     do {
       next_steer_command_publish_ +=
@@ -289,7 +275,7 @@ private:
 
   std::mutex mutex_;
   bool drive_mode_publish_enabled_, steer_sequence_publish_enabled_;
-  bool sequence_repeat_, safety_injection_enabled_, test_estop_active_, test_aeb_active_;
+  bool sequence_repeat_, safety_injection_enabled_, test_estop_active_;
   int64_t test_drive_mode_, drive_mode_publish_period_ms_;
   int64_t steer_command_publish_period_ms_, steer_target_change_interval_ms_;
   double sequence_start_delay_sec_, max_abs_sequence_deg_, current_target_wheel_angle_deg_{0.0};
@@ -300,7 +286,7 @@ private:
   std::chrono::steady_clock::time_point last_mode_publish_, last_safety_publish_;
   std::chrono::steady_clock::time_point next_steer_command_publish_, last_target_change_;
   rclcpp::Publisher<kaiev26_msgs::msg::DriveActuatorStatus>::SharedPtr mode_pub_;
-  rclcpp::Publisher<std_msgs::msg::UInt8>::SharedPtr estop_pub_, aeb_pub_;
+  rclcpp::Publisher<std_msgs::msg::UInt8>::SharedPtr estop_pub_;
   rclcpp::Publisher<kaiev26_msgs::msg::ActuatorCommand>::SharedPtr steer_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr parameter_callback_;
