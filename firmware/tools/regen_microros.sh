@@ -16,6 +16,8 @@
 # 따로 적어 두면 서브모듈이 올라갈 때 조용히 뒤처지므로 그렇게 하지 않는다.
 # 상위 저장소 없이 돌려야 하면 KAIEV26_MSGS_DIR로 경로를 주거나
 # KAIEV26_MSGS_COMMIT으로 커밋을 명시한다.
+# 커밋이 금지된 로컬 검증에서만 KAIEV26_MSGS_ALLOW_DIRTY=1을 명시할 수 있다.
+# 이 경우 base commit과 소스 트리 SHA-256을 manifest에 함께 기록한다.
 set -euo pipefail
 
 # 버전 고정. 바꿀 때는 아래 manifest도 함께 갱신된다.
@@ -23,6 +25,7 @@ UTILS_REPO=https://github.com/micro-ROS/micro_ros_stm32cubemx_utils.git
 UTILS_COMMIT=${UTILS_COMMIT:-bd531b273c1bcd070b3143c5642128ec75a6f04e} # humble
 MSGS_REPO=${MSGS_REPO:-https://github.com/TeamKAI-DL/kaiev26_msgs.git}
 KAIEV26_MSGS_COMMIT=${KAIEV26_MSGS_COMMIT:-}
+KAIEV26_MSGS_ALLOW_DIRTY=${KAIEV26_MSGS_ALLOW_DIRTY:-0}
 DOCKER_IMAGE=microros/micro_ros_static_library_builder:humble
 MCU_CFLAGS="-mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -ffunction-sections -fdata-sections -Os -g0"
 
@@ -40,19 +43,37 @@ rm -rf "$WORK/project/micro_ros_stm32cubemx_utils/.git"
 EP="$WORK/project/micro_ros_stm32cubemx_utils/microros_static_library/library_generation/extra_packages"
 if [ -d "$MSGS_DIR/msg" ] && git -C "$MSGS_DIR" rev-parse --git-dir >/dev/null 2>&1; then
   # 상위 저장소의 서브모듈을 그대로 쓴다. 커밋을 여기서 확정해 manifest에 남긴다.
-  if [ -n "$(git -C "$MSGS_DIR" status --porcelain)" ]; then
+  MSGS_DIRTY=$(git -C "$MSGS_DIR" status --porcelain)
+  if [ -n "$MSGS_DIRTY" ] && [ "$KAIEV26_MSGS_ALLOW_DIRTY" != "1" ]; then
     echo "오류: $MSGS_DIR 에 커밋되지 않은 변경이 있다." >&2
     echo "      어느 커밋으로 빌드했는지 기록할 수 없으므로 중단한다." >&2
     exit 1
   fi
   MSGS_COMMIT=$(git -C "$MSGS_DIR" rev-parse HEAD)
-  MSGS_SOURCE=$MSGS_DIR
+  MSGS_SOURCE=$(
+    git -C "$MSGS_DIR" remote get-url origin 2>/dev/null || echo "$MSGS_DIR"
+  )
+  if [ -n "$MSGS_DIRTY" ]; then
+    MSGS_TREE_SHA256=$(
+      cd "$MSGS_DIR"
+      git ls-files -co --exclude-standard -z |
+        LC_ALL=C sort -z |
+        xargs -0 sha256sum |
+        sha256sum |
+        cut -d' ' -f1
+    )
+    echo "경고: dirty kaiev26_msgs를 명시적으로 사용한다." >&2
+    echo "      base=$MSGS_COMMIT tree_sha256=$MSGS_TREE_SHA256" >&2
+  else
+    MSGS_TREE_SHA256=clean
+  fi
   rsync -a --exclude .git "$MSGS_DIR/" "$EP/kaiev26_msgs/"
 elif [ -n "$KAIEV26_MSGS_COMMIT" ]; then
   git clone -q "$MSGS_REPO" "$EP/kaiev26_msgs"
   git -C "$EP/kaiev26_msgs" checkout -q "$KAIEV26_MSGS_COMMIT"
   MSGS_COMMIT=$(git -C "$EP/kaiev26_msgs" rev-parse HEAD)
   MSGS_SOURCE=$MSGS_REPO
+  MSGS_TREE_SHA256=clean
   rm -rf "$EP/kaiev26_msgs/.git"
 else
   echo "오류: kaiev26_msgs를 찾지 못했다 ($MSGS_DIR)." >&2
@@ -100,6 +121,7 @@ docker_image=$IMAGE_DIGEST
 micro_ros_stm32cubemx_utils=$UTILS_COMMIT
 kaiev26_msgs=$MSGS_COMMIT
 kaiev26_msgs_source=$MSGS_SOURCE
+kaiev26_msgs_tree_sha256=$MSGS_TREE_SHA256
 mcu_cflags=$MCU_CFLAGS
 MANIFEST
 

@@ -64,11 +64,26 @@ typedef struct kaiev26_msgs__msg__DriveActuatorStatus
   bool tractive_feedback;
   bool tractive_feedback_valid;
   bool stop_request;
-  /// 모터드라이버 fault. 실차 CAN 지원 확인 전까지 valid=false
-  uint16_t fault_bits;
+  /// EZkontrol Part II 24-bit fault 원본 비트
+  uint32_t fault_bits;
   bool fault_bits_valid;
+  /// PC 명령 상태
   bool command_received;
+  bool command_timeout;
   float command_age_ms;
+  /// EZkontrol status Part I (0x1801D0EF)
+  float bus_voltage_v;
+  float bus_current_a;
+  float phase_current_a;
+  bool part1_valid;
+  float part1_age_ms;
+  /// EZkontrol status Part II (0x1802D0EF)
+  float controller_temperature_c;
+  float motor_temperature_c;
+  /// 0=torque control, 1=speed control
+  uint8_t controller_control_mode;
+  bool part2_valid;
+  float part2_age_ms;
 } kaiev26_msgs__msg__DriveActuatorStatus;
 
 // Struct for a sequence of kaiev26_msgs__msg__DriveActuatorStatus.
