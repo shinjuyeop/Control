@@ -21,5 +21,6 @@
  extern volatile uint8_t ESTOP_RF;              /* PB4, active-low */
  extern volatile uint8_t ESTOP_STATUS;          /* 물리 E-stop 통합 */
  extern volatile uint8_t SAFETY_STOP_REQUEST;   /* 물리 E-stop | AEB */
+ extern volatile uint8_t MICROROS_COMM_FAULT;    /* Agent/entity 통신 이상 */
  extern volatile uint8_t BRAKE_REQUEST;         /* 브레이크 적용 요청 */
  extern volatile uint8_t BRAKE_COMMAND_APPLIED; /* 적용 방향 PWM 명령 상태 */

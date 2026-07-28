@@ -10,7 +10,7 @@ extern "C" {
 #define DISPLAY_UPDATE_MS 100U
 
 void Dashboard_DrawStaticLayout(void);
-void StartDisplay(void *argument);
+void Dashboard_Task(void *argument);
 
 #ifdef __cplusplus
 }
