@@ -435,7 +435,7 @@ void StartuROS(void *argument)
           reason_bits |=
               kaiev26_msgs__msg__BrakeActuatorStatus__STOP_REASON_ESTOP;
         }
-        if (AEB != 0u) {
+        if ((MODE_FROM_A == VEHICLE_MODE_AUTO) && (AEB != 0u)) {
           reason_bits |=
               kaiev26_msgs__msg__BrakeActuatorStatus__STOP_REASON_AEB;
         }
@@ -693,7 +693,7 @@ static rcl_ret_t publish_brake_status(void)
     reason_bits |=
         kaiev26_msgs__msg__BrakeActuatorStatus__STOP_REASON_ESTOP;
   }
-  if (AEB != 0u) {
+  if ((MODE_FROM_A == VEHICLE_MODE_AUTO) && (AEB != 0u)) {
     reason_bits |=
         kaiev26_msgs__msg__BrakeActuatorStatus__STOP_REASON_AEB;
   }
