@@ -137,7 +137,6 @@ static void update_safety_state(void)
 {
   uint8_t aeb;
   uint8_t mode;
-  uint8_t microros_fault;
 
   /* 세 물리 E-stop 입력은 pull-up active-low이다. */
   ESTOP_DASHBOARD = read_active_low(ESTOP_DASH_GPIO_Port, ESTOP_DASH_Pin);
@@ -148,14 +147,12 @@ static void update_safety_state(void)
   taskENTER_CRITICAL();
   aeb = AEB;
   mode = MODE_FROM_A;
-  microros_fault = MICROROS_COMM_FAULT;
   taskEXIT_CRITICAL();
 
   ESTOP_STATUS = ESTOP_DASHBOARD | ESTOP_SIDE | ESTOP_RF;
-  SAFETY_STOP_REQUEST = ESTOP_STATUS | ((aeb != 0u) ? 1u : 0u);
   BRAKE_REQUEST =
-      SAFETY_STOP_REQUEST |
-      (((mode == VEHICLE_MODE_AUTO) && (microros_fault != 0u)) ? 1u : 0u);
+      ESTOP_STATUS |
+      (((mode == VEHICLE_MODE_AUTO) && (aeb != 0u)) ? 1u : 0u);
 }
 
 /* USER CODE END Variables */
@@ -163,14 +160,14 @@ static void update_safety_state(void)
 osThreadId_t BrakeHandle;
 const osThreadAttr_t Brake_attributes = {
   .name = "Brake",
-  .priority = (osPriority_t) osPriorityRealtime,
+  .priority = (osPriority_t) osPriorityHigh1,
   .stack_size = 512 * 4
 };
 /* Definitions for EStop */
 osThreadId_t EStopHandle;
 const osThreadAttr_t EStop_attributes = {
   .name = "EStop",
-  .priority = (osPriority_t) osPriorityHigh,
+  .priority = (osPriority_t) osPriorityRealtime,
   .stack_size = 256 * 4
 };
 /* Definitions for uROS */
@@ -557,7 +554,7 @@ void StartATx(void *argument)
 
   for (;;) {
     uint8_t frame[7];
-    uint8_t stop_bits = (SAFETY_STOP_REQUEST != 0u) ? 0x01u : 0x00u;
+    uint8_t stop_bits = (BRAKE_REQUEST != 0u) ? 0x01u : 0x00u;
 
     frame[0] = UART_SOF1;
     frame[1] = UART_SOF2;
