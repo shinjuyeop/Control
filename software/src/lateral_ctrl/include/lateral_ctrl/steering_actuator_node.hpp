@@ -2,7 +2,6 @@
 
 #include "lateral_ctrl/keya_can_driver.hpp"
 #include "kaiev26_msgs/msg/actuator_command.hpp"
-#include "kaiev26_msgs/msg/aeb_state.hpp"
 #include "kaiev26_msgs/msg/brake_actuator_status.hpp"
 #include "kaiev26_msgs/msg/drive_actuator_status.hpp"
 #include "kaiev26_msgs/msg/steering_actuator_status.hpp"
@@ -30,9 +29,7 @@ private:
   void onCommand(const kaiev26_msgs::msg::ActuatorCommand::SharedPtr msg);
   void onDriveStatus(const kaiev26_msgs::msg::DriveActuatorStatus::SharedPtr msg);
   void onBrakeStatus(const kaiev26_msgs::msg::BrakeActuatorStatus::SharedPtr msg);
-  void onAebState(const kaiev26_msgs::msg::AEBState::SharedPtr msg);
   void setEstop(bool active, bool test_input);
-  void setAeb(bool active, bool test_input);
   void applyMode(uint8_t mode_value);
   void requestImmediateDisable(SteeringDisableReason reason);
   void discardAllSteeringCommands();
@@ -91,8 +88,7 @@ private:
   rclcpp::Subscription<kaiev26_msgs::msg::ActuatorCommand>::SharedPtr command_sub_;
   rclcpp::Subscription<kaiev26_msgs::msg::DriveActuatorStatus>::SharedPtr drive_status_sub_;
   rclcpp::Subscription<kaiev26_msgs::msg::BrakeActuatorStatus>::SharedPtr brake_status_sub_;
-  rclcpp::Subscription<kaiev26_msgs::msg::AEBState>::SharedPtr aeb_state_sub_;
-  rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr test_estop_sub_, test_aeb_sub_;
+  rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr test_estop_sub_;
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr angle_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr enable_commanded_pub_, enabled_pub_;
   rclcpp::Publisher<kaiev26_msgs::msg::SteeringActuatorStatus>::SharedPtr status_pub_;

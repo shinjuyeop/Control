@@ -114,8 +114,13 @@ ros2 topic pub /target_rpm std_msgs/msg/Int32 "{data: 1000}" -r 20
 횡방향:
 
 ```bash
-ros2 topic pub /cmd/steer std_msgs/msg/Float32 "{data: 10.0}" -r 10
+ros2 topic pub -r 50 /vehicle/command kaiev26_msgs/msg/ActuatorCommand \
+  "{steering_target_rad: -0.1745, speed_target_mps: 0.0, brake_engage: false}"
 ```
+
+위 명령의 `-0.1745 rad`는 기존 벤치 표기의 우조향 `+10 deg`에 해당합니다.
+`lateral_ctrl`을 함께 실행한다면 STM_A 또는 시험 노드가 AUTO
+`/drive/status`를 발행하고 KEYA feedback도 들어와야 모터가 활성화됩니다.
 
 ## 주의
 

@@ -18,16 +18,10 @@ extern "C"
 
 // Constants defined in the message
 
-/// Constant 'STOP_REASON_SERVICE_BRAKE'.
+/// Constant 'STOP_REASON_COMMAND_BRAKE'.
 enum
 {
-  kaiev26_msgs__msg__BrakeActuatorStatus__STOP_REASON_SERVICE_BRAKE = 1
-};
-
-/// Constant 'STOP_REASON_AEB'.
-enum
-{
-  kaiev26_msgs__msg__BrakeActuatorStatus__STOP_REASON_AEB = 2
+  kaiev26_msgs__msg__BrakeActuatorStatus__STOP_REASON_COMMAND_BRAKE = 1
 };
 
 /// Constant 'STOP_REASON_ESTOP'.
@@ -51,7 +45,7 @@ enum
   * 브레이크 진단 status (D-10·D-11·D-13).
   * 실차 브레이크 서보는 피드백 신호선 자체가 없어 actual은 항구적 미지원 —
   * commanded만 제공하고 actual_valid=false 고정. sim도 계약을 따라 동일하게 둔다.
-  * 일반 제동과 안전 정지 원인은 bitmask로 구분한다(D-04).
+  * 판단이 요청한 제동과 물리 E-stop만 구분한다.
  */
 typedef struct kaiev26_msgs__msg__BrakeActuatorStatus
 {

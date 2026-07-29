@@ -46,7 +46,9 @@ if [ -d "$MSGS_DIR/msg" ] && git -C "$MSGS_DIR" rev-parse --git-dir >/dev/null 2
     exit 1
   fi
   MSGS_COMMIT=$(git -C "$MSGS_DIR" rev-parse HEAD)
-  MSGS_SOURCE=$MSGS_DIR
+  MSGS_SOURCE=$(
+    git -C "$MSGS_DIR" remote get-url origin 2>/dev/null || echo "$MSGS_REPO"
+  )
   rsync -a --exclude .git "$MSGS_DIR/" "$EP/kaiev26_msgs/"
 elif [ -n "$KAIEV26_MSGS_COMMIT" ]; then
   git clone -q "$MSGS_REPO" "$EP/kaiev26_msgs"

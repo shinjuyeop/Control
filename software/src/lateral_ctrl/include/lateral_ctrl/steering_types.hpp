@@ -10,10 +10,10 @@ namespace lateral_ctrl
 {
 enum class DriveMode : uint8_t { MANUAL = 0, AUTO = 1, UNKNOWN = 255 };
 enum class SteeringState : uint8_t {
-  INIT, DISABLED, WAIT_CMD, ACTIVE, ESTOP, AEB, CAN_LOST, FEEDBACK_LOST, FAULT
+  INIT, DISABLED, WAIT_CMD, ACTIVE, ESTOP, BRAKE, CAN_LOST, FEEDBACK_LOST, FAULT
 };
 enum class SteeringDisableReason : uint8_t {
-  NONE, MODE_NOT_RECEIVED, MODE_TIMEOUT, MANUAL_MODE, INVALID_MODE, ESTOP, AEB,
+  NONE, MODE_NOT_RECEIVED, MODE_TIMEOUT, MANUAL_MODE, INVALID_MODE, ESTOP, COMMAND_BRAKE,
   STEER_COMMAND_TIMEOUT, CAN_TIMEOUT, FEEDBACK_INVALID, MOTOR_FAULT
 };
 
@@ -41,10 +41,8 @@ struct SafetyInputs
 {
   bool real_estop{false};
   bool test_estop{false};
-  bool real_aeb{false};
-  bool test_aeb{false};
+  bool command_brake{false};
   bool effectiveEstop() const { return real_estop || test_estop; }
-  bool effectiveAeb() const { return real_aeb || test_aeb; }
 };
 
 inline SteeringDisableReason selectDisableReason(
@@ -54,7 +52,7 @@ inline SteeringDisableReason selectDisableReason(
   if (safety.effectiveEstop()) return SteeringDisableReason::ESTOP;
   if (can_timeout) return SteeringDisableReason::CAN_TIMEOUT;
   if (motor_fault) return SteeringDisableReason::MOTOR_FAULT;
-  if (safety.effectiveAeb()) return SteeringDisableReason::AEB;
+  if (safety.command_brake) return SteeringDisableReason::COMMAND_BRAKE;
   if (!feedback_valid) return SteeringDisableReason::FEEDBACK_INVALID;
   if (mode_timeout) return SteeringDisableReason::MODE_TIMEOUT;
   if (!mode_received) return SteeringDisableReason::MODE_NOT_RECEIVED;
@@ -80,7 +78,7 @@ inline SteeringState stateForDisableReason(SteeringDisableReason reason)
     return SteeringState::WAIT_CMD;
   }
   if (reason == SteeringDisableReason::ESTOP) return SteeringState::ESTOP;
-  if (reason == SteeringDisableReason::AEB) return SteeringState::AEB;
+  if (reason == SteeringDisableReason::COMMAND_BRAKE) return SteeringState::BRAKE;
   if (reason == SteeringDisableReason::CAN_TIMEOUT) return SteeringState::CAN_LOST;
   if (reason == SteeringDisableReason::FEEDBACK_INVALID) return SteeringState::FEEDBACK_LOST;
   if (reason == SteeringDisableReason::MOTOR_FAULT) return SteeringState::FAULT;

@@ -8,7 +8,8 @@
 #   사용 (워크스페이스 소싱된 터미널에서 — custom msg 정의가 필요하므로):
 #     ros2 run lateral_ctrl mcap_to_csv.py <bag 디렉토리>
 #     ros2 run lateral_ctrl mcap_to_csv.py <bag 디렉토리> -o /tmp/csv_out
-#     ros2 run lateral_ctrl mcap_to_csv.py <bag 디렉토리> -t /steering/status /cmd/steer
+#     ros2 run lateral_ctrl mcap_to_csv.py <bag 디렉토리> \
+#       -t /steering/status /vehicle/command
 #
 #   출력: <bag 디렉토리>/csv/<토픽이름(슬래시→__)>.csv
 #   각 행 첫 컬럼 recv_time_sec = 수신 시각(bag 기록 시각, epoch 초, float)

@@ -8,7 +8,8 @@ ROS 2 기반 차량 제어 소프트웨어와 STM32 펌웨어를 함께 관리�
 Control/
 ├── firmware/
 │   ├── STM_A/
-│   └── STM_B/
+│   ├── STM_B/
+│   └── micro_ros_agent/
 └── software/
     └── src/
         ├── can_lab/
@@ -53,6 +54,9 @@ lateral_ctrl      -> vcan1 -> teamkai_can_lab steering sim
 - `matlab/`: PID 튜닝용 MATLAB 스크립트를 둡니다.
 - `pid_gazebo/`: 실제 ROS 2 Python 노드 코드를 둡니다.
 - `scripts/`: bag 분석, 자동 실험, plot 생성 같은 개발 보조 스크립트를 둡니다.
+
+펌웨어의 보드 역할, 안전 경로, STM 빌드와 micro-ROS Agent 실행 절차는
+[`firmware/README.md`](firmware/README.md)를 따릅니다.
 
 ## Build
 

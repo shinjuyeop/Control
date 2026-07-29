@@ -18,35 +18,18 @@ extern "C"
 
 // Constants defined in the message
 
-/// Constant 'GEAR_FORWARD'.
-enum
-{
-  kaiev26_msgs__msg__ActuatorCommand__GEAR_FORWARD = 0
-};
-
-/// Constant 'GEAR_REVERSE'.
-enum
-{
-  kaiev26_msgs__msg__ActuatorCommand__GEAR_REVERSE = 1
-};
-
 // Include directives for member types
 // Member 'header'
 #include "std_msgs/msg/detail/header__struct.h"
 
 /// Struct defined in msg/ActuatorCommand in the package kaiev26_msgs.
-/**
-  * 실차 STM_A 규약과 동일한 gear enum. 실차 기어 스위치에 중립이 없다.
- */
 typedef struct kaiev26_msgs__msg__ActuatorCommand
 {
   std_msgs__msg__Header header;
-  bool enable;
   float steering_target_rad;
   /// 실차 STM_A는 speed control만 지원한다. throttle/torque 모드는 제공하지 않는다.
   float speed_target_mps;
   bool brake_engage;
-  uint8_t gear;
 } kaiev26_msgs__msg__ActuatorCommand;
 
 // Struct for a sequence of kaiev26_msgs__msg__ActuatorCommand.

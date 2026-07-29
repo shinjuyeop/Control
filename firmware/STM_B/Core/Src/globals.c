@@ -14,11 +14,10 @@
  volatile uint32_t VEHICLE_CRC_ERROR_COUNT           = 0;
  volatile uint32_t VEHICLE_SEQUENCE_ERROR_COUNT      = 0;
  
- volatile uint8_t AEB                   = 0; // Host AEB / write: uROS, read: EStop
+ volatile uint8_t COMMAND_BRAKE_REQUEST = 0; // /vehicle/command.brake_engage
  volatile uint8_t ESTOP_DASHBOARD       = 0; // PC0 active-low / write: EStop
  volatile uint8_t ESTOP_SIDE            = 0; // PC1 active-low / write: EStop
  volatile uint8_t ESTOP_RF              = 0; // PB4 active-low / write: EStop
  volatile uint8_t ESTOP_STATUS          = 0; // 물리 E-stop 통합 / write: EStop
- volatile uint8_t SAFETY_STOP_REQUEST   = 0; // 물리 E-stop | AEB / write: EStop
- volatile uint8_t BRAKE_REQUEST         = 0; // 브레이크 요청 / write: EStop
- volatile uint8_t BRAKE_COMMAND_APPLIED = 0; // 적용 방향 PWM 명령 / write: Brake
+ volatile uint8_t BRAKE_REQUEST         = 1; // 브레이크 요청 / write: EStop
+ volatile uint8_t BRAKE_COMMAND_APPLIED = 1; // 적용 방향 PWM 명령 / write: Brake

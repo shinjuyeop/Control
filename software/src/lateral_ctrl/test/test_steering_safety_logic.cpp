@@ -23,15 +23,12 @@ TEST(SteeringSafetyLogic, ModeAndFeedbackGatesAuto)
     lateral_ctrl::selectDisableReason(true, DriveMode::AUTO, safety, false, false, false),
     SteeringDisableReason::FEEDBACK_INVALID);
 }
-TEST(SteeringSafetyLogic, RealAndTestSafetyAreMonotonicOr)
+TEST(SteeringSafetyLogic, RealAndTestEstopAreMonotonicOr)
 {
   SafetyInputs safety;
   safety.real_estop = true;
   safety.test_estop = false;
   EXPECT_TRUE(safety.effectiveEstop());
-  safety.real_aeb = true;
-  safety.test_aeb = false;
-  EXPECT_TRUE(safety.effectiveAeb());
 }
 TEST(SteeringSafetyLogic, RealOrTestEstopActivates)
 {
@@ -42,24 +39,21 @@ TEST(SteeringSafetyLogic, RealOrTestEstopActivates)
   safety.real_estop = true;
   EXPECT_TRUE(safety.effectiveEstop());
 }
-TEST(SteeringSafetyLogic, RealOrTestAebActivates)
+TEST(SteeringSafetyLogic, CommandBrakeDisablesAutoSteering)
 {
   SafetyInputs safety;
-  safety.test_aeb = true;
-  EXPECT_TRUE(safety.effectiveAeb());
-  safety.test_aeb = false;
-  safety.real_aeb = true;
-  EXPECT_TRUE(safety.effectiveAeb());
+  safety.command_brake = true;
+  EXPECT_EQ(
+    lateral_ctrl::selectDisableReason(
+      true, DriveMode::AUTO, safety, false, false, true),
+    SteeringDisableReason::COMMAND_BRAKE);
 }
-TEST(SteeringSafetyLogic, TestFalseCannotClearRealTrue)
+TEST(SteeringSafetyLogic, TestEstopFalseCannotClearRealEstop)
 {
   SafetyInputs safety;
   safety.real_estop = true;
-  safety.real_aeb = true;
   safety.test_estop = false;
-  safety.test_aeb = false;
   EXPECT_TRUE(safety.effectiveEstop());
-  EXPECT_TRUE(safety.effectiveAeb());
 }
 TEST(SteeringSafetyLogic, AutoWithoutInhibitMapsToWaitCommand)
 {
@@ -102,7 +96,7 @@ TEST(SteeringSafetyLogic, PriorityIsDeterministic)
 {
   SafetyInputs safety;
   safety.real_estop = true;
-  safety.real_aeb = true;
+  safety.command_brake = true;
   EXPECT_EQ(
     lateral_ctrl::selectDisableReason(true, DriveMode::AUTO, safety, true, true, false),
     SteeringDisableReason::ESTOP);
@@ -140,6 +134,9 @@ TEST(SteeringSafetyLogic, DisableReasonsMapToStates)
   EXPECT_EQ(
     lateral_ctrl::stateForDisableReason(SteeringDisableReason::ESTOP),
     lateral_ctrl::SteeringState::ESTOP);
+  EXPECT_EQ(
+    lateral_ctrl::stateForDisableReason(SteeringDisableReason::COMMAND_BRAKE),
+    lateral_ctrl::SteeringState::BRAKE);
   EXPECT_EQ(
     lateral_ctrl::stateForDisableReason(SteeringDisableReason::CAN_TIMEOUT),
     lateral_ctrl::SteeringState::CAN_LOST);

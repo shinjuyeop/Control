@@ -7,8 +7,7 @@
  volatile float   COMMAND_SPEED   = 0.0f;   // 목표 속도(m/s) / write : uROS / read : Control
  volatile float   CURRENT_SPEED   = 0.0f;   // 현재 속도 (모터 피드백) / write : MotorRx / read : uROS
  
- volatile uint8_t  AEB                           = 0; // Host AEB / write: uROS
- volatile uint8_t  STOP_REQUEST_FROM_B           = 0; // write: BRx
+ volatile uint8_t  BRAKE_REQUEST_FROM_B          = 0; // write: BRx
  volatile uint8_t  SAFETY_FRAME_VALID_FROM_B     = 0; // write: BRx
  volatile uint8_t  STM_B_COMM_TIMEOUT            = 1; // fail-safe until first valid frame
  volatile uint8_t  DRIVE_STOP_REQUEST             = 1; // final motor stop request
