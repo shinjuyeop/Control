@@ -53,7 +53,9 @@ source ~/KAI_26/workspace/Control/software/install/setup.bash
 ros2 run lateral_ctrl mcap_to_csv.py ~/KAI_26/logs/rosbag/deadzone_sweep_20260722_193157
 
 # 특정 토픽만 / 출력 위치 지정
-ros2 run lateral_ctrl mcap_to_csv.py <bag_dir> -t /steering/status /cmd/steer -o /tmp/csv_out
+ros2 run lateral_ctrl mcap_to_csv.py <bag_dir> \
+  -t /steering/status /vehicle/command \
+  -o /tmp/csv_out
 ```
 
 ### CSV 형식
