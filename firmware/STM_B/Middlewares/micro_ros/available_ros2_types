@@ -238,11 +238,9 @@ test_interface_files/Nested.msg
 test_interface_files/Fibonacci.action
 unique_identifier_msgs/UUID.msg
 kaiev26_msgs/TrafficLightObservationArray.msg
-kaiev26_msgs/SimulationGroundTruth.msg
 kaiev26_msgs/RoadFeature2D.msg
 kaiev26_msgs/TrafficLightObservation.msg
 kaiev26_msgs/PerceptionObject.msg
-kaiev26_msgs/ManualDriveInput.msg
 kaiev26_msgs/Detection2D.msg
 kaiev26_msgs/BehaviorDecision.msg
 kaiev26_msgs/DriveActuatorStatus.msg
@@ -253,9 +251,7 @@ kaiev26_msgs/Perception2DFrame.msg
 kaiev26_msgs/Centerline.msg
 kaiev26_msgs/RoadSegment.msg
 kaiev26_msgs/TargetSpeed.msg
-kaiev26_msgs/DriveIntent.msg
 kaiev26_msgs/SceneSummary.msg
-kaiev26_msgs/AEBState.msg
 kaiev26_msgs/RoadSegmentArray.msg
 kaiev26_msgs/PerceptionObjectArray.msg
 kaiev26_msgs/TrafficLightAttributes.msg

@@ -51,10 +51,10 @@ enum
   kaiev26_msgs__msg__SteeringActuatorStatus__STATE_ESTOP = 4
 };
 
-/// Constant 'STATE_AEB'.
+/// Constant 'STATE_BRAKE'.
 enum
 {
-  kaiev26_msgs__msg__SteeringActuatorStatus__STATE_AEB = 5
+  kaiev26_msgs__msg__SteeringActuatorStatus__STATE_BRAKE = 5
 };
 
 /// Constant 'STATE_CAN_LOST'.
@@ -114,10 +114,10 @@ enum
   kaiev26_msgs__msg__SteeringActuatorStatus__REASON_ESTOP = 5
 };
 
-/// Constant 'REASON_AEB'.
+/// Constant 'REASON_COMMAND_BRAKE'.
 enum
 {
-  kaiev26_msgs__msg__SteeringActuatorStatus__REASON_AEB = 6
+  kaiev26_msgs__msg__SteeringActuatorStatus__REASON_COMMAND_BRAKE = 6
 };
 
 /// Constant 'REASON_STEER_COMMAND_TIMEOUT'.
@@ -169,7 +169,7 @@ typedef struct kaiev26_msgs__msg__SteeringActuatorStatus
   bool pending_command_valid;
   bool movement_target_valid;
   bool estop_active;
-  bool aeb_active;
+  bool command_brake_active;
   bool communication_ok;
   bool can_timeout;
   bool feedback_valid;
