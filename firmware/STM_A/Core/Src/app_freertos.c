@@ -611,7 +611,9 @@ void StartBRx(void *argument)
       STM_B_COMM_TIMEOUT = 0u;
     }
 
-    DRIVE_STOP_REQUEST = ((BRAKE_REQUEST_FROM_B != 0u) ||
+    DRIVE_STOP_REQUEST = (((MODE == 1u) &&
+                           (s_command_brake_engage != 0u)) ||
+                          (BRAKE_REQUEST_FROM_B != 0u) ||
                           (SAFETY_FRAME_VALID_FROM_B == 0u) ||
                           (STM_B_COMM_TIMEOUT != 0u)) ? 1u : 0u;
 
@@ -1065,16 +1067,18 @@ static void cb_cmd(const void *message)
 {
   const kaiev26_msgs__msg__ActuatorCommand *cmd =
       (const kaiev26_msgs__msg__ActuatorCommand *)message;
-  if (!isfinite(cmd->speed_target_mps)) return;
+  const uint8_t brake_requested = cmd->brake_engage ? 1u : 0u;
+  if ((brake_requested == 0u) &&
+      !isfinite(cmd->speed_target_mps)) return;
 
   const uint32_t now = HAL_GetTick();
   taskENTER_CRITICAL();
   /* AUTO 속도 명령의 부호는 Host가 정하고, CAN 송신 경계가 전진/후진
    * 회전수 한계를 적용한다. MANUAL 방향만 물리 기어 스위치가 정한다. */
-  COMMAND_SPEED = cmd->brake_engage ? 0.0f :
+  COMMAND_SPEED = (brake_requested != 0u) ? 0.0f :
       fmaxf(-AUTO_SPEED_MAX_MPS,
             fminf(cmd->speed_target_mps, AUTO_SPEED_MAX_MPS));
-  s_command_brake_engage = cmd->brake_engage ? 1u : 0u;
+  s_command_brake_engage = brake_requested;
   s_command_received = 1u;
   s_command_timeout = 0u;
   s_last_command_tick = now;
