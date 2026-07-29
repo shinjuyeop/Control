@@ -144,7 +144,6 @@ static void update_safety_state(void)
 {
   uint8_t command_brake;
   uint8_t mode;
-  uint8_t microros_fault;
 
   /* 세 물리 E-stop 입력은 pull-up active-low이다. */
   ESTOP_DASHBOARD = read_active_low(ESTOP_DASH_GPIO_Port, ESTOP_DASH_Pin);
@@ -155,16 +154,12 @@ static void update_safety_state(void)
   taskENTER_CRITICAL();
   command_brake = COMMAND_BRAKE_REQUEST;
   mode = MODE_FROM_A;
-  microros_fault = MICROROS_COMM_FAULT;
   taskEXIT_CRITICAL();
 
   ESTOP_STATUS = ESTOP_DASHBOARD | ESTOP_SIDE | ESTOP_RF;
-  SAFETY_STOP_REQUEST =
+  BRAKE_REQUEST =
       ESTOP_STATUS |
       (((mode == VEHICLE_MODE_AUTO) && (command_brake != 0u)) ? 1u : 0u);
-  BRAKE_REQUEST =
-      SAFETY_STOP_REQUEST |
-      (((mode == VEHICLE_MODE_AUTO) && (microros_fault != 0u)) ? 1u : 0u);
 }
 
 /* USER CODE END Variables */
@@ -172,14 +167,14 @@ static void update_safety_state(void)
 osThreadId_t BrakeHandle;
 const osThreadAttr_t Brake_attributes = {
   .name = "Brake",
-  .priority = (osPriority_t) osPriorityRealtime,
+  .priority = (osPriority_t) osPriorityHigh1,
   .stack_size = 512 * 4
 };
 /* Definitions for EStop */
 osThreadId_t EStopHandle;
 const osThreadAttr_t EStop_attributes = {
   .name = "EStop",
-  .priority = (osPriority_t) osPriorityHigh,
+  .priority = (osPriority_t) osPriorityRealtime,
   .stack_size = 256 * 4
 };
 /* Definitions for uROS */
@@ -397,7 +392,6 @@ void StartuROS(void *argument)
       cubemx_transport_write,cubemx_transport_read);
   init_ros_message_buffers();
 
-  MICROROS_COMM_FAULT = 1u;
   last_agent_ping = HAL_GetTick() - AGENT_PING_PERIOD_MS;
   last_status = HAL_GetTick();
 
@@ -418,7 +412,6 @@ void StartuROS(void *argument)
 
       case ROS_STATE_CREATE_ENTITIES:
         if (create_ros_entities() != 0u) {
-          MICROROS_COMM_FAULT = 0u;
           spin_failures = 0u;
           publish_failures = 0u;
           previous_bits = 0xFFu;
@@ -426,7 +419,6 @@ void StartuROS(void *argument)
           last_agent_ping = now;
           state = ROS_STATE_RUNNING;
         } else {
-          MICROROS_COMM_FAULT = 1u;
           destroy_ros_entities();
           last_agent_ping = now;
           state = ROS_STATE_WAIT_AGENT;
@@ -466,7 +458,6 @@ void StartuROS(void *argument)
 
         if ((spin_failures >= ROS_OPERATION_FAILURE_LIMIT) ||
             (publish_failures >= ROS_OPERATION_FAILURE_LIMIT)) {
-          MICROROS_COMM_FAULT = 1u;
           state = ROS_STATE_DESTROY_ENTITIES;
           break;
         }
@@ -475,7 +466,6 @@ void StartuROS(void *argument)
           last_agent_ping = now;
           if (rmw_uros_ping_agent(
                   AGENT_PING_TIMEOUT_MS, 1) != RMW_RET_OK) {
-            MICROROS_COMM_FAULT = 1u;
             state = ROS_STATE_DESTROY_ENTITIES;
             break;
           }
@@ -486,7 +476,6 @@ void StartuROS(void *argument)
 
       case ROS_STATE_DESTROY_ENTITIES:
       default:
-        MICROROS_COMM_FAULT = 1u;
         destroy_ros_entities();
         last_agent_ping = HAL_GetTick();
         state = ROS_STATE_WAIT_AGENT;
@@ -567,7 +556,7 @@ void StartATx(void *argument)
 
   for (;;) {
     uint8_t frame[7];
-    uint8_t stop_bits = (SAFETY_STOP_REQUEST != 0u) ? 0x01u : 0x00u;
+    uint8_t stop_bits = (BRAKE_REQUEST != 0u) ? 0x01u : 0x00u;
 
     frame[0] = UART_SOF1;
     frame[1] = UART_SOF2;

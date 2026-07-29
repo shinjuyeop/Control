@@ -189,21 +189,21 @@ static char s_status_frame_id[4];
 osThreadId_t ControlHandle;
 const osThreadAttr_t Control_attributes = {
   .name = "Control",
-  .priority = (osPriority_t) osPriorityNormal,
+  .priority = (osPriority_t) osPriorityRealtime,
   .stack_size = 512 * 4
 };
 /* Definitions for Inputs */
 osThreadId_t InputsHandle;
 const osThreadAttr_t Inputs_attributes = {
   .name = "Inputs",
-  .priority = (osPriority_t) osPriorityHigh1,
+  .priority = (osPriority_t) osPriorityHigh,
   .stack_size = 256 * 4
 };
 /* Definitions for MotorRx */
 osThreadId_t MotorRxHandle;
 const osThreadAttr_t MotorRx_attributes = {
   .name = "MotorRx",
-  .priority = (osPriority_t) osPriorityHigh2,
+  .priority = (osPriority_t) osPriorityAboveNormal,
   .stack_size = 256 * 4
 };
 /* Definitions for uROS */
@@ -217,7 +217,7 @@ const osThreadAttr_t uROS_attributes = {
 osThreadId_t BRxHandle;
 const osThreadAttr_t BRx_attributes = {
   .name = "BRx",
-  .priority = (osPriority_t) osPriorityAboveNormal,
+  .priority = (osPriority_t) osPriorityHigh1,
   .stack_size = 256 * 4
 };
 /* Definitions for BTx */
@@ -406,8 +406,8 @@ void StartControl(void *argument)
       /* 정지 시 RPM/전류뿐 아니라 RUNNING bit도 내려 HALTED를 명령한다. */
       send_motor_can(0, 0.0f, 0u, (MODE == 1u) ? 1u : 0u);
     }
-    // 100Hz 주기
-    osDelay(10);
+    // 20Hz / 50ms 주기
+    osDelay(50);
   }
   /* USER CODE END StartControl */
 }
@@ -611,7 +611,7 @@ void StartBRx(void *argument)
       STM_B_COMM_TIMEOUT = 0u;
     }
 
-    DRIVE_STOP_REQUEST = ((STOP_REQUEST_FROM_B != 0u) ||
+    DRIVE_STOP_REQUEST = ((BRAKE_REQUEST_FROM_B != 0u) ||
                           (SAFETY_FRAME_VALID_FROM_B == 0u) ||
                           (STM_B_COMM_TIMEOUT != 0u)) ? 1u : 0u;
 
@@ -791,7 +791,7 @@ static void process_safety_rx_byte(uint8_t byte)
       s_safety_sequence_initialized = 1u;
 
       taskENTER_CRITICAL();
-      STOP_REQUEST_FROM_B = parser->data[5] & 0x01u;
+      BRAKE_REQUEST_FROM_B = parser->data[5] & 0x01u;
       LAST_SAFETY_RX_MS = HAL_GetTick();
       SAFETY_FRAME_VALID_FROM_B = 1u;
       STM_B_COMM_TIMEOUT = 0u;
