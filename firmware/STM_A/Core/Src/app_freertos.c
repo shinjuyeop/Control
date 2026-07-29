@@ -626,7 +626,8 @@ void StartBRx(void *argument)
       STM_B_COMM_TIMEOUT = 0u;
     }
 
-    DRIVE_STOP_REQUEST = ((BRAKE_REQUEST_FROM_B != 0u) ||
+    DRIVE_STOP_REQUEST = (((MODE == 1u) && (AEB != 0u)) ||
+                          (BRAKE_REQUEST_FROM_B != 0u) ||
                           (SAFETY_FRAME_VALID_FROM_B == 0u) ||
                           (STM_B_COMM_TIMEOUT != 0u)) ? 1u : 0u;
 
