@@ -217,7 +217,7 @@ static HAL_StatusTypeDef restart_usart1_rx(UART_HandleTypeDef *huart);
 static void init_ros_message_buffers(void);
 static uint8_t create_ros_entities(void);
 static void destroy_ros_entities(void);
-static rcl_ret_t publish_brake_status(void);
+static rcl_ret_t publish_brake_status(uint8_t reason_bits);
 static uint8_t ros_operation_failed(rcl_ret_t result);
 /* USER CODE END FunctionPrototypes */
 
@@ -446,7 +446,7 @@ void StartuROS(void *argument)
         }
         if (((uint32_t)(now - last_status) >= BRAKE_STATUS_PERIOD_MS) ||
             (reason_bits != previous_bits)) {
-          rcl_ret_t publish_result = publish_brake_status();
+          rcl_ret_t publish_result = publish_brake_status(reason_bits);
           if (ros_operation_failed(publish_result) != 0u) {
             if (publish_failures < UINT8_MAX) publish_failures++;
           } else {
@@ -681,9 +681,8 @@ static void destroy_ros_entities(void)
   rcl_reset_error();
 }
 
-static rcl_ret_t publish_brake_status(void)
+static rcl_ret_t publish_brake_status(uint8_t reason_bits)
 {
-  uint8_t reason_bits = 0u;
   uint8_t command_received;
   uint32_t last_command_tick;
 
@@ -691,16 +690,6 @@ static rcl_ret_t publish_brake_status(void)
   command_received = s_command_received;
   last_command_tick = s_last_command_tick;
   taskEXIT_CRITICAL();
-
-  if (ESTOP_STATUS != 0u) {
-    reason_bits |=
-        kaiev26_msgs__msg__BrakeActuatorStatus__STOP_REASON_ESTOP;
-  }
-  if ((MODE_FROM_A == VEHICLE_MODE_AUTO) &&
-      (COMMAND_BRAKE_REQUEST != 0u)) {
-    reason_bits |=
-        kaiev26_msgs__msg__BrakeActuatorStatus__STOP_REASON_COMMAND_BRAKE;
-  }
 
   s_status_msg.brake_commanded = (BRAKE_COMMAND_APPLIED != 0u);
   s_status_msg.stop_reason_bits = reason_bits;
