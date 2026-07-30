@@ -1,5 +1,8 @@
 # Safety Design
 
+> 이 문서는 현재 작업 브랜치의 소스 코드를 기준으로 작성되었습니다.
+> 코드 변경 시 주기, timeout, 핀, 통신 ID와 안전 조건을 함께 갱신해야 합니다.
+
 ## 1. 문서 목적
 
 이 문서는 현재 코드에 구현된 E-stop, brake, traction 차단, 통신 timeout과 복구
@@ -130,8 +133,9 @@ ISR은 EStop task에 event flag만 전달하고 실제 GPIO 판독과 brake 계�
 수행합니다. edge를 놓친 경우에도 Task가 최대 10 tick wait 후 다시 읽습니다.
 
 - software debounce: 현재 코드에서 확인되지 않음
-- latch: 없음
-- 해제: 세 입력이 모두 high가 된 뒤 다음 safety update에서 즉시 반영
+- software latch: 현재 구현에 없음
+- 물리 스위치의 기계적 latch 여부: 실제 하드웨어 구성에 따름
+- software 해제 조건: 세 입력이 모두 high인 다음 safety update
 - 모드 차이: 없음
 - STM_A 전달: 최종 `BRAKE_REQUEST` bit로만 전달
 - Host 전달: `/brake/status.stop_reason_bits`의 `STOP_REASON_ESTOP`
@@ -288,7 +292,7 @@ fresh 명령으로 AUTO traction·조향이 재활성화될 수 있습니다.
 - STM_A→STM_B UART timeout을 즉시 brake engage 조건으로 추가할지
 - EZkontrol Part I/II timeout과 CAN TX 실패를 traction HALTED 조건으로 추가할지
 - STM_B Host command timeout과 Agent disconnect 시 command reset 정책
-- 물리 E-stop software/hardware debounce와 latch 요구사항
+- 물리 E-stop software debounce·latch 요구사항과 실제 스위치의 기계적 latch 구성
 - STM32 independent watchdog 적용 여부
 - `/brake/status` 단절 시 조향이 stale E-stop 값을 유지하는 문제와 timeout 정책
 - E-stop/fault가 해제된 뒤 반드시 post-recovery command나 별도 enable을

@@ -1,5 +1,8 @@
 # STM_B Firmware
 
+> 이 문서는 현재 작업 브랜치의 소스 코드를 기준으로 작성되었습니다.
+> 코드 변경 시 주기, timeout, 핀, 통신 ID와 안전 조건을 함께 갱신해야 합니다.
+
 ## 1. 역할
 
 STM_B는 STM32G474 기반의 물리 E-stop·브레이크 보드입니다. 세 E-stop 입력과 AUTO
@@ -97,8 +100,9 @@ ESTOP_STATUS = dashboard OR side OR rf
 - rising/falling edge interrupt 사용
 - Task가 10 tick timeout마다 다시 읽음
 - software debounce 없음
-- latch 없음
-- 세 입력이 모두 high이면 다음 update에서 해제
+- software latch는 현재 구현에 없음
+- 물리 스위치의 기계적 latch 여부는 실제 하드웨어 구성에 따름
+- 세 입력이 모두 high인 다음 safety update에서 software 상태 해제
 - MANUAL/AUTO 모두 동일하게 brake에 적용
 
 UART와 ROS 2에는 합쳐진 E-stop 원인만 전달하고 개별 입력은 전달하지 않습니다.
@@ -181,15 +185,16 @@ Host 원인의 brake는 해제됩니다.
 
 ## 12. 빌드
 
-저장소 루트에서 STM_B만 Release로 빌드합니다. `arm-none-eabi-gcc`가 `PATH`에
-있어야 합니다.
+권장 워크스페이스인 `~/kai_ws` 루트에서 STM_B만 Release로 빌드합니다.
+`arm-none-eabi-gcc`가 `PATH`에 있어야 합니다.
 
 ```bash
-cmake -S firmware/STM_B --preset Release
-cmake --build firmware/STM_B/build/Release
+cd ~/kai_ws
+cmake -S src/Control/firmware/STM_B --preset Release
+cmake --build src/Control/firmware/STM_B/build/Release
 ```
 
-결과물은 `firmware/STM_B/build/Release/STM_B.elf`입니다. 공통 Agent 빌드는
+결과물은 `src/Control/firmware/STM_B/build/Release/STM_B.elf`입니다. 공통 Agent 빌드는
 [`../README.md`](../README.md)를 참고하십시오.
 
 ## 13. 플래시 및 실행
@@ -220,7 +225,8 @@ field가 없으므로 LCD 또는 debugger의 `VEHICLE_FRAME_VALID_FROM_A`로 확
 
 - STM_A vehicle UART 200 ms timeout이 final brake에 포함되지 않습니다.
 - Host brake command timeout과 Agent disconnect reset이 없습니다.
-- E-stop debounce와 latch가 없습니다.
+- E-stop software debounce와 software latch가 없습니다. 물리 스위치의 기계적
+  latch 여부는 실제 하드웨어 구성을 확인해야 합니다.
 - brake servo actual position, stall과 fault feedback이 없습니다.
 - engage/release pulse와 ramp는 실차 calibration이 필요합니다.
 - FDCAN1은 초기화되지만 application에서 사용되지 않습니다.

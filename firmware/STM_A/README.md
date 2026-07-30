@@ -1,5 +1,8 @@
 # STM_A Firmware
 
+> 이 문서는 현재 작업 브랜치의 소스 코드를 기준으로 작성되었습니다.
+> 코드 변경 시 주기, timeout, 핀, 통신 ID와 안전 조건을 함께 갱신해야 합니다.
+
 ## 1. 역할
 
 STM_A는 STM32G474 기반의 차량 입력·종방향 구동 보드입니다. 물리 페달·모드·기어를
@@ -171,14 +174,15 @@ command를 보냅니다.
 
 ## 12. 빌드
 
-저장소 루트에서 STM_A만 Release로 빌드합니다.
+권장 워크스페이스인 `~/kai_ws` 루트에서 STM_A만 Release로 빌드합니다.
 
 ```bash
-cmake -S firmware/STM_A --preset Release
-cmake --build firmware/STM_A/build/Release
+cd ~/kai_ws
+cmake -S src/Control/firmware/STM_A --preset Release
+cmake --build src/Control/firmware/STM_A/build/Release
 ```
 
-결과물은 `firmware/STM_A/build/Release/STM_A.elf`입니다. 공통 toolchain과
+결과물은 `src/Control/firmware/STM_A/build/Release/STM_A.elf`입니다. 공통 toolchain과
 micro-ROS Agent 빌드는 [`../README.md`](../README.md)를 참고하십시오.
 
 ## 13. 플래시 및 실행

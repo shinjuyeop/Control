@@ -12,7 +12,7 @@
 
 ## 시스템 구성
 
-- Host / Control PC: ROS 2 제어 명령 생성·전달, 조향 모터 제어, 상태 통합
+- Host / Control PC: 상위 ROS 2 제어 명령 전달, 조향 모터 제어, 상태 통합
 - STM_A: 가속 페달·모드·기어 입력과 EZkontrol 구동 모터 제어
 - STM_B: 세 물리 E-stop 입력, 브레이크 서보, 최종 브레이크 요청 결정
 - micro-ROS Agent: 각 STM의 LPUART1 serial transport와 ROS 2 graph 연결
@@ -70,7 +70,7 @@ ROS 2 패키지는 워크스페이스 루트에서 빌드합니다.
 cd ~/kai_ws
 source /opt/ros/humble/setup.bash
 colcon build --symlink-install
-source install/setup.bash
+source ~/kai_ws/install/setup.bash
 ```
 
 STM 펌웨어 빌드와 보드별 micro-ROS Agent 실행 절차는

@@ -1,5 +1,8 @@
 # Interfaces
 
+> 이 문서는 현재 작업 브랜치의 소스 코드를 기준으로 작성되었습니다.
+> 코드 변경 시 주기, timeout, 핀, 통신 ID와 안전 조건을 함께 갱신해야 합니다.
+
 ## 1. 문서 목적
 
 이 문서는 현재 코드에서 확인되는 ROS 2 topic, STM_A↔STM_B UART, EZkontrol CAN,
@@ -236,6 +239,9 @@ Part I과 Part II는 마지막 수신 후 200 ms 미만일 때 각각 valid입�
 - `firmware/STM_A/Core/Src/app_freertos.c`
 
 ## 7. Steering Motor CAN
+
+> 이 절의 software 관련 내용은 현재 브랜치 구현을 기준으로 한 스냅샷입니다.
+> software 구조와 통합 실행 방식은 아직 정리 중이며 이후 변경될 수 있습니다.
 
 현재 실차 경로는 Host의 `steering_actuator_node`가 SocketCAN `can0`을 직접
 사용합니다. bitrate는 노드가 설정하지 않으며 실행 전에 외부에서 250 kbit/s로

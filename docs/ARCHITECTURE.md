@@ -1,5 +1,8 @@
 # System Architecture
 
+> 이 문서는 현재 작업 브랜치의 소스 코드를 기준으로 작성되었습니다.
+> 코드 변경 시 주기, timeout, 핀, 통신 ID와 안전 조건을 함께 갱신해야 합니다.
+
 ## 1. 문서 목적
 
 이 문서는 현재 `Control` 코드에서 확인되는 전체 시스템 구성, 각 프로세서의
@@ -10,12 +13,17 @@
 ## 2. 전체 시스템 구성
 
 ```mermaid
-flowchart TD
+flowchart LR
     Planning["Planning / Motion Control<br/>(현재 구현 주체 TBD)"]
     Command["/vehicle/command"]
-    STMA["STM_A<br/>차량 입력 · 구동"]
-    STMB["STM_B<br/>E-stop · 브레이크"]
-    Steering["lateral_ctrl<br/>조향"]
+
+    subgraph Consumers["Command Consumers"]
+        direction TB
+        STMA["STM_A<br/>차량 입력 · 구동"]
+        STMB["STM_B<br/>E-stop · 브레이크"]
+        Steering["lateral_ctrl<br/>조향"]
+    end
+
     Drive["EZkontrol<br/>구동 모터"]
     Keya["KEYA<br/>조향 모터"]
     Estop["Dashboard / Side / RF<br/>E-stop"]
@@ -50,8 +58,9 @@ STM_A와 STM_B는 각각 별도의 LPUART1 serial transport와 micro-ROS Agent�
 ### 3.1 Host / Control PC
 
 - ROS 2 graph와 각 STM의 micro-ROS Agent를 실행합니다.
-- 상위 제어기가 발행한 `/vehicle/command`를 STM_A, STM_B와 조향 노드에
-  전달합니다.
+- 설계상 상위 Planning 또는 motion-control 계층에서 들어오는
+  `/vehicle/command`를 STM_A, STM_B와 조향 노드에 전달합니다. 현재
+  `Control` 저장소에는 production 명령 생성 노드가 없습니다.
 - `lateral_ctrl/steering_actuator_node`가 KEYA 모터의 SocketCAN 소유자가 되어
   조향을 제어합니다.
 - `vehicle_state_publisher`가 `/drive/status`, `/brake/status`,
@@ -95,6 +104,9 @@ STM_B는 물리 E-stop 입력과 브레이크 서보의 직접 구동을 담당�
 구현 기준: `firmware/STM_B/Core/Src/app_freertos.c`
 
 ### 3.4 조향 제어
+
+> 이 절의 software 관련 내용은 현재 브랜치 구현을 기준으로 한 스냅샷입니다.
+> software 구조와 통합 실행 방식은 아직 정리 중이며 이후 변경될 수 있습니다.
 
 `software/src/lateral_ctrl`의 `steering_actuator_node`가 `/vehicle/command`,
 `/drive/status`, `/brake/status`를 받아 KEYA 조향 모터를 제어합니다.

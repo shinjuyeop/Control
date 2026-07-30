@@ -20,8 +20,10 @@ firmware/
 
 ## 명령과 안전 경로
 
-판단·motion control 노드는 `kaiev26_msgs/msg/ActuatorCommand`를
-`/vehicle/command`로 발행합니다.
+상위 Planning 또는 motion-control 계층은
+`kaiev26_msgs/msg/ActuatorCommand`를 `/vehicle/command`로 발행하도록
+설계되어 있습니다. 현재 `Control` 저장소에서는 production 명령 생성 노드가
+확인되지 않습니다.
 
 - STM_A는 `speed_target_mps`와 `brake_engage`를 직접 받습니다.
 - STM_B는 같은 메시지의 `brake_engage`를 독립적으로 받습니다.
@@ -66,12 +68,16 @@ STM_B는 EZkontrol CAN Part I/II를 수신하지 않습니다. STM_B가 표시�
 `/opt/st/stm32cubeclt_1.20.0/`의 compiler 경로를 명시하고, STM_B preset은
 `PATH`에서 compiler를 찾습니다.
 
-```bash
-cmake -S firmware/STM_A --preset Release
-cmake --build firmware/STM_A/build/Release
+아래 명령은 권장 워크스페이스인 `~/kai_ws` 루트에서 실행합니다.
 
-cmake -S firmware/STM_B --preset Release
-cmake --build firmware/STM_B/build/Release
+```bash
+cd ~/kai_ws
+
+cmake -S src/Control/firmware/STM_A --preset Release
+cmake --build src/Control/firmware/STM_A/build/Release
+
+cmake -S src/Control/firmware/STM_B --preset Release
+cmake --build src/Control/firmware/STM_B/build/Release
 ```
 
 현재 CMake target이 직접 생성하는 결과물은 각 build 디렉터리의 `.elf`입니다.
@@ -84,14 +90,17 @@ HEX·BIN이 필요하면 사용하는 flash 도구에 맞게 별도로 변환하
 `firmware/STM_A`와 `firmware/STM_B`에는 `COLCON_IGNORE`가 있으므로, 다음 명령은
 vendored Agent와 `micro_ros_msgs`만 ROS 패키지로 빌드합니다.
 
+아래 명령은 권장 워크스페이스인 `~/kai_ws` 루트에서 실행합니다.
+
 ```bash
+cd ~/kai_ws
 source /opt/ros/humble/setup.bash
 
 colcon build \
-  --base-paths firmware \
+  --base-paths src/Control/firmware \
   --packages-select micro_ros_msgs micro_ros_agent
 
-source install/setup.bash
+source ~/kai_ws/install/setup.bash
 ```
 
 vendored upstream revision과 로컬 빌드 수정은
@@ -107,7 +116,7 @@ vendored upstream revision과 로컬 빌드 수정은
 
 ```bash
 source /opt/ros/humble/setup.bash
-source install/setup.bash
+source ~/kai_ws/install/setup.bash
 ros2 run micro_ros_agent micro_ros_agent serial \
   --dev /dev/serial/by-id/<stm-a-device> -b 115200
 ```
@@ -116,7 +125,7 @@ ros2 run micro_ros_agent micro_ros_agent serial \
 
 ```bash
 source /opt/ros/humble/setup.bash
-source install/setup.bash
+source ~/kai_ws/install/setup.bash
 ros2 run micro_ros_agent micro_ros_agent serial \
   --dev /dev/serial/by-id/<stm-b-device> -b 115200
 ```
