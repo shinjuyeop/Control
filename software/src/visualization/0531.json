@@ -5,7 +5,7 @@
       "paths": [
         {
           "timestampMethod": "receiveTime",
-          "value": "/cmd/speed.data",
+          "value": "/vehicle/command.speed_target_mps",
           "enabled": true,
           "color": "#4e98e2",
           "id": "ebd3d44e-a971-4e31-82bd-caedb0dfd278",
@@ -13,13 +13,13 @@
         },
         {
           "timestampMethod": "receiveTime",
-          "value": "/current/speed.data",
+          "value": "/drive/status.speed_mps",
           "enabled": true,
           "color": "#f5774d",
           "id": "0e09edfe-db3b-4189-8f7f-6eaaccefb3a7"
         }
       ],
-      "yAxisLabel": "km/h",
+      "yAxisLabel": "m/s",
       "showYAxisLabels": true,
       "maxYValue": 20,
       "minYValue": 0
@@ -28,14 +28,14 @@
       "paths": [
         {
           "timestampMethod": "receiveTime",
-          "value": "/cmd/steer.data",
+          "value": "/vehicle/command.steering_target_rad",
           "enabled": true,
           "color": "#4e98e2",
           "id": "d5e305bd-b5c8-44b1-b6bf-4c29568c5cdd"
         },
         {
           "timestampMethod": "receiveTime",
-          "value": "/current/str.data",
+          "value": "/steering/status.actual_wheel_angle_rad",
           "enabled": true,
           "color": "#f5774d",
           "id": "b45ec524-1e22-475b-84a0-ff309da31800"
@@ -45,7 +45,7 @@
       "maxYValue": 15
     },
     "Indicator!1x2iak2": {
-      "path": "/gear.data",
+      "path": "/drive/status.gear",
       "style": "bulb",
       "fontSize": 30,
       "fallbackColor": "#f1c40f",
@@ -61,7 +61,7 @@
       "foxglovePanelTitle": "gear"
     },
     "Indicator!i2w7hf": {
-      "path": "/mode.data",
+      "path": "/drive/status.mode",
       "style": "bulb",
       "fontSize": 30,
       "fallbackColor": "#95a5a6",
@@ -77,7 +77,7 @@
       "foxglovePanelTitle": "mode"
     },
     "Indicator!3ttpbo1": {
-      "path": "/estop.data",
+      "path": "/brake/status.stop_reason_bits",
       "style": "bulb",
       "fontSize": 30,
       "fallbackColor": "#95a5a6",
@@ -85,7 +85,25 @@
       "rules": [
         {
           "operator": "=",
-          "rawValue": "1",
+          "rawValue": "4",
+          "color": "#e74c3c",
+          "label": "EMERGENCY!"
+        },
+        {
+          "operator": "=",
+          "rawValue": "5",
+          "color": "#e74c3c",
+          "label": "EMERGENCY!"
+        },
+        {
+          "operator": "=",
+          "rawValue": "12",
+          "color": "#e74c3c",
+          "label": "EMERGENCY!"
+        },
+        {
+          "operator": "=",
+          "rawValue": "13",
           "color": "#e74c3c",
           "label": "EMERGENCY!"
         }
@@ -93,7 +111,7 @@
       "foxglovePanelTitle": "estop"
     },
     "Indicator!1vnbk68": {
-      "path": "/aeb.data",
+      "path": "/brake/status.brake_commanded",
       "style": "bulb",
       "fontSize": 30,
       "fallbackColor": "#95a5a6",
@@ -103,10 +121,10 @@
           "operator": "=",
           "rawValue": "1",
           "color": "#e74c3c",
-          "label": "EMERGENCY!"
+          "label": "BRAKE"
         }
       ],
-      "foxglovePanelTitle": "aeb"
+      "foxglovePanelTitle": "brake commanded"
     },
     "Tab!18ptled": {
       "activeTabIdx": 0,
