@@ -27,7 +27,8 @@ ros2 launch lateral_ctrl steering_actuator.launch.py \
 
 `ros2 run lateral_ctrl steering_actuator_node`로 직접 실행할 때 두 출력 파라미터의
 기본값은 `false`입니다. 두 값은 노드 생성 시 한 번만 읽으며 런타임 arm/disarm
-기능은 없습니다.
+기능은 없습니다. `node_id`는 `0..255`만 허용하며 범위를 벗어나면 KEYA 드라이버를
+생성하지 않고 노드가 종료됩니다.
 
 ## 차량 제어 계약
 
@@ -84,6 +85,15 @@ command를 폐기하고 모터를 Disable합니다. 조건이 복구되어도 �
 기본 control tick은 20 ms, 즉 50 Hz입니다. `ACTIVE`에서는 rate limit을 적용한
 position 명령을 매 tick 보냅니다. `/vehicle/command`의 기본 timeout은 200 ms이므로
 실제 발행자는 이보다 충분히 빠르게 명령을 계속 보내야 합니다.
+header stamp가 0이거나 timeout보다 오래됐거나 `steering_target_rad`가 nonfinite인
+명령도 즉시 모터를 Disable하고 과거 target을 폐기합니다. 공개 상태에는 기존
+`REASON_STEER_COMMAND_TIMEOUT`으로 보고하며, 이후 새롭고 유효한 명령을 기다립니다.
+조향 노드는 어떤 `/vehicle/command`에서도 `brake_engage=true`를 즉시 적용하지만,
+fresh한 header stamp를 가진 명령의 `brake_engage=false`만 기존 command brake를
+해제합니다. 따라서 0 stamp나 오래된 명령은 걸려 있는 command brake를 해제하지
+못합니다. fresh한 명령이 `brake_engage=false`와 nonfinite 조향값을 함께 보내면
+조향 노드는 command brake는 해제하되 조향 명령은 거부하고 Disable 상태를
+유지합니다.
 
 ## 빌드와 테스트
 

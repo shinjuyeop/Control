@@ -48,6 +48,16 @@ TEST(SteeringSafetyLogic, CommandBrakeDisablesAutoSteering)
       true, DriveMode::AUTO, safety, false, false, true),
     SteeringDisableReason::COMMAND_BRAKE);
 }
+
+TEST(SteeringSafetyLogic, CommandBrakeReleasesOnlyWithFreshStamp)
+{
+  EXPECT_FALSE(lateral_ctrl::nextCommandBrakeState(false, false, false));
+  EXPECT_TRUE(lateral_ctrl::nextCommandBrakeState(true, false, false));
+  EXPECT_FALSE(lateral_ctrl::nextCommandBrakeState(true, false, true));
+  EXPECT_TRUE(lateral_ctrl::nextCommandBrakeState(false, true, false));
+  EXPECT_TRUE(lateral_ctrl::nextCommandBrakeState(true, true, true));
+}
+
 TEST(SteeringSafetyLogic, TestEstopFalseCannotClearRealEstop)
 {
   SafetyInputs safety;
