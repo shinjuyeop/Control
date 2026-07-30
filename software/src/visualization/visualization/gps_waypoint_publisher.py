@@ -1,18 +1,22 @@
-import math
 from collections import deque
+import math
 
 from geometry_msgs.msg import Point, TransformStamped
+from kaiev26_msgs.msg import DriveActuatorStatus, SteeringActuatorStatus
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import NavSatFix, NavSatStatus
-from std_msgs.msg import Float32
 from tf2_ros import TransformBroadcaster
 from visualization_msgs.msg import Marker, MarkerArray
 
 
 class GpsWaypointPublisher(Node):
-    """Publish GPS, TF, and 3D scene markers for Foxglove demos."""
+    """Publish a synthetic GPS/TF/3D scene for Foxglove demonstrations.
+
+    This helper integrates canonical vehicle status inputs into a fictional
+    pose.  It is not a GNSS receiver or a localization estimator.
+    """
 
     def __init__(self):
         super().__init__('gps_waypoint_publisher')
@@ -54,8 +58,18 @@ class GpsWaypointPublisher(Node):
         self.scene_pub = self.create_publisher(MarkerArray, '/viz/scene', 10)
         self.tf_broadcaster = TransformBroadcaster(self)
 
-        self.create_subscription(Float32, '/current/speed', self.speed_cb, 10)
-        self.create_subscription(Float32, '/viz/steering_deg', self.steering_cb, 10)
+        self.create_subscription(
+            DriveActuatorStatus,
+            '/drive/status',
+            self.speed_cb,
+            10,
+        )
+        self.create_subscription(
+            SteeringActuatorStatus,
+            '/steering/status',
+            self.steering_cb,
+            10,
+        )
 
         self.lake_label_m = self.navsat_to_local(37.54078, 127.07620)
         self.route_navsat_points = [
@@ -96,8 +110,9 @@ class GpsWaypointPublisher(Node):
         self.x_m = 0.0
         self.y_m = 0.0
         self.yaw_rad = 0.0
-        self.speed_kmh = 0.0
-        self.steering_deg = 0.0
+        self.speed_mps = 0.0
+        self.steering_rad = 0.0
+        self.steering_feedback_valid = False
         self.route_progress_m = 0.0
         self.route_direction = 1.0
         self.route_hold_sec = 0.0
@@ -130,10 +145,16 @@ class GpsWaypointPublisher(Node):
         return math.atan2(math.sin(yaw_rad), math.cos(yaw_rad))
 
     def speed_cb(self, msg):
-        self.speed_kmh = self.clamp(float(msg.data), -8.0, 30.0)
+        self.speed_mps = self.clamp(float(msg.speed_mps), -3.0, 10.0)
 
     def steering_cb(self, msg):
-        self.steering_deg = self.clamp(float(msg.data), -30.0, 30.0)
+        self.steering_feedback_valid = bool(msg.feedback_valid)
+        if self.steering_feedback_valid:
+            self.steering_rad = self.clamp(
+                float(msg.actual_wheel_angle_rad),
+                math.radians(-30.0),
+                math.radians(30.0),
+            )
 
     def navsat_to_local(self, latitude, longitude):
         earth_radius_m = 6378137.0
@@ -223,14 +244,14 @@ class GpsWaypointPublisher(Node):
 
         if self.follow_route and self.route_length_m > 0.0:
             if self.route_loop:
-                speed_mps = abs(self.speed_kmh) / 3.6
+                speed_mps = abs(self.speed_mps)
                 self.route_progress_m = (
                     self.route_progress_m + speed_mps * dt
                 ) % self.route_length_m
             elif self.route_hold_sec > 0.0:
                 self.route_hold_sec = max(0.0, self.route_hold_sec - dt)
             else:
-                speed_mps = abs(self.speed_kmh) / 3.6
+                speed_mps = abs(self.speed_mps)
                 self.route_progress_m += speed_mps * dt * self.route_direction
 
             if (
@@ -267,8 +288,10 @@ class GpsWaypointPublisher(Node):
             self.trail.append((self.x_m, self.y_m))
             return
 
-        speed_mps = self.speed_kmh / 3.6
-        steering_rad = math.radians(self.steering_deg)
+        speed_mps = self.speed_mps
+        steering_rad = (
+            self.steering_rad if self.steering_feedback_valid else 0.0
+        )
         yaw_rate = speed_mps / self.wheelbase_m * math.tan(steering_rad)
         self.yaw_rad += yaw_rate * dt
         self.x_m += speed_mps * math.cos(self.yaw_rad) * dt

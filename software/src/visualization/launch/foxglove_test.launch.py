@@ -13,14 +13,14 @@ def generate_launch_description():
             ),
             Node(
                 package='visualization',
-                executable='topic_mapper',
-                name='topic_mapper',
+                executable='gps_waypoint_publisher',
+                name='gps_waypoint_publisher',
                 output='screen',
             ),
             Node(
                 package='visualization',
-                executable='gps_waypoint_publisher',
-                name='gps_waypoint_publisher',
+                executable='vehicle_dashboard',
+                name='vehicle_dashboard',
                 output='screen',
             ),
         ]
