@@ -4,6 +4,20 @@ STM_A는 종방향 모터와 차량 입력을 담당하고, STM_B는 물리 E-st
 서보를 담당합니다. 두 보드는 USART1으로 차량 상태와 최종 브레이크 요청을 서로
 교환하며, 각 보드는 LPUART1 115200 baud로 별도의 micro-ROS Agent에 연결됩니다.
 
+## 디렉터리 구조
+
+```text
+firmware/
+├── STM_A/             # 차량 입력과 EZkontrol 구동 모터 제어
+├── STM_B/             # 물리 E-stop, 브레이크 서보와 표시 장치
+├── micro_ros_agent/   # vendored micro-ROS Agent
+└── tools/             # micro-ROS 라이브러리 재생성 보조 스크립트
+```
+
+보드 내부 Task와 Peripheral은
+[`STM_A/README.md`](STM_A/README.md)와
+[`STM_B/README.md`](STM_B/README.md)에 정리되어 있습니다.
+
 ## 명령과 안전 경로
 
 판단·motion control 노드는 `kaiev26_msgs/msg/ActuatorCommand`를
@@ -47,7 +61,10 @@ STM_B는 EZkontrol CAN Part I/II를 수신하지 않습니다. STM_B가 표시�
 
 ## STM 빌드
 
-두 프로젝트의 CMake preset은 STM32CubeCLT 1.20.0의 ARM toolchain을 사용합니다.
+두 프로젝트의 CMake preset은 GNU Arm Embedded
+`arm-none-eabi` toolchain을 사용합니다. STM_A preset은
+`/opt/st/stm32cubeclt_1.20.0/`의 compiler 경로를 명시하고, STM_B preset은
+`PATH`에서 compiler를 찾습니다.
 
 ```bash
 cmake -S firmware/STM_A --preset Release
@@ -57,8 +74,10 @@ cmake -S firmware/STM_B --preset Release
 cmake --build firmware/STM_B/build/Release
 ```
 
-생성되는 ELF·HEX·BIN을 플래시하는 절차는 사용하는 ST-Link 환경에 맞게 수행합니다.
-플래시 전에는 대상 보드가 STM_A인지 STM_B인지 확인하십시오.
+현재 CMake target이 직접 생성하는 결과물은 각 build 디렉터리의 `.elf`입니다.
+HEX·BIN이 필요하면 사용하는 flash 도구에 맞게 별도로 변환하십시오. 플래시
+절차는 사용하는 ST-Link 환경에 맞게 수행하고, 대상 보드가 STM_A인지 STM_B인지
+먼저 확인하십시오.
 
 ## micro-ROS Agent 빌드
 
@@ -116,3 +135,11 @@ ros2 topic echo /brake/status
 정상 상태에서는 `/stm_a_node`와 `/stm_b_node`가 보이고, 두 보드 모두
 `/vehicle/command`를 구독합니다. STM_A는 `/drive/status`, STM_B는
 `/brake/status`를 발행합니다.
+
+## 관련 문서
+
+- 전체 시스템 구조: [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md)
+- 통신 인터페이스: [`../docs/INTERFACES.md`](../docs/INTERFACES.md)
+- 안전 설계: [`../docs/SAFETY.md`](../docs/SAFETY.md)
+- STM_A 상세: [`STM_A/README.md`](STM_A/README.md)
+- STM_B 상세: [`STM_B/README.md`](STM_B/README.md)
