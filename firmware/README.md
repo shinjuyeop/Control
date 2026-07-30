@@ -68,10 +68,10 @@ STM_B는 EZkontrol CAN Part I/II를 수신하지 않습니다. STM_B가 표시�
 `/opt/st/stm32cubeclt_1.20.0/`의 compiler 경로를 명시하고, STM_B preset은
 `PATH`에서 compiler를 찾습니다.
 
-아래 명령은 권장 워크스페이스인 `~/kai_ws` 루트에서 실행합니다.
+아래 명령은 권장 워크스페이스인 `~/KAI_ws` 루트에서 실행합니다.
 
 ```bash
-cd ~/kai_ws
+cd ~/KAI_ws
 
 cmake -S src/Control/firmware/STM_A --preset Release
 cmake --build src/Control/firmware/STM_A/build/Release
@@ -90,17 +90,17 @@ HEX·BIN이 필요하면 사용하는 flash 도구에 맞게 별도로 변환하
 `firmware/STM_A`와 `firmware/STM_B`에는 `COLCON_IGNORE`가 있으므로, 다음 명령은
 vendored Agent와 `micro_ros_msgs`만 ROS 패키지로 빌드합니다.
 
-아래 명령은 권장 워크스페이스인 `~/kai_ws` 루트에서 실행합니다.
+아래 명령은 권장 워크스페이스인 `~/KAI_ws` 루트에서 실행합니다.
 
 ```bash
-cd ~/kai_ws
+cd ~/KAI_ws
 source /opt/ros/humble/setup.bash
 
 colcon build \
   --base-paths src/Control/firmware \
   --packages-select micro_ros_msgs micro_ros_agent
 
-source ~/kai_ws/install/setup.bash
+source ~/KAI_ws/install/setup.bash
 ```
 
 vendored upstream revision과 로컬 빌드 수정은
@@ -116,7 +116,7 @@ vendored upstream revision과 로컬 빌드 수정은
 
 ```bash
 source /opt/ros/humble/setup.bash
-source ~/kai_ws/install/setup.bash
+source ~/KAI_ws/install/setup.bash
 ros2 run micro_ros_agent micro_ros_agent serial \
   --dev /dev/serial/by-id/<stm-a-device> -b 115200
 ```
@@ -125,7 +125,7 @@ ros2 run micro_ros_agent micro_ros_agent serial \
 
 ```bash
 source /opt/ros/humble/setup.bash
-source ~/kai_ws/install/setup.bash
+source ~/KAI_ws/install/setup.bash
 ros2 run micro_ros_agent micro_ros_agent serial \
   --dev /dev/serial/by-id/<stm-b-device> -b 115200
 ```

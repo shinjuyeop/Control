@@ -174,10 +174,10 @@ command를 보냅니다.
 
 ## 12. 빌드
 
-권장 워크스페이스인 `~/kai_ws` 루트에서 STM_A만 Release로 빌드합니다.
+권장 워크스페이스인 `~/KAI_ws` 루트에서 STM_A만 Release로 빌드합니다.
 
 ```bash
-cd ~/kai_ws
+cd ~/KAI_ws
 cmake -S src/Control/firmware/STM_A --preset Release
 cmake --build src/Control/firmware/STM_A/build/Release
 ```

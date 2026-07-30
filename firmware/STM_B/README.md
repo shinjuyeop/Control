@@ -185,11 +185,11 @@ Host 원인의 brake는 해제됩니다.
 
 ## 12. 빌드
 
-권장 워크스페이스인 `~/kai_ws` 루트에서 STM_B만 Release로 빌드합니다.
+권장 워크스페이스인 `~/KAI_ws` 루트에서 STM_B만 Release로 빌드합니다.
 `arm-none-eabi-gcc`가 `PATH`에 있어야 합니다.
 
 ```bash
-cd ~/kai_ws
+cd ~/KAI_ws
 cmake -S src/Control/firmware/STM_B --preset Release
 cmake --build src/Control/firmware/STM_B/build/Release
 ```

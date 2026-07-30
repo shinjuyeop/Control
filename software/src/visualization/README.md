@@ -60,7 +60,7 @@ timeout과 age다.
 
 ```bash
 source /opt/ros/humble/setup.bash
-cd ~/kai_ws
+cd ~/KAI_ws
 colcon build \
   --base-paths src/kaiev26_msgs src/Control/software/src \
   --packages-select kaiev26_msgs visualization

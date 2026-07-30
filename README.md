@@ -58,7 +58,7 @@ Control/
 권장 워크스페이스 배치는 다음과 같습니다.
 
 ```text
-~/kai_ws/
+~/KAI_ws/
 └── src/
     ├── Control/
     └── kaiev26_msgs/
@@ -67,10 +67,10 @@ Control/
 ROS 2 패키지는 워크스페이스 루트에서 빌드합니다.
 
 ```bash
-cd ~/kai_ws
+cd ~/KAI_ws
 source /opt/ros/humble/setup.bash
 colcon build --symlink-install
-source ~/kai_ws/install/setup.bash
+source ~/KAI_ws/install/setup.bash
 ```
 
 STM 펌웨어 빌드와 보드별 micro-ROS Agent 실행 절차는
@@ -83,12 +83,13 @@ STM 펌웨어 빌드와 보드별 micro-ROS Agent 실행 절차는
 | [Architecture](docs/ARCHITECTURE.md) | 전체 시스템 구성, 역할과 데이터 흐름 |
 | [Interfaces](docs/INTERFACES.md) | ROS 2, STM 간 UART, EZkontrol·KEYA CAN 계약 |
 | [Safety](docs/SAFETY.md) | E-stop, timeout, fail-safe와 복구 동작 |
+| [Hardware documents](docs/hardware/README.md) | 구동·조향 하드웨어 제조사 매뉴얼과 통신 프로토콜 |
 | [Firmware](firmware/README.md) | 공통 STM 빌드와 micro-ROS Agent 실행 |
 | [STM_A](firmware/STM_A/README.md) | STM_A 내부 구조 및 동작 |
 | [STM_B](firmware/STM_B/README.md) | STM_B 내부 구조 및 동작 |
 | [Lateral control](software/src/lateral_ctrl/README.md) | 현재 KEYA 조향 패키지 사용법 |
 
-## 개발 상태
+## 개발 규칙
 
 펌웨어의 현재 구현과 인터페이스·안전 동작은 위 기준 문서에 정리되어 있습니다.
 `software` 패키지 전체의 구조와 실행 절차는 아직 정리 중이며, 코드 구조가
@@ -96,20 +97,6 @@ STM 펌웨어 빌드와 보드별 micro-ROS Agent 실행 절차는
 
 현재 `control_launch`에는 통합 launch가 없고 `longitudinal_ctrl`에는 실행 노드가
 없으므로, 문서에 없는 전체 차량 실행 명령을 추정해서 사용하지 마십시오.
-
-현재 유지되는 개별 개발 진입점은 다음과 같습니다.
-
-```bash
-# PID Gazebo
-ros2 launch pid_gazebo pid_gazebo.launch.py
-
-# SILS bag 기록 포함
-ros2 launch pid_gazebo sils.launch.py
-
-# CAN lab
-python3 software/src/can_lab/teamkai_can_lab/teamkai_can_lab.py \
-  --motor-iface vcan0 --steer-iface vcan1
-```
 
 개인 작업은 각자 브랜치에서 진행하고, `build/`, `install/`, `log/`, rosbag,
 MCAP, 분석 CSV와 plot 산출물은 커밋하지 않습니다. 커밋 전에는 변경 범위와
@@ -124,4 +111,25 @@ MCAP, 분석 CSV와 plot 산출물은 커밋하지 않습니다. 커밋 전에�
 ```bash
 git status
 git diff
+```
+
+### PR 작성 형식
+
+PR 본문은 다음 형식을 사용합니다.
+
+```markdown
+## **브랜치**
+
+## **주요 변경**
+
+-
+-
+
+## **확인한 부분**
+
+-
+
+## **확인 필요한 부분**
+
+-
 ```
