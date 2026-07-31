@@ -45,6 +45,12 @@ struct SafetyInputs
   bool effectiveEstop() const { return real_estop || test_estop; }
 };
 
+inline bool nextCommandBrakeState(
+  bool current_brake, bool requested_brake, bool stamp_fresh)
+{
+  return requested_brake || (current_brake && !stamp_fresh);
+}
+
 inline SteeringDisableReason selectDisableReason(
   bool mode_received, bool mode_timeout, DriveMode mode, const SafetyInputs & safety,
   bool motor_fault, bool can_timeout, bool feedback_valid, bool steer_command_timeout)

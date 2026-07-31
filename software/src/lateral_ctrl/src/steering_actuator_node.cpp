@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <functional>
 #include <limits>
+#include <stdexcept>
 
 namespace lateral_ctrl
 {
@@ -40,7 +42,10 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
   actuator_output_enabled_ = declare_parameter("actuator_output_enabled", false);
   test_input_injection_enabled_ = declare_parameter("test_input_injection_enabled", false);
   const auto can_interface = declare_parameter("can_interface", std::string("can0"));
-  const auto node_id = declare_parameter("node_id", 1);
+  const auto node_id = declare_parameter<std::int64_t>("node_id", 1);
+  if (node_id < 0 || node_id > std::numeric_limits<std::uint8_t>::max()) {
+    throw std::out_of_range("node_id must be in [0, 255]");
+  }
 
   // canonical 통합 인터페이스: 명령은 /vehicle/command 하나,
   // 안전·모드 상태는 STM이 발행하는 status에서 읽는다.
@@ -107,13 +112,30 @@ SteeringActuatorNode::~SteeringActuatorNode()
 
 void SteeringActuatorNode::onCommand(const kaiev26_msgs::msg::ActuatorCommand::SharedPtr input)
 {
+  const auto stamp = rclcpp::Time(input->header.stamp);
+  const bool stamp_present = stamp.nanoseconds() > 0;
+  const double stamp_age_ms = stamp_present ?
+    (now() - stamp).seconds() * 1000.0 :
+    std::numeric_limits<double>::infinity();
+  const bool stamp_fresh =
+    std::isfinite(stamp_age_ms) &&
+    stamp_age_ms <= static_cast<double>(steer_command_timeout_ms_);
   const bool brake_activated = !safety_.command_brake && input->brake_engage;
-  safety_.command_brake = input->brake_engage;
+  safety_.command_brake = nextCommandBrakeState(
+    safety_.command_brake, input->brake_engage, stamp_fresh);
   if (brake_activated) {
     requestImmediateDisable(SteeringDisableReason::COMMAND_BRAKE);
   }
 
-  if (!std::isfinite(input->steering_target_rad)) return;
+  if (!std::isfinite(input->steering_target_rad) ||
+    !stamp_fresh)
+  {
+    requestImmediateDisable(
+      safety_.command_brake ?
+      SteeringDisableReason::COMMAND_BRAKE :
+      SteeringDisableReason::STEER_COMMAND_TIMEOUT);
+    return;
+  }
   // canonical 계약 단위 변환: rad·좌회전 양수 → 내부 deg·좌회전 음수.
   // 이 변환은 명령 수신 경계에서만 수행한다.
   constexpr double kCanonicalRadToDeg = -180.0 / 3.14159265358979323846;
@@ -270,6 +292,9 @@ void SteeringActuatorNode::controlTick()
   }
   ++tick_count_;
 
+  // receiveAvailableFrames()가 수신 프레임에 찍은 시각보다 뒤에서 age를 계산한다.
+  // tick 시작 시각인 now는 제어 dt 계산 기준으로 계속 사용한다.
+  const auto age_now = std::chrono::steady_clock::now();
   const auto & motor = can_driver_->motorState();
   double feedback_age_ms = std::numeric_limits<double>::infinity();
   double position_age_ms = std::numeric_limits<double>::infinity();
@@ -277,19 +302,22 @@ void SteeringActuatorNode::controlTick()
   double steer_age_ms = std::numeric_limits<double>::infinity();
   if (motor.last_feedback.time_since_epoch().count() != 0) {
     feedback_age_ms =
-      std::chrono::duration<double, std::milli>(now - motor.last_feedback).count();
+      std::chrono::duration<double, std::milli>(age_now - motor.last_feedback).count();
   }
   if (motor.last_position_feedback.time_since_epoch().count() != 0) {
     position_age_ms =
-      std::chrono::duration<double, std::milli>(now - motor.last_position_feedback).count();
+      std::chrono::duration<double, std::milli>(
+      age_now - motor.last_position_feedback).count();
   }
   can_timeout_ = !can_driver_->isOpen() || feedback_age_ms > can_timeout_ms_;
   if (last_mode_time_.time_since_epoch().count() != 0) {
-    mode_age_ms = std::chrono::duration<double, std::milli>(now - last_mode_time_).count();
+    mode_age_ms =
+      std::chrono::duration<double, std::milli>(age_now - last_mode_time_).count();
   }
   if (last_steer_command_time_.time_since_epoch().count() != 0) {
     steer_age_ms =
-      std::chrono::duration<double, std::milli>(now - last_steer_command_time_).count();
+      std::chrono::duration<double, std::milli>(
+      age_now - last_steer_command_time_).count();
   }
   mode_timeout_ = mode_received_ && mode_age_ms > mode_timeout_ms_;
   if (motor.position_valid) {
@@ -383,12 +411,7 @@ void SteeringActuatorNode::publishState(
   status.command_brake_active = safety_.command_brake;
   status.communication_ok = motor.communication_ok && !can_timeout_;
   status.can_timeout = can_timeout_;
-  status.feedback_valid =
-    motor.position_valid &&
-    motor.last_position_feedback.time_since_epoch().count() != 0 &&
-    std::chrono::duration<double, std::milli>(
-      std::chrono::steady_clock::now() - motor.last_position_feedback).count() <= can_timeout_ms_ &&
-    !can_timeout_;
+  status.feedback_valid = !feedback_timeout_ && !can_timeout_;
   status.enabled_commanded = enabled_commanded_;
   status.enabled_feedback = motor.enabled_feedback;
   status.enabled_feedback_valid = motor.enabled_feedback_valid;
@@ -454,7 +477,13 @@ void SteeringActuatorNode::publishState(
 int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<lateral_ctrl::SteeringActuatorNode>());
+  try {
+    rclcpp::spin(std::make_shared<lateral_ctrl::SteeringActuatorNode>());
+  } catch (const std::exception & error) {
+    RCLCPP_FATAL(rclcpp::get_logger("steering_actuator_node"), "%s", error.what());
+    rclcpp::shutdown();
+    return 1;
+  }
   rclcpp::shutdown();
   return 0;
 }
