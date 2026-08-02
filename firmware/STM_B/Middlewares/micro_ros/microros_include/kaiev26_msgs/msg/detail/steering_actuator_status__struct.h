@@ -152,7 +152,7 @@ enum
 /**
   * 조향 액추에이터 진단 status (D-10·D-11). 실차 lateral_ctrl의
   * SteeringActuatorStatus(533a3fb9) 설계를 계승하되 canonical 단위로 정리:
-  * 각도는 rad·좌회전 양수, 각속도는 rad/s. deg·부호 반전은 실차 어댑터 내부에서만.
+  * 바퀴각은 rad·좌회전 양수. motor_angle_deg와 motor_speed_rpm은 KEYA 모터축 원시 진단값.
   * 실차 통합 시 lateral_ctrl 로컬 메시지를 삭제하고 이 메시지로 교체한다(D-15 SSOT).
  */
 typedef struct kaiev26_msgs__msg__SteeringActuatorStatus
@@ -190,14 +190,12 @@ typedef struct kaiev26_msgs__msg__SteeringActuatorStatus
   float commanded_wheel_angle_rad;
   /// tracking PID 보정이 적용된 최종 명령각
   float corrected_wheel_angle_rad;
-  /// motor_position_count 환산 실측각. wheel_limit_deg로 클램프됨
+  /// motor_position_count를 calibration 다항식으로 환산한 실측각. 명령 한계 클램프를 적용하지 않음
   float actual_wheel_angle_rad;
   /// commanded - actual. tracking PID의 입력
   float tracking_error_rad;
   /// tracking PID가 더한 보정량
   float tracking_correction_rad;
-  /// commanded의 변화율(명령 기준). 실측 각속도가 아니고 ACTIVE 밖에서는 0
-  float steering_rate_radps;
   /// SDO position query(10000 count/turn) 원시값. 영점은 KEYA 드라이버가 들고 있다
   int32_t motor_position_count;
   /// 모터축 각도(원시 진단값, count 파생). 로드휠 부호 변환을 적용하지 않는다

@@ -368,12 +368,9 @@ void SteeringActuatorNode::controlTick()
     }
   }
 
-  commanded_steering_rate_deg_s_ = 0.0;
   if (state_ == SteeringState::ACTIVE && movement_target_valid_ && !entered_active_this_tick) {
-    const double previous = commanded_wheel_angle_deg_;
     commanded_wheel_angle_deg_ = rateLimit(
-      previous, target_wheel_angle_deg_, max_steering_rate_deg_s_, dt);
-    commanded_steering_rate_deg_s_ = (commanded_wheel_angle_deg_ - previous) / dt;
+      commanded_wheel_angle_deg_, target_wheel_angle_deg_, max_steering_rate_deg_s_, dt);
     corrected_wheel_angle_deg_ = converter_.clampWheelDeg(
       tracking_controller_.update(
         commanded_wheel_angle_deg_, actual_wheel_angle_deg_, dt));
@@ -460,9 +457,6 @@ void SteeringActuatorNode::publishState(
     static_cast<float>(tracking_controller_.errorDeg() * kDegToCanonicalRad);
   status.tracking_correction_rad =
     static_cast<float>(tracking_controller_.correctionDeg() * kDegToCanonicalRad);
-  // 명령각의 변화율이다. 모터가 실제로 낸 각속도가 아니고 ACTIVE 밖에서는 0이다.
-  status.steering_rate_radps =
-    static_cast<float>(commanded_steering_rate_deg_s_ * kDegToCanonicalRad);
   status.motor_position_count = motor.motor_position_count;
   // 모터축 원시 진단값 — 로드휠 부호 변환을 적용하지 않는다
   status.motor_angle_deg =

@@ -2,6 +2,6 @@ generated_by=firmware/tools/regen_microros.sh
 ros_distro=humble
 docker_image=microros/micro_ros_static_library_builder@sha256:e291f74890e81b31eb1d70731cb79b2d767dd585269325031effc72952b24b9d
 micro_ros_stm32cubemx_utils=bd531b273c1bcd070b3143c5642128ec75a6f04e
-kaiev26_msgs=2c2102d7b9684cffa79a05d633b6c21efc2c30e6
+kaiev26_msgs=bb1c271fb179073fc492a04e640d72cc447b5908
 kaiev26_msgs_source=https://github.com/TeamKAI-DL/kaiev26_msgs.git
 mcu_cflags=-mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -ffunction-sections -fdata-sections -Os -g0

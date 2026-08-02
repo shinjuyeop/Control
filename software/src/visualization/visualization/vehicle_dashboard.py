@@ -220,7 +220,6 @@ if QtWidgets is not None and pg is not None:
                         ('Corrected angle', 'corrected_steering'),
                         ('Actual angle', 'actual_steering'),
                         ('Tracking error', 'tracking_error'),
-                        ('Steering rate', 'steering_rate'),
                         ('State', 'steering_state'),
                         ('Disable reason', 'steering_reason'),
                         ('Enabled commanded', 'enabled_commanded'),
@@ -552,7 +551,6 @@ if QtWidgets is not None and pg is not None:
                     'corrected_steering',
                     'actual_steering',
                     'tracking_error',
-                    'steering_rate',
                     'steering_state',
                     'steering_reason',
                     'enabled_commanded',
@@ -613,14 +611,6 @@ if QtWidgets is not None and pg is not None:
                         else NA
                     ),
                 )
-            self._set(
-                'steering_rate',
-                (
-                    f'{rad_to_deg(steering.steering_rate_radps):.2f} °/s'
-                    if steering.feedback_valid
-                    else NA
-                ),
-            )
             self._set(
                 'steering_state',
                 steering_state_text(steering.state),

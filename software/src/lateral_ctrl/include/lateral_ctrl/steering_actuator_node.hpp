@@ -70,7 +70,6 @@ private:
   double commanded_wheel_angle_deg_{0.0};
   double corrected_wheel_angle_deg_{0.0};
   double actual_wheel_angle_deg_{0.0};
-  double commanded_steering_rate_deg_s_{0.0};
   double max_steering_rate_deg_s_{60.0};
   double tracking_error_warning_deg_{1.0};
   double tracking_error_fault_deg_{3.0};
