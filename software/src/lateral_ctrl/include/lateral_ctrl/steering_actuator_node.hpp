@@ -38,6 +38,10 @@ private:
   void enterWaitCommand(SteeringDisableReason reason = SteeringDisableReason::NONE);
   bool tryEnterActiveFromPendingCommand(std::chrono::steady_clock::time_point now);
   void publishState(double feedback_age_ms, double mode_age_ms, double steer_age_ms);
+  // 버스를 열고 조회 프레임을 보내 상태를 발행하는 데까지가 canLinkEnabled의 범위다.
+  // 모터를 실제로 움직이는 enable/disable/position 프레임은 outputArmed여야 나간다.
+  // 벤치 관측은 hardware_can_enabled만 켜서 읽기 전용으로 돌린다.
+  bool canLinkEnabled() const { return hardware_can_enabled_; }
   bool outputArmed() const { return hardware_can_enabled_ && actuator_output_enabled_; }
 
   std::unique_ptr<KeyaCanDriver> can_driver_;
@@ -66,7 +70,7 @@ private:
   double commanded_wheel_angle_deg_{0.0};
   double corrected_wheel_angle_deg_{0.0};
   double actual_wheel_angle_deg_{0.0};
-  double steering_rate_deg_s_{0.0};
+  double commanded_steering_rate_deg_s_{0.0};
   double max_steering_rate_deg_s_{60.0};
   double tracking_error_warning_deg_{1.0};
   double tracking_error_fault_deg_{3.0};

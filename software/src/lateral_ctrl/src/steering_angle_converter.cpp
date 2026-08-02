@@ -41,7 +41,10 @@ double SteeringAngleConverter::motorToWheelDeg(double motor_deg) const
   const double normalized = motor_deg / direction_sign_;
   if (std::abs(normalized) < 1e-12) return 0.0;
   const double magnitude = std::abs(normalized);
-  return clampWheelDeg(std::copysign(a_ * magnitude * magnitude + b_ * magnitude + c_, normalized));
+  // 측정 경로에는 wheel_limit_deg를 걸지 않는다. 그 값은 명령을 제한하는 한계이지
+  // 바퀴가 실제로 놓일 수 있는 위치의 한계가 아니다. 여기에 상한을 씌우면 한계를
+  // 넘은 실제 각도가 한계값으로 보고되어 추종 오차가 실제보다 작게 나온다.
+  return std::copysign(a_ * magnitude * magnitude + b_ * magnitude + c_, normalized);
 }
 
 int32_t SteeringAngleConverter::motorDegToCount(double motor_deg) const

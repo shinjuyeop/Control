@@ -83,20 +83,23 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
   enabled_pub_ = create_publisher<std_msgs::msg::Bool>(enabled_topic, 10);
 
   can_driver_ = std::make_unique<KeyaCanDriver>(can_interface, static_cast<uint8_t>(node_id));
-  if (outputArmed()) {
-    if (!can_driver_->open()) {
-      RCLCPP_ERROR(get_logger(), "Failed to open SocketCAN interface '%s'", can_interface.c_str());
-    } else {
-      can_driver_->sendDisable();
-      RCLCPP_WARN(
-        get_logger(),
-        "HARDWARE OUTPUT ARMED: hardware_can_enabled and actuator_output_enabled are both true");
-    }
+  if (!canLinkEnabled()) {
+    RCLCPP_WARN(
+      get_logger(),
+      "CAN link closed. Set hardware_can_enabled=true to observe the motor, and "
+      "actuator_output_enabled=true as well to permit CAN actuation.");
+  } else if (!can_driver_->open()) {
+    RCLCPP_ERROR(get_logger(), "Failed to open SocketCAN interface '%s'", can_interface.c_str());
+  } else if (outputArmed()) {
+    can_driver_->sendDisable();
+    RCLCPP_WARN(
+      get_logger(),
+      "HARDWARE OUTPUT ARMED: hardware_can_enabled and actuator_output_enabled are both true");
   } else {
     RCLCPP_WARN(
       get_logger(),
-      "Motor output disarmed. Set BOTH hardware_can_enabled=true and "
-      "actuator_output_enabled=true to permit CAN actuation.");
+      "READ-ONLY: polling the motor and publishing status only. No enable, disable or "
+      "position frame is sent. Set actuator_output_enabled=true to permit CAN actuation.");
   }
   previous_tick_ = std::chrono::steady_clock::now();
   control_timer_ = create_wall_timer(
@@ -107,7 +110,7 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
 SteeringActuatorNode::~SteeringActuatorNode()
 {
   discardAllSteeringCommands();
-  if (can_driver_ && can_driver_->isOpen()) can_driver_->sendDisable();
+  if (outputArmed() && can_driver_ && can_driver_->isOpen()) can_driver_->sendDisable();
 }
 
 void SteeringActuatorNode::onCommand(const kaiev26_msgs::msg::ActuatorCommand::SharedPtr input)
@@ -234,6 +237,14 @@ bool SteeringActuatorNode::tryEnterActiveFromPendingCommand(
   {
     return false;
   }
+  if (!outputArmed()) {
+    // 읽기 전용에서는 ACTIVE로 올라가지 않는다. 받아들일 만한 명령이 와 있는데도
+    // 출력이 잠겨 있다는 사실만 알리고, 명령은 pending으로 남겨 status에 드러낸다.
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 5000,
+      "Steering command held: motor output is not armed (read-only)");
+    return false;
+  }
   commanded_wheel_angle_deg_ = actual_wheel_angle_deg_;
   corrected_wheel_angle_deg_ = actual_wheel_angle_deg_;
   target_wheel_angle_deg_ = pending_target_wheel_angle_deg_;
@@ -357,12 +368,12 @@ void SteeringActuatorNode::controlTick()
     }
   }
 
-  steering_rate_deg_s_ = 0.0;
+  commanded_steering_rate_deg_s_ = 0.0;
   if (state_ == SteeringState::ACTIVE && movement_target_valid_ && !entered_active_this_tick) {
     const double previous = commanded_wheel_angle_deg_;
     commanded_wheel_angle_deg_ = rateLimit(
       previous, target_wheel_angle_deg_, max_steering_rate_deg_s_, dt);
-    steering_rate_deg_s_ = (commanded_wheel_angle_deg_ - previous) / dt;
+    commanded_steering_rate_deg_s_ = (commanded_wheel_angle_deg_ - previous) / dt;
     corrected_wheel_angle_deg_ = converter_.clampWheelDeg(
       tracking_controller_.update(
         commanded_wheel_angle_deg_, actual_wheel_angle_deg_, dt));
@@ -372,7 +383,7 @@ void SteeringActuatorNode::controlTick()
     }
   } else {
     tracking_controller_.reset();
-    if (feedback_valid && can_driver_->isOpen()) {
+    if (outputArmed() && feedback_valid && can_driver_->isOpen()) {
       const int32_t actual_count =
         converter_.motorDegToCount(converter_.wheelToMotorDeg(actual_wheel_angle_deg_));
       can_driver_->sendPositionCount(actual_count);
@@ -449,8 +460,9 @@ void SteeringActuatorNode::publishState(
     static_cast<float>(tracking_controller_.errorDeg() * kDegToCanonicalRad);
   status.tracking_correction_rad =
     static_cast<float>(tracking_controller_.correctionDeg() * kDegToCanonicalRad);
+  // 명령각의 변화율이다. 모터가 실제로 낸 각속도가 아니고 ACTIVE 밖에서는 0이다.
   status.steering_rate_radps =
-    static_cast<float>(steering_rate_deg_s_ * kDegToCanonicalRad);
+    static_cast<float>(commanded_steering_rate_deg_s_ * kDegToCanonicalRad);
   status.motor_position_count = motor.motor_position_count;
   // 모터축 원시 진단값 — 로드휠 부호 변환을 적용하지 않는다
   status.motor_angle_deg =

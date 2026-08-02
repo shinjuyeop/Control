@@ -5,36 +5,43 @@ KEYA KY170DJD01005-08G-V1 스티어링 모터를 Torque control 모드로 두고
 
 ## 사용 노드
 
-- `steering_feedback_node` — CAN heartbeat(`0x07000001`)를 읽어 `/ctrl/steer`(캘리브레이션 다항식으로
-  변환된 wheel 각도, deg), **`/ctrl/steer_handle_raw`(다항식 변환 전, 부호만 보정한 핸들/모터축 raw
-  각도, deg, 360 count/turn)**, **`/ctrl/steer_handle_hires`(같은 부호 규약이지만 legacy 프로토콜의
-  Encoder count value query를 50ms마다 별도로 쏴서 받는 10000 count/turn 고정밀 값, deg)**,
-  `/ctrl/steer_motor_rpm`, `/ctrl/steer_motor_current`(실측 전류, A), `/ctrl/steer_fault`(비트마스크)를
-  퍼블리시
-  
+- `steering_actuator_node`(읽기 전용) — `hardware_can_enabled:=true`,
+  `actuator_output_enabled:=false`로 띄우면 버스를 열어 조회 프레임만 보내고 `/steering/status`를
+  발행한다. enable/disable/position 프레임은 한 장도 나가지 않으므로 아래 측정 노드의 torque 명령과
+  충돌하지 않는다. 측정에 쓰는 필드는 `motor_angle_deg`(legacy 프로토콜의 Encoder count value query
+  기반, 10000 count/turn = 0.036°/count, 캘리브레이션 다항식과 `direction_sign`을 거치지 않은 모터축
+  원시 각도), `motor_current_a`(드라이버 실측 전류, A), 값이 살아 있는지 보는 `feedback_valid`.
+
 - `deadzone_measure_node` — torque cmd를 0부터 계단식으로 올리면서, 각 단계를 `step_hold_ms`만큼
-  유지한 뒤 `angle_topic`(기본 `/ctrl/steer`, 정밀 측정 시 `/ctrl/steer_handle_hires` 권장) 각도가 그
-  시작 시점 대비 조금이라도 달라졌는지 확인. 안 바뀌면 다음 단계로, 바뀌면 그 순간의 torque cmd와
-  **그 순간의 실측 전류**(`/ctrl/steer_motor_current` 구독)를 데드존 판정값으로 로그에 남기고 정지 +
-  disable.
+  유지한 뒤 `motor_angle_deg`가 그 시작 시점 대비 조금이라도 달라졌는지 확인. 안 바뀌면 다음 단계로,
+  바뀌면 그 순간의 torque cmd와 **그 순간의 실측 전류**를 데드존 판정값으로 로그에 남기고 정지 +
+  disable. 구독 토픽은 `status_topic`(기본 `/steering/status`) 하나다.
 
-### raw_handle을 기준으로 삼기로 함
+이전에는 `steering_feedback_node`가 `/ctrl/steer` 계열 토픽으로 같은 값을 따로 발행했다. 이 노드는
+읽기 전용 모드가 같은 일을 하게 되면서 삭제했다. 아래 기록에 나오는 `/ctrl/*` 토픽 이름은 당시
+그대로 남겨 둔 것이다.
 
-기계팀에서 받은 캘리브레이션 다항식(`poly_right`, 핸들각→wheel각 변환)이 정확한지 검증이 안 된
-상태라, **인지/판단 파트에는 이 다항식을 거치지 않은 `/ctrl/steer_handle_raw`(raw handle 각도)를
-기준으로 전달하기로 함.** 데드존 측정도 이 값을 기준으로 봐야 다항식 오차와 무관하게 순수 모터/기구
-특성만 볼 수 있음.
+### 모터축 원시 각도를 기준으로 삼기로 함
+
+기계팀에서 받은 캘리브레이션 다항식(핸들각→wheel각 변환)이 정확한지 검증이 안 된 상태라,
+**인지/판단 파트에는 이 다항식을 거치지 않은 모터축 원시 각도를 기준으로 전달하기로 함.** 데드존
+측정도 이 값을 기준으로 봐야 다항식 오차와 무관하게 순수 모터/기구 특성만 볼 수 있음.
+
+다만 `motor_angle_deg`에는 `direction_sign`(-1)이 적용돼 있지 않다. 아래 "부호 규약 확인(ISO8855)"은
+부호를 반전한 옛 `/ctrl/steer_handle_hires` 기준으로 적은 기록이라, 같은 실험을 `motor_angle_deg`로
+다시 보면 `ramp_direction`과 각도 증감의 부호 관계가 반대로 나온다. 방향이 바뀐 게 아니라 보고 있는
+축이 다른 것이다.
 
 ## 실행 방법
 
 ```bash
-# 터미널1
-ros2 run lateral_ctrl steering_feedback_node can0
+# 터미널1 — 읽기 전용. 조회 프레임만 나가고 모터는 건드리지 않는다
+ros2 launch lateral_ctrl steering_actuator.launch.py \
+    can_interface:=can0 actuator_output_enabled:=false
 
-# 터미널2 (노드는 한 번만 띄우고 계속 재사용) — hires 기준 정밀 측정
+# 터미널2 (노드는 한 번만 띄우고 계속 재사용)
 ros2 run lateral_ctrl deadzone_measure_node can0 --ros-args \
-    -p step_hold_ms:=300 -p ramp_direction:=1 \
-    -p angle_topic:=/ctrl/steer_handle_hires
+    -p step_hold_ms:=300 -p ramp_direction:=1
 
 # 터미널3 — 반복 측정 시 노드 재시작 없이 이걸로 재실행
 ros2 topic pub /deadzone/start std_msgs/msg/UInt8 "{data: 1}" --once
@@ -45,9 +52,8 @@ ros2 param set /deadzone_measure_node ramp_direction -1
 
 ## 판정 방식
 
-- 1 raw encoder count(360 count/turn, 데이터시트 4.3.2절 heartbeat 규격) 단위로 위치가 정수라서,
-  안 움직이면 `/ctrl/steer` 값이 완전히 동일하게 나온다는 점을 이용 — threshold 없이 "값이 조금이라도
-  달라졌는가"만으로 판정
+- 인코더 카운트가 정수라서 안 움직이면 각도값이 완전히 동일하게 나온다는 점을 이용 — threshold 없이
+  "값이 조금이라도 달라졌는가"만으로 판정. 지금 기준인 `motor_angle_deg`는 0.036°/count다
 - `ramp_period_ms`(20ms, CAN watchdog keep-alive 겸용)와 `step_hold_ms`(300ms, 판정 대기 시간)는
   분리되어 있음
 

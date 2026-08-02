@@ -65,4 +65,4 @@
 
 - 0-1 byte: signed int16, big-endian
 - 이 교육용 시뮬레이터에서는 **handle angle degree ≈ raw count** 로 보냄
-- `steering_feedback_node` 의 변환식이 적용되면 최종 wheel angle이 나옴
+- `lateral_ctrl`의 캘리브레이션 다항식이 적용되면 최종 wheel angle이 나옴
