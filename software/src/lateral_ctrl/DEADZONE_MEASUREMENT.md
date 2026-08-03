@@ -204,3 +204,52 @@ breakaway를 잡은 것으로, 1차(360 count/turn, 0.231°/count) 대비 약 6�
   남기는 기능을 추가함. **벤치(무부하) 상태에선 의미가 제한적** — 조향 랙/타이어 부하가 없으면 각도가
   한 값에 정착하지 않고 계속 돌기만 함. 실차에 장착해서 실제 부하(랙 마찰, 정지 조향 시 타이어-지면
   마찰) 하에서 재측정해야 함. 아직 미실시.
+
+## 2026-08-03 재연결 읽기 전용 확인
+
+실물 KEYA를 다시 연결해 출력이 잠긴 상태에서 CAN 통신과 측정 경로만 확인했다. 이
+호스트에서 KEYA는 `can1`(PCAN-USB), 250 kbit/s였으며 `can0`은 구동 계통용
+CANable이었다. 인터페이스 번호는 USB 열거 순서에 따라 바뀔 수 있으므로 다음 벤치에서도
+실제 어댑터를 먼저 식별해야 한다.
+
+```bash
+ros2 run lateral_ctrl steering_actuator_node --ros-args \
+  -p can_interface:=can1 \
+  -p hardware_can_enabled:=true \
+  -p actuator_output_enabled:=false
+```
+
+이 세션에서는 enable, disable, position, torque 프레임을 보내지 않았다. 위치·fault·속도·
+전류·전압·온도 query만 보냈고, 종료 뒤 노드와 Agent 프로세스가 모두 사라진 것을 확인했다.
+
+### 실측 결과
+
+| 항목 | 결과 |
+|---|---|
+| KEYA heartbeat | `0x07000001`, 100구간 평균 `20.100 ms` |
+| heartbeat 최소/최대 간격 | `19.852 ms` / `20.342 ms` |
+| SDO 위치 query 왕복 | 20회 평균 `1.393 ms`, 최소 `1.321 ms`, 최대 `1.460 ms` |
+| heartbeat 위치 | `FFFA` = signed `-6`, 360 count/turn 기준 약 `-6°` |
+| SDO 위치 | `FFFFFF53` = signed `-173`, 10000 count/turn 기준 `-6.228°` |
+| 모터 상태 | Disable, `0 rpm`, `0 A`, `11 V`, `34°C` |
+| fault/status | `0x0001`; bit 0은 fault가 아니라 Disable 상태 |
+
+heartbeat와 SDO 위치는 각자 해상도로 환산했을 때 약 `0.228°` 차이로 일치했다.
+따라서 360 count/turn heartbeat와 10000 count/turn SDO 위치 경로가 모두 현재 장치에서
+동작한다. MANUAL/Disable 상태에서도 SDO 위치 응답과 `/steering/status.feedback_valid=true`는
+확인했지만, 축을 손으로 움직이며 count가 연속적으로 따라오는지와 락투락 폭은 측정하지 않았다.
+
+### 아직 확인하지 못한 경계
+
+- KEYA 작업 모드 Parameter 0020은 CAN heartbeat나 현재 SDO query로 확인할 수 없다.
+  제조사 문서의 RS232 상태 질의 `ED 00 00 00 00 00 00 00`이 필요하다. 당시 호스트에는
+  KEYA용 USB-RS232가 없고 STM ST-LINK의 `/dev/ttyACM0/1`만 있었다.
+- 데드존 측정 전에는 RS232 설정에서 `0020=2`(Torque)를 확인하고, 측정 뒤 반드시
+  `0020=3`(Absolute position)으로 복귀시켜 Burn 및 전원 재기동해야 한다.
+- Parameter 0034를 `5 ms`로 바꾼 heartbeat 주기 시험도 같은 설정 연결이 필요하다.
+- 전원 재인가 위치 유지, 락투락 count 폭, CW/CCW 데드존은 이번 세션에서 수행하지 않았다.
+- 상태등은 CAN상 추가 fault 없이 Disable만 보고했다. 눈으로 본 빨강/보라 조합은 파란
+  status 점멸과 다른 표시등이 겹쳐 보인 것일 수 있으나, 사진이나 분리 관찰 없이 확정하지 않는다.
+
+이 확인 뒤 KEYA는 벤치에서 분리하기로 했다. 다음 재연결 전까지는 위 미확인 항목을
+완료로 취급하지 않는다.
