@@ -1,0 +1,17 @@
+stm_test_bridge:
+  ros__parameters:
+    serial_port: "/dev/serial/by-id/REPLACE_WITH_STM_TEST"
+    baud_rate: 115200
+    status_poll_hz: 5.0
+    command_timeout_sec: 0.5
+    retry_count: 2
+    reconnect_interval_sec: 1.0
+
+hil_command_generator:
+  ros__parameters:
+    enabled: false
+    publish_rate_hz: 20.0
+    speed_target_mps: 0.0
+    steering_target_rad: 0.0
+    brake_engage: false
+    command_topic: "/vehicle/command"

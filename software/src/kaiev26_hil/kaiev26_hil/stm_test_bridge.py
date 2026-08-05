@@ -1,0 +1,304 @@
+"""ROS 2 bridge between STM_TEST USB serial and shared HIL interfaces."""
+
+from __future__ import annotations
+
+from dataclasses import replace
+import queue
+import threading
+import time
+from typing import Callable
+
+from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+import rclpy
+from rclpy.executors import ExternalShutdownException
+from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from std_msgs.msg import Bool, String
+from std_srvs.srv import Trigger
+
+from .models import HilDesiredState
+from .protocol import desired_commands, desired_status_mismatches, update_desired, validate_command
+from .transport import SerialCommandClient
+
+
+class BridgeWorker(threading.Thread):
+    """Single owner of serial I/O; emits immutable events to the ROS thread."""
+
+    def __init__(
+        self,
+        *,
+        serial_port: str,
+        baud_rate: int,
+        status_poll_hz: float,
+        command_timeout_sec: float,
+        retry_count: int,
+        reconnect_interval_sec: float,
+        event_callback: Callable[[str, object], None],
+        client_factory=SerialCommandClient,
+    ) -> None:
+        super().__init__(name="stm-test-serial", daemon=True)
+        self.serial_port = serial_port
+        self.baud_rate = baud_rate
+        self.status_period = 1.0 / max(0.1, status_poll_hz)
+        self.command_timeout_sec = command_timeout_sec
+        self.retry_count = max(0, retry_count)
+        self.reconnect_interval_sec = max(0.1, reconnect_interval_sec)
+        self.event_callback = event_callback
+        self.client_factory = client_factory
+        self.commands: queue.Queue[str] = queue.Queue()
+        self._stop_event = threading.Event()
+        self._desired_lock = threading.Lock()
+        self._desired = HilDesiredState()
+        self._connected = False
+        self._client = None
+
+    def enqueue(self, command: str) -> None:
+        self.commands.put(validate_command(command))
+
+    def replace_desired(self, desired: HilDesiredState, *, enqueue: bool = True) -> None:
+        with self._desired_lock:
+            self._desired = replace(desired)
+        if enqueue:
+            for command in desired_commands(desired):
+                self.enqueue(command)
+        self.event_callback("desired", replace(desired))
+
+    def desired_snapshot(self) -> HilDesiredState:
+        with self._desired_lock:
+            return replace(self._desired)
+
+    def stop(self) -> None:
+        self._stop_event.set()
+
+    def _set_connected(self, connected: bool, detail: str = "") -> None:
+        if connected != self._connected or detail:
+            self._connected = connected
+            self.event_callback("connection", (connected, detail))
+
+    def _disconnect(self, reason: str) -> None:
+        if self._client is not None:
+            self._client.close()
+        self._client = None
+        self._set_connected(False, reason)
+
+    def _request(self, command: str):
+        last_exception = None
+        for _ in range(self.retry_count + 1):
+            try:
+                response = self._client.request(command)
+                if response.kind == "error":
+                    return response
+                return response
+            except (OSError, ConnectionError, TimeoutError) as exc:
+                last_exception = exc
+        raise last_exception
+
+    def _apply_desired_after_connect(self) -> None:
+        for command in desired_commands(self.desired_snapshot()):
+            response = self._request(command)
+            self.event_callback("result", response.raw)
+            if response.kind != "ok":
+                raise IOError(f"desired-state replay rejected: {response.raw}")
+
+    def _handle_command(self, command: str) -> None:
+        response = self._request(command)
+        if response.kind == "status":
+            self.event_callback("status", response.status)
+        else:
+            self.event_callback("result", response.raw)
+            if response.kind == "ok":
+                with self._desired_lock:
+                    update_desired(self._desired, command)
+                    snapshot = replace(self._desired)
+                self.event_callback("desired", snapshot)
+
+    def run(self) -> None:
+        next_reconnect = 0.0
+        next_status = time.monotonic()
+        while not self._stop_event.is_set():
+            now = time.monotonic()
+            if self._client is None:
+                if now < next_reconnect:
+                    self._stop_event.wait(min(0.1, next_reconnect - now))
+                    continue
+                try:
+                    self._client = self.client_factory(
+                        self.serial_port,
+                        self.baud_rate,
+                        self.command_timeout_sec,
+                    )
+                    self._client.open()
+                    self._set_connected(True, self.serial_port)
+                    self._apply_desired_after_connect()
+                    next_status = time.monotonic()
+                except Exception as exc:
+                    self._disconnect(str(exc))
+                    next_reconnect = time.monotonic() + self.reconnect_interval_sec
+                    continue
+
+            try:
+                timeout = max(0.0, min(0.1, next_status - time.monotonic()))
+                try:
+                    command = self.commands.get(timeout=timeout)
+                except queue.Empty:
+                    command = None
+                if command is not None:
+                    self._handle_command(command)
+                if time.monotonic() >= next_status:
+                    self._handle_command("STATUS")
+                    next_status = time.monotonic() + self.status_period
+            except Exception as exc:
+                self._disconnect(str(exc))
+                next_reconnect = time.monotonic() + self.reconnect_interval_sec
+        self._disconnect("stopped")
+
+
+class StmTestBridge(Node):
+    def __init__(self) -> None:
+        super().__init__("stm_test_bridge")
+        self.declare_parameter("serial_port", "/dev/serial/by-id/REPLACE_WITH_STM_TEST")
+        self.declare_parameter("baud_rate", 115200)
+        self.declare_parameter("status_poll_hz", 5.0)
+        self.declare_parameter("command_timeout_sec", 0.5)
+        self.declare_parameter("retry_count", 2)
+        self.declare_parameter("reconnect_interval_sec", 1.0)
+
+        qos = QoSProfile(depth=1)
+        qos.reliability = ReliabilityPolicy.RELIABLE
+        qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
+        self.status_pub = self.create_publisher(String, "/hil/status", 10)
+        self.desired_pub = self.create_publisher(String, "/hil/desired_state", qos)
+        self.connected_pub = self.create_publisher(Bool, "/hil/connected", qos)
+        self.result_pub = self.create_publisher(String, "/hil/command_result", 20)
+        self.diagnostic_pub = self.create_publisher(DiagnosticArray, "/diagnostics", 10)
+        self.create_subscription(String, "/hil/command", self._on_command, 20)
+        self.create_service(Trigger, "/hil/reset_safe_state", self._reset_safe_state)
+        self.create_service(Trigger, "/hil/refresh_status", self._refresh_status)
+        self.create_service(Trigger, "/hil/reapply_desired_state", self._reapply_desired)
+
+        self._events: queue.Queue[tuple[str, object]] = queue.Queue()
+        self._connected = False
+        self._connection_detail = "not started"
+        self._last_status_monotonic = None
+        self._last_status = None
+        self._worker = BridgeWorker(
+            serial_port=str(self.get_parameter("serial_port").value),
+            baud_rate=int(self.get_parameter("baud_rate").value),
+            status_poll_hz=float(self.get_parameter("status_poll_hz").value),
+            command_timeout_sec=float(self.get_parameter("command_timeout_sec").value),
+            retry_count=int(self.get_parameter("retry_count").value),
+            reconnect_interval_sec=float(self.get_parameter("reconnect_interval_sec").value),
+            event_callback=lambda kind, payload: self._events.put((kind, payload)),
+        )
+        self._worker.start()
+        self.create_timer(0.05, self._drain_events)
+        self.create_timer(1.0, self._publish_diagnostics)
+        self._publish_desired(self._worker.desired_snapshot())
+
+    def _publish_text(self, publisher, value: str) -> None:
+        message = String()
+        message.data = value
+        publisher.publish(message)
+
+    def _publish_desired(self, desired: HilDesiredState) -> None:
+        self._publish_text(self.desired_pub, desired.to_json())
+
+    def _on_command(self, message: String) -> None:
+        try:
+            self._worker.enqueue(message.data)
+        except ValueError as exc:
+            self._publish_text(self.result_pub, f"ERR validation: {exc}")
+
+    def _reset_safe_state(self, request, response):
+        del request
+        self._worker.replace_desired(HilDesiredState(), enqueue=True)
+        response.success = True
+        response.message = "safe state queued; it will replay after reconnect if disconnected"
+        return response
+
+    def _refresh_status(self, request, response):
+        del request
+        self._worker.enqueue("STATUS")
+        response.success = True
+        response.message = "STATUS queued"
+        return response
+
+    def _reapply_desired(self, request, response):
+        del request
+        for command in desired_commands(self._worker.desired_snapshot()):
+            self._worker.enqueue(command)
+        response.success = True
+        response.message = "desired state replay queued"
+        return response
+
+    def _drain_events(self) -> None:
+        while True:
+            try:
+                kind, payload = self._events.get_nowait()
+            except queue.Empty:
+                break
+            if kind == "connection":
+                self._connected, self._connection_detail = payload
+                message = Bool()
+                message.data = self._connected
+                self.connected_pub.publish(message)
+            elif kind == "status":
+                self._last_status_monotonic = time.monotonic()
+                self._last_status = payload
+                self._publish_text(self.status_pub, payload.to_json())
+            elif kind == "result":
+                self._publish_text(self.result_pub, str(payload))
+            elif kind == "desired":
+                self._publish_desired(payload)
+
+    def _publish_diagnostics(self) -> None:
+        age = None if self._last_status_monotonic is None else time.monotonic() - self._last_status_monotonic
+        status = DiagnosticStatus()
+        status.name = "STM_TEST serial bridge"
+        status.hardware_id = str(self.get_parameter("serial_port").value)
+        mismatches = []
+        if self._last_status is not None:
+            mismatches = desired_status_mismatches(
+                self._worker.desired_snapshot(), self._last_status
+            )
+        if not self._connected:
+            status.level = DiagnosticStatus.ERROR
+            status.message = "disconnected"
+        elif mismatches:
+            status.level = DiagnosticStatus.WARN
+            status.message = "connected; desired state does not match STATUS"
+        else:
+            status.level = DiagnosticStatus.OK
+            status.message = "connected"
+        status.values = [
+            KeyValue(key="serial_port", value=status.hardware_id),
+            KeyValue(key="detail", value=self._connection_detail),
+            KeyValue(key="last_status_age_sec", value="unknown" if age is None else f"{age:.3f}"),
+            KeyValue(key="queued_commands", value=str(self._worker.commands.qsize())),
+            KeyValue(
+                key="desired_state_mismatches",
+                value="; ".join(mismatches) if mismatches else "none",
+            ),
+        ]
+        array = DiagnosticArray()
+        array.header.stamp = self.get_clock().now().to_msg()
+        array.status = [status]
+        self.diagnostic_pub.publish(array)
+
+    def destroy_node(self):
+        self._worker.stop()
+        self._worker.join(timeout=2.0)
+        return super().destroy_node()
+
+
+def main(args=None) -> None:
+    rclpy.init(args=args)
+    node = StmTestBridge()
+    try:
+        rclpy.spin(node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
