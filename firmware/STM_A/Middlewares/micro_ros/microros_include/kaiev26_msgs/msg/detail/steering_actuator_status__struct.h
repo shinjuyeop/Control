@@ -152,14 +152,17 @@ enum
 /**
   * 조향 액추에이터 진단 status (D-10·D-11). 실차 lateral_ctrl의
   * SteeringActuatorStatus(533a3fb9) 설계를 계승하되 canonical 단위로 정리:
-  * 각도는 rad·좌회전 양수, 각속도는 rad/s. deg·부호 반전은 실차 어댑터 내부에서만.
+  * 바퀴각은 rad·좌회전 양수. motor_angle_deg와 motor_speed_rpm은 KEYA 모터축 원시 진단값.
   * 실차 통합 시 lateral_ctrl 로컬 메시지를 삭제하고 이 메시지로 교체한다(D-15 SSOT).
  */
 typedef struct kaiev26_msgs__msg__SteeringActuatorStatus
 {
   std_msgs__msg__Header header;
+  /// STATE_* 상태 머신 현재값
   uint8_t state;
+  /// REASON_* 모터를 끈 이유. state가 ACTIVE면 REASON_NONE
   uint8_t disable_reason;
+  /// /drive/status의 mode를 그대로 받은 값
   uint8_t drive_mode;
   bool mode_received;
   bool mode_timeout;
@@ -181,24 +184,37 @@ typedef struct kaiev26_msgs__msg__SteeringActuatorStatus
   bool tracking_control_enabled;
   bool tracking_error_warning;
   bool tracking_error_fault;
+  /// 상위가 요청한 각. wheel_limit_deg로 클램프됨
   float target_wheel_angle_rad;
+  /// target에 max_steering_rate_deg_s 기울기 제한을 건 값
   float commanded_wheel_angle_rad;
   /// tracking PID 보정이 적용된 최종 명령각
   float corrected_wheel_angle_rad;
+  /// motor_position_count를 calibration 다항식으로 환산한 실측각. 명령 한계 클램프를 적용하지 않음
   float actual_wheel_angle_rad;
+  /// commanded - actual. tracking PID의 입력
   float tracking_error_rad;
+  /// tracking PID가 더한 보정량
   float tracking_correction_rad;
-  float steering_rate_radps;
+  /// SDO position query(10000 count/turn) 원시값. 영점은 KEYA 드라이버가 들고 있다
   int32_t motor_position_count;
   /// 모터축 각도(원시 진단값, count 파생). 로드휠 부호 변환을 적용하지 않는다
   float motor_angle_deg;
+  /// heartbeat 또는 speed query 중 나중에 도착한 값
   float motor_speed_rpm;
+  /// 작동 전류. query 경로는 1바이트라 255 A에서 포화한다
   float motor_current_a;
+  /// 드라이버 공급 전압. voltage query에서만 갱신
   float bus_voltage_v;
+  /// 드라이버 온도. temperature query에서만 갱신
   float driver_temperature_c;
+  /// KEYA 에러 비트마스크. bit0은 fault가 아니라 Enable(0)/Disable(1) 상태
   uint16_t fault_bits;
+  /// 마지막 position feedback 이후 경과. 미수신이면 inf
   float feedback_age_ms;
+  /// 마지막 /drive/status 수신 이후 경과. 미수신이면 inf
   float mode_age_ms;
+  /// 마지막 조향 명령 수신 이후 경과. 미수신이면 inf
   float steer_command_age_ms;
 } kaiev26_msgs__msg__SteeringActuatorStatus;
 

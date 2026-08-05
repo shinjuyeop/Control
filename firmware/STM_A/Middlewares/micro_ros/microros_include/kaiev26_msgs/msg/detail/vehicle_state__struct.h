@@ -59,7 +59,7 @@ typedef struct kaiev26_msgs__msg__VehicleState
 {
   std_msgs__msg__Header header;
   float speed_mps;
-  /// 중앙 등가 조향각 추정치. 실차는 motor encoder 기반 추정만 가능하다.
+  /// 중앙 등가 조향각 추정치. 실차는 motor encoder 기반 추정만 가능하다
   float steering_rad;
   uint8_t gear;
   uint8_t mode;
