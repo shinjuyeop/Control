@@ -54,26 +54,41 @@ enum
 typedef struct kaiev26_msgs__msg__DriveActuatorStatus
 {
   std_msgs__msg__Header header;
+  /// MODE_MANUAL / MODE_AUTO. 물리 스위치
   uint8_t mode;
+  /// GEAR_FORWARD / GEAR_REVERSE. 물리 스위치
   uint8_t gear;
+  /// 운전자 가속페달 0~100%. MANUAL 상전류 지령의 원천
+  uint8_t pedal_percent;
+  /// 데드밴드 클램핑 전 ADC 원시값. 재보정 후 로그 재계산용
+  int32_t pedal_adc_raw;
   /// 모터 RPM 기반 추정 차량 속도
   float speed_mps;
   float motor_rpm;
   bool tractive_commanded;
-  /// 실차는 드라이버 RUN feedback 지원 확인 전까지 valid=false
+  /// 드라이버 RUN 상태 (Part II byte 2 bit0)
   bool tractive_feedback;
+  /// Part II 미수신 구간에서 false
   bool tractive_feedback_valid;
   bool stop_request;
   /// EZkontrol Part II가 보내는 24비트 fault 원본
   uint32_t fault_bits;
+  /// Part II 미수신 구간에서 false
   bool fault_bits_valid;
   /// Host 명령 수신 상태
   bool command_received;
   bool command_timeout;
   float command_age_ms;
+  /// STM_A가 EZkontrol로 내보낸 명령 (0x0C01EFD0 byte 0-1, byte 2-3).
+  /// 인코딩과 클램핑을 거친 뒤의 값이라 버스에 실제로 실린 값과 같다.
+  /// MANUAL(torque)에서 목표, AUTO(speed)에서 상한
+  float commanded_phase_current_a;
+  /// AUTO(speed)에서 목표, MANUAL(torque)에서 상한
+  float commanded_motor_rpm;
   /// EZkontrol status Part I (0x1801D0EF)
   float bus_voltage_v;
   float bus_current_a;
+  /// 드라이버가 실제로 흘린 상전류. 토크에 비례
   float phase_current_a;
   bool part1_valid;
   float part1_age_ms;
