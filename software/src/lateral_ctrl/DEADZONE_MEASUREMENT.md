@@ -5,36 +5,43 @@ KEYA KY170DJD01005-08G-V1 스티어링 모터를 Torque control 모드로 두고
 
 ## 사용 노드
 
-- `steering_feedback_node` — CAN heartbeat(`0x07000001`)를 읽어 `/ctrl/steer`(캘리브레이션 다항식으로
-  변환된 wheel 각도, deg), **`/ctrl/steer_handle_raw`(다항식 변환 전, 부호만 보정한 핸들/모터축 raw
-  각도, deg, 360 count/turn)**, **`/ctrl/steer_handle_hires`(같은 부호 규약이지만 legacy 프로토콜의
-  Encoder count value query를 50ms마다 별도로 쏴서 받는 10000 count/turn 고정밀 값, deg)**,
-  `/ctrl/steer_motor_rpm`, `/ctrl/steer_motor_current`(실측 전류, A), `/ctrl/steer_fault`(비트마스크)를
-  퍼블리시
-  
+- `steering_actuator_node`(읽기 전용) — `hardware_can_enabled:=true`,
+  `actuator_output_enabled:=false`로 띄우면 버스를 열어 조회 프레임만 보내고 `/steering/status`를
+  발행한다. enable/disable/position 프레임은 한 장도 나가지 않으므로 아래 측정 노드의 torque 명령과
+  충돌하지 않는다. 측정에 쓰는 필드는 `motor_angle_deg`(legacy 프로토콜의 Encoder count value query
+  기반, 10000 count/turn = 0.036°/count, 캘리브레이션 다항식과 `direction_sign`을 거치지 않은 모터축
+  원시 각도), `motor_current_a`(드라이버 실측 전류, A), 값이 살아 있는지 보는 `feedback_valid`.
+
 - `deadzone_measure_node` — torque cmd를 0부터 계단식으로 올리면서, 각 단계를 `step_hold_ms`만큼
-  유지한 뒤 `angle_topic`(기본 `/ctrl/steer`, 정밀 측정 시 `/ctrl/steer_handle_hires` 권장) 각도가 그
-  시작 시점 대비 조금이라도 달라졌는지 확인. 안 바뀌면 다음 단계로, 바뀌면 그 순간의 torque cmd와
-  **그 순간의 실측 전류**(`/ctrl/steer_motor_current` 구독)를 데드존 판정값으로 로그에 남기고 정지 +
-  disable.
+  유지한 뒤 `motor_angle_deg`가 그 시작 시점 대비 조금이라도 달라졌는지 확인. 안 바뀌면 다음 단계로,
+  바뀌면 그 순간의 torque cmd와 **그 순간의 실측 전류**를 데드존 판정값으로 로그에 남기고 정지 +
+  disable. 구독 토픽은 `status_topic`(기본 `/steering/status`) 하나다.
 
-### raw_handle을 기준으로 삼기로 함
+이전에는 `steering_feedback_node`가 `/ctrl/steer` 계열 토픽으로 같은 값을 따로 발행했다. 이 노드는
+읽기 전용 모드가 같은 일을 하게 되면서 삭제했다. 아래 기록에 나오는 `/ctrl/*` 토픽 이름은 당시
+그대로 남겨 둔 것이다.
 
-기계팀에서 받은 캘리브레이션 다항식(`poly_right`, 핸들각→wheel각 변환)이 정확한지 검증이 안 된
-상태라, **인지/판단 파트에는 이 다항식을 거치지 않은 `/ctrl/steer_handle_raw`(raw handle 각도)를
-기준으로 전달하기로 함.** 데드존 측정도 이 값을 기준으로 봐야 다항식 오차와 무관하게 순수 모터/기구
-특성만 볼 수 있음.
+### 모터축 원시 각도를 기준으로 삼기로 함
+
+기계팀에서 받은 캘리브레이션 다항식(핸들각→wheel각 변환)이 정확한지 검증이 안 된 상태라,
+**인지/판단 파트에는 이 다항식을 거치지 않은 모터축 원시 각도를 기준으로 전달하기로 함.** 데드존
+측정도 이 값을 기준으로 봐야 다항식 오차와 무관하게 순수 모터/기구 특성만 볼 수 있음.
+
+다만 `motor_angle_deg`에는 `direction_sign`(-1)이 적용돼 있지 않다. 아래 "부호 규약 확인(ISO8855)"은
+부호를 반전한 옛 `/ctrl/steer_handle_hires` 기준으로 적은 기록이라, 같은 실험을 `motor_angle_deg`로
+다시 보면 `ramp_direction`과 각도 증감의 부호 관계가 반대로 나온다. 방향이 바뀐 게 아니라 보고 있는
+축이 다른 것이다.
 
 ## 실행 방법
 
 ```bash
-# 터미널1
-ros2 run lateral_ctrl steering_feedback_node can0
+# 터미널1 — 읽기 전용. 조회 프레임만 나가고 모터는 건드리지 않는다
+ros2 launch lateral_ctrl steering_actuator.launch.py \
+    can_interface:=can0 actuator_output_enabled:=false
 
-# 터미널2 (노드는 한 번만 띄우고 계속 재사용) — hires 기준 정밀 측정
+# 터미널2 (노드는 한 번만 띄우고 계속 재사용)
 ros2 run lateral_ctrl deadzone_measure_node can0 --ros-args \
-    -p step_hold_ms:=300 -p ramp_direction:=1 \
-    -p angle_topic:=/ctrl/steer_handle_hires
+    -p step_hold_ms:=300 -p ramp_direction:=1
 
 # 터미널3 — 반복 측정 시 노드 재시작 없이 이걸로 재실행
 ros2 topic pub /deadzone/start std_msgs/msg/UInt8 "{data: 1}" --once
@@ -45,9 +52,8 @@ ros2 param set /deadzone_measure_node ramp_direction -1
 
 ## 판정 방식
 
-- 1 raw encoder count(360 count/turn, 데이터시트 4.3.2절 heartbeat 규격) 단위로 위치가 정수라서,
-  안 움직이면 `/ctrl/steer` 값이 완전히 동일하게 나온다는 점을 이용 — threshold 없이 "값이 조금이라도
-  달라졌는가"만으로 판정
+- 인코더 카운트가 정수라서 안 움직이면 각도값이 완전히 동일하게 나온다는 점을 이용 — threshold 없이
+  "값이 조금이라도 달라졌는가"만으로 판정. 지금 기준인 `motor_angle_deg`는 0.036°/count다
 - `ramp_period_ms`(20ms, CAN watchdog keep-alive 겸용)와 `step_hold_ms`(300ms, 판정 대기 시간)는
   분리되어 있음
 
@@ -198,3 +204,52 @@ breakaway를 잡은 것으로, 1차(360 count/turn, 0.231°/count) 대비 약 6�
   남기는 기능을 추가함. **벤치(무부하) 상태에선 의미가 제한적** — 조향 랙/타이어 부하가 없으면 각도가
   한 값에 정착하지 않고 계속 돌기만 함. 실차에 장착해서 실제 부하(랙 마찰, 정지 조향 시 타이어-지면
   마찰) 하에서 재측정해야 함. 아직 미실시.
+
+## 2026-08-03 재연결 읽기 전용 확인
+
+실물 KEYA를 다시 연결해 출력이 잠긴 상태에서 CAN 통신과 측정 경로만 확인했다. 이
+호스트에서 KEYA는 `can1`(PCAN-USB), 250 kbit/s였으며 `can0`은 구동 계통용
+CANable이었다. 인터페이스 번호는 USB 열거 순서에 따라 바뀔 수 있으므로 다음 벤치에서도
+실제 어댑터를 먼저 식별해야 한다.
+
+```bash
+ros2 run lateral_ctrl steering_actuator_node --ros-args \
+  -p can_interface:=can1 \
+  -p hardware_can_enabled:=true \
+  -p actuator_output_enabled:=false
+```
+
+이 세션에서는 enable, disable, position, torque 프레임을 보내지 않았다. 위치·fault·속도·
+전류·전압·온도 query만 보냈고, 종료 뒤 노드와 Agent 프로세스가 모두 사라진 것을 확인했다.
+
+### 실측 결과
+
+| 항목 | 결과 |
+|---|---|
+| KEYA heartbeat | `0x07000001`, 100구간 평균 `20.100 ms` |
+| heartbeat 최소/최대 간격 | `19.852 ms` / `20.342 ms` |
+| SDO 위치 query 왕복 | 20회 평균 `1.393 ms`, 최소 `1.321 ms`, 최대 `1.460 ms` |
+| heartbeat 위치 | `FFFA` = signed `-6`, 360 count/turn 기준 약 `-6°` |
+| SDO 위치 | `FFFFFF53` = signed `-173`, 10000 count/turn 기준 `-6.228°` |
+| 모터 상태 | Disable, `0 rpm`, `0 A`, `11 V`, `34°C` |
+| fault/status | `0x0001`; bit 0은 fault가 아니라 Disable 상태 |
+
+heartbeat와 SDO 위치는 각자 해상도로 환산했을 때 약 `0.228°` 차이로 일치했다.
+따라서 360 count/turn heartbeat와 10000 count/turn SDO 위치 경로가 모두 현재 장치에서
+동작한다. MANUAL/Disable 상태에서도 SDO 위치 응답과 `/steering/status.feedback_valid=true`는
+확인했지만, 축을 손으로 움직이며 count가 연속적으로 따라오는지와 락투락 폭은 측정하지 않았다.
+
+### 아직 확인하지 못한 경계
+
+- KEYA 작업 모드 Parameter 0020은 CAN heartbeat나 현재 SDO query로 확인할 수 없다.
+  제조사 문서의 RS232 상태 질의 `ED 00 00 00 00 00 00 00`이 필요하다. 당시 호스트에는
+  KEYA용 USB-RS232가 없고 STM ST-LINK의 `/dev/ttyACM0/1`만 있었다.
+- 데드존 측정 전에는 RS232 설정에서 `0020=2`(Torque)를 확인하고, 측정 뒤 반드시
+  `0020=3`(Absolute position)으로 복귀시켜 Burn 및 전원 재기동해야 한다.
+- Parameter 0034를 `5 ms`로 바꾼 heartbeat 주기 시험도 같은 설정 연결이 필요하다.
+- 전원 재인가 위치 유지, 락투락 count 폭, CW/CCW 데드존은 이번 세션에서 수행하지 않았다.
+- 상태등은 CAN상 추가 fault 없이 Disable만 보고했다. 눈으로 본 빨강/보라 조합은 파란
+  status 점멸과 다른 표시등이 겹쳐 보인 것일 수 있으나, 사진이나 분리 관찰 없이 확정하지 않는다.
+
+이 확인 뒤 KEYA는 벤치에서 분리하기로 했다. 다음 재연결 전까지는 위 미확인 항목을
+완료로 취급하지 않는다.

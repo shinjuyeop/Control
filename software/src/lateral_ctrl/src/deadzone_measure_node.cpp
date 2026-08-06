@@ -3,15 +3,24 @@
 //   KEYA KY170DJD01005-08G-V1 스티어링 모터의 데드존(정지 마찰 break-away 문턱)
 //   측정 전용 노드. position 명령이 아니라 torque(전류) 명령을 계단식으로
 //   0부터 증가시키면서, 각 단계마다 일정 시간(step_hold_ms) 유지한 뒤
-//   steering_feedback_node가 퍼블리시하는 실제 휠 각도(/ctrl/steer)가
-//   조금이라도 변했는지 확인한다. 변화가 없으면 다음 단계로 올리고,
-//   변화가 생기면 그 순간의 torque cmd를 데드존 문턱값으로 판정한다.
-//   드라이버 파라미터 0020(제어모드)은 이미 Torque control(2)로 설정돼
-//   있다고 가정한다.
+//   steering_actuator_node가 발행하는 /steering/status의 모터축 각도
+//   (motor_angle_deg)가 조금이라도 변했는지 확인한다. 변화가 없으면 다음
+//   단계로 올리고, 변화가 생기면 그 순간의 torque cmd를 데드존 문턱값으로
+//   판정한다. 드라이버 파라미터 0020(제어모드)은 이미 Torque control(2)로
+//   설정돼 있다고 가정한다.
+//
+//   motor_angle_deg는 legacy 프로토콜의 Encoder count value query 응답
+//   (10000 count/turn = 0.036°/count)을 그대로 각도로 옮긴 값이라
+//   heartbeat(360 count/turn)보다 약 28배 촘촘하다. 캘리브레이션 다항식과
+//   direction_sign을 거치지 않은 모터축 원시값이므로, ramp_direction과 각도
+//   증감의 부호 관계는 바퀴 각도 기준과 반대로 나타난다.
 //
 // 사용 시나리오
-//   1. feedback 노드(steering_feedback_node)를 먼저 실행해 /ctrl/steer
-//      (휠 각도)가 정상적으로 퍼블리시되는지 확인한다.
+//   1. steering_actuator_node를 읽기 전용(hardware_can_enabled:=true,
+//      actuator_output_enabled:=false)으로 먼저 띄운다. 이 상태에서는 조회
+//      프레임만 나가므로 이 노드의 torque 명령과 충돌하지 않는다.
+//        ros2 launch lateral_ctrl steering_actuator.launch.py
+//            can_interface:=can0 actuator_output_enabled:=false
 //   2. 이 노드를 실행한다.
 //        ros2 run lateral_ctrl deadzone_measure_node can0
 //   3. /deadzone/start (std_msgs/UInt8, data=1)를 쏘면 자동으로 계단식
@@ -35,7 +44,7 @@
 // ============================================================================
 
 #include "rclcpp/rclcpp.hpp"
-#include "std_msgs/msg/float32.hpp"
+#include "kaiev26_msgs/msg/steering_actuator_status.hpp"
 #include "std_msgs/msg/u_int8.hpp"
 
 #include <rcl_interfaces/msg/set_parameters_result.hpp>
@@ -72,8 +81,9 @@ public:
         ramp_direction_ = normalize_direction(this->declare_parameter<int>("ramp_direction", 1));
         torque_limit_ = clamp_torque_limit(this->declare_parameter<int>("torque_limit", 2000));
         auto_start_ = this->declare_parameter<bool>("auto_start", false);
-        angle_topic_ = this->declare_parameter<std::string>("angle_topic", "/ctrl/steer");
-        current_topic_ = this->declare_parameter<std::string>("current_topic", "/ctrl/steer_motor_current");
+        // 각도와 전류를 한 메시지에서 같이 받는다. 둘이 같은 시점의 값이라
+        // 판정 로그의 전류가 그 각도 변화와 짝이 맞는다.
+        status_topic_ = this->declare_parameter<std::string>("status_topic", "/steering/status");
         // sweep_mode=true: 첫 움직임에서 멈추지 않고 torque_limit까지 계단식으로 끝까지 올리며
         // 매 스텝 steady-state (torque cmd, 전류, 각도)를 기록 — torque-전류 상관관계식 도출용.
         sweep_mode_ = this->declare_parameter<bool>("sweep_mode", false);
@@ -90,11 +100,11 @@ public:
 
         RCLCPP_INFO(get_logger(),
                     "params: can_iface=%s ramp_step=%d ramp_period_ms=%d step_hold_ms=%d "
-                    "ramp_direction=%+d torque_limit=%d auto_start=%s angle_topic=%s current_topic=%s "
+                    "ramp_direction=%+d torque_limit=%d auto_start=%s status_topic=%s "
                     "sweep_mode=%s start_cmd=%d max_angle_delta=%.3f",
                     can_iface_.c_str(), ramp_step_, ramp_period_ms_, step_hold_ms_,
                     ramp_direction_, torque_limit_, auto_start_ ? "true" : "false",
-                    angle_topic_.c_str(), current_topic_.c_str(), sweep_mode_ ? "true" : "false",
+                    status_topic_.c_str(), sweep_mode_ ? "true" : "false",
                     start_cmd_, max_angle_delta_);
 
         // ── 램프 제어 토픽
@@ -106,15 +116,10 @@ public:
             "/deadzone/stop", 10,
             std::bind(&DeadzoneMeasureNode::stop_callback, this, std::placeholders::_1));
 
-        // ── 움직임 감지용 휠 각도 구독 (항상 최신값만 저장)
-        angle_sub_ = create_subscription<std_msgs::msg::Float32>(
-            angle_topic_, 10,
-            std::bind(&DeadzoneMeasureNode::angle_callback, this, std::placeholders::_1));
-
-        // ── 드라이버 실측 전류 구독 (판정 로그에 실제 전류를 같이 남기기 위함)
-        current_sub_ = create_subscription<std_msgs::msg::Float32>(
-            current_topic_, 10,
-            std::bind(&DeadzoneMeasureNode::current_callback, this, std::placeholders::_1));
+        // ── 움직임 감지용 모터축 각도와 실측 전류 구독 (항상 최신값만 저장)
+        status_sub_ = create_subscription<kaiev26_msgs::msg::SteeringActuatorStatus>(
+            status_topic_, 10,
+            std::bind(&DeadzoneMeasureNode::status_callback, this, std::placeholders::_1));
 
         // ── 런타임 파라미터 변경 콜백
         param_cb_handle_ = this->add_on_set_parameters_callback(
@@ -279,8 +284,9 @@ private:
         if (!has_angle_)
         {
             RCLCPP_WARN(get_logger(),
-                        "No feedback received yet on %s — is steering_feedback_node running?",
-                        angle_topic_.c_str());
+                        "No valid angle received yet on %s — is steering_actuator_node running "
+                        "in read-only mode?",
+                        status_topic_.c_str());
         }
         RCLCPP_INFO(get_logger(),
                     "Ramp START (dir=%+d, step=%d, period=%dms, hold=%dms, limit=%d)",
@@ -395,17 +401,14 @@ private:
         RCLCPP_WARN(get_logger(), ">>> STOPPED at torque cmd = %d <<<", current_cmd_);
     }
 
-    // ── 휠 각도 콜백: 최신값만 저장 (판정은 ramp_timer_tick에서 수행)
-    void angle_callback(const std_msgs::msg::Float32::SharedPtr msg)
+    // ── 조향 status 콜백: 최신값만 저장 (판정은 ramp_timer_tick에서 수행)
+    //    feedback_valid가 false인 동안은 각도가 갱신되지 않은 묵은 값이라 받지 않는다.
+    void status_callback(const kaiev26_msgs::msg::SteeringActuatorStatus::SharedPtr msg)
     {
-        latest_angle_ = msg->data;
+        latest_current_ = msg->motor_current_a;
+        if (!msg->feedback_valid) return;
+        latest_angle_ = msg->motor_angle_deg;
         has_angle_ = true;
-    }
-
-    // ── 드라이버 실측 전류 콜백: 최신값만 저장
-    void current_callback(const std_msgs::msg::Float32::SharedPtr msg)
-    {
-        latest_current_ = msg->data;
     }
 
     // ── 런타임 파라미터 변경 콜백
@@ -489,8 +492,7 @@ private:
     int ramp_direction_{1};
     int torque_limit_{2000};
     bool auto_start_{false};
-    std::string angle_topic_{"/ctrl/steer"};
-    std::string current_topic_{"/ctrl/steer_motor_current"};
+    std::string status_topic_{"/steering/status"};
     bool sweep_mode_{false};
     int start_cmd_{0};
     double max_angle_delta_{0.0}; // 0.0 = 비활성. 실차 lock-to-lock 실측 후 값 대입.
@@ -512,8 +514,7 @@ private:
     // ── ROS 인터페이스
     rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr start_sub_;
     rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr stop_sub_;
-    rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr angle_sub_;
-    rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr current_sub_;
+    rclcpp::Subscription<kaiev26_msgs::msg::SteeringActuatorStatus>::SharedPtr status_sub_;
     rclcpp::TimerBase::SharedPtr ramp_timer_;
     rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_cb_handle_;
 };

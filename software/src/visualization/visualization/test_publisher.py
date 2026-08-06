@@ -242,15 +242,18 @@ class VehicleScenarioPublisher(Node):
         msg.actual_wheel_angle_rad = float(self.actual_steering_rad)
         msg.tracking_error_rad = float(tracking_error)
         msg.tracking_correction_rad = 0.0
-        msg.steering_rate_radps = float(
-            (self.actual_steering_rad - self.previous_steering_rad)
-            * self.publish_rate_hz
-        )
         msg.motor_position_count = int(
             self.actual_steering_rad * 100000.0
         )
         msg.motor_angle_deg = math.degrees(self.actual_steering_rad) * 15.0
-        msg.motor_speed_rpm = msg.steering_rate_radps * 143.24
+        previous_motor_angle_deg = (
+            math.degrees(self.previous_steering_rad) * 15.0
+        )
+        msg.motor_speed_rpm = float(
+            (msg.motor_angle_deg - previous_motor_angle_deg)
+            * self.publish_rate_hz
+            / 6.0
+        )
         msg.motor_current_a = 1.3 + abs(tracking_error) * 5.0
         msg.bus_voltage_v = 24.1
         msg.driver_temperature_c = 38.0

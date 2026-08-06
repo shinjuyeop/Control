@@ -106,11 +106,36 @@ source ~/KAI_ws/install/setup.bash
 vendored upstream revision과 로컬 빌드 수정은
 `firmware/micro_ros_agent/UPSTREAM.md`에 기록되어 있습니다.
 
+## STM 보드 고정 장치 이름
+
+두 NUCLEO-G474RE의 ST-LINK serial을 기준으로 다음 이름을 사용합니다. `ttyACM0/1`
+순서는 재부팅이나 USB 재연결 때 바뀔 수 있으므로 보드 식별에 사용하지 않습니다.
+
+| 보드 | ST-LINK serial | 고정 장치 이름 |
+|---|---|---|
+| STM_A | `0025002B3234511137333934` | `/dev/stm_a` |
+| STM_B | `003D00433234511137333934` | `/dev/stm_b` |
+
+규칙 원본은 `firmware/udev/99-kaiev26-stm.rules`입니다. 호스트에 설치한 뒤 규칙을
+다시 읽고 현재 장치에 적용합니다.
+
+```bash
+sudo install -m 0644 firmware/udev/99-kaiev26-stm.rules \
+  /etc/udev/rules.d/99-kaiev26-stm.rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger --subsystem-match=tty
+readlink -f /dev/stm_a
+readlink -f /dev/stm_b
+```
+
+2026-08-03 실보드 확인에서 `/dev/stm_a`는 `/stm_a_node`, `/dev/stm_b`는
+`/stm_b_node`를 각각 생성했습니다. 이 확인은 장치 이름뿐 아니라 실제 실행된
+펌웨어 역할까지 대조한 결과입니다.
+
 ## Agent 실행
 
 두 보드를 동시에 연결하려면 서로 다른 serial device에 Agent를 하나씩 실행합니다.
-아래 device 이름은 예시이므로 `udevadm info` 등으로 실제 보드를 식별한 뒤
-대입하십시오.
+위 udev 규칙을 설치한 호스트에서는 고정 장치 이름을 사용합니다.
 
 터미널 1, STM_A:
 
@@ -118,7 +143,7 @@ vendored upstream revision과 로컬 빌드 수정은
 source /opt/ros/humble/setup.bash
 source ~/KAI_ws/install/setup.bash
 ros2 run micro_ros_agent micro_ros_agent serial \
-  --dev /dev/serial/by-id/<stm-a-device> -b 115200
+  --dev /dev/stm_a -b 115200
 ```
 
 터미널 2, STM_B:
@@ -127,7 +152,7 @@ ros2 run micro_ros_agent micro_ros_agent serial \
 source /opt/ros/humble/setup.bash
 source ~/KAI_ws/install/setup.bash
 ros2 run micro_ros_agent micro_ros_agent serial \
-  --dev /dev/serial/by-id/<stm-b-device> -b 115200
+  --dev /dev/stm_b -b 115200
 ```
 
 연결 후에는 node 이름뿐 아니라 타입과 실제 endpoint를 함께 확인합니다.

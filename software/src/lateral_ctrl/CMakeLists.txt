@@ -18,16 +18,12 @@ find_package(std_msgs REQUIRED)
 find_package(kaiev26_msgs REQUIRED)
 
 # ── 측정 전용 노드 (deadzone/breakaway/sweep 실험용, DEADZONE_MEASUREMENT.md 참고)
-#    steering_actuator_node(absolute position mode)와 동시 실행 금지 —
+#    각도와 전류는 steering_actuator_node를 읽기 전용으로 띄워 /steering/status에서 받는다.
 #    드라이버 0020=Torque control(2)로 전환한 오프라인 세션에서만 사용.
-add_executable(steering_feedback_node src/steering_feedback_node.cpp)
-ament_target_dependencies(steering_feedback_node rclcpp std_msgs)
-
 add_executable(deadzone_measure_node src/deadzone_measure_node.cpp)
-ament_target_dependencies(deadzone_measure_node rclcpp std_msgs)
+ament_target_dependencies(deadzone_measure_node rclcpp std_msgs kaiev26_msgs)
 
 install(TARGETS
-  steering_feedback_node
   deadzone_measure_node
   DESTINATION lib/${PROJECT_NAME}
 )

@@ -197,7 +197,7 @@ ros2 launch lateral_ctrl steering_bench_test.launch.py \
 | `feedback_timeout_ms` | 500 | position feedback timeout |
 | `mode_timeout_ms` | 1500 | `/drive/status` timeout |
 | `steer_command_timeout_ms` | 200 | `ACTIVE`에서 `/vehicle/command` timeout |
-| `wheel_limit_deg` | 30.0 | 절대 바퀴각 제한 |
+| `wheel_limit_deg` | 30.0 | 명령 바퀴각 제한. 측정값에는 걸지 않음 |
 | `max_steering_rate_deg_s` | 60.0 | 바퀴각 변화율 제한 |
 | `tracking_control_enabled` | false | 바퀴각 tracking 보정 |
 
@@ -210,6 +210,7 @@ steer_sequence_start_delay_sec: 3.0
 steer_sequence_repeat: true
 ```
 
-측정 전용 `steering_feedback_node`와 `deadzone_measure_node`는
-`DEADZONE_MEASUREMENT.md`의 오프라인 절차에만 사용합니다. 실차 position-mode
-actuator 노드와 동시에 실행하지 마십시오.
+측정 전용 `deadzone_measure_node`는 `DEADZONE_MEASUREMENT.md`의 오프라인 절차에만
+사용합니다. 각도와 전류는 `steering_actuator_node`를 읽기 전용
+(`actuator_output_enabled:=false`)으로 띄워 `/steering/status`에서 받습니다. 출력이
+살아 있는 actuator 노드와 동시에 실행하지 마십시오.

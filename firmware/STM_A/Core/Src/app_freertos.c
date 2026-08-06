@@ -89,7 +89,10 @@ enum {
 #define MOTOR_FEEDBACK_TIMEOUT_MS 200u
 #define AGENT_PING_PERIOD_MS 500u
 #define AGENT_PING_TIMEOUT_MS 100u
-#define DRIVE_STATUS_PERIOD_MS 50u
+/* 20ms(50Hz). 벤치에서 페달 밟는 속도와 EZkontrol 응답을 놓치지 않을 만큼 촘촘하다.
+ * status 한 건이 직렬화와 전송 프레이밍까지 약 120B라 50Hz면 LPUART1 115200(초당
+ * 11.5kB)의 절반쯤을 쓴다. 여유가 모자라면 주기가 아니라 baud를 올린다. */
+#define DRIVE_STATUS_PERIOD_MS 20u
 #define MOTOR_STATUS_PART1_ID 0x1801D0EFUL
 #define MOTOR_STATUS_PART2_ID 0x1802D0EFUL
 
@@ -141,8 +144,9 @@ static uart_frame_parser_t s_safety_parser;
 static uint8_t s_safety_last_sequence = 0u;
 static uint8_t s_safety_sequence_initialized = 0u;
 static uint8_t s_life = 0;
-/* TEMP DEBUG: 클램핑 전 raw ADC 값 저장 (StartInputs가 쓰고, StartuROS가 읽어서 발행) */
-static volatile int32_t s_pedal_raw_dbg = 0;
+/* 데드밴드 클램핑 전 raw ADC 값. StartInputs가 쓰고 StartuROS가 발행한다.
+ * 캘리브레이션(PEDAL_ADC_MIN/MAX)이 바뀌어도 과거 로그를 다시 계산할 수 있게 남긴다. */
+static volatile int32_t s_pedal_adc_raw = 0;
 static volatile float s_motor_rpm = 0.0f;
 static volatile uint8_t s_command_received = 0u;
 static volatile uint8_t s_command_timeout = 1u;
@@ -151,6 +155,11 @@ static volatile uint32_t s_last_command_tick = 0u;
 static volatile uint8_t s_motor_handshake_done = 0u;
 static volatile uint32_t s_motor_handshake_count = 0u;
 static volatile uint8_t s_tractive_commanded = 0u;
+
+/* send_motor_can이 버스에 실제로 실은 명령. 인코딩과 클램핑을 되돌린 값이라
+ * 지령과 실측(Part I)을 같은 단위로 나란히 볼 수 있다. */
+static volatile float s_commanded_phase_current_a = 0.0f;
+static volatile float s_commanded_motor_rpm = 0.0f;
 
 /* CAN ISR가 갱신하고 uROS task가 짧은 critical section에서 snapshot한다. */
 static volatile float s_bus_voltage_v = 0.0f;
@@ -434,8 +443,8 @@ void StartInputs(void *argument)
       sum += HAL_ADC_GetValue(&hadc1);
     }
     int raw = (int)(sum / 8u);
-    // TEMP DEBUG: 클램핑 전 raw 값을 그대로 저장 (디버깅 끝나면 이 줄 삭제)
-    s_pedal_raw_dbg = (int32_t)raw;
+    // 클램핑 전 raw 값은 /drive/status의 pedal_adc_raw로 그대로 나간다
+    s_pedal_adc_raw = (int32_t)raw;
     // 데드밴드 클램핑 (무반응 구간, 유격감안)
     if (raw < PEDAL_ADC_MIN) raw = PEDAL_ADC_MIN;
     if (raw > PEDAL_ADC_MAX) raw = PEDAL_ADC_MAX;
@@ -922,6 +931,10 @@ static void destroy_ros_entities(void)
 
 static void publish_drive_status(uint32_t now)
 {
+  uint8_t pedal_percent;
+  int32_t pedal_adc_raw;
+  float commanded_phase_current_a;
+  float commanded_motor_rpm;
   float motor_rpm;
   float speed_mps;
   float bus_voltage_v;
@@ -943,6 +956,10 @@ static void publish_drive_status(uint32_t now)
 
   /* CAN ISR와 Control task가 갱신하는 관련 필드를 한 시점의 snapshot으로 읽는다. */
   taskENTER_CRITICAL();
+  pedal_percent = PEDAL;
+  pedal_adc_raw = s_pedal_adc_raw;
+  commanded_phase_current_a = s_commanded_phase_current_a;
+  commanded_motor_rpm = s_commanded_motor_rpm;
   motor_rpm = s_motor_rpm;
   speed_mps = CURRENT_SPEED;
   bus_voltage_v = s_bus_voltage_v;
@@ -974,6 +991,8 @@ static void publish_drive_status(uint32_t now)
 
   s_status_msg.mode = MODE;
   s_status_msg.gear = GEAR;
+  s_status_msg.pedal_percent = pedal_percent;
+  s_status_msg.pedal_adc_raw = pedal_adc_raw;
   s_status_msg.speed_mps = speed_mps;
   s_status_msg.motor_rpm = motor_rpm;
   s_status_msg.tractive_commanded = (tractive_commanded != 0u);
@@ -986,6 +1005,8 @@ static void publish_drive_status(uint32_t now)
   s_status_msg.command_timeout = (command_timeout != 0u);
   s_status_msg.command_age_ms = (command_received != 0u) ?
       (float)((uint32_t)(now - command_rx_ms)) : INFINITY;
+  s_status_msg.commanded_phase_current_a = commanded_phase_current_a;
+  s_status_msg.commanded_motor_rpm = commanded_motor_rpm;
   s_status_msg.bus_voltage_v = bus_voltage_v;
   s_status_msg.bus_current_a = bus_current_a;
   s_status_msg.phase_current_a = phase_current_a;
@@ -1036,6 +1057,10 @@ static void send_motor_can(int32_t rpm, float curr_a, uint8_t run_command,
 
   if (HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &hdr, d) == HAL_OK) {
     s_tractive_commanded = (run_command != 0u) ? 1u : 0u;
+    /* 인코딩을 되돌려 저장한다. 양자화와 클램핑이 반영된 값이라
+     * 의도한 값이 아니라 실제로 나간 값이 남는다. */
+    s_commanded_phase_current_a = (float)current_encoded * 0.1f - 3200.0f;
+    s_commanded_motor_rpm = (float)clamped_rpm;
   } else {
     s_tractive_commanded = 0u;
   }
