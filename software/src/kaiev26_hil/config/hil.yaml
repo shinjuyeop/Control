@@ -1,6 +1,6 @@
 stm_test_bridge:
   ros__parameters:
-    serial_port: "/dev/serial/by-id/REPLACE_WITH_STM_TEST"
+    serial_port: "/dev/hil_test"
     baud_rate: 115200
     status_poll_hz: 5.0
     command_timeout_sec: 0.5

@@ -10,7 +10,7 @@ def generate_launch_description():
     share = get_package_share_directory("kaiev26_hil")
     config = os.path.join(share, "config", "hil.yaml")
     return LaunchDescription([
-        DeclareLaunchArgument("serial_port", default_value="/dev/serial/by-id/REPLACE_WITH_STM_TEST"),
+        DeclareLaunchArgument("serial_port", default_value="/dev/hil_test"),
         Node(package="kaiev26_hil", executable="stm_test_bridge", name="stm_test_bridge",
              output="screen", parameters=[config, {"serial_port": LaunchConfiguration("serial_port")}]),
         Node(package="kaiev26_hil", executable="command_generator", name="hil_command_generator",

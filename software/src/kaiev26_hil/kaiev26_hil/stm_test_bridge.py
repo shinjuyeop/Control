@@ -156,7 +156,7 @@ class BridgeWorker(threading.Thread):
 class StmTestBridge(Node):
     def __init__(self) -> None:
         super().__init__("stm_test_bridge")
-        self.declare_parameter("serial_port", "/dev/serial/by-id/REPLACE_WITH_STM_TEST")
+        self.declare_parameter("serial_port", "/dev/hil_test")
         self.declare_parameter("baud_rate", 115200)
         self.declare_parameter("status_poll_hz", 5.0)
         self.declare_parameter("command_timeout_sec", 0.5)

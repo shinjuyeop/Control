@@ -1,5 +1,10 @@
-# KAIEV26 STM_A: NUCLEO-G474RE ST-LINK virtual COM port
-ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="0025002B3234511137333934", SYMLINK+="stm_a"
+# KAIEV26 HIL bench boards. The vehicle boards get stm_a / stm_b later.
 
-# KAIEV26 STM_B: NUCLEO-G474RE ST-LINK virtual COM port
-ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="003D00433234511137333934", SYMLINK+="stm_b"
+# HIL_A: NUCLEO-G474RE ST-LINK virtual COM port, STM_A firmware
+ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="0025002B3234511137333934", SYMLINK+="hil_a"
+
+# HIL_B: NUCLEO-G474RE ST-LINK virtual COM port, STM_B firmware
+ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="003D00433234511137333934", SYMLINK+="hil_b"
+
+# HIL_TEST: NUCLEO-G474RE ST-LINK virtual COM port, STM_TEST firmware
+ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="002E00253235510837333439", SYMLINK+="hil_test"

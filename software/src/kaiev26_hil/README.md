@@ -130,31 +130,31 @@ EZ timeout scenario는 현재 STM_A contract에서 확인 가능한 `part1_valid
 
 ## Launch
 
-먼저 persistent serial path를 찾는다.
-
-```bash
-ls -l /dev/serial/by-id/
-```
+STM_TEST 보드는 `firmware/udev/99-kaiev26-stm.rules`가 `/dev/hil_test`라는 고정
+이름을 만든다. 규칙 설치 방법과 보드별 serial은
+[`../../../firmware/README.md`](../../../firmware/README.md#stm-보드-고정-장치-이름)에
+있다. 규칙을 설치하지 않은 호스트에서는 `ls -l /dev/serial/by-id/`로 path를 찾아
+그 값을 대신 넣는다. `ttyACM` 번호는 USB 재연결 때 바뀌므로 쓰지 않는다.
 
 HIL bridge와 command generator:
 
 ```bash
 ros2 launch kaiev26_hil hil.launch.py \
-  serial_port:=/dev/serial/by-id/usb-...
+  serial_port:=/dev/hil_test
 ```
 
 GUI:
 
 ```bash
 ros2 launch kaiev26_hil hil_gui.launch.py \
-  serial_port:=/dev/serial/by-id/usb-...
+  serial_port:=/dev/hil_test
 ```
 
 Scenario:
 
 ```bash
 ros2 launch kaiev26_hil hil.launch.py \
-  serial_port:=/dev/serial/by-id/usb-... \
+  serial_port:=/dev/hil_test \
   scenario_file:=$(ros2 pkg prefix kaiev26_hil)/share/kaiev26_hil/config/scenarios/smoke_test.yaml
 ```
 
