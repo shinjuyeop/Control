@@ -1,0 +1,65 @@
+#ifndef HIL_STATE_H
+#define HIL_STATE_H
+
+#include <stdbool.h>
+#include <stdint.h>
+
+typedef enum {
+  HIL_BRAKE_UNKNOWN = 0,
+  HIL_BRAKE_RELEASED,
+  HIL_BRAKE_ENGAGED
+} HilBrakeState_t;
+
+typedef struct {
+  bool auto_mode;
+  bool reverse;
+
+  bool estop_dashboard;
+  bool estop_side;
+  bool estop_rf;
+
+  float pedal_percent;
+
+  float vehicle_speed_kph;
+  float motor_rpm;
+  float motor_voltage_v;
+  float motor_current_a;
+  float motor_temperature_c;
+
+  /* KEYA motor-shaft position/target in degrees (10000 count/rev). */
+  float steering_position;
+  float steering_target;
+
+  uint32_t brake_period_us;
+  uint32_t brake_pulse_us;
+  bool brake_engaged;
+  bool brake_pwm_valid;
+  bool brake_pwm_lost;
+  HilBrakeState_t brake_state;
+
+  bool ez_can_enabled;
+  bool keya_can_enabled;
+
+  bool ez_drop_tx;
+  bool keya_drop_tx;
+
+  bool ez_fault;
+  bool keya_fault;
+
+  bool ez_can_healthy;
+  bool keya_can_healthy;
+  bool ez_running;
+  bool ez_speed_control;
+
+  uint32_t ez_rx_count;
+  uint32_t ez_tx_count;
+  uint32_t keya_rx_count;
+  uint32_t keya_tx_count;
+} HilState_t;
+
+void HilState_Init(void);
+HilState_t *HilState_Lock(uint32_t timeout_ticks);
+void HilState_Unlock(void);
+bool HilState_GetSnapshot(HilState_t *snapshot, uint32_t timeout_ticks);
+
+#endif /* HIL_STATE_H */
