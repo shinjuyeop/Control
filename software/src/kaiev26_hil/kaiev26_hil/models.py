@@ -36,6 +36,16 @@ class HilStatus:
     keya_ok: bool
     ez_fault: bool
     keya_fault: bool
+    plant: bool
+    ez_target_rpm: float
+    ez_running: bool = False
+    ez_speed_control: bool = False
+    ez_command_rpm: float = 0.0
+    ez_command_current: float = 0.0
+    ez_rx_age_ms: int = 4294967295
+    keya_enabled: bool = False
+    keya_rx_age_ms: int = 4294967295
+    protocol: int = 1
     received_monotonic: float = 0.0
 
     def to_json(self) -> str:
@@ -59,6 +69,7 @@ class HilDesiredState:
     steering_position: float = 0.0
     ez_can_enabled: bool = True
     keya_can_enabled: bool = True
+    plant_enabled: bool = False
     ez_drop_tx: bool = False
     keya_drop_tx: bool = False
     ez_fault: bool = False
