@@ -185,6 +185,8 @@ void HilKEYA_Task(void)
 {
   uint32_t next = osKernelGetTickCount();
   uint32_t last_heartbeat = next - HIL_KEYA_HEARTBEAT_MS;
+  uint32_t last_rx = next;
+  bool rx_seen = false;
 
   for (;;) {
     HilState_t snapshot;
@@ -195,6 +197,9 @@ void HilKEYA_Task(void)
     HilState_t *shared = HilState_Lock(2u);
     if (shared != NULL) {
       shared->keya_can_healthy = s_initialized && !s_rx_overflow;
+      shared->keya_motor_enabled = s_motor_enabled;
+      shared->keya_rx_age_ms = rx_seen ?
+          (uint32_t)(osKernelGetTickCount() - last_rx) : UINT32_MAX;
       HilState_Unlock();
     }
     s_rx_overflow = false;
@@ -204,6 +209,8 @@ void HilKEYA_Task(void)
       if (!snapshot.keya_can_enabled) continue;
       HilKeyaCommand_t command = HilLogic_KeyaDecode(frame.data);
       if (command.type == HIL_KEYA_COMMAND_INVALID) continue;
+      last_rx = osKernelGetTickCount();
+      rx_seen = true;
       shared = HilState_Lock(2u);
       if (shared != NULL) {
         shared->keya_rx_count++;
@@ -242,6 +249,7 @@ void HilKEYA_Task(void)
     const uint32_t now = osKernelGetTickCount();
     if (!snapshot.keya_can_enabled) {
       s_motor_enabled = false;
+      rx_seen = false;
       last_heartbeat = now;
     } else if ((uint32_t)(now - last_heartbeat) >= HIL_KEYA_HEARTBEAT_MS) {
       last_heartbeat += HIL_KEYA_HEARTBEAT_MS;

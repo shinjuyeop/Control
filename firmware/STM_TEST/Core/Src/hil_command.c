@@ -10,7 +10,7 @@
 #define HIL_UART_DMA_BUFFER_SIZE 128u
 #define HIL_UART_RING_SIZE       512u
 #define HIL_UART_LINE_SIZE       160u
-#define HIL_UART_REPLY_SIZE      512u
+#define HIL_UART_REPLY_SIZE      768u
 #define HIL_UART_TX_TIMEOUT_MS   100u
 
 extern UART_HandleTypeDef hlpuart1;
@@ -79,8 +79,12 @@ void HilCommand_UartErrorFromISR(void)
 
 void HilCommand_Task(void)
 {
-  char line[HIL_UART_LINE_SIZE];
-  char reply[HIL_UART_REPLY_SIZE];
+  /* Static, not automatic: the HostCommand thread has a 2 KB stack and the
+   * STATUS snprintf already spends a few hundred bytes of it on newlib float
+   * formatting. Keeping 928 bytes of buffers off the stack leaves that margin
+   * intact. Only this one thread calls into here, so there is no sharing. */
+  static char line[HIL_UART_LINE_SIZE];
+  static char reply[HIL_UART_REPLY_SIZE];
   size_t length = 0u;
   bool discard_line = false;
 

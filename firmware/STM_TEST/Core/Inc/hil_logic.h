@@ -17,6 +17,19 @@
 #define HIL_KEYA_COUNTS_PER_REV          10000.0f
 #define HIL_KEYA_SIM_RATE_DEG_PER_SEC    90.0f
 
+/* EZkontrol plant. First-order lag only: one time constant, no vehicle mass or
+ * road load. It exists so a speed command reaches the motor RPM that STM_A
+ * reads back, not to reproduce real acceleration. */
+#define HIL_EZ_PLANT_TAU_S               0.60f
+/* Torque control commands a phase current, not an RPM. The RPM field is a limit
+ * in that mode, so scale it by the current as a fraction of the configured
+ * maximum phase current. STM_A maps MANUAL pedal 0..100% to 0..175 A, half of
+ * this full scale. */
+#define HIL_EZ_PLANT_TORQUE_FULL_SCALE_A 350.0f
+/* No command frame for this long means STM_A is gone or was reset. The emulator
+ * returns to WAIT_HANDSHAKE so a restarted STM_A can hand shake again. */
+#define HIL_EZ_RX_TIMEOUT_MS             500u
+
 typedef enum {
   HIL_KEYA_COMMAND_INVALID = 0,
   HIL_KEYA_COMMAND_ENABLE,
@@ -46,6 +59,21 @@ void HilLogic_EZEncodePart1(const HilState_t *state, uint8_t data[8]);
 void HilLogic_EZEncodePart2(const HilState_t *state, uint8_t life,
                             uint8_t data[8]);
 bool HilLogic_IsFilled(const uint8_t data[8], uint8_t value);
+
+typedef struct {
+  bool handshake_ack;
+  bool running;
+  bool speed_control;
+  /* Commanded RPM in speed control, RPM limit in torque control. */
+  float rpm_field;
+  float phase_current_a;
+} HilEZCommand_t;
+
+HilEZCommand_t HilLogic_EZDecodeCommand(const uint8_t data[8]);
+float HilLogic_EZPlantTargetRpm(const HilEZCommand_t *command);
+float HilLogic_PlantStepRpm(float current_rpm, float target_rpm,
+                            float dt_s, float tau_s);
+void HilLogic_SetMotionFromRpm(HilState_t *state, float rpm);
 
 HilKeyaCommand_t HilLogic_KeyaDecode(const uint8_t data[8]);
 int32_t HilLogic_KeyaDegreesToCount(float degrees);
