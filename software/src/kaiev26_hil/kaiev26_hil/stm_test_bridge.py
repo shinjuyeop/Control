@@ -51,6 +51,8 @@ class BridgeWorker(threading.Thread):
         self._desired = HilDesiredState()
         self._connected = False
         self._client = None
+        self._protocol_version = None
+        self._last_status = None
 
     def enqueue(self, command: str) -> None:
         self.commands.put(validate_command(command))
@@ -58,10 +60,28 @@ class BridgeWorker(threading.Thread):
     def replace_desired(self, desired: HilDesiredState, *, enqueue: bool = True) -> None:
         with self._desired_lock:
             self._desired = replace(desired)
-        if enqueue:
-            for command in desired_commands(desired):
+        if not self._connected:
+            # A complete desired-state replacement (currently Safe State) must
+            # supersede commands queued while the serial link was down.
+            while True:
+                try:
+                    self.commands.get_nowait()
+                except queue.Empty:
+                    break
+        if enqueue and self._connected:
+            for command in desired_commands(
+                desired, protocol_version=self._protocol_version or 1
+            ):
                 self.enqueue(command)
         self.event_callback("desired", replace(desired))
+
+    def reapply_desired(self) -> None:
+        if not self._connected:
+            return
+        for command in desired_commands(
+            self.desired_snapshot(), protocol_version=self._protocol_version or 1
+        ):
+            self.enqueue(command)
 
     def desired_snapshot(self) -> HilDesiredState:
         with self._desired_lock:
@@ -79,6 +99,8 @@ class BridgeWorker(threading.Thread):
         if self._client is not None:
             self._client.close()
         self._client = None
+        self._protocol_version = None
+        self._last_status = None
         self._set_connected(False, reason)
 
     def _request(self, command: str):
@@ -94,20 +116,48 @@ class BridgeWorker(threading.Thread):
         raise last_exception
 
     def _apply_desired_after_connect(self) -> None:
-        for command in desired_commands(self.desired_snapshot()):
+        for command in desired_commands(
+            self.desired_snapshot(), protocol_version=self._protocol_version or 1
+        ):
             response = self._request(command)
             self.event_callback("result", response.raw)
             if response.kind != "ok":
                 raise IOError(f"desired-state replay rejected: {response.raw}")
 
+    def _read_status(self) -> None:
+        response = self._request("STATUS")
+        if response.kind != "status" or response.status is None:
+            raise IOError(f"STATUS request rejected: {response.raw}")
+        self._last_status = response.status
+        self._protocol_version = response.status.protocol
+        self.event_callback("status", response.status)
+
     def _handle_command(self, command: str) -> None:
+        if command.startswith("SET PLANT ") and (self._protocol_version or 1) < 2:
+            self.event_callback(
+                "result", "ERR plant_not_supported_by_STM_TEST_protocol_1"
+            )
+            return
+
+        held_motion = None
+        if command == "SET PLANT OFF":
+            # Capture the plant output immediately before opening the loop so
+            # reconnect replay continues from the value the operator saw.
+            self._read_status()
+            held_motion = self._last_status
         response = self._request(command)
         if response.kind == "status":
+            self._last_status = response.status
+            self._protocol_version = response.status.protocol
             self.event_callback("status", response.status)
         else:
             self.event_callback("result", response.raw)
             if response.kind == "ok":
                 with self._desired_lock:
+                    if held_motion is not None:
+                        self._desired.speed = held_motion.speed
+                        self._desired.rpm = held_motion.rpm
+                        self._desired.motion_source = "RPM"
                     update_desired(self._desired, command)
                     snapshot = replace(self._desired)
                 self.event_callback("desired", snapshot)
@@ -128,8 +178,12 @@ class BridgeWorker(threading.Thread):
                         self.command_timeout_sec,
                     )
                     self._client.open()
-                    self._set_connected(True, self.serial_port)
+                    # Read capabilities before replay. Protocol-1 firmware does
+                    # not understand SET PLANT and must remain connectable.
+                    self._read_status()
                     self._apply_desired_after_connect()
+                    self._read_status()
+                    self._set_connected(True, self.serial_port)
                     next_status = time.monotonic()
                 except Exception as exc:
                     self._disconnect(str(exc))
@@ -225,10 +279,12 @@ class StmTestBridge(Node):
 
     def _reapply_desired(self, request, response):
         del request
-        for command in desired_commands(self._worker.desired_snapshot()):
-            self._worker.enqueue(command)
+        self._worker.reapply_desired()
         response.success = True
-        response.message = "desired state replay queued"
+        response.message = (
+            "desired state replay queued" if self._connected
+            else "disconnected; desired state will replay after reconnect"
+        )
         return response
 
     def _drain_events(self) -> None:
