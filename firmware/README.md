@@ -187,6 +187,11 @@ ros2 topic echo /brake/status
 `/vehicle/command`를 구독합니다. STM_A는 `/drive/status`, STM_B는
 `/brake/status`를 발행합니다.
 
+STM_TEST bridge와 GUI를 포함해 SSH 접속부터 HIL을 순서대로 실행하는 절차는
+[`../docs/HIL_RUNBOOK.md`](../docs/HIL_RUNBOOK.md)를 따릅니다. 특히 device symlink는
+virtual COM port 식별이며 SWD target 확인을 대신하지 않으므로, runbook의 현장 확인
+전에는 이를 근거로 플래시하지 않습니다.
+
 ## 관련 문서
 
 - 전체 시스템 구조: [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md)
@@ -194,3 +199,5 @@ ros2 topic echo /brake/status
 - 안전 설계: [`../docs/SAFETY.md`](../docs/SAFETY.md)
 - STM_A 상세: [`STM_A/README.md`](STM_A/README.md)
 - STM_B 상세: [`STM_B/README.md`](STM_B/README.md)
+- STM_TEST 상세: [`STM_TEST/README.md`](STM_TEST/README.md)
+- HIL 전체 운용: [`../docs/HIL_RUNBOOK.md`](../docs/HIL_RUNBOOK.md)

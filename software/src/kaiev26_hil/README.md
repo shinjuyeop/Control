@@ -19,6 +19,13 @@ HIL:        Command Generator -> Control -> STM_A/B
 - `hil_gui`: STM_TEST 시험 조건 입력과 fault injection
 - `bench.can_sim`: vcan 기반 SIL/교육용 plant. 실제 STM_TEST HIL과 별도 경로
 
+SSH/X11 접속, host 준비, STM_A/B Agent, STM_TEST GUI, 기능 시험, KEYA 확장 및
+정상 종료를 한 번에 따라 하려면
+[`../../../docs/HIL_RUNBOOK.md`](../../../docs/HIL_RUNBOOK.md)를 사용한다.
+이 문서는 ROS node·topic·service·GUI 계약만 설명한다. 핀 배치, UART
+명령, CAN ID·payload, Plant 수식과 timing은
+[`../../../firmware/STM_TEST/README.md`](../../../firmware/STM_TEST/README.md)가 기준이다.
+
 ## Nodes
 
 ### stm_test_bridge
@@ -85,13 +92,14 @@ Parameters:
 기존 visualization과 동일하게 PyQt5를 사용한다. GUI는 serial을 열지 않고 ROS를
 통해 bridge만 조작한다.
 
-- 연결/STATUS age/EZ·KEYA health
-- mode, gear, pedal, speed/RPM/voltage/current/temperature/steering
-- 세 E-stop
-- CAN enable, TX drop, controller fault
-- brake/steering/CAN counter feedback
+- 신호 방향별 화면: STM_TEST 주입 → controller command 관측 → emulated feedback
+- mode/gear/pedal DAC와 세 E-stop 주입
+- EZ command의 RUN/control mode/RPM/current/plant target 관측
+- brake PWM과 KEYA enable/target command 관측
+- `Closed-loop simulation` / `Direct feedback override` 응답 모드
+- CAN enable, TX drop, controller fault는 별도 advanced tab
 - Safe State, AUTO+Forward, pedal preset, E-stop, fault clear, STATUS refresh
-- 시각적으로 분리된 production `/vehicle/command` 입력
+- 별도 tab으로 분리된 production `/vehicle/command` 입력
 
 연결이 끊기면 일반 command panel은 비활성화되지만 Safe State는 계속 사용할 수
 있다. Safe State는 desired state에 저장되어 재연결 시 적용된다. GUI 종료 시에는
@@ -99,8 +107,40 @@ Parameters:
 
 ## Safe state
 
-MANUAL, Forward, pedal/speed/RPM/steering 0, 세 E-stop OFF, 두 CAN ON,
-모든 controller fault/TX drop OFF다.
+bridge의 Safe State는 firmware의
+[Safe defaults](../../../firmware/STM_TEST/README.md#safe-defaults)와 같다. bridge는 이 상태를
+desired state에 저장하고 serial 재연결 후 재적용한다. command generator의
+`enabled`는 별도 상태이므로 Safe State 적용 전에 따로 끄는다.
+
+## Plant
+
+Plant를 켜면 `/vehicle/command` -> STM_A -> EZ CAN -> STM_TEST -> EZ CAN ->
+`/drive/status` 경로로 피드백이 닫힌다. Plant 모델, 계수와 RPM 계산은 firmware
+[Plant 명세](../../../firmware/STM_TEST/README.md#plant)를 따른다.
+
+plant가 켜져 있으면 motion은 명령을 따라가므로 desired state의 speed/RPM과 다른 것이
+정상이다. `stm_test_bridge`는 이때 speed/RPM 불일치를 diagnostics에서 제외한다.
+기존 scenario는 plant OFF 기준이며 그대로 동작한다.
+
+GUI에서는 `plant`라는 내부 이름 대신 응답 모드로 표시한다. Closed-loop에서는
+SPEED/RPM 직접 입력을 비활성화하고 STM_A에서 실제 수신한 command RPM/current와
+계산된 target RPM을 보여준다. Direct override로 전환할 때는 직전 plant 출력 RPM을
+desired state에 저장하므로 재연결 후에도 같은 값에서 이어진다.
+
+## KEYA steering
+
+GUI는 KEYA 패널을 항상 표시하고 CAN 주변장치 초기화(`keya_ok`)와
+실제 controller RX를 구분한다. 유효 RX가 없으면 `NO RX / NOT CONNECTED`,
+이후 수신이 끊기면 `STALE RX`로 표시한다. 현재 EZ CAN만 연결된
+bench에서는 `NO RX / NOT CONNECTED`가 정상이다. KEYA CAN ID, payload,
+heartbeat와 조향 추종 모델은 firmware
+[KEYA emulator 명세](../../../firmware/STM_TEST/README.md#keya-emulator)에 있다.
+
+## Firmware protocol compatibility
+
+bridge는 먼저 STATUS의 `protocol`을 읽고 desired state를 재적용한다. Protocol 1
+구형 firmware에는 지원하지 않는 `SET PLANT`를 보내지 않으므로 새 GUI도 연결할 수
+있지만, command 관측값과 RX age는 unavailable로 표시된다.
 
 ## Scenarios
 
@@ -150,6 +190,25 @@ ros2 launch kaiev26_hil hil_gui.launch.py \
   serial_port:=/dev/hil_test
 ```
 
+이 launch가 실행하는 것은 `stm_test_bridge`, `hil_command_generator`, `hil_gui`다.
+STM_A/B용 micro-ROS Agent, `lateral_ctrl`, `vehicle_state_publisher`는 포함하지 않는다.
+현재 EZ CAN만 연결된 bench에서는 Agent 두 개와 위 launch까지만 실행하고 KEYA
+`NO RX / NOT CONNECTED`를 정상 상태로 취급한다.
+
+Bench 전체를 한 번에:
+
+```bash
+ros2 launch kaiev26_hil hil_bench.launch.py \
+  serial_port:=/dev/hil_test \
+  stm_a_port:=/dev/hil_a \
+  stm_b_port:=/dev/hil_b
+```
+
+`hil_bench.launch.py`는 위 `hil_gui.launch.py`에 STM_A/B micro-ROS Agent 두 개를
+더한 것이다. Agent를 이미 따로 실행 중이면 `agents:=false`를 준다. 로그가 한
+터미널에 모이므로 Agent 로그만 읽어야 할 때는 터미널을 나눠 실행한다. 이 launch도
+`lateral_ctrl`과 `vehicle_state_publisher`는 포함하지 않는다.
+
 Scenario:
 
 ```bash
@@ -179,14 +238,19 @@ Foxglove에서 `/hil/status`, `/vehicle/state`, `/drive/status`, `/brake/status`
 ## Build and test
 
 ```bash
-cd software
-source /opt/ros/humble/setup.bash
-colcon build --symlink-install
-source install/setup.bash
+cd ~/KAI_ws
+source /opt/ros/humble/setup.zsh
+colcon build --symlink-install --packages-select kaiev26_hil
+source ~/KAI_ws/install/setup.zsh
 colcon test --packages-select kaiev26_hil
 colcon test-result --verbose
 ```
 
+`test/test_hil_gui_smoke.py`는 `QT_QPA_PLATFORM=offscreen`으로 GUI window를 실제로
+구성하고 STATUS를 rendering하므로 X11 없이도 실행된다. PyQt5가 없으면 skip된다.
+사용하는 STATUS 문자열은 firmware README의 예시와 같은 형식이므로, firmware가
+field를 바꾸면 bench가 아니라 이 test에서 먼저 드러난다.
+
 필수 runtime dependency는 ROS 2 Humble, `pyserial`, `PyYAML`, PyQt5다. bench GUI는
-추가로 Tkinter와 Matplotlib를 사용한다. 실제 하드웨어 배선은
-`firmware/STM_TEST/README.md`를 참고한다.
+추가로 Tkinter와 Matplotlib를 사용한다. host 준비와 전체 build 대상은
+[HIL runbook](../../../docs/HIL_RUNBOOK.md#5-소프트웨어-빌드와-테스트)를 따른다.

@@ -28,10 +28,12 @@ Control/
 ├── firmware/
 │   ├── STM_A/               # 구동 및 차량 입력 펌웨어
 │   ├── STM_B/               # E-stop 및 브레이크 펌웨어
+│   ├── STM_TEST/            # STM_A/B 입출력 및 EZ/KEYA HIL emulator
 │   └── micro_ros_agent/     # vendored micro-ROS Agent
 └── software/
     └── src/
         ├── lateral_ctrl/    # KEYA 조향 액추에이터 제어
+        ├── kaiev26_hil/     # STM_TEST bridge, HIL GUI, scenario 도구
         ├── longitudinal_ctrl/
         ├── vehicle_state_publisher/
         ├── control_launch/
@@ -48,6 +50,8 @@ Control/
 | `firmware/STM_B` | `/vehicle/command`의 브레이크 명령, 물리 E-stop, 브레이크 PWM, `/brake/status` |
 | `software/src/lateral_ctrl` | `/vehicle/command`와 STM 상태를 사용한 KEYA 조향 모터 제어 및 `/steering/status` |
 | `software/src/vehicle_state_publisher` | 액추에이터 status 3종을 `/vehicle/state`로 통합 |
+| `software/src/kaiev26_hil` | STM_TEST serial bridge, 신호 방향 기반 GUI, command generator와 HIL scenario |
+| `firmware/STM_TEST` | mode·gear·E-stop·pedal 주입, brake PWM 관측, EZ/KEYA CAN emulator와 Plant |
 | `software/src/control_launch` | 전체 제어 launch 파일용 패키지이며 현재 통합 launch는 없음 |
 | `software/src/longitudinal_ctrl` | 현재 패키지 골격만 있고 실행 노드는 없음 |
 | `software/src/can_lab` | SocketCAN 기반 구동·조향 CAN 시험 도구 |
@@ -85,6 +89,8 @@ STM 펌웨어 빌드와 보드별 micro-ROS Agent 실행 절차는
 | [Safety](docs/SAFETY.md) | E-stop, timeout, fail-safe와 복구 동작 |
 | [Hardware documents](docs/hardware/README.md) | 구동·조향 하드웨어 제조사 매뉴얼과 통신 프로토콜 |
 | [Firmware](firmware/README.md) | 공통 STM 빌드와 micro-ROS Agent 실행 |
+| [HIL runbook](docs/HIL_RUNBOOK.md) | SSH/X11부터 Agent·GUI·시험·종료까지 전체 HIL 운용 절차 |
+| [HIL package](software/src/kaiev26_hil/README.md) | STM_TEST bridge, GUI, protocol과 scenario 상세 |
 | [STM_A](firmware/STM_A/README.md) | STM_A 내부 구조 및 동작 |
 | [STM_B](firmware/STM_B/README.md) | STM_B 내부 구조 및 동작 |
 | [Lateral control](software/src/lateral_ctrl/README.md) | 현재 KEYA 조향 패키지 사용법 |
@@ -92,8 +98,8 @@ STM 펌웨어 빌드와 보드별 micro-ROS Agent 실행 절차는
 ## 개발 규칙
 
 펌웨어의 현재 구현과 인터페이스·안전 동작은 위 기준 문서에 정리되어 있습니다.
-`software` 패키지 전체의 구조와 실행 절차는 아직 정리 중이며, 코드 구조가
-안정된 뒤 패키지별 README와 통합 실행 문서를 별도 작성할 예정입니다.
+HIL 실행은 [HIL runbook](docs/HIL_RUNBOOK.md)을 따르며, 전체 차량 software stack의
+단일 통합 실행 절차는 `control_launch`가 구성된 뒤 별도로 정리합니다.
 
 현재 `control_launch`에는 통합 launch가 없고 `longitudinal_ctrl`에는 실행 노드가
 없으므로, 문서에 없는 전체 차량 실행 명령을 추정해서 사용하지 마십시오.
