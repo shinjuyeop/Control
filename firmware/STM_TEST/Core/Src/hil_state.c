@@ -1,6 +1,7 @@
 #include "hil_state.h"
 
 #include "cmsis_os2.h"
+#include <stdint.h>
 #include <string.h>
 
 extern osMutexId_t HilStateMutexHandle;
@@ -12,6 +13,8 @@ void HilState_Init(void)
   memset(&s_hil_state, 0, sizeof(s_hil_state));
   s_hil_state.ez_can_enabled = true;
   s_hil_state.keya_can_enabled = true;
+  s_hil_state.ez_rx_age_ms = UINT32_MAX;
+  s_hil_state.keya_rx_age_ms = UINT32_MAX;
   s_hil_state.brake_pwm_lost = true;
   s_hil_state.brake_state = HIL_BRAKE_UNKNOWN;
 }

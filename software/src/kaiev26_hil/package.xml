@@ -18,6 +18,8 @@
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
+  <!-- hil_bench.launch.py starts the STM_A/STM_B Agents. -->
+  <exec_depend>micro_ros_agent</exec_depend>
   <exec_depend>python3-serial</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>python3-pyqt5</exec_depend>

@@ -99,6 +99,62 @@ float HilLogic_Approach(float current, float target, float max_step)
   return target;
 }
 
+void HilLogic_SetMotionFromRpm(HilState_t *state, float rpm)
+{
+  if (state == NULL) return;
+  if (rpm < HIL_RPM_MIN) rpm = HIL_RPM_MIN;
+  if (rpm > HIL_RPM_MAX) rpm = HIL_RPM_MAX;
+  const float speed_mps = rpm * HIL_PI_F * HIL_EZ_TIRE_DIAMETER_M /
+      (60.0f * HIL_EZ_GEAR_RATIO);
+  state->motor_rpm = rpm;
+  state->vehicle_speed_kph = speed_mps * 3.6f;
+}
+
+HilEZCommand_t HilLogic_EZDecodeCommand(const uint8_t data[8])
+{
+  HilEZCommand_t command = {0};
+  if (data == NULL) return command;
+  if (HilLogic_IsFilled(data, 0xAAu)) {
+    command.handshake_ack = true;
+    return command;
+  }
+  const uint16_t current_raw =
+      (uint16_t)((uint16_t)data[0] | ((uint16_t)data[1] << 8));
+  const uint16_t rpm_raw =
+      (uint16_t)((uint16_t)data[2] | ((uint16_t)data[3] << 8));
+  command.phase_current_a = ((float)current_raw * 0.1f) - 3200.0f;
+  command.rpm_field = (float)((int32_t)rpm_raw - 32000);
+  command.running = (data[4] & 0x01u) != 0u;
+  command.speed_control = (data[4] & 0x02u) != 0u;
+  return command;
+}
+
+float HilLogic_EZPlantTargetRpm(const HilEZCommand_t *command)
+{
+  if ((command == NULL) || command->handshake_ack || !command->running) {
+    return 0.0f;
+  }
+  if (command->speed_control) return command->rpm_field;
+
+  /* Torque control: the RPM field is only a limit, so the commanded phase
+   * current decides how much of it the motor actually reaches. */
+  float fraction = command->phase_current_a / HIL_EZ_PLANT_TORQUE_FULL_SCALE_A;
+  if (fraction < -1.0f) fraction = -1.0f;
+  if (fraction > 1.0f) fraction = 1.0f;
+  if (fraction < 0.0f) fraction = -fraction;
+  return command->rpm_field * fraction;
+}
+
+float HilLogic_PlantStepRpm(float current_rpm, float target_rpm,
+                            float dt_s, float tau_s)
+{
+  if (!isfinite(current_rpm) || !isfinite(target_rpm)) return current_rpm;
+  if (!(dt_s > 0.0f)) return current_rpm;
+  /* tau <= dt degenerates to snapping straight to the target. */
+  if (!(tau_s > dt_s)) return target_rpm;
+  return current_rpm + ((target_rpm - current_rpm) * (dt_s / tau_s));
+}
+
 bool HilLogic_ProcessCommand(HilState_t *state, char *line,
                              char *reply, size_t reply_size)
 {
@@ -129,11 +185,14 @@ bool HilLogic_ProcessCommand(HilState_t *state, char *line,
 
   if ((count == 1u) && token_is(tokens[0], "STATUS")) {
     (void)snprintf(reply, reply_size,
-      "STATUS mode=%s gear=%s pedal=%.1f estop_dash=%u estop_side=%u estop_rf=%u "
+      "STATUS protocol=2 mode=%s gear=%s pedal=%.1f estop_dash=%u estop_side=%u estop_rf=%u "
       "speed=%.2f rpm=%.0f voltage=%.1f current=%.1f motor_temp=%.1f "
       "brake_period_us=%lu brake_us=%lu brake=%s pwm_lost=%u "
       "steer=%.2f steer_target=%.2f ez_rx=%lu ez_tx=%lu keya_rx=%lu keya_tx=%lu "
-      "ez_can=%u keya_can=%u ez_ok=%u keya_ok=%u ez_fault=%u keya_fault=%u",
+      "ez_can=%u keya_can=%u ez_ok=%u keya_ok=%u ez_fault=%u keya_fault=%u "
+      "plant=%u ez_target_rpm=%.0f ez_running=%u ez_speed_control=%u "
+      "ez_command_rpm=%.0f ez_command_current=%.1f ez_rx_age_ms=%lu "
+      "keya_enabled=%u keya_rx_age_ms=%lu",
       state->auto_mode ? "AUTO" : "MANUAL", state->reverse ? "REV" : "FWD",
       (double)state->pedal_percent, state->estop_dashboard, state->estop_side,
       state->estop_rf, (double)state->vehicle_speed_kph, (double)state->motor_rpm,
@@ -147,13 +206,19 @@ bool HilLogic_ProcessCommand(HilState_t *state, char *line,
       (unsigned long)state->ez_tx_count, (unsigned long)state->keya_rx_count,
       (unsigned long)state->keya_tx_count, state->ez_can_enabled,
       state->keya_can_enabled, state->ez_can_healthy, state->keya_can_healthy,
-      state->ez_fault, state->keya_fault);
+      state->ez_fault, state->keya_fault,
+      state->ez_plant_enabled, (double)state->ez_target_rpm,
+      state->ez_running, state->ez_speed_control,
+      (double)state->ez_command_rpm, (double)state->ez_command_current_a,
+      (unsigned long)state->ez_rx_age_ms, state->keya_motor_enabled,
+      (unsigned long)state->keya_rx_age_ms);
     return true;
   }
   if ((count == 1u) && token_is(tokens[0], "HELP")) {
     (void)snprintf(reply, reply_size,
       "HELP SET MODE|GEAR|ESTOP|PEDAL|SPEED|RPM|VOLTAGE|CURRENT|MOTOR_TEMP|"
-      "STEER_POS|EZ_CAN|KEYA_CAN ...; FAULT EZ|KEYA [DROP_TX] ON|OFF; STATUS");
+      "STEER_POS|EZ_CAN|KEYA_CAN|PLANT ...; FAULT EZ|KEYA [DROP_TX] ON|OFF; "
+      "STATUS");
     return true;
   }
 
@@ -178,6 +243,13 @@ bool HilLogic_ProcessCommand(HilState_t *state, char *line,
     if (token_is(tokens[1], "EZ_CAN")) state->ez_can_enabled = enabled;
     else state->keya_can_enabled = enabled;
     success = true;
+  } else if ((count == 3u) && token_is(tokens[0], "SET") &&
+             token_is(tokens[1], "PLANT") &&
+             (token_is(tokens[2], "ON") || token_is(tokens[2], "OFF"))) {
+    /* Turning the plant off leaves the current motion in place so the operator
+     * keeps whatever the loop reached and can inject from there. */
+    state->ez_plant_enabled = token_is(tokens[2], "ON");
+    success = true;
   } else if ((count == 3u) && token_is(tokens[0], "SET")) {
     float *field = NULL;
     float minimum = 0.0f, maximum = 0.0f;
@@ -196,9 +268,7 @@ bool HilLogic_ProcessCommand(HilState_t *state, char *line,
         state->motor_rpm = speed_mps * 60.0f * HIL_EZ_GEAR_RATIO /
             (HIL_PI_F * HIL_EZ_TIRE_DIAMETER_M);
       } else if (field == &state->motor_rpm) {
-        const float speed_mps = value * HIL_PI_F * HIL_EZ_TIRE_DIAMETER_M /
-            (60.0f * HIL_EZ_GEAR_RATIO);
-        state->vehicle_speed_kph = speed_mps * 3.6f;
+        HilLogic_SetMotionFromRpm(state, value);
       }
       success = true;
     }

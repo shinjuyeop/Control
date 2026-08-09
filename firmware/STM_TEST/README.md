@@ -6,6 +6,11 @@ brake servo PWM, Host의 KEYA steering CAN 경로를 실제 제어기 없이 시
 있게 한다. micro-ROS는 사용하지 않으며 PC 제어는 LPUART1 ASCII protocol을
 사용한다.
 
+SSH/X11에서 STM_A/B Agent와 GUI까지 실행하는 전체 절차는
+[`../../docs/HIL_RUNBOOK.md`](../../docs/HIL_RUNBOOK.md)를 따른다.
+ROS bridge·topic·service와 GUI 계약은
+[`../../software/src/kaiev26_hil/README.md`](../../software/src/kaiev26_hil/README.md)에서 설명한다.
+
 ## Pin map
 
 | Pin | Function | Meaning |
@@ -32,6 +37,7 @@ transceiver와 올바른 120-ohm termination이 필요하다. MCU FDCAN pin을 C
 - pedal 0% (`DAC=560`, STM_A의 `PEDAL_ADC_MIN`)
 - vehicle speed, motor RPM, steering position 0
 - EZkontrol/KEYA CAN enabled
+- plant 비활성. speed/RPM은 주입한 값을 그대로 유지한다
 - fault 및 TX drop 없음
 
 ## UART protocol
@@ -57,6 +63,7 @@ SET MOTOR_TEMP <-40..210 C>
 SET STEER_POS <-1800..1800 motor-deg>
 SET EZ_CAN ON|OFF
 SET KEYA_CAN ON|OFF
+SET PLANT ON|OFF
 FAULT EZ DROP_TX ON|OFF
 FAULT KEYA DROP_TX ON|OFF
 FAULT EZ ON|OFF
@@ -70,11 +77,21 @@ EZkontrol motor RPM으로 환산한다. `SET RPM`은 반대로 diagnostic speed�
 `SET STEER_POS`는 KEYA motor shaft degree이며 실제 query/command의 10,000
 count/rev와 변환된다.
 
+`SET PLANT ON`은 아래 EZkontrol emulator의 plant를 켠다. plant가 켜져 있으면
+speed와 RPM은 STM_A가 보낸 CAN 명령을 따라가므로 `SET SPEED`/`SET RPM`으로 넣은
+값은 다음 plant 주기에 덮어써진다. plant를 끄면 그 시점의 motion을 그대로 두므로
+운전자가 도달한 값에서 이어서 주입할 수 있다.
+
 STATUS 응답 예시는 다음과 같다.
 
 ```text
-STATUS mode=AUTO gear=FWD pedal=25.0 estop_dash=0 estop_side=0 estop_rf=0 speed=5.20 rpm=487 voltage=52.3 current=12.5 motor_temp=40.0 brake_period_us=20000 brake_us=1388 brake=RELEASED pwm_lost=0 steer=1.50 steer_target=2.00 ez_rx=10 ez_tx=20 keya_rx=20 keya_tx=21 ez_can=1 keya_can=1 ez_fault=0 keya_fault=0
+STATUS protocol=2 mode=AUTO gear=FWD pedal=25.0 estop_dash=0 estop_side=0 estop_rf=0 speed=5.20 rpm=487 voltage=52.3 current=12.5 motor_temp=40.0 brake_period_us=20000 brake_us=1388 brake=RELEASED pwm_lost=0 steer=1.50 steer_target=2.00 ez_rx=10 ez_tx=20 keya_rx=20 keya_tx=21 ez_can=1 keya_can=1 ez_ok=1 keya_ok=1 ez_fault=0 keya_fault=0 plant=1 ez_target_rpm=1200 ez_running=1 ez_speed_control=1 ez_command_rpm=1200 ez_command_current=23.5 ez_rx_age_ms=12 keya_enabled=1 keya_rx_age_ms=15
 ```
+
+`ez_ok`/`keya_ok`는 FDCAN 초기화 및 queue 상태이지 상대 controller 연결 판정이
+아니다. 실제 link는 `*_rx`, `*_rx_age_ms`로 판단한다. 아직 유효 frame을 받지
+않았거나 CAN을 껐다가 다시 켠 직후의 age는 `UINT32_MAX`(4294967295)다.
+`protocol=2`는 plant 및 command-observation field가 포함된 STATUS 계약이다.
 
 ## EZkontrol emulator
 
@@ -95,6 +112,29 @@ STM_A가 RPM으로 속도를 계산한다. Part II는 temperature, fault, life c
 수신한 STM_A command의 RUN/control-mode bit를 반영한다. `DROP_TX`는 수신을
 유지하고 handshake/status 송신만 버린다.
 
+`ACTIVE`에서 `HIL_EZ_RX_TIMEOUT_MS`(500 ms) 동안 command frame이 오지 않으면
+`WAIT_HANDSHAKE`로 돌아간다. STM_A는 handshake가 끝나기 전에는 CAN을 보내지
+않고 emulator는 `WAIT_HANDSHAKE`에서만 `0x55`를 보내므로, 이 복귀가 없으면
+STM_A만 재시작했을 때 양쪽이 서로를 영원히 기다린다.
+
+### Plant
+
+`SET PLANT ON`이면 emulator가 수신한 command에서 목표 motor RPM을 뽑아 1차 지연으로
+`motor_rpm`을 갱신한다. 시정수는 `HIL_EZ_PLANT_TAU_S`(0.60 s)이고 차량 질량이나
+주행 저항은 넣지 않는다. 속도 명령이 STM_A가 되읽는 RPM까지 도달하는지 확인하는
+용도이며 실제 가속도를 재현하지 않는다.
+
+- speed control(bit1=1): 목표 RPM은 command의 RPM field 그대로다
+- torque control(bit1=0): RPM field는 상한이므로 phase current를
+  `HIL_EZ_PLANT_TORQUE_FULL_SCALE_A`(350 A) 대비 비율로 곱한다. STM_A는 MANUAL
+  pedal 0~100%를 0~175 A로 보내므로 pedal 100%가 상한의 절반이 된다
+- RUN bit가 0이거나 handshake가 안 끝났으면 목표는 0이다
+
+`ez_target_rpm`은 이렇게 계산한 목표값이며 STATUS로 관찰할 수 있다.
+원본 command의 `ez_running`, `ez_speed_control`, `ez_command_rpm`,
+`ez_command_current`도 함께 노출하므로 target 계산과 실제 RPM 추종을 분리해 볼 수
+있다.
+
 ## KEYA emulator
 
 기본 node ID는 1이다.
@@ -107,6 +147,11 @@ Enable, disable, absolute position command와 encoder position, motor speed/curr
 fault, voltage, temperature query payload를 KEYA V1.1 manual 형식으로 처리한다.
 Position은 signed big-endian 32-bit, 10,000 count/rev다. Enable 상태에서는 실제
 position이 10 ms마다 최대 90 motor-deg/s로 target을 따라간다.
+
+`keya_enabled`는 마지막 enable/disable command 결과이고 `keya_rx_age_ms`는 마지막
+유효 command/query 이후 경과시간이다. FDCAN2 transceiver가 없는 구성에서도
+emulator와 GUI는 동작하며, RX count 0/age UINT32_MAX가 물리 link 부재를 명확히
+나타낸다. KEYA 추종 모델은 EZ의 `SET PLANT`와 독립적이다.
 
 1차 state에는 별도의 KEYA supply/current/temperature 입력이 없으므로 해당 query는
 0을 반환한다. `FAULT KEYA ON`은 매뉴얼의 CAN-disconnected fault bit 14로

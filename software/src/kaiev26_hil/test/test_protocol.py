@@ -5,6 +5,7 @@ from kaiev26_hil.protocol import (
     build_fault,
     build_set_estop,
     build_set_pedal,
+    build_set_plant,
     desired_status_mismatches,
     desired_commands,
     parse_response,
@@ -15,11 +16,23 @@ from kaiev26_hil.protocol import (
 
 
 STATUS = (
-    "STATUS mode=AUTO gear=FWD pedal=25.0 estop_dash=0 estop_side=1 estop_rf=0 "
+    "STATUS protocol=2 mode=AUTO gear=FWD pedal=25.0 estop_dash=0 estop_side=1 estop_rf=0 "
     "speed=5.20 rpm=487 voltage=52.3 current=12.5 motor_temp=40.0 "
     "brake_period_us=20000 brake_us=1388 brake=RELEASED pwm_lost=0 "
     "steer=1.50 steer_target=2.00 ez_rx=10 ez_tx=20 keya_rx=30 keya_tx=40 "
-    "ez_can=1 keya_can=1 ez_ok=1 keya_ok=0 ez_fault=0 keya_fault=1"
+    "ez_can=1 keya_can=1 ez_ok=1 keya_ok=0 ez_fault=0 keya_fault=1 "
+    "plant=0 ez_target_rpm=0 ez_running=1 ez_speed_control=1 "
+    "ez_command_rpm=1200 ez_command_current=23.5 ez_rx_age_ms=12 "
+    "keya_enabled=0 keya_rx_age_ms=4294967295"
+)
+
+LEGACY_STATUS = " ".join(
+    token for token in STATUS.split()
+    if not token.startswith((
+        "protocol=", "plant=", "ez_target_rpm=", "ez_running=",
+        "ez_speed_control=", "ez_command_rpm=", "ez_command_current=",
+        "ez_rx_age_ms=", "keya_enabled=", "keya_rx_age_ms=",
+    ))
 )
 
 
@@ -43,7 +56,23 @@ def test_status_parser_uses_exact_firmware_keys():
     assert status.brake_us == 1388
     assert status.ez_ok is True
     assert status.keya_ok is False
+    assert status.protocol == 2
+    assert status.ez_command_rpm == 1200
+    assert status.ez_rx_age_ms == 12
     assert status.received_monotonic == 123.0
+
+
+def test_status_parser_accepts_legacy_firmware_without_plant_fields():
+    status = parse_status(LEGACY_STATUS)
+    assert status.protocol == 1
+    assert status.plant is False
+    assert status.ez_command_rpm == 0.0
+    assert status.keya_rx_age_ms == 4294967295
+
+
+def test_protocol_2_status_requires_all_observation_fields():
+    with pytest.raises(ValueError, match="missing protocol 2 STATUS keys"):
+        parse_status(STATUS.replace(" ez_command_rpm=1200", ""))
 
 
 def test_response_parser_distinguishes_ok_error_and_status():
@@ -75,3 +104,42 @@ def test_desired_status_comparison_uses_firmware_gear_and_observable_fields():
     desired.estop_side = True
     desired.keya_fault = True
     assert desired_status_mismatches(desired, status) == []
+
+
+def test_plant_command_round_trips_through_desired_state():
+    assert build_set_plant(True) == "SET PLANT ON"
+    assert validate_command("set plant off") == "SET PLANT OFF"
+    with pytest.raises(ValueError):
+        validate_command("SET PLANT MAYBE")
+
+    desired = HilDesiredState()
+    assert desired.plant_enabled is False
+    commands = desired_commands(desired)
+    assert commands[0] == "SET PLANT OFF"
+    update_desired(desired, "SET PLANT ON")
+    assert desired.plant_enabled is True
+    assert desired_commands(desired)[-1] == "SET PLANT ON"
+    assert not any(
+        command.startswith("SET PLANT ")
+        for command in desired_commands(desired, protocol_version=1)
+    )
+
+
+def test_running_plant_excludes_injected_motion_from_mismatches():
+    """The plant drives speed/rpm, so desired motion must not be compared."""
+    status = parse_status(
+        STATUS.replace("plant=0", "plant=1").replace("speed=5.20", "speed=9.90")
+    )
+    desired = HilDesiredState(
+        mode="AUTO", pedal=25.0, speed=5.2, motion_source="SPEED",
+        voltage=52.3, current=12.5, motor_temp=40.0, steering_position=2.0,
+        estop_side=True, keya_fault=True, plant_enabled=True,
+    )
+    assert desired_status_mismatches(desired, status) == []
+
+    # The plant flag itself is still compared.
+    desired.plant_enabled = False
+    assert any(
+        entry.startswith("plant:")
+        for entry in desired_status_mismatches(desired, status)
+    )

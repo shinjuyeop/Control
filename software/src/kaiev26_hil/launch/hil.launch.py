@@ -12,7 +12,7 @@ def generate_launch_description():
     config = os.path.join(share, "config", "hil.yaml")
     scenario_file = LaunchConfiguration("scenario_file")
     return LaunchDescription([
-        DeclareLaunchArgument("serial_port", default_value="/dev/serial/by-id/REPLACE_WITH_STM_TEST"),
+        DeclareLaunchArgument("serial_port", default_value="/dev/hil_test"),
         DeclareLaunchArgument("scenario_file", default_value=""),
         DeclareLaunchArgument("results_dir", default_value="test_results"),
         Node(

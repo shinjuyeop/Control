@@ -15,6 +15,7 @@ import rclpy
 from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
 from rclpy.node import Node
 
+from visualization.qt_runtime import ensure_bundled_qt_first
 from visualization.ros_state_cache import (
     bool_text,
     BRAKE,
@@ -36,6 +37,8 @@ from visualization.ros_state_cache import (
     steering_state_text,
     valid_bool_text,
 )
+
+ensure_bundled_qt_first()
 
 try:
     from PyQt5 import QtCore, QtGui, QtWidgets
@@ -810,6 +813,7 @@ def _spin_executor(executor):
 
 
 def main(args=None):
+    ensure_bundled_qt_first()
     if GUI_IMPORT_ERROR is not None:
         raise RuntimeError(
             'vehicle_dashboard requires python3-pyqt5 and '
