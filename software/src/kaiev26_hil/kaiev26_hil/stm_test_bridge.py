@@ -200,7 +200,15 @@ class BridgeWorker(threading.Thread):
                     self._handle_command(command)
                 if time.monotonic() >= next_status:
                     self._handle_command("STATUS")
-                    next_status = time.monotonic() + self.status_period
+                    # Advance from the deadline, not from completion. A STATUS
+                    # round trip is ~44 ms of wire time at 115200; charging that
+                    # to the next period turned a requested 10 Hz into 6.9 Hz.
+                    next_status += self.status_period
+                    now = time.monotonic()
+                    if next_status <= now:
+                        # Behind schedule: resync rather than queue back-to-back
+                        # polls, which would starve operator commands.
+                        next_status = now + self.status_period
             except Exception as exc:
                 self._disconnect(str(exc))
                 next_reconnect = time.monotonic() + self.reconnect_interval_sec
