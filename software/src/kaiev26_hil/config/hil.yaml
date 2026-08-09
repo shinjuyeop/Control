@@ -2,7 +2,11 @@ stm_test_bridge:
   ros__parameters:
     serial_port: "/dev/hil_test"
     baud_rate: 115200
-    status_poll_hz: 5.0
+    # A protocol 2 STATUS round trip is 501 bytes, which is 43.5 ms of wire time
+    # at 115200 8N1. 10 Hz therefore uses 44% of the link and leaves the rest for
+    # commands; 20 Hz would saturate it and delay them. Operator-visible latency
+    # is one poll period, so this is also what the 100 ms GUI timer expects.
+    status_poll_hz: 10.0
     command_timeout_sec: 0.5
     retry_count: 2
     reconnect_interval_sec: 1.0
