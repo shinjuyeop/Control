@@ -118,6 +118,8 @@ NUCLEO-G474RE의 ST-LINK serial을 기준으로 다음 이름을 사용합니다
 
 | 보드 | 올린 펌웨어 | ST-LINK serial | 고정 장치 이름 |
 |---|---|---|---|
+| Vehicle STM_A | STM_A | `003E002E3235510B37333439` | `/dev/stm_a` |
+| Vehicle STM_B | STM_B | `004E003B3235510B37333439` | `/dev/stm_b` |
 | HIL bench A | STM_A | `0025002B3234511137333934` | `/dev/hil_a` |
 | HIL bench B | STM_B | `003D00433234511137333934` | `/dev/hil_b` |
 | HIL bench TEST | STM_TEST | `002E00253235510837333439` | `/dev/hil_test` |
