@@ -1,0 +1,562 @@
+{
+  "configById": {
+    "Plot!speed0810": {
+      "foxglovePanelTitle": "목표 속도 & 현재 속도",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/vehicle/command.speed_target_mps",
+          "enabled": true,
+          "color": "#4e98e2",
+          "id": "spd-target-0810",
+          "label": "target"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.speed_mps",
+          "enabled": true,
+          "color": "#f5774d",
+          "id": "spd-actual-0810",
+          "label": "actual"
+        }
+      ],
+      "yAxisLabel": "m/s",
+      "showYAxisLabels": true,
+      "maxYValue": 20,
+      "minYValue": 0
+    },
+    "Plot!steer0810": {
+      "foxglovePanelTitle": "목표 조향 & 실제 조향",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/vehicle/command.steering_target_rad",
+          "enabled": true,
+          "color": "#4e98e2",
+          "id": "str-target-0810",
+          "label": "target"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.actual_wheel_angle_rad",
+          "enabled": true,
+          "color": "#f5774d",
+          "id": "str-actual-0810",
+          "label": "actual"
+        }
+      ],
+      "minYValue": -15,
+      "maxYValue": 15
+    },
+    "Plot!rpm0810": {
+      "foxglovePanelTitle": "모터 RPM 추종",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.commanded_motor_rpm",
+          "enabled": true,
+          "color": "#4e98e2",
+          "id": "rpm-cmd-0810",
+          "label": "commanded"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.motor_rpm",
+          "enabled": true,
+          "color": "#f5774d",
+          "id": "rpm-act-0810",
+          "label": "actual"
+        }
+      ],
+      "yAxisLabel": "rpm",
+      "showYAxisLabels": true
+    },
+    "Plot!current0810": {
+      "foxglovePanelTitle": "전류 (지령 / 상전류 / 버스)",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.commanded_phase_current_a",
+          "enabled": true,
+          "color": "#4e98e2",
+          "id": "cur-cmd-0810",
+          "label": "commanded phase"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.phase_current_a",
+          "enabled": true,
+          "color": "#f5774d",
+          "id": "cur-phase-0810",
+          "label": "actual phase"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.bus_current_a",
+          "enabled": true,
+          "color": "#2ecc71",
+          "id": "cur-bus-0810",
+          "label": "bus"
+        }
+      ],
+      "yAxisLabel": "A",
+      "showYAxisLabels": true
+    },
+    "Plot!voltage0810": {
+      "foxglovePanelTitle": "버스 전압",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.bus_voltage_v",
+          "enabled": true,
+          "color": "#9b59b6",
+          "id": "volt-0810",
+          "label": "bus voltage"
+        }
+      ],
+      "yAxisLabel": "V",
+      "showYAxisLabels": true
+    },
+    "Plot!temp0810": {
+      "foxglovePanelTitle": "온도 (컨트롤러 / 모터)",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.controller_temperature_c",
+          "enabled": true,
+          "color": "#4e98e2",
+          "id": "temp-ctrl-0810",
+          "label": "controller"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.motor_temperature_c",
+          "enabled": true,
+          "color": "#e74c3c",
+          "id": "temp-motor-0810",
+          "label": "motor"
+        }
+      ],
+      "yAxisLabel": "°C",
+      "showYAxisLabels": true
+    },
+    "Plot!age0810": {
+      "foxglovePanelTitle": "메시지 신선도 (age)",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.command_age_ms",
+          "enabled": true,
+          "color": "#4e98e2",
+          "id": "age-drvcmd-0810",
+          "label": "drive command"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.part1_age_ms",
+          "enabled": true,
+          "color": "#f5774d",
+          "id": "age-part1-0810",
+          "label": "EZkontrol Part I"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.part2_age_ms",
+          "enabled": true,
+          "color": "#2ecc71",
+          "id": "age-part2-0810",
+          "label": "EZkontrol Part II"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/brake/status.command_age_ms",
+          "enabled": true,
+          "color": "#9b59b6",
+          "id": "age-brk-0810",
+          "label": "brake command"
+        }
+      ],
+      "yAxisLabel": "ms",
+      "showYAxisLabels": true,
+      "minYValue": 0
+    },
+    "StateTransitions!drive0810": {
+      "foxglovePanelTitle": "구동 상태 이력",
+      "paths": [
+        {
+          "value": "/drive/status.mode",
+          "timestampMethod": "receiveTime",
+          "label": "mode"
+        },
+        {
+          "value": "/drive/status.gear",
+          "timestampMethod": "receiveTime",
+          "label": "gear"
+        },
+        {
+          "value": "/drive/status.tractive_commanded",
+          "timestampMethod": "receiveTime",
+          "label": "tractive commanded"
+        },
+        {
+          "value": "/drive/status.tractive_feedback",
+          "timestampMethod": "receiveTime",
+          "label": "tractive feedback"
+        },
+        {
+          "value": "/drive/status.tractive_feedback_valid",
+          "timestampMethod": "receiveTime",
+          "label": "tractive fb valid"
+        },
+        {
+          "value": "/drive/status.controller_control_mode",
+          "timestampMethod": "receiveTime",
+          "label": "control mode (0=torque 1=speed)"
+        }
+      ],
+      "isSynced": true
+    },
+    "StateTransitions!health0810": {
+      "foxglovePanelTitle": "통신 / 정지 이력",
+      "paths": [
+        {
+          "value": "/drive/status.command_received",
+          "timestampMethod": "receiveTime",
+          "label": "command received"
+        },
+        {
+          "value": "/drive/status.command_timeout",
+          "timestampMethod": "receiveTime",
+          "label": "command timeout"
+        },
+        {
+          "value": "/drive/status.part1_valid",
+          "timestampMethod": "receiveTime",
+          "label": "Part I valid"
+        },
+        {
+          "value": "/drive/status.part2_valid",
+          "timestampMethod": "receiveTime",
+          "label": "Part II valid"
+        },
+        {
+          "value": "/drive/status.fault_bits_valid",
+          "timestampMethod": "receiveTime",
+          "label": "fault bits valid"
+        },
+        {
+          "value": "/drive/status.stop_request",
+          "timestampMethod": "receiveTime",
+          "label": "stop request"
+        },
+        {
+          "value": "/brake/status.brake_commanded",
+          "timestampMethod": "receiveTime",
+          "label": "brake commanded"
+        },
+        {
+          "value": "/brake/status.stop_reason_bits",
+          "timestampMethod": "receiveTime",
+          "label": "stop reason bits"
+        }
+      ],
+      "isSynced": true
+    },
+    "Gauge!pedal0810": {
+      "foxglovePanelTitle": "pedal %",
+      "path": "/drive/status.pedal_percent",
+      "minValue": 0,
+      "maxValue": 100,
+      "colorMode": "colormap",
+      "colorMap": "red-yellow-green",
+      "gradient": [
+        "#0000ff",
+        "#ff00ff"
+      ],
+      "reverse": true
+    },
+    "RawMessages!fault0810": {
+      "foxglovePanelTitle": "fault bits (원본)",
+      "diffEnabled": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "showFullMessageForDiff": false,
+      "topicPath": "/drive/status.fault_bits"
+    },
+    "Indicator!gear0810": {
+      "path": "/drive/status.gear",
+      "style": "bulb",
+      "fontSize": 30,
+      "fallbackColor": "#f1c40f",
+      "fallbackLabel": "REVERSE",
+      "rules": [
+        {
+          "operator": "=",
+          "rawValue": "0",
+          "color": "#2ecc71",
+          "label": "DRIVE"
+        }
+      ],
+      "foxglovePanelTitle": "gear"
+    },
+    "Indicator!mode0810": {
+      "path": "/drive/status.mode",
+      "style": "bulb",
+      "fontSize": 30,
+      "fallbackColor": "#95a5a6",
+      "fallbackLabel": "MANUAL",
+      "rules": [
+        {
+          "operator": "=",
+          "rawValue": "1",
+          "color": "#2ecc71",
+          "label": "AUTO"
+        }
+      ],
+      "foxglovePanelTitle": "mode"
+    },
+    "Indicator!estop0810": {
+      "path": "/brake/status.stop_reason_bits",
+      "style": "bulb",
+      "fontSize": 30,
+      "fallbackColor": "#95a5a6",
+      "fallbackLabel": "NORMAL",
+      "rules": [
+        {
+          "operator": "=",
+          "rawValue": "4",
+          "color": "#e74c3c",
+          "label": "EMERGENCY!"
+        },
+        {
+          "operator": "=",
+          "rawValue": "5",
+          "color": "#e74c3c",
+          "label": "EMERGENCY!"
+        },
+        {
+          "operator": "=",
+          "rawValue": "12",
+          "color": "#e74c3c",
+          "label": "EMERGENCY!"
+        },
+        {
+          "operator": "=",
+          "rawValue": "13",
+          "color": "#e74c3c",
+          "label": "EMERGENCY!"
+        }
+      ],
+      "foxglovePanelTitle": "estop"
+    },
+    "Indicator!brake0810": {
+      "path": "/brake/status.brake_commanded",
+      "style": "bulb",
+      "fontSize": 30,
+      "fallbackColor": "#95a5a6",
+      "fallbackLabel": "NORMAL",
+      "rules": [
+        {
+          "operator": "=",
+          "rawValue": "1",
+          "color": "#e74c3c",
+          "label": "BRAKE"
+        }
+      ],
+      "foxglovePanelTitle": "brake commanded"
+    },
+    "Tab!main0810": {
+      "activeTabIdx": 0,
+      "tabs": [
+        {
+          "title": "Speed & Steer",
+          "layout": {
+            "first": "Plot!speed0810",
+            "second": "Plot!steer0810",
+            "direction": "column"
+          }
+        },
+        {
+          "title": "Drive",
+          "layout": {
+            "first": {
+              "first": "Plot!rpm0810",
+              "second": "Plot!current0810",
+              "direction": "column"
+            },
+            "second": {
+              "first": "Plot!voltage0810",
+              "second": "Plot!temp0810",
+              "direction": "column"
+            },
+            "direction": "row"
+          }
+        },
+        {
+          "title": "Health",
+          "layout": {
+            "first": "StateTransitions!health0810",
+            "second": {
+              "first": "StateTransitions!drive0810",
+              "second": "Plot!age0810",
+              "direction": "column"
+            },
+            "direction": "row",
+            "splitPercentage": 55
+          }
+        }
+      ]
+    },
+    "Tab!status0810": {
+      "activeTabIdx": 0,
+      "tabs": [
+        {
+          "title": "Status",
+          "layout": {
+            "first": {
+              "first": "Indicator!gear0810",
+              "second": "Indicator!mode0810",
+              "direction": "row"
+            },
+            "second": {
+              "first": {
+                "first": "Indicator!estop0810",
+                "second": "Indicator!brake0810",
+                "direction": "row"
+              },
+              "second": "Gauge!pedal0810",
+              "direction": "row",
+              "splitPercentage": 66
+            },
+            "direction": "row"
+          }
+        },
+        {
+          "title": "Fault",
+          "layout": "RawMessages!fault0810"
+        }
+      ]
+    },
+    "map!gps0810": {
+      "zoomLevel": 17,
+      "customTileUrl": "",
+      "disabledTopics": [],
+      "followTopic": "",
+      "followFrame": "",
+      "layer": "map",
+      "topicColors": {},
+      "maxNativeZoom": 18,
+      "topicConfig": {
+        "/gps/fix": {
+          "historyMode": "none",
+          "pointSize": 6
+        }
+      },
+      "layers": []
+    },
+    "Parameters!param0810": {},
+    "3D!scene0810": {
+      "cameraState": {
+        "perspective": true,
+        "distance": 47.833119595859685,
+        "phi": 60.000000000004384,
+        "thetaOffset": 60.000000000011354,
+        "targetOffset": [
+          0,
+          0,
+          0
+        ],
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "targetOrientation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "fovy": 45,
+        "near": 0.5,
+        "far": 5000
+      },
+      "followMode": "follow-pose",
+      "fixedFrame": "map",
+      "scene": {},
+      "transforms": {},
+      "topics": {
+        "/initialpose": {
+          "visible": false
+        },
+        "/viz/scene": {
+          "visible": true
+        },
+        "/viz/waypoints": {
+          "visible": true
+        },
+        "/move_base_simple/goal": {
+          "visible": true
+        }
+      },
+      "layers": {
+        "grid": {
+          "visible": false,
+          "drawBehind": false,
+          "instanceId": "grid-0810",
+          "layerId": "foxglove.Grid",
+          "size": 10,
+          "divisions": 10,
+          "lineWidth": 1,
+          "color": "#248eff",
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      "publish": {
+        "type": "point",
+        "poseTopic": "/move_base_simple/goal",
+        "pointTopic": "/clicked_point",
+        "poseEstimateTopic": "/initialpose",
+        "poseEstimateXDeviation": 0.5,
+        "poseEstimateYDeviation": 0.5,
+        "poseEstimateThetaDeviation": 0.26179939
+      },
+      "synchronize": false,
+      "imageMode": {}
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": {
+    "speed": 1
+  },
+  "layout": {
+    "first": {
+      "first": "Tab!main0810",
+      "second": "Tab!status0810",
+      "direction": "column",
+      "splitPercentage": 82
+    },
+    "second": {
+      "first": "map!gps0810",
+      "second": {
+        "first": "Parameters!param0810",
+        "second": "3D!scene0810",
+        "direction": "row"
+      },
+      "direction": "column",
+      "splitPercentage": 54.592161151664676
+    },
+    "direction": "row",
+    "splitPercentage": 57.960457856399586
+  }
+}
