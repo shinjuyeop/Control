@@ -6,12 +6,20 @@ brake servo PWM, Host의 KEYA steering CAN 경로를 실제 제어기 없이 시
 있게 한다. micro-ROS는 사용하지 않으며 PC 제어는 LPUART1 ASCII protocol을
 사용한다.
 
-SSH/X11에서 STM_A/B Agent와 GUI까지 실행하는 전체 절차는
-[`../../docs/HIL_RUNBOOK.md`](../../docs/HIL_RUNBOOK.md)를 따른다.
-ROS bridge·topic·service와 GUI 계약은
-[`../../software/src/kaiev26_hil/README.md`](../../software/src/kaiev26_hil/README.md)에서 설명한다.
+## 1. Intended wiring
 
-## Pin map
+- FDCAN1 transceiver ↔ STM_A FDCAN1 bus
+- FDCAN2 transceiver ↔ PC USB-CAN adapter
+- PC USB serial ↔ NUCLEO LPUART1 pins through a suitable USB-UART path
+- PA4 DAC output ↔ STM_A accelerator ADC input, with common ground
+- PC0/PC1 ↔ STM_A mode/gear inputs
+- PC2/PC3/PC4 ↔ STM_B dashboard/side/RF E-stop inputs
+- STM_B brake servo PWM output ↔ PA6, with compatible logic voltage/common ground
+
+실제 연결 전 GPIO output 간 충돌 여부, 3.3 V logic compatibility, DAC load, CAN
+termination과 NUCLEO virtual COM routing을 회로도 기준으로 다시 확인해야 한다.
+
+## 2. Pin map
 
 | Pin | Function | Meaning |
 |---|---|---|
@@ -30,7 +38,7 @@ ROS bridge·topic·service와 GUI 계약은
 transceiver와 올바른 120-ohm termination이 필요하다. MCU FDCAN pin을 CANH/CANL에
 직접 연결하면 안 된다. 모든 보드는 signal ground를 공유해야 한다.
 
-## Safe defaults
+## 3. Safe defaults
 
 - MANUAL, Forward
 - 세 E-stop 모두 Normal
@@ -40,7 +48,7 @@ transceiver와 올바른 120-ohm termination이 필요하다. MCU FDCAN pin을 C
 - plant 비활성. speed/RPM은 주입한 값을 그대로 유지한다
 - fault 및 TX drop 없음
 
-## UART protocol
+## 4. UART protocol
 
 명령은 ASCII이며 LF 또는 CRLF로 끝난다. 성공은 `OK <command>`, 실패는
 `ERR <reason>`으로 응답한다. `STATUS` 외에는 상태를 자동 출력하지 않는다.
@@ -93,7 +101,7 @@ STATUS protocol=2 mode=AUTO gear=FWD pedal=25.0 estop_dash=0 estop_side=0 estop_
 않았거나 CAN을 껐다가 다시 켠 직후의 age는 `UINT32_MAX`(4294967295)다.
 `protocol=2`는 plant 및 command-observation field가 포함된 STATUS 계약이다.
 
-## EZkontrol emulator
+## 5. EZkontrol emulator
 
 FDCAN1은 extended command ID `0x0C01EFD0`만 FIFO0로 수신한다. 다른 standard,
 extended, remote frame은 global filter에서 거부한다.
@@ -135,7 +143,7 @@ STM_A만 재시작했을 때 양쪽이 서로를 영원히 기다린다.
 `ez_command_current`도 함께 노출하므로 target 계산과 실제 RPM 추종을 분리해 볼 수
 있다.
 
-## KEYA emulator
+## 6. KEYA emulator
 
 기본 node ID는 1이다.
 
@@ -158,7 +166,7 @@ emulator와 GUI는 동작하며, RX count 0/age UINT32_MAX가 물리 link 부재
 표현한다. Disable 상태는 문서의 status bit 0으로 표현한다. 정의되지 않은 fault
 bit는 만들지 않는다.
 
-## Brake PWM monitor
+## 7. Brake PWM monitor
 
 TIM3은 1 us/count PWM Input mode다. CH1 rising/direct capture가 period를, CH2
 falling/indirect capture가 pulse width를 제공한다.
@@ -171,7 +179,7 @@ falling/indirect capture가 pulse width를 제공한다.
 ISR은 capture register와 tick만 기록하고 분류 및 공유 상태 갱신은 Monitor task가
 50 ms마다 수행한다.
 
-## Build and host logic tests
+## 8. Build and host logic tests
 
 반드시 이 README가 있는 디렉터리에서 실행한다.
 
@@ -183,15 +191,12 @@ cmake --build --preset Debug
 
 결과 ELF는 `build/Debug/STM_TEST.elf`다.
 
-## Intended wiring
+## 9. 관련 문서
 
-- FDCAN1 transceiver ↔ STM_A FDCAN1 bus
-- FDCAN2 transceiver ↔ PC USB-CAN adapter
-- PC USB serial ↔ NUCLEO LPUART1 pins through a suitable USB-UART path
-- PA4 DAC output ↔ STM_A accelerator ADC input, with common ground
-- PC0/PC1 ↔ STM_A mode/gear inputs
-- PC2/PC3/PC4 ↔ STM_B dashboard/side/RF E-stop inputs
-- STM_B brake servo PWM output ↔ PA6, with compatible logic voltage/common ground
-
-실제 연결 전 GPIO output 간 충돌 여부, 3.3 V logic compatibility, DAC load, CAN
-termination과 NUCLEO virtual COM routing을 회로도 기준으로 다시 확인해야 한다.
+- 펌웨어 공통 빌드·장치 이름: [`../README.md`](../README.md)
+- 상대 보드: [`../STM_A/README.md`](../STM_A/README.md),
+  [`../STM_B/README.md`](../STM_B/README.md)
+- ROS bridge·topic·service와 GUI 계약:
+  [`../../software/src/kaiev26_hil/README.md`](../../software/src/kaiev26_hil/README.md)
+- HIL 전체 운용 절차: [`../../docs/HIL_RUNBOOK.md`](../../docs/HIL_RUNBOOK.md)
+- 통신 계약: [`../../docs/INTERFACES.md`](../../docs/INTERFACES.md)

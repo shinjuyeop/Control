@@ -236,6 +236,8 @@ field가 없으므로 LCD 또는 debugger의 `VEHICLE_FRAME_VALID_FROM_A`로 확
 ## 16. 관련 문서
 
 - 펌웨어 공통 빌드·Agent: [`../README.md`](../README.md)
+- 상대 보드: [`../STM_A/README.md`](../STM_A/README.md)
+- HIL emulator: [`../STM_TEST/README.md`](../STM_TEST/README.md)
 - 시스템 구조: [`../../docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md)
 - 통신 계약: [`../../docs/INTERFACES.md`](../../docs/INTERFACES.md)
 - 안전 설계: [`../../docs/SAFETY.md`](../../docs/SAFETY.md)

@@ -55,20 +55,7 @@ STM_A와 STM_B는 각각 별도의 LPUART1 serial transport와 micro-ROS Agent�
 
 ## 3. 구성요소별 역할
 
-### 3.1 Host / Control PC
-
-- ROS 2 graph와 각 STM의 micro-ROS Agent를 실행합니다.
-- 설계상 상위 Planning 또는 motion-control 계층에서 들어오는
-  `/vehicle/command`를 STM_A, STM_B와 조향 노드에 전달합니다. 현재
-  `Control` 저장소에는 production 명령 생성 노드가 없습니다.
-- `lateral_ctrl/steering_actuator_node`가 KEYA 모터의 SocketCAN 소유자가 되어
-  조향을 제어합니다.
-- `vehicle_state_publisher`가 `/drive/status`, `/brake/status`,
-  `/steering/status`를 합성해 `/vehicle/state`를 20 Hz로 발행합니다.
-- software 전체 실행 구조는 현재 정리 중이며 통합 실행 절차는 아직 확정되지
-  않았습니다.
-
-### 3.2 STM_A
+### 3.1 STM_A
 
 STM_A는 종방향 구동과 차량의 물리 모드·기어·가속 페달 입력을 담당합니다.
 
@@ -85,7 +72,7 @@ STM_A는 종방향 구동과 차량의 물리 모드·기어·가속 페달 입�
 
 구현 기준: `firmware/STM_A/Core/Src/app_freertos.c`
 
-### 3.3 STM_B
+### 3.2 STM_B
 
 STM_B는 물리 E-stop 입력과 브레이크 서보의 직접 구동을 담당합니다.
 
@@ -102,6 +89,19 @@ STM_B는 물리 E-stop 입력과 브레이크 서보의 직접 구동을 담당�
 현재 application 코드에서 CAN 송수신에 사용되지 않습니다.
 
 구현 기준: `firmware/STM_B/Core/Src/app_freertos.c`
+
+### 3.3 Host / Control PC
+
+- ROS 2 graph와 각 STM의 micro-ROS Agent를 실행합니다.
+- 설계상 상위 Planning 또는 motion-control 계층에서 들어오는
+  `/vehicle/command`를 STM_A, STM_B와 조향 노드에 전달합니다. 현재
+  `Control` 저장소에는 production 명령 생성 노드가 없습니다.
+- `lateral_ctrl/steering_actuator_node`가 KEYA 모터의 SocketCAN 소유자가 되어
+  조향을 제어합니다.
+- `vehicle_state_publisher`가 `/drive/status`, `/brake/status`,
+  `/steering/status`를 합성해 `/vehicle/state`를 20 Hz로 발행합니다.
+- software 전체 실행 구조는 현재 정리 중이며 통합 실행 절차는 아직 확정되지
+  않았습니다.
 
 ### 3.4 조향 제어
 
@@ -210,3 +210,6 @@ traction 차단 조건으로 사용하지 않습니다.
 - 공통 펌웨어 빌드: [`../firmware/README.md`](../firmware/README.md)
 - STM_A 내부 구조: [`../firmware/STM_A/README.md`](../firmware/STM_A/README.md)
 - STM_B 내부 구조: [`../firmware/STM_B/README.md`](../firmware/STM_B/README.md)
+- STM_TEST HIL emulator: [`../firmware/STM_TEST/README.md`](../firmware/STM_TEST/README.md)
+- 조향 패키지: [`../software/src/lateral_ctrl/README.md`](../software/src/lateral_ctrl/README.md)
+- HIL 운용 절차: [`HIL_RUNBOOK.md`](HIL_RUNBOOK.md)

@@ -10,13 +10,21 @@ STM_A는 종방향 모터와 차량 입력을 담당하고, STM_B는 물리 E-st
 firmware/
 ├── STM_A/             # 차량 입력과 EZkontrol 구동 모터 제어
 ├── STM_B/             # 물리 E-stop, 브레이크 서보와 표시 장치
+├── STM_TEST/          # STM_A/B 입출력과 EZ/KEYA CAN을 대신하는 HIL emulator
 ├── micro_ros_agent/   # vendored micro-ROS Agent
-└── tools/             # micro-ROS 라이브러리 재생성 보조 스크립트
+├── tools/             # micro-ROS 라이브러리 재생성 보조 스크립트
+└── udev/              # STM 보드 고정 장치 이름 규칙
 ```
 
 보드 내부 Task와 Peripheral은
-[`STM_A/README.md`](STM_A/README.md)와
-[`STM_B/README.md`](STM_B/README.md)에 정리되어 있습니다.
+[`STM_A/README.md`](STM_A/README.md),
+[`STM_B/README.md`](STM_B/README.md),
+[`STM_TEST/README.md`](STM_TEST/README.md)에 정리되어 있습니다.
+
+STM_A와 STM_B는 실차에 올라가는 펌웨어이고, STM_TEST는 실차 없이 두 보드의
+입출력을 시험하기 위한 bench 전용 펌웨어입니다. 세 보드 모두 같은 CMake preset
+구조를 쓰지만, micro-ROS를 사용하는 것은 STM_A와 STM_B뿐입니다. STM_TEST는
+LPUART1 ASCII protocol로 PC와 직접 통신하므로 Agent가 필요 없습니다.
 
 ## 명령과 안전 경로
 
@@ -63,10 +71,9 @@ STM_B는 EZkontrol CAN Part I/II를 수신하지 않습니다. STM_B가 표시�
 
 ## STM 빌드
 
-두 프로젝트의 CMake preset은 GNU Arm Embedded
-`arm-none-eabi` toolchain을 사용합니다. STM_A preset은
-`/opt/st/stm32cubeclt_1.20.0/`의 compiler 경로를 명시하고, STM_B preset은
-`PATH`에서 compiler를 찾습니다.
+세 프로젝트의 CMake preset은 모두 GNU Arm Embedded `arm-none-eabi` toolchain을
+사용합니다. STM_A preset은 `/opt/st/stm32cubeclt_1.20.0/`의 compiler 경로를
+명시하고, STM_B와 STM_TEST preset은 `PATH`에서 compiler를 찾습니다.
 
 아래 명령은 권장 워크스페이스인 `~/KAI_ws` 루트에서 실행합니다.
 
@@ -78,12 +85,19 @@ cmake --build src/Control/firmware/STM_A/build/Release
 
 cmake -S src/Control/firmware/STM_B --preset Release
 cmake --build src/Control/firmware/STM_B/build/Release
+
+cmake -S src/Control/firmware/STM_TEST --preset Release
+cmake --build src/Control/firmware/STM_TEST/build/Release
 ```
 
 현재 CMake target이 직접 생성하는 결과물은 각 build 디렉터리의 `.elf`입니다.
 HEX·BIN이 필요하면 사용하는 flash 도구에 맞게 별도로 변환하십시오. 플래시
-절차는 사용하는 ST-Link 환경에 맞게 수행하고, 대상 보드가 STM_A인지 STM_B인지
-먼저 확인하십시오.
+절차는 사용하는 ST-Link 환경에 맞게 수행하고, 대상 보드가 어느 것인지 먼저
+확인하십시오.
+
+STM_TEST는 host에서 도는 logic test를 함께 제공합니다. 절차는
+[`STM_TEST/README.md`](STM_TEST/README.md#8-build-and-host-logic-tests)에
+있습니다.
 
 ## micro-ROS Agent 빌드
 

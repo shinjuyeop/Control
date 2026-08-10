@@ -36,9 +36,11 @@ USB serial의 단일 소유자다. 115200 8N1, LF 종료 request-response를 사
 
 Parameters:
 
+괄호 안은 node 선언 기본값이고, launch는 `config/hil.yaml`을 함께 적용한다.
+
 - `serial_port`
 - `baud_rate` (115200)
-- `status_poll_hz` (5.0)
+- `status_poll_hz` (5.0, `hil.yaml`에서 10.0으로 올림)
 - `command_timeout_sec` (0.5)
 - `retry_count` (2)
 - `reconnect_interval_sec` (1.0)
@@ -108,7 +110,7 @@ Parameters:
 ## Safe state
 
 bridge의 Safe State는 firmware의
-[Safe defaults](../../../firmware/STM_TEST/README.md#safe-defaults)와 같다. bridge는 이 상태를
+[Safe defaults](../../../firmware/STM_TEST/README.md#3-safe-defaults)와 같다. bridge는 이 상태를
 desired state에 저장하고 serial 재연결 후 재적용한다. command generator의
 `enabled`는 별도 상태이므로 Safe State 적용 전에 따로 끄는다.
 
@@ -134,7 +136,7 @@ GUI는 KEYA 패널을 항상 표시하고 CAN 주변장치 초기화(`keya_ok`)�
 이후 수신이 끊기면 `STALE RX`로 표시한다. 현재 EZ CAN만 연결된
 bench에서는 `NO RX / NOT CONNECTED`가 정상이다. KEYA CAN ID, payload,
 heartbeat와 조향 추종 모델은 firmware
-[KEYA emulator 명세](../../../firmware/STM_TEST/README.md#keya-emulator)에 있다.
+[KEYA emulator 명세](../../../firmware/STM_TEST/README.md#6-keya-emulator)에 있다.
 
 ## Firmware protocol compatibility
 
