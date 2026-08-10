@@ -12,6 +12,7 @@ from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 import os
 
 
@@ -30,6 +31,10 @@ def generate_launch_description():
             description="비어 있지 않으면 scenario runner를 함께 띄운다.",
         ),
         DeclareLaunchArgument("results_dir", default_value="test_results"),
+        DeclareLaunchArgument(
+            "gui_refresh_ms", default_value="200",
+            description="GUI 갱신 주기(ms). 원격 X11 기준값이며 로컬 화면이면 100.",
+        ),
         Node(
             package="kaiev26_hil", executable="stm_test_bridge", name="stm_test_bridge",
             output="screen",
@@ -41,6 +46,11 @@ def generate_launch_description():
         ),
         Node(
             package="kaiev26_hil", executable="hil_gui", name="hil_gui", output="screen",
+            parameters=[{
+                "refresh_interval_ms": ParameterValue(
+                    LaunchConfiguration("gui_refresh_ms"), value_type=int
+                ),
+            }],
             condition=IfCondition(LaunchConfiguration("gui")),
         ),
         Node(

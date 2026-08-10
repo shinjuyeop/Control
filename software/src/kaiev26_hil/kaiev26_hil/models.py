@@ -69,7 +69,12 @@ class HilDesiredState:
     steering_position: float = 0.0
     ez_can_enabled: bool = True
     keya_can_enabled: bool = True
-    plant_enabled: bool = False
+    # Closed-loop traction is the default the bench runs in: the bridge replays
+    # this on connect, so STM_TEST leaves its plant-off power-on state without
+    # the operator having to select it. Safe State returns here too. The KEYA
+    # steering emulator needs no equivalent -- it follows its CAN2 position
+    # command whenever the motor is enabled, with no open-loop mode to pick.
+    plant_enabled: bool = True
     ez_drop_tx: bool = False
     keya_drop_tx: bool = False
     ez_fault: bool = False

@@ -42,6 +42,10 @@ def generate_launch_description():
         DeclareLaunchArgument("stm_b_port", default_value="/dev/hil_b"),
         DeclareLaunchArgument("agent_baud", default_value="115200"),
         DeclareLaunchArgument(
+            "gui_refresh_ms", default_value="200",
+            description="GUI 갱신 주기(ms). 원격 X11 기준값이며 로컬 화면이면 100.",
+        ),
+        DeclareLaunchArgument(
             "agents", default_value="true",
             description="Start both micro-ROS Agents. Set false when they already run.",
         ),
@@ -52,6 +56,7 @@ def generate_launch_description():
             launch_arguments={
                 "serial_port": LaunchConfiguration("serial_port"),
                 "gui": "true",
+                "gui_refresh_ms": LaunchConfiguration("gui_refresh_ms"),
             }.items(),
         ),
     ])

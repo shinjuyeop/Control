@@ -197,6 +197,12 @@ class BridgeWorker(threading.Thread):
                     command = None
                 if command is not None:
                     self._handle_command(command)
+                    if command != "STATUS":
+                        # A SET/FAULT reply is "OK", not a STATUS, so the change
+                        # was invisible until the next scheduled poll -- up to a
+                        # full period of apparent lag on every operator click.
+                        # Re-poll now; the deadline below resyncs from here.
+                        next_status = time.monotonic()
                 if time.monotonic() >= next_status:
                     self._handle_command("STATUS")
                     # Advance from the deadline, not from completion. A STATUS
@@ -252,7 +258,10 @@ class StmTestBridge(Node):
             event_callback=lambda kind, payload: self._events.put((kind, payload)),
         )
         self._worker.start()
-        self.create_timer(0.05, self._drain_events)
+        # Draining is a queue pop and a publish; the interval is pure added
+        # latency between the serial thread and every subscriber, so keep it
+        # well under the status period.
+        self.create_timer(0.02, self._drain_events)
         self.create_timer(1.0, self._publish_diagnostics)
         self._publish_desired(self._worker.desired_snapshot())
 

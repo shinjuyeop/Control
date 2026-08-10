@@ -6,6 +6,7 @@ import json
 import signal
 import sys
 import threading
+import time
 
 from diagnostic_msgs.msg import DiagnosticArray
 import rclpy
@@ -30,6 +31,7 @@ else:
     GUI_IMPORT_ERROR = None
 
 from .protocol import (
+    GEAR_COMMAND_NAMES,
     build_fault,
     build_set_can,
     build_set_estop,
@@ -44,6 +46,12 @@ from .remote_parameters import RemoteParameterClient
 class HilGuiRosNode(Node):
     def __init__(self) -> None:
         super().__init__("hil_gui")
+        # Every repaint crosses the wire on a forwarded X11 display. The bench
+        # is driven remotely, so the default is half the 10 Hz STATUS poll:
+        # worst-case display lag stays one poll period and the panel is idle
+        # between ticks. Drop it to 100 for a local display if you want the
+        # STATUS age counter to tick smoothly.
+        self.declare_parameter("refresh_interval_ms", 200)
         self._lock = threading.Lock()
         self.connected = False
         self.status = {}
@@ -128,10 +136,52 @@ class HilGuiRosNode(Node):
 
 
 if QtWidgets is not None:
+    class AbsoluteSliderStyle(QtWidgets.QProxyStyle):
+        """Make a left click jump the handle to the click, not page toward it.
+
+        Qt asks the style which buttons set the value absolutely; by default no
+        button does, so clicking the groove steps one page at a time and the
+        operator has to drag to reach a value.
+        """
+
+        def styleHint(self, hint, option=None, widget=None, returnData=None):
+            if hint == QtWidgets.QStyle.SH_Slider_AbsoluteSetButtons:
+                return int(QtCore.Qt.LeftButton)
+            return super().styleHint(hint, option, widget, returnData)
+
     class HilWindow(QtWidgets.QMainWindow):
-        def __init__(self, ros_node):
+        #: How long a clicked toggle keeps showing the operator's intent before
+        #: it gives up and falls back to what STM_TEST reports. One command can
+        #: take command_timeout_sec * (retry_count + 1) plus a poll period, so
+        #: this has to outlast a retried command to avoid a spurious revert.
+        PENDING_TIMEOUT_S = 2.0
+
+        #: STM_TEST writes SET STEER_POS straight into the simulated shaft
+        #: position. While the KEYA emulator is following, its 10 ms task
+        #: overwrites that on the next tick, so the command lands and is then
+        #: silently undone. Say so rather than leaving a control that does
+        #: nothing -- this mirrors how the EZ direct override is locked out
+        #: while the plant runs.
+        STEER_FOLLOWING_NOTE = (
+            "Motor enabled: the emulator is following the CAN2 position command "
+            "at 90 motor-deg/s, so a manual position is overwritten within "
+            "10 ms. Disable the KEYA motor or CAN2 to set a starting position. "
+            "This is independent of the EZ Plant switch."
+        )
+        STEER_IDLE_NOTE = (
+            "Motor disabled or CAN2 off: the shaft holds this position, so it "
+            "sets where the emulation starts. Enabling the motor hands the "
+            "shaft back to the CAN2 command. Independent of the EZ Plant switch."
+        )
+
+        def __init__(self, ros_node, refresh_interval_ms=100):
             super().__init__()
             self.node = ros_node
+            # button -> (value the operator asked for, deadline). A toggle in
+            # here is not overwritten by _refresh: the round trip through the
+            # bridge and firmware is slower than the refresh timer, so syncing
+            # unconditionally used to snap every press back to OFF for a tick.
+            self._pending_toggles = {}
             self.setWindowTitle("KAI EV26 HIL Operator")
             self.resize(1360, 860)
             root = QtWidgets.QWidget()
@@ -158,6 +208,8 @@ if QtWidgets is not None:
             layout.addLayout(top)
 
             self.control_groups = []
+            # Exclusive button rows whose selection is driven by STATUS.
+            self.choice_rows = []
             self.tabs = QtWidgets.QTabWidget()
             layout.addWidget(self.tabs, 1)
             self._build_signal_flow_tab()
@@ -169,7 +221,7 @@ if QtWidgets is not None:
             layout.addWidget(self.result)
             self.timer = QtCore.QTimer(self)
             self.timer.timeout.connect(self._refresh)
-            self.timer.start(100)
+            self.timer.start(max(20, int(refresh_interval_ms)))
 
         @staticmethod
         def _description(text):
@@ -195,7 +247,9 @@ if QtWidgets is not None:
             splitter.addWidget(self._build_injection_panel())
             splitter.addWidget(self._build_observation_panel())
             splitter.addWidget(self._build_feedback_panel())
-            splitter.setSizes([360, 430, 550])
+            # The injection panel is the narrowest: its rows are buttons, with
+            # no Apply column. The denser read-out panels get the rest.
+            splitter.setSizes([350, 440, 570])
             self.tabs.addTab(page, "Signal Flow")
 
         def _build_injection_panel(self):
@@ -206,32 +260,53 @@ if QtWidgets is not None:
                 "accelerator-pedal DAC presented to STM_A/STM_B."
             ))
             grid = QtWidgets.QGridLayout()
+            # Give the slack to the editors. Without this the grid splits spare
+            # width evenly and the pedal slider collapses to nothing next to the
+            # label, Apply button and badge.
+            grid.setColumnStretch(1, 1)
             layout.addLayout(grid)
-            self.mode = QtWidgets.QComboBox()
-            self.mode.addItems(["MANUAL", "AUTO"])
-            self.gear = QtWidgets.QComboBox()
-            self.gear.addItems(["FORWARD", "REVERSE"])
-            self._row_apply(grid, 0, "Mode [GPIO]", self.mode,
-                            lambda: build_set_mode(self.mode.currentText()))
-            self._row_apply(grid, 1, "Gear [GPIO]", self.gear,
-                            lambda: build_set_gear(self.gear.currentText()))
+            # Two-way settings are a pair of buttons: the choice is the command,
+            # so there is nothing to stage and no Apply. The lit button is what
+            # STATUS reports, amber while the round trip is still outstanding --
+            # the same confirmation the e-stop buttons below use.
+            self.mode_row = self._choice_row(
+                grid, 0, "Mode [GPIO]", ["MANUAL", "AUTO"], build_set_mode,
+                lambda status: status.get("mode"))
+            self.gear_row = self._choice_row(
+                grid, 1, "Gear [GPIO]", ["FORWARD", "REVERSE"], build_set_gear,
+                lambda status: GEAR_COMMAND_NAMES.get(status.get("gear")))
 
+            # The pedal applies itself, so it has no Apply button and no
+            # applied/staged badge: what the row shows is always what was sent.
             pedal_editor = QtWidgets.QWidget()
             pedal_layout = QtWidgets.QHBoxLayout(pedal_editor)
             pedal_layout.setContentsMargins(0, 0, 0, 0)
             self.pedal_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
             self.pedal_slider.setRange(0, 100)
+            self.pedal_slider.setMinimumWidth(80)
+            # Built with no base style: QProxyStyle takes ownership of one it is
+            # handed, and handing it the shared application style frees it out
+            # from under every other widget. The reference has to live on self
+            # too -- setStyle does not own it, so a local would be collected and
+            # leave the slider pointing at freed memory.
+            self._pedal_slider_style = AbsoluteSliderStyle()
+            self.pedal_slider.setStyle(self._pedal_slider_style)
             self.pedal = QtWidgets.QDoubleSpinBox()
             self.pedal.setRange(0, 100)
             self.pedal.setDecimals(1)
             self.pedal.setSuffix(" %")
-            self.pedal_slider.valueChanged.connect(self.pedal.setValue)
-            self.pedal.valueChanged.connect(
-                lambda value: self.pedal_slider.setValue(round(value)))
+            # Mirror the two editors without letting the spin box re-enter:
+            # blockSignals keeps a typed digit from also committing the slider.
+            self.pedal_slider.valueChanged.connect(self._pedal_slider_moved)
+            self.pedal.valueChanged.connect(self._pedal_box_edited)
+            # One command per interaction: mid-drag values are skipped and the
+            # release commits. A serial round trip per pixel would swamp the link.
+            self.pedal_slider.sliderReleased.connect(self._commit_pedal)
+            self.pedal.editingFinished.connect(self._commit_pedal)
             pedal_layout.addWidget(self.pedal_slider, 1)
             pedal_layout.addWidget(self.pedal)
-            self._row_apply(grid, 2, "Pedal [DAC]", pedal_editor,
-                            lambda: build_set_numeric("PEDAL", self.pedal.value()))
+            grid.addWidget(QtWidgets.QLabel("Pedal [DAC]"), 2, 0)
+            grid.addWidget(pedal_editor, 2, 1, 1, 3)
 
             estop = QtWidgets.QGroupBox("E-stop switch outputs [GPIO]")
             estop_layout = QtWidgets.QHBoxLayout(estop)
@@ -249,13 +324,10 @@ if QtWidgets is not None:
             presets = QtWidgets.QGroupBox("Quick injection")
             preset_layout = QtWidgets.QGridLayout(presets)
             actions = [
-                ("AUTO + Forward", lambda: [
-                    self.node.send(build_set_mode("AUTO")),
-                    self.node.send(build_set_gear("FORWARD")),
-                ]),
-                ("Pedal 10%", lambda: self.node.send(build_set_numeric("PEDAL", 10))),
-                ("Pedal 30%", lambda: self.node.send(build_set_numeric("PEDAL", 30))),
-                ("Dashboard E-stop", lambda: self.node.send(build_set_estop("DASH", True))),
+                ("AUTO + Forward", lambda: self._inject_mode_gear("AUTO", "FORWARD")),
+                ("Pedal 10%", lambda: self._inject_pedal(10)),
+                ("Pedal 30%", lambda: self._inject_pedal(30)),
+                ("Dashboard E-stop", lambda: self._force_estop("DASH", True)),
             ]
             for index, (label, callback) in enumerate(actions):
                 button = QtWidgets.QPushButton(label)
@@ -307,7 +379,13 @@ if QtWidgets is not None:
             layout.addWidget(brake)
 
             keya = QtWidgets.QGroupBox("Steering controller / KEYA command [CAN2]")
-            keya_form = QtWidgets.QFormLayout(keya)
+            # A QFormLayout row sizes a spanning widget from its sizeHint and
+            # ignores heightForWidth, which clips a wrapped note. Keep the note
+            # in a box layout under the form instead -- same appearance, and it
+            # grows with the text like every other description in this window.
+            keya_box = QtWidgets.QVBoxLayout(keya)
+            keya_form = QtWidgets.QFormLayout()
+            keya_box.addLayout(keya_form)
             self.keya_link = QtWidgets.QLabel("--")
             keya_form.addRow("Link", self.keya_link)
             for key, title in (
@@ -322,8 +400,7 @@ if QtWidgets is not None:
             self.keya_note = self._description(
                 "Transceiver absent is valid: NO RX; manual feedback remains usable."
             )
-            self.keya_note.setMinimumHeight(38)
-            keya_form.addRow(self.keya_note)
+            keya_box.addWidget(self.keya_note)
             layout.addWidget(keya)
             layout.addStretch()
             return group
@@ -386,7 +463,9 @@ if QtWidgets is not None:
             layout.addWidget(motor)
 
             steering = QtWidgets.QGroupBox("KEYA steering feedback [CAN2]")
-            steering_form = QtWidgets.QFormLayout(steering)
+            steering_box = QtWidgets.QVBoxLayout(steering)
+            steering_form = QtWidgets.QFormLayout()
+            steering_box.addLayout(steering_form)
             self.steer_actual = QtWidgets.QLabel("--")
             self.steer_target = QtWidgets.QLabel("--")
             steering_form.addRow("Simulated shaft angle", self.steer_actual)
@@ -399,15 +478,13 @@ if QtWidgets is not None:
             steer_layout = QtWidgets.QHBoxLayout(steer_editor)
             steer_layout.setContentsMargins(0, 0, 0, 0)
             steer_layout.addWidget(self.steer_override, 1)
-            apply_steer = QtWidgets.QPushButton("Set feedback position")
-            apply_steer.clicked.connect(lambda: self.node.send(
+            self.apply_steer = QtWidgets.QPushButton("Set feedback position")
+            self.apply_steer.clicked.connect(lambda: self.node.send(
                 build_set_numeric("STEER_POS", self.steer_override.value())))
-            steer_layout.addWidget(apply_steer)
+            steer_layout.addWidget(self.apply_steer)
             steering_form.addRow("Manual initial/feedback position", steer_editor)
-            steering_form.addRow(self._description(
-                "KEYA simulation is always command-following when CAN2 receives an "
-                "enable and position command; it does not use the EZ Plant switch."
-            ))
+            self.steer_note = self._description(self.STEER_IDLE_NOTE)
+            steering_box.addWidget(self.steer_note)
             layout.addWidget(steering)
             layout.addStretch()
             self.control_groups.append(group)
@@ -489,17 +566,114 @@ if QtWidgets is not None:
             layout.addWidget(fault)
             layout.addStretch()
             self.control_groups.append(fault)
-            self.tabs.addTab(page, "Faults & Interfaces")
+            # "&&" is Qt's escape for a literal ampersand; a single "&" is taken
+            # as a mnemonic and the tab renders as "Faults _Interfaces".
+            self.tabs.addTab(page, "Faults && Interfaces")
 
         def _row_apply(self, layout, row, label, editor, builder):
             button = QtWidgets.QPushButton("Apply")
             button.clicked.connect(lambda: self.node.send(builder()))
             layout.addWidget(QtWidgets.QLabel(label), row, 0); layout.addWidget(editor, row, 1); layout.addWidget(button, row, 2)
 
+        def _choice_row(self, layout, row, label, options, builder, reader):
+            """A row of mutually exclusive buttons; picking one sends it."""
+            state = {"buttons": {}, "builder": builder, "reader": reader,
+                     "pending": None}
+            holder = QtWidgets.QWidget()
+            box = QtWidgets.QHBoxLayout(holder)
+            box.setContentsMargins(0, 0, 0, 0)
+            box.setSpacing(4)
+            group = QtWidgets.QButtonGroup(self)
+            for option in options:
+                button = QtWidgets.QPushButton(option)
+                button.setCheckable(True)
+                # `clicked` fires only for real interaction, so syncing the row
+                # from STATUS with setChecked cannot echo a command back.
+                button.clicked.connect(
+                    lambda _checked, choice=option: self._choose(state, choice))
+                group.addButton(button)
+                box.addWidget(button)
+                state["buttons"][option] = button
+            layout.addWidget(QtWidgets.QLabel(label), row, 0)
+            layout.addWidget(holder, row, 1, 1, 3)
+            self.choice_rows.append(state)
+            return state
+
+        def _choose(self, state, option):
+            state["pending"] = (option, time.monotonic() + self.PENDING_TIMEOUT_S)
+            self._render_choice(state, option, pending=True)
+            self.node.send(state["builder"](option))
+
+        def _render_choice(self, state, selected, *, pending=False):
+            if selected not in state["buttons"]:
+                return
+            # Checking the winner unchecks the rest: the group is exclusive.
+            state["buttons"][selected].setChecked(True)
+            for option, button in state["buttons"].items():
+                if option != selected:
+                    self._apply_style(button, "")
+                    continue
+                color = "#9a6700" if pending else "#2da44e"
+                self._apply_style(
+                    button, f"font-weight:bold;background:{color};color:white")
+
+        def _refresh_choices(self, status, now):
+            for state in self.choice_rows:
+                reported = state["reader"](status)
+                pending = state["pending"]
+                if pending is not None:
+                    wanted, deadline = pending
+                    if reported == wanted:
+                        state["pending"] = None
+                        self._render_choice(state, reported)
+                        continue
+                    if now < deadline:
+                        continue
+                    # Nothing came back in time; show what STM_TEST reports so a
+                    # command that never took cannot pass for one that did.
+                    state["pending"] = None
+                self._render_choice(state, reported)
+
+        def _inject_mode_gear(self, mode, gear):
+            """Run a preset through the rows so they show what was sent."""
+            self._choose(self.mode_row, mode)
+            self._choose(self.gear_row, gear)
+
+        def _pedal_slider_moved(self, value):
+            self.pedal.blockSignals(True)
+            self.pedal.setValue(float(value))
+            self.pedal.blockSignals(False)
+            # A drag reports every intermediate value; wait for the release.
+            # A wheel or arrow key never presses the handle, so it commits here.
+            if not self.pedal_slider.isSliderDown():
+                self._commit_pedal()
+
+        def _pedal_box_edited(self, value):
+            # Typing "51" passes through 5 first, so only editingFinished
+            # commits. Mirror the slider silently to avoid a second commit.
+            self.pedal_slider.blockSignals(True)
+            self.pedal_slider.setValue(round(value))
+            self.pedal_slider.blockSignals(False)
+
+        def _commit_pedal(self):
+            self.node.send(build_set_numeric("PEDAL", self.pedal.value()))
+
+        def _inject_pedal(self, percent):
+            self.pedal.setValue(float(percent))
+            self._commit_pedal()
+
         def _response_mode_changed(self, index):
             closed_loop = index == 0
             self.node.send(build_set_plant(closed_loop))
             self._set_direct_controls(not closed_loop)
+
+        def _set_steer_override(self, *, following, connected):
+            """Lock the manual shaft position while the emulator would undo it."""
+            self.steer_override.setEnabled(connected and not following)
+            self.apply_steer.setEnabled(connected and not following)
+            self.steer_note.setText(
+                self.STEER_FOLLOWING_NOTE if following else self.STEER_IDLE_NOTE
+            )
 
         def _set_direct_controls(self, enabled):
             self.motion_source.setEnabled(enabled)
@@ -524,32 +698,77 @@ if QtWidgets is not None:
             button.setProperty("hil_label", label)
             button.setProperty("hil_danger", danger)
             def changed(value):
-                self._render_toggle(button, value)
+                self._mark_pending(button, value)
                 self.node.send(builder(value))
             button.toggled.connect(changed)
             return button
 
-        @staticmethod
-        def _render_toggle(button, value):
+        def _mark_pending(self, button, value):
+            """Hold the operator's click until STM_TEST confirms it."""
+            self._pending_toggles[button] = (
+                bool(value), time.monotonic() + self.PENDING_TIMEOUT_S
+            )
+            self._render_toggle(button, value, pending=True)
+
+        def _force_estop(self, location, value):
+            """Drive an e-stop from a preset through the button's own state."""
+            button = self.estop_buttons[location]
+            button.blockSignals(True)
+            button.setChecked(bool(value))
+            button.blockSignals(False)
+            self._mark_pending(button, value)
+            self.node.send(build_set_estop(location, value))
+
+        def _render_toggle(self, button, value, *, pending=False):
             label = str(button.property("hil_label"))
             danger = bool(button.property("hil_danger"))
-            button.setText(label + (": ON" if value else ": OFF"))
-            color = "#d1242f" if danger and value else ("#2da44e" if value else "")
-            button.setStyleSheet(
-                f"font-weight:bold;background:{color};color:white" if color else ""
+            state = "ON" if value else "OFF"
+            button.setText(f"{label}: {state} …" if pending else f"{label}: {state}")
+            if pending:
+                # Amber reads as "sent, not confirmed": the operator can tell a
+                # slow serial round trip from a command STM_TEST refused.
+                color = "#9a6700"
+            else:
+                color = "#d1242f" if danger and value else ("#2da44e" if value else "")
+            self._apply_style(
+                button,
+                f"font-weight:bold;background:{color};color:white" if color else "",
             )
 
         def _clear_faults(self):
-            for command in (build_fault("EZ", "DROP_TX", False), build_fault("KEYA", "DROP_TX", False),
-                            build_fault("EZ", None, False), build_fault("KEYA", None, False)):
+            for label, command in (
+                ("EZ TX DROP", build_fault("EZ", "DROP_TX", False)),
+                ("KEYA TX DROP", build_fault("KEYA", "DROP_TX", False)),
+                ("EZ FAULT", build_fault("EZ", None, False)),
+                ("KEYA FAULT", build_fault("KEYA", None, False)),
+            ):
+                button = self.fault_buttons[label]
+                button.blockSignals(True)
+                button.setChecked(False)
+                button.blockSignals(False)
+                self._mark_pending(button, False)
                 self.node.send(command)
 
         @staticmethod
-        def _set_badge(label, text, color):
+        def _apply_style(widget, style):
+            """Set a stylesheet only when it actually changed.
+
+            ``setStyleSheet`` does not compare against the current sheet: it
+            re-polishes and repaints unconditionally. _refresh reapplied the
+            same string to the status labels on every tick, which is a repaint
+            per widget per tick sent over a forwarded X11 display for nothing.
+            """
+            if widget.property("hil_style") == style:
+                return
+            widget.setProperty("hil_style", style)
+            widget.setStyleSheet(style)
+
+        def _set_badge(self, label, text, color):
             label.setText(text)
-            label.setStyleSheet(
+            self._apply_style(
+                label,
                 f"font-weight:bold;color:{color};border:1px solid {color};"
-                "padding:2px 5px;border-radius:3px"
+                "padding:2px 5px;border-radius:3px",
             )
 
         def _render_can_link(self, label, status, prefix):
@@ -574,15 +793,19 @@ if QtWidgets is not None:
         def _refresh(self):
             connected, status, desired, serial_port, result = self.node.snapshot()
             self.connection.setText("CONNECTED" if connected else "DISCONNECTED")
-            self.connection.setStyleSheet("font-weight:bold;color:" + ("#2da44e" if connected else "#d1242f"))
+            self._apply_style(
+                self.connection,
+                "font-weight:bold;color:" + ("#2da44e" if connected else "#d1242f"),
+            )
             self.serial_port.setText("Serial: " + serial_port)
             for group in self.control_groups: group.setEnabled(connected)
             self.result.setText("Command result: " + (result or "--"))
             if status:
-                age = max(0.0, __import__("time").monotonic() - float(status.get("received_monotonic", 0.0)))
+                age = max(0.0, time.monotonic() - float(status.get("received_monotonic", 0.0)))
                 self.age.setText(f"STATUS age: {age:.2f}s")
                 self._render_can_link(self.ez_link, status, "ez")
                 self._render_can_link(self.keya_link, status, "keya")
+                self._refresh_choices(status, time.monotonic())
                 self.ez_health.setText("EZ RX: " + self.ez_link.text())
                 self.keya_health.setText("KEYA RX: " + self.keya_link.text())
                 display = dict(status)
@@ -613,6 +836,12 @@ if QtWidgets is not None:
                     self.response_mode.setCurrentIndex(mode_index)
                     self.response_mode.blockSignals(False)
                 self._set_direct_controls(mode_index == 1 and connected)
+                # Matches the firmware gate: keya_can_enabled && motor_enabled.
+                self._set_steer_override(
+                    following=bool(status.get("keya_can"))
+                    and bool(status.get("keya_enabled")),
+                    connected=connected,
+                )
             toggle_values = {
                 self.estop_buttons["DASH"]: status.get("estop_dash"),
                 self.estop_buttons["SIDE"]: status.get("estop_side"),
@@ -624,13 +853,31 @@ if QtWidgets is not None:
                 self.fault_buttons["EZ CAN"]: status.get("ez_can"),
                 self.fault_buttons["KEYA CAN"]: status.get("keya_can"),
             }
+            now = time.monotonic()
             for button, value in toggle_values.items():
-                if value is None or button.isChecked() == bool(value):
+                if value is None:
+                    continue
+                reported = bool(value)
+                pending = self._pending_toggles.get(button)
+                if pending is not None:
+                    wanted, deadline = pending
+                    if reported == wanted:
+                        # Confirmed: drop the amber highlight, keep the state.
+                        del self._pending_toggles[button]
+                        self._render_toggle(button, reported)
+                        continue
+                    if now < deadline:
+                        continue
+                    # Nothing came back in time. Falling back to the reported
+                    # value is now a real signal that the command did not take,
+                    # not the one-tick flicker it used to be.
+                    del self._pending_toggles[button]
+                if button.isChecked() == reported:
                     continue
                 button.blockSignals(True)
-                button.setChecked(bool(value))
+                button.setChecked(reported)
                 button.blockSignals(False)
-                self._render_toggle(button, bool(value))
+                self._render_toggle(button, reported)
 
 
 def main(args=None) -> None:
@@ -649,7 +896,11 @@ def main(args=None) -> None:
 
     thread = threading.Thread(target=spin_ros, daemon=True); thread.start()
     application = QtWidgets.QApplication(sys.argv)
-    window = HilWindow(node); window.show()
+    window = HilWindow(
+        node,
+        refresh_interval_ms=int(node.get_parameter("refresh_interval_ms").value),
+    )
+    window.show()
     shutdown_timer = QtCore.QTimer()
     shutdown_timer.timeout.connect(lambda: None if rclpy.ok() else application.quit())
     shutdown_timer.start(100)

@@ -11,6 +11,13 @@ from .models import HilDesiredState, HilStatus, ProtocolResponse
 
 MODES = {"MANUAL", "AUTO"}
 GEARS = {"FORWARD", "REVERSE"}
+#: Commands spell the gear out; STATUS abbreviates it. Anything comparing a
+#: requested gear against a reported one has to go through this.
+GEAR_STATUS_NAMES = {"FORWARD": "FWD", "REVERSE": "REV"}
+GEAR_COMMAND_NAMES = {status: command for command, status in GEAR_STATUS_NAMES.items()}
+#: STM_TEST reports the pedal as a rounded percentage, so an exact float
+#: comparison against the value that was sent would never match.
+PEDAL_MATCH_TOLERANCE = 0.11
 ESTOPS = {"DASH", "SIDE", "RF"}
 CONTROLLERS = {"EZ", "KEYA"}
 BRAKE_STATES = {"UNKNOWN", "RELEASED", "ENGAGED"}
@@ -281,8 +288,8 @@ def desired_status_mismatches(state: HilDesiredState, status: HilStatus) -> list
             mismatches.append(f"{name}: actual={actual!r} desired={desired!r}")
 
     exact("mode", status.mode, state.mode)
-    exact("gear", status.gear, {"FORWARD": "FWD", "REVERSE": "REV"}[state.gear])
-    close("pedal", status.pedal, state.pedal, 0.11)
+    exact("gear", status.gear, GEAR_STATUS_NAMES[state.gear])
+    close("pedal", status.pedal, state.pedal, PEDAL_MATCH_TOLERANCE)
     exact("estop_dash", status.estop_dash, state.estop_dashboard)
     exact("estop_side", status.estop_side, state.estop_side)
     exact("estop_rf", status.estop_rf, state.estop_rf)
