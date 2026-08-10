@@ -8,12 +8,12 @@ import yaml
 
 
 CALIBRATION_PARAMETER_NAMES = (
-    "calibration_a",
-    "calibration_b",
-    "calibration_c",
+    "count_scale",
+    "equivalent_k1_deg",
+    "equivalent_k3_deg",
+    "equivalent_k5_deg",
+    "command_count_limit",
     "counts_per_rev",
-    "direction_sign",
-    "wheel_limit_deg",
 )
 
 

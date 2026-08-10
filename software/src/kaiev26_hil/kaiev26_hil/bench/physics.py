@@ -11,6 +11,7 @@ import threading
 from dataclasses import dataclass
 
 from .can_io import MotorCommand, SteeringCommand
+from .steering_calibration import count_to_equivalent_deg, motor_deg_to_count
 
 
 @dataclass(frozen=True)
@@ -298,15 +299,10 @@ class SteeringPlant:
 
     @staticmethod
     def handle_to_wheel_deg(handle_deg: float) -> float:
-        """핸들각을 기존 제어 코드가 쓰는 바퀴각 근사식으로 바꾼다."""
-        x = -handle_deg
-        magnitude = abs(x)
-        if magnitude < 1e-6:
-            return 0.0
-        wheel_deg = (0.0002 * magnitude + 0.2159) * magnitude + 0.1612
-        return math.copysign(wheel_deg, x)
+        """모터축 각도를 중앙 등가 조향각·좌회전 양수로 바꾼다."""
+        return count_to_equivalent_deg(motor_deg_to_count(handle_deg))
 
     @staticmethod
     def raw_handle_to_display_deg(handle_deg: float) -> float:
-        """raw handle 부호를 GUI 표시용 부호 규약으로 뒤집는다."""
-        return -handle_deg
+        """모터축 표시도 raw count와 같은 좌회전 양수 부호를 쓴다."""
+        return handle_deg

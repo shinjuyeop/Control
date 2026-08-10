@@ -1,14 +1,16 @@
-# KEYA steering motor-to-wheel calibration shared by the real actuator node
-# and Gazebo CAN bridge.  The coefficients map motor degrees to the absolute
-# road-wheel angle in degrees:
+# KEYA raw encoder count to central-equivalent Ackermann steering angle.
+# Control, HIL, and the Gazebo CAN bridge share this calibration:
 #
-#   wheel_deg = a * motor_deg^2 + b * motor_deg + c
+#   v = motor_position_count / count_scale
+#   equivalent_deg = k1 * v + k3 * v^3 + k5 * v^5
 #
-# Update the revision whenever a bench calibration changes these values.
-revision: "keya-steering-20260726-r1"
-calibration_a: 0.0002
-calibration_b: 0.2159
-calibration_c: 0.1612
+# Positive count and positive angle mean left turn. Commands are limited to the
+# symmetric measured count range; feedback conversion is not clamped.
+revision: "keya-steering-20260810-r2"
+count_scale: 3500.0
+equivalent_k1_deg: 46.79149152
+equivalent_k3_deg: -39.22366242
+equivalent_k5_deg: 22.73814759
+command_count_limit: 3321
+# Raw motor-axis diagnostic conversion only.
 counts_per_rev: 10000.0
-direction_sign: -1.0
-wheel_limit_deg: 30.0

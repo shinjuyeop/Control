@@ -74,7 +74,7 @@ ros2 topic info -v /vehicle/state
 
 | Topic | Publisher | Type | Rate | 설명 |
 |---|---|---|---:|---|
-| `/steering/angle` | 조향 노드 | `std_msgs/msg/Float32` | position valid일 때 최대 50 Hz | 실제 바퀴각, degree |
+| `/steering/angle` | 조향 노드 | `std_msgs/msg/Float32` | position valid일 때 최대 50 Hz | 중앙 등가 실측 조향각, degree·좌회전 양수 |
 | `/steering/enable_commanded` | 조향 노드 | `std_msgs/msg/Bool` | 50 Hz | KEYA에 명령한 enable 상태 |
 | `/steering/enabled` | 조향 노드 | `std_msgs/msg/Bool` | 50 Hz | feedback enable; 현재 하드웨어에서는 validity 미지원 |
 | `/steering/test/estop` | 벤치 노드 | `std_msgs/msg/UInt8` | 벤치 기본 20 Hz | `test_input_injection_enabled=true`에서만 구독 |
@@ -281,8 +281,10 @@ bus voltage·driver temperature는 500 ms 간격으로 번갈아 조회합니다
 - position feedback timeout: 유효 position response가 500 ms 동안 없을 때
 - KEYA 내부 watchdog 설정값: 현재 actuator 코드에서 설정하거나 확인하지 않음
 - 제어 mode: 현재 통합 경로는 position command만 사용
-- encoder scaling: `10000 count/rev`, calibration은
-  `software/src/lateral_ctrl/config/steering_motor_calibration.yaml`
+- motor-axis diagnostic scaling: `10000 count/rev`
+- 조향 calibration은 raw KEYA count를 중앙 등가각으로 직접 환산하며
+  `software/src/lateral_ctrl/config/steering_motor_calibration.yaml`이 소유
+- 명령 범위: `-3321..3321 count`(약 `-28.38..28.38 deg`), feedback은 클램프하지 않음
 
 구현 위치:
 

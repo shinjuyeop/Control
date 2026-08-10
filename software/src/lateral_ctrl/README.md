@@ -59,7 +59,7 @@ ABI에 넣지 않은 최종 브레이크 명령입니다.
 | 토픽 | 타입 | 내용 |
 | --- | --- | --- |
 | `/steering/status` | `kaiev26_msgs/msg/SteeringActuatorStatus` | 상태, 비활성 원인, timeout, 목표·실제각과 모터 진단 |
-| `/steering/angle` | `std_msgs/msg/Float32` | 실제 바퀴각, degree |
+| `/steering/angle` | `std_msgs/msg/Float32` | 중앙 등가 실측 조향각, degree·좌회전 양수 |
 | `/steering/enable_commanded` | `std_msgs/msg/Bool` | 노드가 KEYA에 명령한 Enable 상태 |
 | `/steering/enabled` | `std_msgs/msg/Bool` | KEYA 피드백으로 확인한 Enable 상태 |
 
@@ -161,12 +161,12 @@ ros2 launch lateral_ctrl steering_bench_test.launch.py
 | 토픽 | 내용 | 주기 |
 | --- | --- | ---: |
 | `/drive/status` | 시험용 AUTO 상태 | 100 ms |
-| `/vehicle/command` | 절대 바퀴각 `+5/-5 deg`, 속도 0, 브레이크 해제 | 20 ms |
+| `/vehicle/command` | 절대 중앙 등가각 `+5/-5 deg`, 속도 0, 브레이크 해제 | 20 ms |
 | `/steering/test/estop` | 시험 E-stop 해제 | 50 ms |
 
-`steer_sequence_deg`는 차량 좌회전 음수라는 기존 벤치 표기이며, 벤치 노드가
-canonical rad·좌회전 양수로 바꾸어 발행합니다. 명령은 현재각 offset이 아닌 절대
-바퀴각입니다. 바퀴가 중앙에서 벗어난 상태에서는 첫 명령이 큰 이동을 만들 수
+`steer_sequence_deg`는 중앙 등가각 degree·좌회전 양수입니다. 벤치 노드는 단위만
+canonical radian으로 바꾸어 발행합니다. 명령은 현재각 offset이 아닌 절대
+중앙 등가각입니다. 바퀴가 중앙에서 벗어난 상태에서는 첫 명령이 큰 이동을 만들 수
 있습니다.
 
 시험 E-stop은 다음처럼 조작합니다.
@@ -197,9 +197,13 @@ ros2 launch lateral_ctrl steering_bench_test.launch.py \
 | `feedback_timeout_ms` | 500 | position feedback timeout |
 | `mode_timeout_ms` | 1500 | `/drive/status` timeout |
 | `steer_command_timeout_ms` | 200 | `ACTIVE`에서 `/vehicle/command` timeout |
-| `wheel_limit_deg` | 30.0 | 명령 바퀴각 제한. 측정값에는 걸지 않음 |
-| `max_steering_rate_deg_s` | 60.0 | 바퀴각 변화율 제한 |
-| `tracking_control_enabled` | false | 바퀴각 tracking 보정 |
+| `command_count_limit` | 3321 | 명령 가능한 KEYA raw count 절댓값. 약 28.38° 중앙 등가각 |
+| `max_steering_rate_deg_s` | 60.0 | 중앙 등가각 변화율 제한 |
+| `tracking_control_enabled` | false | 중앙 등가각 tracking 보정 |
+
+count-to-angle 계수와 `counts_per_rev`는
+`config/steering_motor_calibration.yaml` 한 파일이 소유합니다. Control, active HIL,
+Gazebo CAN bridge가 같은 값을 사용합니다.
 
 벤치 시퀀스의 기본값은 다음과 같습니다.
 

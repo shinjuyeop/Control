@@ -9,7 +9,7 @@ KEYA KY170DJD01005-08G-V1 스티어링 모터를 Torque control 모드로 두고
   `actuator_output_enabled:=false`로 띄우면 버스를 열어 조회 프레임만 보내고 `/steering/status`를
   발행한다. enable/disable/position 프레임은 한 장도 나가지 않으므로 아래 측정 노드의 torque 명령과
   충돌하지 않는다. 측정에 쓰는 필드는 `motor_angle_deg`(legacy 프로토콜의 Encoder count value query
-  기반, 10000 count/turn = 0.036°/count, 캘리브레이션 다항식과 `direction_sign`을 거치지 않은 모터축
+  기반, 10000 count/turn = 0.036°/count, 중앙 등가각 calibration을 거치지 않은 모터축
   원시 각도), `motor_current_a`(드라이버 실측 전류, A), 값이 살아 있는지 보는 `feedback_valid`.
 
 - `deadzone_measure_node` — torque cmd를 0부터 계단식으로 올리면서, 각 단계를 `step_hold_ms`만큼
@@ -27,7 +27,7 @@ KEYA KY170DJD01005-08G-V1 스티어링 모터를 Torque control 모드로 두고
 **인지/판단 파트에는 이 다항식을 거치지 않은 모터축 원시 각도를 기준으로 전달하기로 함.** 데드존
 측정도 이 값을 기준으로 봐야 다항식 오차와 무관하게 순수 모터/기구 특성만 볼 수 있음.
 
-다만 `motor_angle_deg`에는 `direction_sign`(-1)이 적용돼 있지 않다. 아래 "부호 규약 확인(ISO8855)"은
+`motor_angle_deg`는 raw count와 같은 모터축 부호를 그대로 쓴다. 아래 "부호 규약 확인(ISO8855)"은
 부호를 반전한 옛 `/ctrl/steer_handle_hires` 기준으로 적은 기록이라, 같은 실험을 `motor_angle_deg`로
 다시 보면 `ramp_direction`과 각도 증감의 부호 관계가 반대로 나온다. 방향이 바뀐 게 아니라 보고 있는
 축이 다른 것이다.

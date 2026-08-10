@@ -2,38 +2,46 @@
 
 #include <gtest/gtest.h>
 
-#include <cmath>
+namespace
+{
+lateral_ctrl::SteeringAngleConverter MakeConverter()
+{
+  return lateral_ctrl::SteeringAngleConverter(
+    3500.0, 46.79149152, -39.22366242, 22.73814759, 3321, 10000.0);
+}
+}
 
 TEST(SteeringAngleConverter, EncoderResolution)
 {
-  lateral_ctrl::SteeringAngleConverter converter;
-  EXPECT_EQ(converter.motorDegToCount(360.0), 10000);
-  EXPECT_EQ(converter.motorDegToCount(0.036), 1);
+  const auto converter = MakeConverter();
+  EXPECT_DOUBLE_EQ(converter.countToMotorDeg(10000), 360.0);
+  EXPECT_DOUBLE_EQ(converter.countToMotorDeg(1), 0.036);
 }
-TEST(SteeringAngleConverter, ClampsWheelAngle)
+TEST(SteeringAngleConverter, UsesMeasuredCanonicalRelation)
 {
-  lateral_ctrl::SteeringAngleConverter converter;
-  EXPECT_DOUBLE_EQ(converter.clampWheelDeg(40.0), 30.0);
-  EXPECT_DOUBLE_EQ(converter.clampWheelDeg(-40.0), -30.0);
+  const auto converter = MakeConverter();
+  EXPECT_DOUBLE_EQ(converter.countToEquivalentDeg(0), 0.0);
+  EXPECT_NEAR(converter.countToEquivalentDeg(500), 6.5714969851, 1e-9);
+  EXPECT_NEAR(converter.countToEquivalentDeg(3321), 28.3790454907, 1e-9);
+  EXPECT_NEAR(converter.countToEquivalentDeg(-3321), -28.3790454907, 1e-9);
 }
-TEST(SteeringAngleConverter, DoesNotClampMeasuredWheelAngle)
+TEST(SteeringAngleConverter, DoesNotClampFeedback)
 {
-  lateral_ctrl::SteeringAngleConverter converter;
-  // 한계를 넘어선 위치에 바퀴가 실제로 놓일 수 있다. 측정 경로는 그 값을 그대로
-  // 돌려줘야 추종 오차가 실제 크기로 잡힌다.
-  const double beyond_limit_motor_deg = converter.wheelToMotorDeg(30.0) * 1.5;
-  EXPECT_GT(std::abs(converter.motorToWheelDeg(beyond_limit_motor_deg)), 30.0);
+  const auto converter = MakeConverter();
+  EXPECT_GT(converter.countToEquivalentDeg(3500), converter.countToEquivalentDeg(3321));
 }
-TEST(SteeringAngleConverter, ClampsCommandedWheelAngle)
+TEST(SteeringAngleConverter, ClampsCommandsToMeasuredCountRange)
 {
-  lateral_ctrl::SteeringAngleConverter converter;
-  // 명령 경로는 반대다. 한계 밖을 지시해도 한계 안의 모터 각도로 접힌다.
-  EXPECT_DOUBLE_EQ(converter.wheelToMotorDeg(40.0), converter.wheelToMotorDeg(30.0));
+  const auto converter = MakeConverter();
+  EXPECT_EQ(converter.equivalentDegToCount(90.0), 3321);
+  EXPECT_EQ(converter.equivalentDegToCount(-90.0), -3321);
 }
-TEST(SteeringAngleConverter, RoundTripsCalibratedAngle)
+TEST(SteeringAngleConverter, RoundTripsEveryCommandCount)
 {
-  lateral_ctrl::SteeringAngleConverter converter;
-  for (double wheel : {-25.0, -5.0, -1.0, 1.0, 5.0, 25.0}) {
-    EXPECT_NEAR(converter.motorToWheelDeg(converter.wheelToMotorDeg(wheel)), wheel, 1e-6);
+  const auto converter = MakeConverter();
+  for (int32_t count = -converter.commandCountLimit();
+    count <= converter.commandCountLimit(); ++count)
+  {
+    EXPECT_EQ(converter.equivalentDegToCount(converter.countToEquivalentDeg(count)), count);
   }
 }

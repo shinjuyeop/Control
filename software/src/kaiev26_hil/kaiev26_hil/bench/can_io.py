@@ -16,6 +16,8 @@ import time
 from dataclasses import dataclass
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
+from .steering_calibration import count_to_motor_deg, equivalent_deg_to_count
+
 # Linux raw CAN 소켓에서 쓰는 확장 CAN 플래그/마스크들이다.
 CAN_EFF_FLAG = 0x80000000
 CAN_EFF_MASK = 0x1FFFFFFF
@@ -385,19 +387,8 @@ def make_motor_handshake_ack(iface: str) -> CanFrame:
 
 
 def wheel_to_handle_deg_for_cmd(wheel_deg: float) -> float:
-    """바퀴각 기준 목표값을 실제 command가 쓰는 핸들각 스케일로 역변환한다."""
-    a = 0.0002
-    b = 0.2159
-    c = 0.1612
-    sign = 1.0 if wheel_deg >= 0 else -1.0
-    wheel_abs = abs(wheel_deg)
-    disc = b * b - 4.0 * a * (c - wheel_abs)
-    if disc < 0.0:
-        # 근사식 유효 범위를 벗어나면 최소 안전 구간으로 clamp 한다.
-        wheel_abs = c
-        disc = b * b
-    handle_abs = (-b + math.sqrt(disc)) / (2.0 * a)
-    return -sign * handle_abs
+    """중앙 등가 조향각을 KEYA 모터축 명령각으로 바꾼다."""
+    return count_to_motor_deg(equivalent_deg_to_count(wheel_deg))
 
 
 def make_steer_enable_frame(iface: str, enable: bool = True) -> CanFrame:

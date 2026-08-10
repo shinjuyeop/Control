@@ -8,16 +8,22 @@ class SteeringAngleConverter
 {
 public:
   SteeringAngleConverter(
-    double a = 0.0002, double b = 0.2159, double c = 0.1612,
-    double counts_per_rev = 10000.0, double direction_sign = -1.0,
-    double wheel_limit_deg = 30.0);
-  double wheelToMotorDeg(double wheel_deg) const;
-  double motorToWheelDeg(double motor_deg) const;
-  int32_t motorDegToCount(double motor_deg) const;
+    double count_scale, double equivalent_k1_deg, double equivalent_k3_deg,
+    double equivalent_k5_deg, std::int64_t command_count_limit,
+    double counts_per_rev);
+  int32_t equivalentDegToCount(double equivalent_deg) const;
+  double countToEquivalentDeg(int32_t count) const;
   double countToMotorDeg(int32_t count) const;
-  double clampWheelDeg(double wheel_deg) const;
+  double clampEquivalentDeg(double equivalent_deg) const;
+  int32_t commandCountLimit() const { return command_count_limit_; }
 
 private:
-  double a_, b_, c_, counts_per_rev_, direction_sign_, wheel_limit_deg_;
+  double count_scale_;
+  double equivalent_k1_deg_;
+  double equivalent_k3_deg_;
+  double equivalent_k5_deg_;
+  int32_t command_count_limit_;
+  double counts_per_rev_;
+  double command_angle_limit_deg_;
 };
 }  // namespace lateral_ctrl
