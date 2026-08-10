@@ -83,7 +83,31 @@ ros2 run visualization vehicle_dashboard
 ros2 launch visualization vehicle_dashboard.launch.py
 ```
 
-GUI는 다음 parameter를 지원한다.
+### 화면 구성
+
+한 페이지에 전부 들어가며 스크롤도 plot도 없다. 디버깅 read-out에서 스크롤해야
+보이는 값은 보지 않은 값이기 때문이다. 신호 흐름 순서로 세 열이다.
+
+1. **Command · physical switches** — `/vehicle/command`가 요청한 값, `/drive/status`가
+   보고하는 물리 스위치(mode·gear·pedal), `/brake/status`의 제동과 정지 원인
+2. **Longitudinal** — `/drive/status`. 목표/실제 속도와 오차를 큰 글씨로 두고,
+   EZkontrol Part I·II 진단이 뒤따른다
+3. **Lateral** — `/steering/status`. 상태 머신과 disable 이유, 그리고
+   target → commanded → corrected → actual 각도 파이프라인
+
+읽는 방법은 두 가지 장치에 기대고 있다.
+
+- **Active conditions** — 헤더 아래 띠는 메시지가 이미 싣고 있는 원인 필드
+  (`stop_reason_bits`, `disable_reason`, 각종 `*_timeout`)를 **출처 필드명과 함께**
+  그대로 나열한다. 진단하지 않고 보고만 한다. 이 패키지 계약대로, 메시지가
+  말하지 않은 상태를 GUI가 추정하는 일은 없다.
+- **Flag chips** — bool은 정상일 때 흐리게, 아닐 때만 불이 들어오는 chip이다.
+  각 chip은 어느 쪽이 정상인지를 따로 갖는다. `command_received`는 false가
+  문제이고 `can_timeout`은 true가 문제이며, brake `actual_valid`와 steering
+  `enabled_feedback_valid`는 이 하드웨어에서 계약상 항상 false라 절대 fault로
+  표시하지 않는다.
+
+### Parameter
 
 | parameter | 기본값 |
 |---|---:|
@@ -91,8 +115,11 @@ GUI는 다음 parameter를 지원한다.
 | `drive_status_stale_ms` | 300 |
 | `brake_status_stale_ms` | 300 |
 | `steering_status_stale_ms` | 500 |
-| `history_sec` | 10 |
-| `ui_update_hz` | 10 |
+| `ui_update_hz` | 4 |
+
+`ui_update_hz`는 원격 X11 기준으로 정한 값이다. plot이 없어져서 한 tick은 값이
+바뀐 위젯만 다시 그리므로 예전보다 훨씬 가볍다. 로컬 화면에서는 10으로 올리고,
+링크가 느리면 2로 낮추거나 Foxglove bridge를 쓴다(픽셀 대신 데이터만 보낸다).
 
 ## Synthetic test 실행
 

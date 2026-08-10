@@ -1,9 +1,27 @@
-"""Read-only Qt dashboard for the canonical vehicle ROS 2 interface."""
+"""Read-only Qt dashboard for the canonical vehicle ROS 2 interface.
 
-from collections import deque
+Everything is on one page, laid out along the signal flow: what the vehicle was
+told to do, what the drive axis did, what the steering axis did. There are no
+plots and no scrolling -- this is a debugging read-out, and a value you have to
+scroll to find is a value you did not see.
+
+Two devices carry most of the work:
+
+* **Active conditions.** The strip under the header repeats the reason fields
+  the messages already carry -- ``stop_reason_bits``, ``disable_reason``, the
+  timeout flags -- naming the field each one came from. It reports; it does not
+  diagnose. Per this package's contract the GUI never infers a state that the
+  message did not state.
+* **Flag chips.** Booleans are chips that stay dim while nominal and light up
+  only when they are not, so a wall of twenty flags reads at a glance. Each
+  chip declares which way is nominal, because ``command_received`` is bad when
+  false while ``can_timeout`` is bad when true, and some -- brake
+  ``actual_valid``, steering ``enabled_feedback_valid`` -- are contractually
+  false on this hardware and must never be shown as faults.
+"""
+
 import sys
 import threading
-import time
 
 from kaiev26_hil.qt_runtime import ensure_bundled_qt_first
 from kaiev26_msgs.msg import (
@@ -35,22 +53,28 @@ from visualization.ros_state_cache import (
     STEERING,
     steering_disable_reason_text,
     steering_state_text,
-    valid_bool_text,
 )
 
 ensure_bundled_qt_first()
 
 try:
     from PyQt5 import QtCore, QtGui, QtWidgets
-    import pyqtgraph as pg
 except ImportError as gui_import_error:
     QtCore = None
     QtGui = None
     QtWidgets = None
-    pg = None
     GUI_IMPORT_ERROR = gui_import_error
 else:
     GUI_IMPORT_ERROR = None
+
+
+#: Which way round a flag is nominal. ``INFO`` never alarms: it is for flags
+#: this hardware holds at a fixed value by contract, where colouring the normal
+#: case as a fault would train the operator to ignore the colour.
+BAD_TRUE = 'bad_true'
+BAD_FALSE = 'bad_false'
+WARN_TRUE = 'warn_true'
+INFO = 'info'
 
 
 class VehicleStatusSubscriber(Node):
@@ -64,8 +88,10 @@ class VehicleStatusSubscriber(Node):
         self.declare_parameter('drive_status_stale_ms', 300.0)
         self.declare_parameter('brake_status_stale_ms', 300.0)
         self.declare_parameter('steering_status_stale_ms', 500.0)
-        self.declare_parameter('history_sec', 10.0)
-        self.declare_parameter('ui_update_hz', 10.0)
+        # One tick repaints only the values that changed -- there are no plots
+        # to redraw -- so this is cheap even on a forwarded X11 display. 4 Hz
+        # is the remote default; raise it to 10 on a local screen.
+        self.declare_parameter('ui_update_hz', 4.0)
 
         self.stale_ms = {
             COMMAND: float(self.get_parameter('command_stale_ms').value),
@@ -77,10 +103,6 @@ class VehicleStatusSubscriber(Node):
                 self.get_parameter('steering_status_stale_ms').value
             ),
         }
-        self.history_sec = max(
-            1.0,
-            float(self.get_parameter('history_sec').value),
-        )
         self.ui_update_hz = max(
             1.0,
             float(self.get_parameter('ui_update_hz').value),
@@ -112,302 +134,556 @@ class VehicleStatusSubscriber(Node):
         )
 
 
-if QtWidgets is not None and pg is not None:
+if QtWidgets is not None:
 
     class VehicleDashboard(QtWidgets.QMainWindow):
-        """Developer-oriented, read-only status and trend display."""
+        """Developer-oriented, read-only status display on a single page."""
 
-        STATUS_COLORS = {
-            NO_DATA: '#8b949e',
-            OK: '#3fb950',
-            STALE: '#d29922',
-        }
+        FG = '#c9d1d9'
+        DIM = '#6e7681'
+        ACCENT = '#58a6ff'
+        GOOD = '#3fb950'
+        WARN = '#d29922'
+        BAD = '#f85149'
+
+        STATUS_COLORS = {NO_DATA: DIM, OK: GOOD, STALE: WARN}
+
+        DRIVE_FLAGS = (
+            ('command_received', 'cmd received', BAD_FALSE),
+            ('command_timeout', 'cmd timeout', BAD_TRUE),
+            ('stop_request', 'stop request', BAD_TRUE),
+            ('tractive_commanded', 'tractive cmd', INFO),
+            ('tractive_feedback', 'tractive fb', INFO),
+            ('tractive_feedback_valid', 'tractive fb valid', BAD_FALSE),
+            ('part1_valid', 'Part I valid', BAD_FALSE),
+            ('part2_valid', 'Part II valid', BAD_FALSE),
+            ('fault_bits_valid', 'fault bits valid', INFO),
+        )
+
+        STEERING_FLAGS = (
+            ('communication_ok', 'comm OK', BAD_FALSE),
+            ('can_timeout', 'CAN timeout', BAD_TRUE),
+            ('feedback_valid', 'feedback valid', BAD_FALSE),
+            ('feedback_timeout', 'feedback timeout', BAD_TRUE),
+            ('mode_received', 'mode received', BAD_FALSE),
+            ('mode_timeout', 'mode timeout', BAD_TRUE),
+            ('steer_command_received', 'steer cmd rx', BAD_FALSE),
+            ('steer_command_timeout', 'steer cmd timeout', BAD_TRUE),
+            ('pending_command_valid', 'pending cmd valid', INFO),
+            ('movement_target_valid', 'move target valid', INFO),
+            ('estop_active', 'E-stop', BAD_TRUE),
+            ('command_brake_active', 'command brake', BAD_TRUE),
+            ('enabled_commanded', 'enable cmd', INFO),
+            ('enabled_feedback', 'enable fb', INFO),
+            # Contractually false on the real KEYA: no trustworthy enable query.
+            ('enabled_feedback_valid', 'enable fb valid', INFO),
+            ('enable_mismatch', 'enable mismatch', BAD_TRUE),
+            ('tracking_control_enabled', 'tracking ctrl', INFO),
+            ('tracking_error_warning', 'tracking warn', WARN_TRUE),
+            ('tracking_error_fault', 'tracking fault', BAD_TRUE),
+        )
 
         def __init__(self, node, cache):
             super().__init__()
             self.node = node
             self.cache = cache
-            self.labels = {}
-            self.start_monotonic = time.monotonic()
-            self.speed_history = deque()
-            self.steering_history = deque()
+            self.values = {}
+            self.chips = {}
+            self._styles = {}
 
             self.setWindowTitle('KAI Vehicle Debug Dashboard (Read Only)')
-            self.resize(1500, 920)
             self._build_ui()
 
             interval_ms = max(20, int(1000.0 / self.node.ui_update_hz))
             self.timer = QtCore.QTimer(self)
             self.timer.timeout.connect(self.refresh)
             self.timer.start(interval_ms)
+            # Shutdown is a separate concern from rendering: keeping it out of
+            # refresh leaves refresh a pure function of the cache, which is what
+            # makes it testable without a live ROS context.
+            self.shutdown_timer = QtCore.QTimer(self)
+            self.shutdown_timer.timeout.connect(self._close_if_ros_stopped)
+            self.shutdown_timer.start(200)
             self.refresh()
+
+        # ---------------------------------------------------------------- UI
 
         def _build_ui(self):
             central = QtWidgets.QWidget()
             outer = QtWidgets.QVBoxLayout(central)
+            outer.setContentsMargins(10, 8, 10, 8)
+            outer.setSpacing(8)
+            outer.addLayout(self._build_header())
+            outer.addWidget(self._build_conditions())
 
-            title = QtWidgets.QLabel(
-                'Vehicle Debug Dashboard  ·  READ ONLY'
-            )
-            title_font = QtGui.QFont()
-            title_font.setPointSize(16)
-            title_font.setBold(True)
-            title.setFont(title_font)
-            title.setStyleSheet('color: #58a6ff; padding: 6px;')
-            outer.addWidget(title)
-
-            splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-            outer.addWidget(splitter, 1)
-
-            scroll = QtWidgets.QScrollArea()
-            scroll.setWidgetResizable(True)
-            details = QtWidgets.QWidget()
-            detail_layout = QtWidgets.QVBoxLayout(details)
-            detail_layout.addWidget(
-                self._make_group(
-                    'System',
-                    [
-                        ('MODE', 'mode'),
-                        ('GEAR', 'gear'),
-                        ('/vehicle/command', 'command_rx'),
-                        ('/drive/status', 'drive_rx'),
-                        ('/brake/status', 'brake_rx'),
-                        ('/steering/status', 'steering_rx'),
-                        ('Brake commanded', 'brake_commanded'),
-                        ('Brake actual feedback', 'brake_actual'),
-                        ('Physical E-stop', 'physical_estop'),
-                        ('Brake reasons', 'brake_reasons'),
-                        ('Steering state', 'system_steering_state'),
-                        (
-                            'Steering disable reason',
-                            'system_steering_reason',
-                        ),
-                    ],
-                )
-            )
-            detail_layout.addWidget(
-                self._make_group(
-                    'Longitudinal',
-                    [
-                        ('Target speed', 'target_speed'),
-                        ('Actual speed', 'actual_speed'),
-                        ('Speed error', 'speed_error'),
-                        ('Motor RPM', 'motor_rpm'),
-                        ('Tractive commanded', 'tractive_commanded'),
-                        ('Tractive feedback', 'tractive_feedback'),
-                        ('Bus voltage', 'drive_bus_voltage'),
-                        ('Bus current', 'drive_bus_current'),
-                        ('Phase current', 'phase_current'),
-                        (
-                            'Controller temperature',
-                            'controller_temperature',
-                        ),
-                        ('Motor temperature', 'motor_temperature'),
-                        ('Command received', 'command_received'),
-                        ('Command timeout', 'command_timeout'),
-                        ('Command age', 'drive_command_age'),
-                        ('Part I valid', 'part1_valid'),
-                        ('Part I age', 'part1_age'),
-                        ('Part II valid', 'part2_valid'),
-                        ('Part II age', 'part2_age'),
-                        ('Motor fault bits', 'motor_fault_bits'),
-                    ],
-                )
-            )
-            detail_layout.addWidget(
-                self._make_group(
-                    'Lateral',
-                    [
-                        ('Target angle', 'target_steering'),
-                        ('Commanded angle', 'commanded_steering'),
-                        ('Corrected angle', 'corrected_steering'),
-                        ('Actual angle', 'actual_steering'),
-                        ('Tracking error', 'tracking_error'),
-                        ('State', 'steering_state'),
-                        ('Disable reason', 'steering_reason'),
-                        ('Enabled commanded', 'enabled_commanded'),
-                        ('Enabled feedback', 'enabled_feedback'),
-                        (
-                            'Enabled feedback valid',
-                            'enabled_feedback_valid',
-                        ),
-                        ('CAN timeout', 'can_timeout'),
-                        ('Mode received', 'mode_received'),
-                        ('Mode timeout', 'mode_timeout'),
-                        (
-                            'Steer command received',
-                            'steer_command_received',
-                        ),
-                        (
-                            'Steer command timeout',
-                            'steer_command_timeout',
-                        ),
-                        ('Feedback timeout', 'feedback_timeout'),
-                        ('Communication OK', 'communication_ok'),
-                        (
-                            'Pending command valid',
-                            'pending_command_valid',
-                        ),
-                        (
-                            'Movement target valid',
-                            'movement_target_valid',
-                        ),
-                        ('Feedback valid', 'feedback_valid'),
-                        ('Feedback age', 'feedback_age'),
-                        ('Mode age', 'mode_age'),
-                        ('Steer command age', 'steer_command_age'),
-                        ('Motor position/count', 'motor_position'),
-                        ('Motor angle', 'motor_angle'),
-                        ('Motor speed', 'steering_motor_speed'),
-                        ('Motor current', 'steering_motor_current'),
-                        ('Bus voltage', 'steering_bus_voltage'),
-                        ('Driver temperature', 'driver_temperature'),
-                        ('Steering fault bits', 'steering_fault_bits'),
-                    ],
-                )
-            )
-            detail_layout.addStretch(1)
-            scroll.setWidget(details)
-            splitter.addWidget(scroll)
-
-            plot_panel = QtWidgets.QWidget()
-            plot_layout = QtWidgets.QVBoxLayout(plot_panel)
-            self.speed_plot = pg.PlotWidget(title='Speed — recent history')
-            self.speed_plot.setLabel('left', 'Speed', units='m/s')
-            self.speed_plot.setLabel('bottom', 'Time', units='s')
-            self.speed_plot.addLegend()
-            self.speed_target_curve = self.speed_plot.plot(
-                pen=pg.mkPen('#58a6ff', width=2),
-                name='target',
-            )
-            self.speed_actual_curve = self.speed_plot.plot(
-                pen=pg.mkPen('#3fb950', width=2),
-                name='actual',
-            )
-            plot_layout.addWidget(self.speed_plot)
-
-            self.steering_plot = pg.PlotWidget(
-                title='Steering — recent history'
-            )
-            self.steering_plot.setLabel('left', 'Wheel angle', units='deg')
-            self.steering_plot.setLabel('bottom', 'Time', units='s')
-            self.steering_plot.addLegend()
-            self.steering_target_curve = self.steering_plot.plot(
-                pen=pg.mkPen('#58a6ff', width=2),
-                name='target',
-            )
-            self.steering_actual_curve = self.steering_plot.plot(
-                pen=pg.mkPen('#f0883e', width=2),
-                name='actual',
-            )
-            plot_layout.addWidget(self.steering_plot)
-            splitter.addWidget(plot_panel)
-            splitter.setSizes([650, 850])
+            columns = QtWidgets.QHBoxLayout()
+            columns.setSpacing(8)
+            columns.addWidget(self._build_system_column(), 3)
+            columns.addWidget(self._build_longitudinal_column(), 4)
+            columns.addWidget(self._build_lateral_column(), 5)
+            outer.addLayout(columns, 1)
 
             self.setCentralWidget(central)
             self.setStyleSheet(
-                'QMainWindow, QWidget { background: #0d1117; color: #c9d1d9; }'
-                'QGroupBox { border: 1px solid #30363d; border-radius: 5px;'
-                ' margin-top: 9px; font-weight: bold; }'
-                'QGroupBox::title { subcontrol-origin: margin; left: 10px;'
-                ' padding: 0 4px; color: #58a6ff; }'
-                'QScrollArea { border: none; }'
+                'QMainWindow, QWidget { background:#0d1117; color:#c9d1d9; }'
+                # margin-top has to clear the bold title drawn in it, or the
+                # top of the caption is cut off by the frame.
+                'QGroupBox { border:1px solid #30363d; border-radius:6px;'
+                ' margin-top:14px; font-weight:bold; }'
+                'QGroupBox::title { subcontrol-origin:margin; left:9px;'
+                ' padding:0 4px; color:#58a6ff; }'
             )
 
-        def _make_group(self, title, rows):
-            group = QtWidgets.QGroupBox(title)
-            grid = QtWidgets.QGridLayout(group)
-            for row, (caption, key) in enumerate(rows):
-                name_label = QtWidgets.QLabel(caption)
-                value_label = QtWidgets.QLabel(NO_DATA)
-                value_label.setTextInteractionFlags(
-                    QtCore.Qt.TextSelectableByMouse
-                )
-                value_label.setAlignment(
-                    QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
-                )
-                grid.addWidget(name_label, row, 0)
-                grid.addWidget(value_label, row, 1)
-                self.labels[key] = value_label
-            grid.setColumnStretch(1, 1)
+        def _build_header(self):
+            header = QtWidgets.QHBoxLayout()
+            title = QtWidgets.QLabel('Vehicle Debug Dashboard')
+            title.setStyleSheet(
+                f'color:{self.ACCENT};font-size:15pt;font-weight:bold;'
+            )
+            header.addWidget(title)
+            read_only = QtWidgets.QLabel('READ ONLY')
+            read_only.setStyleSheet(
+                f'color:{self.DIM};border:1px solid {self.DIM};'
+                'border-radius:3px;padding:1px 6px;font-weight:bold;'
+            )
+            header.addWidget(read_only)
+            header.addStretch(1)
+            # One badge per subscribed topic: the first thing to check when a
+            # column reads NO DATA is whether the topic is arriving at all.
+            for key, caption in (
+                (COMMAND, '/vehicle/command'),
+                (DRIVE, '/drive/status'),
+                (BRAKE, '/brake/status'),
+                (STEERING, '/steering/status'),
+            ):
+                badge = QtWidgets.QLabel(f'{caption}  {NO_DATA}')
+                badge.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+                self.values[f'link_{key}'] = badge
+                header.addWidget(badge)
+            return header
+
+        def _build_conditions(self):
+            box = QtWidgets.QGroupBox(
+                'Active conditions  ·  reported by the messages, not inferred'
+            )
+            layout = QtWidgets.QHBoxLayout(box)
+            layout.setContentsMargins(9, 4, 9, 6)
+            self.conditions = QtWidgets.QLabel(NO_DATA)
+            self.conditions.setWordWrap(True)
+            self.conditions.setTextInteractionFlags(
+                QtCore.Qt.TextSelectableByMouse
+            )
+            layout.addWidget(self.conditions)
+            return box
+
+        def _build_system_column(self):
+            # This column mixes three topics -- the command, the drive message's
+            # physical switch fields and the brake message -- so it is named for
+            # what it shows rather than for one source topic.
+            # No "&" in the caption: Qt reads it as a mnemonic and renders the
+            # title as "Command _physical switches".
+            group = QtWidgets.QGroupBox('1. Command  ·  physical switches')
+            layout = QtWidgets.QVBoxLayout(group)
+            layout.addLayout(self._headline_row((
+                ('MODE', 'mode'),
+                ('GEAR', 'gear'),
+            )))
+            grid = self._grid(layout)
+            rows = (
+                ('Pedal [driver]', 'pedal', False),
+                ('Pedal ADC raw', 'pedal_adc', False),
+                ('', None, False),
+                ('Target speed', 'cmd_speed', False),
+                ('Target steering', 'cmd_steer', False),
+                ('Brake engage [cmd]', 'cmd_brake', False),
+                ('', None, False),
+                ('Physical E-stop', 'physical_estop', False),
+                ('Brake commanded', 'brake_commanded', False),
+                ('Brake command age', 'brake_age', False),
+                ('Brake actual feedback', 'brake_actual', False),
+                # Three reason bits can be asserted at once, so this one gets
+                # its own line rather than sharing with the caption.
+                ('Stop reasons', 'brake_reasons', True),
+            )
+            index = 0
+            for caption, key, wide in rows:
+                self._row(grid, index, caption, key, wide=wide)
+                index += 2 if wide else 1
+            layout.addStretch(1)
             return group
 
-        def _set(self, key, text, state=None):
-            label = self.labels[key]
-            label.setText(str(text))
-            color = self.STATUS_COLORS.get(state, '#c9d1d9')
-            label.setStyleSheet(f'color: {color};')
+        def _build_longitudinal_column(self):
+            group = QtWidgets.QGroupBox('2. Longitudinal  ·  /drive/status')
+            layout = QtWidgets.QVBoxLayout(group)
+            layout.addLayout(self._headline_row((
+                ('TARGET', 'speed_target'),
+                ('ACTUAL', 'speed_actual'),
+                ('ERROR', 'speed_error'),
+            )))
+            grid = self._grid(layout)
+            rows = (
+                ('Motor RPM', 'motor_rpm'),
+                ('Controller control mode', 'control_mode'),
+                ('Commanded motor RPM', 'commanded_rpm'),
+                ('Commanded phase current', 'commanded_current'),
+                ('', None),
+                ('Bus voltage [Part I]', 'bus_voltage'),
+                ('Bus current [Part I]', 'bus_current'),
+                ('Phase current [Part I]', 'phase_current'),
+                ('Controller temp [Part II]', 'controller_temp'),
+                ('Motor temp [Part II]', 'motor_temp'),
+                ('', None),
+                ('Host command age', 'drive_cmd_age'),
+                ('Part I age', 'part1_age'),
+                ('Part II age', 'part2_age'),
+                ('Motor fault bits', 'drive_faults'),
+            )
+            for index, (caption, key) in enumerate(rows):
+                self._row(grid, index, caption, key)
+            layout.addWidget(self._flag_panel('drive', self.DRIVE_FLAGS, 3))
+            layout.addStretch(1)
+            return group
+
+        def _build_lateral_column(self):
+            group = QtWidgets.QGroupBox('3. Lateral  ·  /steering/status')
+            layout = QtWidgets.QVBoxLayout(group)
+            layout.addLayout(self._headline_row((
+                ('STATE', 'steering_state'),
+                ('DISABLE REASON', 'steering_reason'),
+            )))
+            # The four angles are one pipeline, so they read as a chain rather
+            # than as four unrelated rows: a limit or a PID correction shows up
+            # as a step between two neighbouring cells.
+            layout.addLayout(self._headline_row((
+                ('target', 'angle_target'),
+                ('→ commanded', 'angle_commanded'),
+                ('→ corrected', 'angle_corrected'),
+                ('actual', 'angle_actual'),
+                ('error', 'angle_error'),
+            ), small=True))
+            grid = self._grid(layout)
+            rows = (
+                ('Motor position', 'motor_position'),
+                ('Motor angle [shaft]', 'motor_angle'),
+                ('Motor speed', 'motor_speed'),
+                ('Motor current', 'motor_current'),
+                ('Bus voltage', 'steer_voltage'),
+                ('Driver temperature', 'driver_temp'),
+                ('', None),
+                ('Feedback age', 'feedback_age'),
+                ('Mode age', 'mode_age'),
+                ('Steer command age', 'steer_cmd_age'),
+                ('Drive mode seen by steering', 'steer_drive_mode'),
+                ('KEYA fault bits', 'steer_faults'),
+            )
+            for index, (caption, key) in enumerate(rows):
+                self._row(grid, index, caption, key)
+            layout.addWidget(self._flag_panel('steering', self.STEERING_FLAGS, 4))
+            layout.addStretch(1)
+            return group
+
+        # ------------------------------------------------------------ pieces
 
         @staticmethod
-        def _receive_text(topic_snapshot):
-            if topic_snapshot.state == NO_DATA:
-                return NO_DATA
-            return (
-                f'{topic_snapshot.state} '
-                f'({topic_snapshot.age_ms:.0f} ms local)'
+        def _grid(parent_layout):
+            grid = QtWidgets.QGridLayout()
+            grid.setHorizontalSpacing(10)
+            grid.setVerticalSpacing(2)
+            grid.setColumnStretch(1, 1)
+            parent_layout.addLayout(grid)
+            return grid
+
+        def _row(self, grid, row, caption, key, *, wide=False):
+            """One caption/value row. ``wide`` gives the value its own line.
+
+            A value whose length is unbounded -- a decoded bit list -- cannot
+            share a line with its caption: it overruns the caption and clips.
+            """
+            if key is None:  # spacer keeps related rows visually grouped
+                spacer = QtWidgets.QLabel(' ')
+                spacer.setFixedHeight(6)
+                grid.addWidget(spacer, row, 0, 1, 2)
+                return
+            name = QtWidgets.QLabel(caption)
+            name.setStyleSheet(f'color:{self.DIM};')
+            value = QtWidgets.QLabel(NO_DATA)
+            value.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+            value.setStyleSheet(f'color:{self.FG};font-family:monospace;')
+            if wide:
+                value.setWordWrap(True)
+                value.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+                grid.addWidget(name, row, 0, 1, 2)
+                grid.addWidget(value, row + 1, 0, 1, 2)
+            else:
+                value.setAlignment(
+                    QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
+                )
+                grid.addWidget(name, row, 0)
+                grid.addWidget(value, row, 1)
+            self.values[key] = value
+
+        def _headline_row(self, specs, *, small=False):
+            """A row of large read-at-a-glance values under a caption."""
+            row = QtWidgets.QHBoxLayout()
+            row.setSpacing(12)
+            for caption, key in specs:
+                cell = QtWidgets.QVBoxLayout()
+                cell.setSpacing(0)
+                label = QtWidgets.QLabel(caption)
+                label.setStyleSheet(f'color:{self.DIM};font-size:8pt;')
+                value = QtWidgets.QLabel(NO_DATA)
+                value.setTextInteractionFlags(
+                    QtCore.Qt.TextSelectableByMouse
+                )
+                value.setStyleSheet(
+                    f'color:{self.FG};font-family:monospace;font-weight:bold;'
+                    f'font-size:{"11" if small else "14"}pt;'
+                )
+                cell.addWidget(label)
+                cell.addWidget(value)
+                row.addLayout(cell)
+                self.values[key] = value
+            row.addStretch(1)
+            return row
+
+        def _flag_panel(self, prefix, specs, columns):
+            box = QtWidgets.QGroupBox('Flags')
+            grid = QtWidgets.QGridLayout(box)
+            grid.setHorizontalSpacing(4)
+            grid.setVerticalSpacing(3)
+            for index, (field, caption, polarity) in enumerate(specs):
+                chip = QtWidgets.QLabel(caption)
+                chip.setAlignment(QtCore.Qt.AlignCenter)
+                grid.addWidget(chip, index // columns, index % columns)
+                self.chips[f'{prefix}.{field}'] = (chip, caption, polarity)
+            return box
+
+        # ----------------------------------------------------------- styling
+
+        def _style(self, widget, style):
+            """Apply a stylesheet only when it changed.
+
+            setStyleSheet re-polishes and repaints unconditionally, and this
+            window rewrites every widget on every tick. On a forwarded display
+            the skipped repaints are the whole cost of the refresh.
+            """
+            if self._styles.get(widget) == style:
+                return
+            self._styles[widget] = style
+            widget.setStyleSheet(style)
+
+        def _set(self, key, text, color=None):
+            value = self.values[key]
+            value.setText(str(text))
+            self._style(
+                value,
+                f'color:{color or self.FG};font-family:monospace;',
             )
 
-        def _refresh_system(self, snapshot):
+        def _set_headline(self, key, text, color=None, *, small=False):
+            value = self.values[key]
+            value.setText(str(text))
+            self._style(
+                value,
+                f'color:{color or self.FG};font-family:monospace;'
+                f'font-weight:bold;font-size:{"11" if small else "14"}pt;',
+            )
+
+        def _set_chip(self, prefix, field, state):
+            """Render one flag. ``state`` is True/False, or None for no data."""
+            chip, caption, polarity = self.chips[f'{prefix}.{field}']
+            chip.setText(caption)
+            if state is None:
+                color, filled = self.DIM, False
+            elif polarity == INFO:
+                color, filled = (self.FG if state else self.DIM), False
+            elif polarity == BAD_TRUE:
+                color, filled = (self.BAD if state else self.DIM), bool(state)
+            elif polarity == WARN_TRUE:
+                color, filled = (self.WARN if state else self.DIM), bool(state)
+            else:  # BAD_FALSE
+                color, filled = (self.GOOD if state else self.BAD), not state
+            if filled:
+                style = (
+                    f'background:{color};color:#0d1117;font-weight:bold;'
+                    'border-radius:3px;padding:2px 4px;font-size:8pt;'
+                )
+            else:
+                style = (
+                    f'color:{color};border:1px solid {color};'
+                    'border-radius:3px;padding:1px 3px;font-size:8pt;'
+                )
+            self._style(chip, style)
+
+        def _blank_chips(self, prefix, specs):
+            for field, _caption, _polarity in specs:
+                self._set_chip(prefix, field, None)
+
+        # ---------------------------------------------------------- refresh
+
+        def _close_if_ros_stopped(self):
+            if not rclpy.ok():
+                self.close()
+
+        def refresh(self):
+            snapshot = self.cache.snapshot(self.node.stale_ms)
+            self._refresh_links(snapshot)
+            self._refresh_conditions(snapshot)
+            self._refresh_system(snapshot)
+            self._refresh_longitudinal(snapshot)
+            self._refresh_lateral(snapshot)
+
+        def _refresh_links(self, snapshot):
+            for key, caption in (
+                (COMMAND, '/vehicle/command'),
+                (DRIVE, '/drive/status'),
+                (BRAKE, '/brake/status'),
+                (STEERING, '/steering/status'),
+            ):
+                topic = snapshot[key]
+                color = self.STATUS_COLORS.get(topic.state, self.FG)
+                if topic.state == NO_DATA:
+                    text = f'{caption}  {NO_DATA}'
+                else:
+                    text = f'{caption}  {topic.state} {topic.age_ms:.0f} ms'
+                badge = self.values[f'link_{key}']
+                badge.setText(text)
+                self._style(
+                    badge,
+                    f'color:{color};border:1px solid {color};'
+                    'border-radius:3px;padding:1px 6px;font-family:monospace;',
+                )
+
+        def _refresh_conditions(self, snapshot):
+            """Repeat the reason fields the messages carry, naming each source."""
             drive = snapshot[DRIVE].message
             brake = snapshot[BRAKE].message
             steering = snapshot[STEERING].message
+            conditions = []
 
-            self._set(
-                'mode',
-                drive_mode_text(drive.mode) if drive else NO_DATA,
-                snapshot[DRIVE].state,
-            )
-            self._set(
-                'gear',
-                drive_gear_text(drive.gear) if drive else NO_DATA,
-                snapshot[DRIVE].state,
-            )
-            for key, label_key in (
-                (COMMAND, 'command_rx'),
-                (DRIVE, 'drive_rx'),
-                (BRAKE, 'brake_rx'),
-                (STEERING, 'steering_rx'),
-            ):
-                self._set(
-                    label_key,
-                    self._receive_text(snapshot[key]),
-                    snapshot[key].state,
+            missing = [
+                caption
+                for key, caption in (
+                    (COMMAND, '/vehicle/command'),
+                    (DRIVE, '/drive/status'),
+                    (BRAKE, '/brake/status'),
+                    (STEERING, '/steering/status'),
+                )
+                if snapshot[key].state == NO_DATA
+            ]
+            if missing:
+                conditions.append('NO DATA: ' + ', '.join(missing))
+
+            if brake is not None and int(brake.stop_reason_bits):
+                conditions.append(
+                    f'{brake_reason_text(brake.stop_reason_bits)} '
+                    '(brake.stop_reason_bits)'
+                )
+            if drive is not None:
+                if drive.command_timeout:
+                    conditions.append('COMMAND_TIMEOUT (drive.command_timeout)')
+                if drive.stop_request:
+                    conditions.append('STOP_REQUEST (drive.stop_request)')
+                if drive.fault_bits_valid and int(drive.fault_bits):
+                    conditions.append(
+                        f'FAULT 0x{int(drive.fault_bits):06X} (drive.fault_bits)'
+                    )
+            if steering is not None:
+                if steering.state != SteeringActuatorStatus.STATE_ACTIVE:
+                    conditions.append(
+                        f'{steering_state_text(steering.state)} (steering.state)'
+                    )
+                if steering.disable_reason != SteeringActuatorStatus.REASON_NONE:
+                    conditions.append(
+                        f'{steering_disable_reason_text(steering.disable_reason)} '
+                        '(steering.disable_reason)'
+                    )
+                # bit0 is the KEYA enable state, not a fault.
+                steering_faults = int(steering.fault_bits) & ~1
+                if steering_faults:
+                    conditions.append(
+                        f'FAULT 0x{steering_faults:04X} (steering.fault_bits)'
+                    )
+
+            if conditions:
+                self.conditions.setText('   ·   '.join(conditions))
+                self._style(
+                    self.conditions,
+                    f'color:{self.BAD};font-weight:bold;font-family:monospace;',
+                )
+            else:
+                self.conditions.setText('none asserted')
+                self._style(
+                    self.conditions,
+                    f'color:{self.GOOD};font-family:monospace;',
                 )
 
-            self._set(
-                'brake_commanded',
-                bool_text(brake.brake_commanded) if brake else NO_DATA,
+        def _refresh_system(self, snapshot):
+            command = snapshot[COMMAND].message
+            drive = snapshot[DRIVE].message
+            brake = snapshot[BRAKE].message
+
+            self._set_headline(
+                'mode',
+                drive_mode_text(drive.mode) if drive else NO_DATA,
+                self.ACCENT if drive else self.DIM,
+            )
+            self._set_headline(
+                'gear',
+                drive_gear_text(drive.gear) if drive else NO_DATA,
+                self.ACCENT if drive else self.DIM,
             )
             self._set(
-                'brake_actual',
-                (
-                    'SUPPORTED'
-                    if brake and brake.actual_valid
-                    else (NA if brake else NO_DATA)
-                ),
+                'pedal',
+                f'{int(drive.pedal_percent)} %' if drive else NO_DATA,
             )
+            self._set(
+                'pedal_adc',
+                f'{int(drive.pedal_adc_raw)}' if drive else NO_DATA,
+            )
+
+            self._set(
+                'cmd_speed',
+                f'{command.speed_target_mps:.2f} m/s' if command else NO_DATA,
+            )
+            self._set(
+                'cmd_steer',
+                f'{rad_to_deg(command.steering_target_rad):.2f}°'
+                if command else NO_DATA,
+            )
+            self._set(
+                'cmd_brake',
+                bool_text(command.brake_engage) if command else NO_DATA,
+                self.BAD if command and command.brake_engage else None,
+            )
+
             estop = physical_estop_active(brake)
             self._set(
                 'physical_estop',
                 bool_text(estop) if estop is not None else NO_DATA,
+                self.BAD if estop else None,
+            )
+            self._set(
+                'brake_commanded',
+                bool_text(brake.brake_commanded) if brake else NO_DATA,
+                self.BAD if brake and brake.brake_commanded else None,
             )
             self._set(
                 'brake_reasons',
-                brake_reason_text(brake.stop_reason_bits)
-                if brake
-                else NO_DATA,
+                brake_reason_text(brake.stop_reason_bits) if brake else NO_DATA,
+                self.BAD if brake and int(brake.stop_reason_bits) else None,
             )
             self._set(
-                'system_steering_state',
-                steering_state_text(steering.state)
-                if steering
-                else NO_DATA,
+                'brake_age',
+                f'{brake.command_age_ms:.0f} ms' if brake else NO_DATA,
             )
+            # Permanently unsupported on this hardware, so it is stated as a
+            # capability rather than coloured like a fault.
             self._set(
-                'system_steering_reason',
-                steering_disable_reason_text(steering.disable_reason)
-                if steering
-                else NO_DATA,
+                'brake_actual',
+                ('SUPPORTED' if brake.actual_valid else 'NOT WIRED')
+                if brake else NO_DATA,
+                self.DIM,
             )
 
         def _refresh_longitudinal(self, snapshot):
@@ -416,382 +692,219 @@ if QtWidgets is not None and pg is not None:
             target = command.speed_target_mps if command else None
             actual = drive.speed_mps if drive else None
 
-            self._set(
-                'target_speed',
-                f'{target:.2f} m/s' if target is not None else NO_DATA,
+            self._set_headline(
+                'speed_target',
+                f'{target:.2f}' if target is not None else '--',
+                self.ACCENT if target is not None else self.DIM,
             )
-            self._set(
-                'actual_speed',
-                f'{actual:.2f} m/s' if actual is not None else NO_DATA,
+            self._set_headline(
+                'speed_actual',
+                f'{actual:.2f}' if actual is not None else '--',
+                self.GOOD if actual is not None else self.DIM,
             )
-            self._set(
+            self._set_headline(
                 'speed_error',
-                f'{target - actual:.2f} m/s'
-                if target is not None and actual is not None
-                else NO_DATA,
+                f'{target - actual:+.2f}'
+                if target is not None and actual is not None else '--',
+                self.DIM if target is None or actual is None else self.FG,
             )
-            if not drive:
+
+            if drive is None:
                 for key in (
-                    'motor_rpm',
-                    'tractive_commanded',
-                    'tractive_feedback',
-                    'drive_bus_voltage',
-                    'drive_bus_current',
-                    'phase_current',
-                    'controller_temperature',
-                    'motor_temperature',
-                    'command_received',
-                    'command_timeout',
-                    'drive_command_age',
-                    'part1_valid',
-                    'part1_age',
-                    'part2_valid',
-                    'part2_age',
-                    'motor_fault_bits',
+                    'motor_rpm', 'control_mode', 'commanded_rpm',
+                    'commanded_current', 'bus_voltage', 'bus_current',
+                    'phase_current', 'controller_temp', 'motor_temp',
+                    'drive_cmd_age', 'part1_age', 'part2_age', 'drive_faults',
                 ):
-                    self._set(key, NO_DATA)
+                    self._set(key, NO_DATA, self.DIM)
+                self._blank_chips('drive', self.DRIVE_FLAGS)
                 return
 
             self._set('motor_rpm', f'{drive.motor_rpm:.1f} rpm')
             self._set(
-                'tractive_commanded',
-                bool_text(drive.tractive_commanded),
+                'control_mode',
+                'SPEED' if int(drive.controller_control_mode) == 1 else 'TORQUE',
+            )
+            self._set('commanded_rpm', f'{drive.commanded_motor_rpm:.0f} rpm')
+            self._set(
+                'commanded_current',
+                f'{drive.commanded_phase_current_a:.1f} A',
             )
             self._set(
-                'tractive_feedback',
-                valid_bool_text(
-                    drive.tractive_feedback_valid,
-                    drive.tractive_feedback,
-                ),
+                'bus_voltage',
+                format_if_valid(drive.part1_valid, drive.bus_voltage_v, '.2f', ' V'),
             )
             self._set(
-                'drive_bus_voltage',
-                format_if_valid(
-                    drive.part1_valid,
-                    drive.bus_voltage_v,
-                    '.2f',
-                    ' V',
-                ),
-            )
-            self._set(
-                'drive_bus_current',
-                format_if_valid(
-                    drive.part1_valid,
-                    drive.bus_current_a,
-                    '.2f',
-                    ' A',
-                ),
+                'bus_current',
+                format_if_valid(drive.part1_valid, drive.bus_current_a, '.2f', ' A'),
             )
             self._set(
                 'phase_current',
+                format_if_valid(drive.part1_valid, drive.phase_current_a, '.2f', ' A'),
+            )
+            self._set(
+                'controller_temp',
                 format_if_valid(
-                    drive.part1_valid,
-                    drive.phase_current_a,
-                    '.2f',
-                    ' A',
+                    drive.part2_valid, drive.controller_temperature_c, '.1f', ' °C'
                 ),
             )
             self._set(
-                'controller_temperature',
+                'motor_temp',
                 format_if_valid(
-                    drive.part2_valid,
-                    drive.controller_temperature_c,
-                    '.1f',
-                    ' °C',
+                    drive.part2_valid, drive.motor_temperature_c, '.1f', ' °C'
                 ),
             )
             self._set(
-                'motor_temperature',
-                format_if_valid(
-                    drive.part2_valid,
-                    drive.motor_temperature_c,
-                    '.1f',
-                    ' °C',
-                ),
-            )
-            self._set('command_received', bool_text(drive.command_received))
-            self._set('command_timeout', bool_text(drive.command_timeout))
-            self._set(
-                'drive_command_age',
+                'drive_cmd_age',
                 f'{drive.command_age_ms:.0f} ms',
+                self.BAD if drive.command_timeout else None,
             )
-            self._set('part1_valid', bool_text(drive.part1_valid))
             self._set(
                 'part1_age',
-                f'{drive.part1_age_ms:.0f} ms'
-                if drive.part1_valid
-                else NA,
+                f'{drive.part1_age_ms:.0f} ms' if drive.part1_valid else NA,
             )
-            self._set('part2_valid', bool_text(drive.part2_valid))
             self._set(
                 'part2_age',
-                f'{drive.part2_age_ms:.0f} ms'
-                if drive.part2_valid
-                else NA,
+                f'{drive.part2_age_ms:.0f} ms' if drive.part2_valid else NA,
             )
+            faults = int(drive.fault_bits)
             self._set(
-                'motor_fault_bits',
-                f'0x{int(drive.fault_bits):08X}'
-                if drive.fault_bits_valid
-                else NA,
+                'drive_faults',
+                f'0x{faults:06X}' if drive.fault_bits_valid else NA,
+                self.BAD if drive.fault_bits_valid and faults else None,
             )
+            for field, _caption, _polarity in self.DRIVE_FLAGS:
+                self._set_chip('drive', field, bool(getattr(drive, field)))
 
         def _refresh_lateral(self, snapshot):
             command = snapshot[COMMAND].message
             steering = snapshot[STEERING].message
-            self._set(
-                'target_steering',
-                (
-                    f'{rad_to_deg(command.steering_target_rad):.2f}°'
-                    if command
-                    else NO_DATA
-                ),
-                snapshot[COMMAND].state,
-            )
-            if not steering:
+
+            if steering is None:
+                self._set_headline('steering_state', NO_DATA, self.DIM)
+                self._set_headline('steering_reason', NO_DATA, self.DIM)
                 for key in (
-                    'commanded_steering',
-                    'corrected_steering',
-                    'actual_steering',
-                    'tracking_error',
-                    'steering_state',
-                    'steering_reason',
-                    'enabled_commanded',
-                    'enabled_feedback',
-                    'enabled_feedback_valid',
-                    'can_timeout',
-                    'mode_received',
-                    'mode_timeout',
-                    'steer_command_received',
-                    'steer_command_timeout',
-                    'feedback_timeout',
-                    'communication_ok',
-                    'pending_command_valid',
-                    'movement_target_valid',
-                    'feedback_valid',
-                    'feedback_age',
-                    'mode_age',
-                    'steer_command_age',
-                    'motor_position',
-                    'motor_angle',
-                    'steering_motor_speed',
-                    'steering_motor_current',
-                    'steering_bus_voltage',
-                    'driver_temperature',
-                    'steering_fault_bits',
+                    'angle_target', 'angle_commanded', 'angle_corrected',
+                    'angle_actual', 'angle_error',
                 ):
-                    self._set(key, NO_DATA)
+                    self._set_headline(key, '--', self.DIM, small=True)
+                for key in (
+                    'motor_position', 'motor_angle', 'motor_speed',
+                    'motor_current', 'steer_voltage', 'driver_temp',
+                    'feedback_age', 'mode_age', 'steer_cmd_age',
+                    'steer_drive_mode', 'steer_faults',
+                ):
+                    self._set(key, NO_DATA, self.DIM)
+                self._blank_chips('steering', self.STEERING_FLAGS)
+                # The commanded angle still comes from /vehicle/command.
+                self._set_headline(
+                    'angle_target',
+                    f'{rad_to_deg(command.steering_target_rad):.2f}°'
+                    if command else '--',
+                    self.ACCENT if command else self.DIM,
+                    small=True,
+                )
                 return
 
-            angle_fields = (
-                (
-                    'commanded_steering',
-                    steering.commanded_wheel_angle_rad,
-                    True,
-                ),
-                (
-                    'corrected_steering',
-                    steering.corrected_wheel_angle_rad,
-                    True,
-                ),
-                (
-                    'actual_steering',
-                    steering.actual_wheel_angle_rad,
-                    steering.feedback_valid,
-                ),
-                (
-                    'tracking_error',
-                    steering.tracking_error_rad,
-                    steering.feedback_valid,
-                ),
-            )
-            for key, value, valid in angle_fields:
-                self._set(
-                    key,
-                    (
-                        f'{rad_to_deg(value):.2f}°'
-                        if valid
-                        else NA
-                    ),
-                )
-            self._set(
+            active = steering.state == SteeringActuatorStatus.STATE_ACTIVE
+            self._set_headline(
                 'steering_state',
                 steering_state_text(steering.state),
+                self.GOOD if active else self.BAD,
             )
-            self._set(
+            reason_none = (
+                steering.disable_reason == SteeringActuatorStatus.REASON_NONE
+            )
+            self._set_headline(
                 'steering_reason',
                 steering_disable_reason_text(steering.disable_reason),
+                self.DIM if reason_none else self.BAD,
             )
-            self._set(
-                'enabled_commanded',
-                bool_text(steering.enabled_commanded),
+
+            self._set_headline(
+                'angle_target',
+                f'{rad_to_deg(steering.target_wheel_angle_rad):.2f}°',
+                self.ACCENT,
+                small=True,
             )
-            self._set(
-                'enabled_feedback',
-                valid_bool_text(
-                    steering.enabled_feedback_valid,
-                    steering.enabled_feedback,
-                ),
+            self._set_headline(
+                'angle_commanded',
+                f'{rad_to_deg(steering.commanded_wheel_angle_rad):.2f}°',
+                small=True,
             )
-            self._set(
-                'enabled_feedback_valid',
-                bool_text(steering.enabled_feedback_valid),
+            self._set_headline(
+                'angle_corrected',
+                f'{rad_to_deg(steering.corrected_wheel_angle_rad):.2f}°',
+                small=True,
             )
-            self._set('can_timeout', bool_text(steering.can_timeout))
-            self._set('mode_received', bool_text(steering.mode_received))
-            self._set('mode_timeout', bool_text(steering.mode_timeout))
-            self._set(
-                'steer_command_received',
-                bool_text(steering.steer_command_received),
+            self._set_headline(
+                'angle_actual',
+                f'{rad_to_deg(steering.actual_wheel_angle_rad):.2f}°'
+                if steering.feedback_valid else NA,
+                self.GOOD if steering.feedback_valid else self.DIM,
+                small=True,
             )
-            self._set(
-                'steer_command_timeout',
-                bool_text(steering.steer_command_timeout),
+            self._set_headline(
+                'angle_error',
+                f'{rad_to_deg(steering.tracking_error_rad):+.2f}°'
+                if steering.feedback_valid else NA,
+                self.WARN if steering.tracking_error_warning else None,
+                small=True,
             )
-            self._set(
-                'feedback_timeout',
-                bool_text(steering.feedback_timeout),
-            )
-            self._set(
-                'communication_ok',
-                bool_text(steering.communication_ok),
-            )
-            self._set(
-                'pending_command_valid',
-                bool_text(steering.pending_command_valid),
-            )
-            self._set(
-                'movement_target_valid',
-                bool_text(steering.movement_target_valid),
-            )
-            self._set('feedback_valid', bool_text(steering.feedback_valid))
-            self._set(
-                'feedback_age',
-                f'{steering.feedback_age_ms:.0f} ms'
-                if steering.feedback_valid
-                else NA,
-            )
-            self._set('mode_age', f'{steering.mode_age_ms:.0f} ms')
-            self._set(
-                'steer_command_age',
-                f'{steering.steer_command_age_ms:.0f} ms',
-            )
+
+            valid = steering.feedback_valid
             self._set(
                 'motor_position',
-                (
-                    f'{steering.motor_position_count} count'
-                    if steering.feedback_valid
-                    else NA
-                ),
+                f'{steering.motor_position_count} count' if valid else NA,
             )
             self._set(
                 'motor_angle',
-                (
-                    f'{steering.motor_angle_deg:.2f}°'
-                    if steering.feedback_valid
-                    else NA
-                ),
+                f'{steering.motor_angle_deg:.2f}°' if valid else NA,
             )
             self._set(
-                'steering_motor_speed',
-                (
-                    f'{steering.motor_speed_rpm:.1f} rpm'
-                    if steering.feedback_valid
-                    else NA
-                ),
+                'motor_speed',
+                f'{steering.motor_speed_rpm:.1f} rpm' if valid else NA,
             )
             self._set(
-                'steering_motor_current',
-                (
-                    f'{steering.motor_current_a:.2f} A'
-                    if steering.feedback_valid
-                    else NA
-                ),
+                'motor_current',
+                f'{steering.motor_current_a:.2f} A' if valid else NA,
+            )
+            self._set('steer_voltage', f'{steering.bus_voltage_v:.2f} V')
+            self._set('driver_temp', f'{steering.driver_temperature_c:.1f} °C')
+            self._set(
+                'feedback_age',
+                f'{steering.feedback_age_ms:.0f} ms' if valid else NA,
+                self.BAD if steering.feedback_timeout else None,
             )
             self._set(
-                'steering_bus_voltage',
-                f'{steering.bus_voltage_v:.2f} V',
+                'mode_age',
+                f'{steering.mode_age_ms:.0f} ms',
+                self.BAD if steering.mode_timeout else None,
             )
             self._set(
-                'driver_temperature',
-                f'{steering.driver_temperature_c:.1f} °C',
+                'steer_cmd_age',
+                f'{steering.steer_command_age_ms:.0f} ms',
+                self.BAD if steering.steer_command_timeout else None,
             )
             self._set(
-                'steering_fault_bits',
-                f'0x{int(steering.fault_bits):04X}',
+                'steer_drive_mode',
+                drive_mode_text(steering.drive_mode),
             )
-
-        def _refresh_plots(self, snapshot, now):
-            relative_time = now - self.start_monotonic
-            command = snapshot[COMMAND].message
-            drive = snapshot[DRIVE].message
-            steering = snapshot[STEERING].message
-
-            if (
-                command
-                and drive
-                and snapshot[COMMAND].state == OK
-                and snapshot[DRIVE].state == OK
-            ):
-                self.speed_history.append(
-                    (
-                        relative_time,
-                        float(command.speed_target_mps),
-                        float(drive.speed_mps),
-                    )
-                )
-            if (
-                command
-                and steering
-                and snapshot[COMMAND].state == OK
-                and snapshot[STEERING].state == OK
-                and steering.feedback_valid
-            ):
-                self.steering_history.append(
-                    (
-                        relative_time,
-                        rad_to_deg(command.steering_target_rad),
-                        rad_to_deg(steering.actual_wheel_angle_rad),
-                    )
-                )
-
-            cutoff = relative_time - self.node.history_sec
-            for history in (self.speed_history, self.steering_history):
-                while history and history[0][0] < cutoff:
-                    history.popleft()
-
-            if self.speed_history:
-                x, target, actual = zip(*self.speed_history)
-                self.speed_target_curve.setData(x, target)
-                self.speed_actual_curve.setData(x, actual)
-                self.speed_plot.setXRange(
-                    max(0.0, relative_time - self.node.history_sec),
-                    max(self.node.history_sec, relative_time),
-                    padding=0.0,
-                )
-            if self.steering_history:
-                x, target, actual = zip(*self.steering_history)
-                self.steering_target_curve.setData(x, target)
-                self.steering_actual_curve.setData(x, actual)
-                self.steering_plot.setXRange(
-                    max(0.0, relative_time - self.node.history_sec),
-                    max(self.node.history_sec, relative_time),
-                    padding=0.0,
-                )
-
-        def refresh(self):
-            if not rclpy.ok():
-                self.close()
-                return
-            now = time.monotonic()
-            snapshot = self.cache.snapshot(self.node.stale_ms, now=now)
-            self._refresh_system(snapshot)
-            self._refresh_longitudinal(snapshot)
-            self._refresh_lateral(snapshot)
-            self._refresh_plots(snapshot, now)
+            # bit0 carries the enable state, so it is split out rather than
+            # reported as a fault.
+            raw = int(steering.fault_bits)
+            enable_bit = raw & 1
+            self._set(
+                'steer_faults',
+                f'0x{raw:04X}  (bit0 enable={enable_bit})',
+                self.BAD if raw & ~1 else None,
+            )
+            for field, _caption, _polarity in self.STEERING_FLAGS:
+                self._set_chip('steering', field, bool(getattr(steering, field)))
 
         def closeEvent(self, event):
             self.timer.stop()
+            self.shutdown_timer.stop()
             event.accept()
 
 else:
@@ -801,7 +914,7 @@ else:
 
         def __init__(self, *_args, **_kwargs):
             raise RuntimeError(
-                'vehicle_dashboard requires PyQt5 and pyqtgraph'
+                'vehicle_dashboard requires PyQt5'
             ) from GUI_IMPORT_ERROR
 
 
@@ -816,8 +929,7 @@ def main(args=None):
     ensure_bundled_qt_first()
     if GUI_IMPORT_ERROR is not None:
         raise RuntimeError(
-            'vehicle_dashboard requires python3-pyqt5 and '
-            'python3-pyqtgraph; see README.md'
+            'vehicle_dashboard requires python3-pyqt5; see README.md'
         ) from GUI_IMPORT_ERROR
 
     rclpy.init(args=args)

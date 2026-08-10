@@ -62,18 +62,17 @@ Ubuntu 22.04/ROS 2 Humble 기준이다.
 sudo apt update
 sudo apt install \
   python3-pyqt5 \
-  python3-pyqtgraph \
   python3-serial \
   python3-yaml \
   x11-utils \
   can-utils
 ```
 
-`python3-pyqtgraph`가 설치되지 않으면 `vehicle_dashboard`가 실행되지
-않는다. HIL GUI 자체에는 `pyqtgraph`가 필요하지 않다.
+두 GUI 모두 `python3-pyqt5`만 필요하다. `vehicle_dashboard`는 plot을 없애면서
+`pyqtgraph` 의존을 걷어냈다.
 
 ```bash
-python3 -c "import serial, PyQt5, pyqtgraph; print('GUI dependencies OK')"
+python3 -c "import serial, PyQt5; print('GUI dependencies OK')"
 ```
 
 ### 2.2 serial 권한
@@ -671,11 +670,11 @@ git -C ~/KAI_ws/src/kaiev26_msgs rev-parse HEAD
 SocketCAN `can0`, `lateral_ctrl`가 모두 준비되어야 `ACTIVE`가 된다. `keya_ok`는
 STM_TEST의 FDCAN 주변장치 초기화 결과일 뿐 상대 controller 연결 판정이 아니다.
 
-### `vehicle_dashboard`에서 `No module named pyqtgraph`
+### `vehicle_dashboard`에서 `No module named PyQt5`
 
 ```bash
-sudo apt install python3-pyqtgraph
-python3 -c "import pyqtgraph; print(pyqtgraph.__version__)"
+sudo apt install python3-pyqt5
+python3 -c "import PyQt5; print('PyQt5 OK')"
 ```
 
 ## 15. 현장 복귀 후 남은 작업
