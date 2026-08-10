@@ -41,13 +41,13 @@ STM_TEST serial ──> stm_test_bridge ──> /hil/status
 |---|---|---|
 | STM_A Agent | `/dev/hil_a` ↔ `/stm_a_node` | 필수 |
 | STM_B Agent | `/dev/hil_b` ↔ `/stm_b_node` | 필수 |
-| `hil_gui.launch.py` | STM_TEST bridge, command generator, HIL GUI | 필수 |
+| `hil.launch.py` | STM_TEST bridge, command generator, HIL GUI | 필수 |
 | `hil_bench.launch.py` | 위 세 줄을 한 번에 실행 | 위 세 줄의 대안 |
 | `lateral_ctrl` | SocketCAN `can0` KEYA 제어 | CAN2 transceiver 연결 후 |
 | `vehicle_state_publisher` | status 3종 → `/vehicle/state` | 조향 status가 있을 때 |
 | `vehicle_dashboard` | 전체 차량 상태 모니터링 GUI | 선택 |
 
-`hil_gui.launch.py`는 micro-ROS Agent, `lateral_ctrl`,
+`hil.launch.py`는 micro-ROS Agent, `lateral_ctrl`,
 `vehicle_state_publisher`를 실행하지 않는다. `hil_bench.launch.py`는 Agent 두
 개까지 포함하지만 `lateral_ctrl`과 `vehicle_state_publisher`는 마찬가지로
 포함하지 않는다. 전체 차량 stack의 통합 launch는 아직 없다.
@@ -314,7 +314,7 @@ source /opt/ros/humble/setup.zsh
 source ~/KAI_ws/install/setup.zsh
 export ROS_DOMAIN_ID=0
 
-ros2 launch kaiev26_hil hil_gui.launch.py \
+ros2 launch kaiev26_hil hil.launch.py \
   serial_port:=/dev/hil_test
 ```
 
@@ -568,9 +568,9 @@ ros2 topic echo /vehicle/state
 
 ## 12. 자동 scenario 실행(선택)
 
-GUI launch가 이미 bridge와 generator를 실행 중일 때 `hil.launch.py`를 다시 실행하면
-중복 node와 serial 소유권 충돌이 생긴다. 기존 stack을 유지한 채 scenario runner만
-실행한다.
+`hil.launch.py`가 이미 bridge와 generator를 실행 중일 때 같은 launch를 다시
+실행하면 중복 node와 serial 소유권 충돌이 생긴다. 기존 stack을 유지한 채 scenario
+runner만 실행한다.
 
 ```bash
 HIL_SHARE="$(ros2 pkg prefix kaiev26_hil)/share/kaiev26_hil"
@@ -580,11 +580,13 @@ ros2 run kaiev26_hil scenario_runner --ros-args \
   -p results_dir:="$HOME/KAI_ws/hil_test_results"
 ```
 
-GUI 없이 scenario 중심으로 새로 시작할 때만 다음 통합 launch를 사용한다.
+GUI 없이 scenario 중심으로 새로 시작할 때는 같은 launch에 `gui:=false`와
+`scenario_file`을 준다.
 
 ```bash
 ros2 launch kaiev26_hil hil.launch.py \
   serial_port:=/dev/hil_test \
+  gui:=false \
   scenario_file:="$(ros2 pkg prefix kaiev26_hil)/share/kaiev26_hil/config/scenarios/smoke_test.yaml" \
   results_dir:="$HOME/KAI_ws/hil_test_results"
 ```

@@ -63,9 +63,13 @@ source /opt/ros/humble/setup.bash
 cd ~/KAI_ws
 colcon build \
   --base-paths src/kaiev26_msgs src/Control/software/src \
-  --packages-select kaiev26_msgs visualization
+  --packages-select kaiev26_msgs kaiev26_hil visualization
 source install/setup.bash
 ```
+
+`vehicle_dashboard`는 PyQt5 번들 Qt 우선순위 workaround인
+`kaiev26_hil.qt_runtime`을 공유하므로 `kaiev26_hil`도 함께 빌드한다. 같은 파일을
+두 패키지에 복제하지 않기 위한 선택이다.
 
 ## 실제 차량 GUI 실행
 

@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 
+from kaiev26_hil.qt_runtime import ensure_bundled_qt_first
 from kaiev26_msgs.msg import (
     ActuatorCommand,
     BrakeActuatorStatus,
@@ -15,7 +16,6 @@ import rclpy
 from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
 from rclpy.node import Node
 
-from visualization.qt_runtime import ensure_bundled_qt_first
 from visualization.ros_state_cache import (
     bool_text,
     BRAKE,

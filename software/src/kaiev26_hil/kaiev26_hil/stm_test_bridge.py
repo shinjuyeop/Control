@@ -107,10 +107,9 @@ class BridgeWorker(threading.Thread):
         last_exception = None
         for _ in range(self.retry_count + 1):
             try:
-                response = self._client.request(command)
-                if response.kind == "error":
-                    return response
-                return response
+                # "ERR ..." 응답도 유효한 응답이라 재시도하지 않는다.
+                # 재시도는 링크 수준 예외에만 적용한다.
+                return self._client.request(command)
             except (OSError, ConnectionError, TimeoutError) as exc:
                 last_exception = exc
         raise last_exception

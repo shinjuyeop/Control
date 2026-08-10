@@ -37,7 +37,6 @@ Control/
         ├── longitudinal_ctrl/
         ├── vehicle_state_publisher/
         ├── control_launch/
-        ├── can_lab/
         ├── gazebo/
         └── visualization/
 ```
@@ -50,11 +49,10 @@ Control/
 | `firmware/STM_B` | `/vehicle/command`의 브레이크 명령, 물리 E-stop, 브레이크 PWM, `/brake/status` |
 | `software/src/lateral_ctrl` | `/vehicle/command`와 STM 상태를 사용한 KEYA 조향 모터 제어 및 `/steering/status` |
 | `software/src/vehicle_state_publisher` | 액추에이터 status 3종을 `/vehicle/state`로 통합 |
-| `software/src/kaiev26_hil` | STM_TEST serial bridge, 신호 방향 기반 GUI, command generator와 HIL scenario |
+| `software/src/kaiev26_hil` | STM_TEST serial bridge, 신호 방향 기반 GUI, command generator, HIL scenario와 `vcan` bench simulator |
 | `firmware/STM_TEST` | mode·gear·E-stop·pedal 주입, brake PWM 관측, EZ/KEYA CAN emulator와 Plant |
 | `software/src/control_launch` | 전체 제어 launch 파일용 패키지이며 현재 통합 launch는 없음 |
 | `software/src/longitudinal_ctrl` | 현재 패키지 골격만 있고 실행 노드는 없음 |
-| `software/src/can_lab` | SocketCAN 기반 구동·조향 CAN 시험 도구 |
 | `software/src/gazebo` | PID 및 SILS 관련 시뮬레이션 자원 |
 
 ## 빠른 빌드

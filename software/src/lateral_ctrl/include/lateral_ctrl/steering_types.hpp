@@ -68,14 +68,6 @@ inline SteeringDisableReason selectDisableReason(
   return SteeringDisableReason::NONE;
 }
 
-inline SteeringDisableReason selectDisableReason(
-  bool mode_received, DriveMode mode, const SafetyInputs & safety, bool motor_fault,
-  bool can_timeout, bool feedback_valid)
-{
-  return selectDisableReason(
-    mode_received, false, mode, safety, motor_fault, can_timeout, feedback_valid, false);
-}
-
 inline SteeringState stateForDisableReason(SteeringDisableReason reason)
 {
   if (reason == SteeringDisableReason::NONE ||
@@ -113,13 +105,5 @@ inline double rateLimit(
   }
   const double max_step = std::max(0.0, max_rate_deg_s) * dt_sec;
   return previous + std::clamp(target - previous, -max_step, max_step);
-}
-
-inline void resetMotionTargetForRecovery(
-  double actual, double & target, double & commanded, bool & target_valid)
-{
-  target = actual;
-  commanded = actual;
-  target_valid = false;
 }
 }  // namespace lateral_ctrl

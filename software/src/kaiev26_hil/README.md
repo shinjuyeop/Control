@@ -176,17 +176,10 @@ STM_TEST 보드는 `firmware/udev/99-kaiev26-stm.rules`가 `/dev/hil_test`라는
 있다. 규칙을 설치하지 않은 호스트에서는 `ls -l /dev/serial/by-id/`로 path를 찾아
 그 값을 대신 넣는다. `ttyACM` 번호는 USB 재연결 때 바뀌므로 쓰지 않는다.
 
-HIL bridge와 command generator:
+HIL bridge, command generator와 GUI:
 
 ```bash
 ros2 launch kaiev26_hil hil.launch.py \
-  serial_port:=/dev/hil_test
-```
-
-GUI:
-
-```bash
-ros2 launch kaiev26_hil hil_gui.launch.py \
   serial_port:=/dev/hil_test
 ```
 
@@ -194,6 +187,9 @@ ros2 launch kaiev26_hil hil_gui.launch.py \
 STM_A/B용 micro-ROS Agent, `lateral_ctrl`, `vehicle_state_publisher`는 포함하지 않는다.
 현재 EZ CAN만 연결된 bench에서는 Agent 두 개와 위 launch까지만 실행하고 KEYA
 `NO RX / NOT CONNECTED`를 정상 상태로 취급한다.
+
+`gui`와 `scenario_file`은 서로 독립인 인자다. GUI 없이 bridge와 generator만
+띄우려면 `gui:=false`만 주면 된다.
 
 Bench 전체를 한 번에:
 
@@ -204,23 +200,26 @@ ros2 launch kaiev26_hil hil_bench.launch.py \
   stm_b_port:=/dev/hil_b
 ```
 
-`hil_bench.launch.py`는 위 `hil_gui.launch.py`에 STM_A/B micro-ROS Agent 두 개를
+`hil_bench.launch.py`는 위 `hil.launch.py`에 STM_A/B micro-ROS Agent 두 개를
 더한 것이다. Agent를 이미 따로 실행 중이면 `agents:=false`를 준다. 로그가 한
 터미널에 모이므로 Agent 로그만 읽어야 할 때는 터미널을 나눠 실행한다. 이 launch도
 `lateral_ctrl`과 `vehicle_state_publisher`는 포함하지 않는다.
 
-Scenario:
+Scenario. GUI 대신 scenario runner를 붙이려면 `gui:=false`와 `scenario_file`을
+함께 준다.
 
 ```bash
 ros2 launch kaiev26_hil hil.launch.py \
   serial_port:=/dev/hil_test \
+  gui:=false \
   scenario_file:=$(ros2 pkg prefix kaiev26_hil)/share/kaiev26_hil/config/scenarios/smoke_test.yaml
 ```
 
 ## CAN Bench/SIL simulator
 
-기존 `software/src/can_lab` 구현은 `kaiev26_hil.bench`로 이동했다. 기존 source-tree
-실행 경로에는 compatibility wrapper가 남아 있다.
+`vcan`에서 구동·조향 CAN 동작을 시험하는 simulator다. 구현은 `kaiev26_hil.bench`
+하나이며, 과거 `software/src/can_lab`의 source-tree 실행 경로와 compatibility
+wrapper는 제거했다.
 
 ```bash
 ros2 launch kaiev26_hil bench.launch.py motor_iface:=vcan0 steer_iface:=vcan1
@@ -245,6 +244,10 @@ source ~/KAI_ws/install/setup.zsh
 colcon test --packages-select kaiev26_hil
 colcon test-result --verbose
 ```
+
+`test/test_bench_*.py`는 bench simulator의 CAN encode/decode, plant 물리와 runtime
+진단을 덮는다. can_lab 패키지에 있던 test를 옮긴 것이라 `kaiev26_hil.bench`를
+직접 import한다.
 
 `test/test_hil_gui_smoke.py`는 `QT_QPA_PLATFORM=offscreen`으로 GUI window를 실제로
 구성하고 STATUS를 rendering하므로 X11 없이도 실행된다. PyQt5가 없으면 skip된다.

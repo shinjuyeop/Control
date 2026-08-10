@@ -14,6 +14,10 @@ opens, on a local display as well as over SSH X11 forwarding.
 ``LD_LIBRARY_PATH`` is read by the loader at process start, so assigning it here
 cannot help the running process. Re-exec once instead, with the bundled Qt
 directory in front. A system PyQt5 has no bundled directory and is left alone.
+
+This module is shared: ``kaiev26_hil.hil_gui`` and
+``visualization.vehicle_dashboard`` both import it, so ``visualization``
+declares an ``exec_depend`` on this package rather than keeping a copy.
 """
 
 from __future__ import annotations

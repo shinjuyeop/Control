@@ -34,7 +34,7 @@ def _agent(name, port, baud):
 
 def generate_launch_description():
     share = get_package_share_directory("kaiev26_hil")
-    gui_launch = os.path.join(share, "launch", "hil_gui.launch.py")
+    hil_launch = os.path.join(share, "launch", "hil.launch.py")
     baud = LaunchConfiguration("agent_baud")
     return LaunchDescription([
         DeclareLaunchArgument("serial_port", default_value="/dev/hil_test"),
@@ -48,9 +48,10 @@ def generate_launch_description():
         _agent("stm_a_agent", LaunchConfiguration("stm_a_port"), baud),
         _agent("stm_b_agent", LaunchConfiguration("stm_b_port"), baud),
         IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(gui_launch),
+            PythonLaunchDescriptionSource(hil_launch),
             launch_arguments={
                 "serial_port": LaunchConfiguration("serial_port"),
+                "gui": "true",
             }.items(),
         ),
     ])

@@ -179,7 +179,8 @@ traction 차단 조건으로 사용하지 않습니다.
 
 ## 7. 실차와 시뮬레이션의 관계
 
-- `can_lab`은 `vcan`에서 구동·조향 CAN 동작을 시험하는 도구입니다.
+- `kaiev26_hil`의 `bench` 모듈은 `vcan`에서 구동·조향 CAN 동작을 시험하는
+  simulator입니다. `ros2 launch kaiev26_hil bench.launch.py`로 실행합니다.
 - `gazebo/pid_gazebo`는 PID와 SILS 실험용 Python 패키지·자원을 포함합니다.
 - 벤치용 `steering_bench_test_node`는 시험 `/vehicle/command`,
   `/drive/status`, `/steering/test/estop`을 선택적으로 발행합니다.
