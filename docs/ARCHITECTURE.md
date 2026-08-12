@@ -183,9 +183,14 @@ traction 차단 조건으로 사용하지 않습니다.
   simulator입니다. `ros2 launch kaiev26_hil bench.launch.py`로 실행합니다.
 - `gazebo/pid_gazebo`는 PID와 SILS 실험용 Python 패키지·자원을 포함합니다.
 - 벤치용 `steering_bench_test_node`는 시험 `/vehicle/command`,
-  `/drive/status`, `/steering/test/estop`을 선택적으로 발행합니다.
+  `/drive/status`, `/steering/test/estop`을 선택적으로 발행합니다. STM_A/B 없이
+  조향만 단독 시험할 때 쓰며, HIL bench의 `hil_command_generator`와 동시에
+  실행하면 `/vehicle/command` 발행자가 둘이 되므로 함께 켜지 않습니다.
 - 이 시험 입력은 실제 STM의 안전 경로를 대체하는 인증된 fail-safe로 간주할 수
   없습니다.
+- HIL bench의 KEYA emulator는 모터축을 선형으로만 모사합니다. 따라서 CAN 경로와
+  안전 로직은 검증되지만 `calibration_a/b/c`와 `direction_sign`의 정확도는
+  검증되지 않으며, 실제 조향 기구에서 따로 확인해야 합니다.
 
 현재 실차와 시뮬레이션을 동일한 통합 launch로 전환하는 구조는 구현되어 있지
 않습니다.

@@ -1,13 +1,23 @@
 # KAIEV26 HIL 운용 절차
 
 이 문서는 새 SSH 세션에서 KAIEV26 HIL bench를 준비하고, STM_A/B Agent와
-STM_TEST bridge, HIL GUI, 선택적인 KEYA 조향 및 차량 상태 GUI까지 실행·검증·종료하는
+STM_TEST bridge, HIL GUI, KEYA 조향 및 차량 상태 GUI까지 실행·검증·종료하는
 절차를 설명한다.
 
-현재 bench에는 STM_A와 연결된 EZKontrol CAN transceiver만 연결되어 있다. 따라서
-기본 절차에서는 traction·brake HIL을 실행하고 KEYA는 GUI에서
-`NO RX / NOT CONNECTED`로 관찰한다. KEYA CAN2 transceiver가 설치된 뒤에는
-[KEYA 포함 전체 HIL](#10-keya-포함-전체-hil선택)을 추가로 실행한다.
+2026-08-12에 STM_TEST FDCAN2 KEYA transceiver를 설치하고 Host USB-CAN과의
+양방향 통신을 검증했다. 이제 bench에서 traction·brake와 조향을 모두 폐루프로
+실행할 수 있다. 조향까지 포함하려면 [10절](#10-keya-포함-전체-hil)을 함께
+실행한다.
+
+검증된 값은 다음과 같다.
+
+| 항목 | 실측 |
+|---|---|
+| bitrate | 250 kbit/s 양단 일치, sample point 87.5% |
+| heartbeat `0x07000001` | 1.000 s 주기 |
+| query 응답 왕복 | 4~6 ms |
+| `can0` 에러 카운터 | bus-error·error-warn·bus-off 모두 0 |
+| 조향 폐루프 | target 0.2 rad → actual 0.2 rad, 보드 `steer` 50.0°와 일치 |
 
 이 문서의 명령은 다음 배치를 기준으로 한다.
 
@@ -43,7 +53,7 @@ STM_TEST serial ──> stm_test_bridge ──> /hil/status
 | STM_B Agent | `/dev/hil_b` ↔ `/stm_b_node` | 필수 |
 | `hil.launch.py` | STM_TEST bridge, command generator, HIL GUI | 필수 |
 | `hil_bench.launch.py` | 위 세 줄을 한 번에 실행 | 위 세 줄의 대안 |
-| `lateral_ctrl` | SocketCAN `can0` KEYA 제어 | CAN2 transceiver 연결 후 |
+| `lateral_ctrl` | SocketCAN `can0` KEYA 제어 | 조향을 시험할 때 |
 | `vehicle_state_publisher` | status 3종 → `/vehicle/state` | 조향 status가 있을 때 |
 | `vehicle_dashboard` | 전체 차량 상태 모니터링 GUI | 선택 |
 
@@ -62,18 +72,17 @@ Ubuntu 22.04/ROS 2 Humble 기준이다.
 sudo apt update
 sudo apt install \
   python3-pyqt5 \
-  python3-pyqtgraph \
   python3-serial \
   python3-yaml \
   x11-utils \
   can-utils
 ```
 
-`python3-pyqtgraph`가 설치되지 않으면 `vehicle_dashboard`가 실행되지
-않는다. HIL GUI 자체에는 `pyqtgraph`가 필요하지 않다.
+두 GUI 모두 `python3-pyqt5`만 필요하다. `vehicle_dashboard`는 plot을 없애면서
+`pyqtgraph` 의존을 걷어냈다.
 
 ```bash
-python3 -c "import serial, PyQt5, pyqtgraph; print('GUI dependencies OK')"
+python3 -c "import serial, PyQt5; print('GUI dependencies OK')"
 ```
 
 ### 2.2 serial 권한
@@ -271,7 +280,7 @@ ros2 launch kaiev26_hil hil_bench.launch.py \
 
 이 launch는 HIL bench 범위만 실행한다. `lateral_ctrl`,
 `vehicle_state_publisher`, `vehicle_dashboard`는 포함하지 않으므로 필요할 때
-[10절](#10-keya-포함-전체-hil선택)과 [11절](#11-통합-차량-상태와-monitoring-gui선택)에서
+[10절](#10-keya-포함-전체-hil)과 [11절](#11-통합-차량-상태와-monitoring-gui선택)에서
 따로 실행한다.
 
 모든 로그가 한 터미널에 섞이므로, XRCE session 생성 실패처럼 Agent 로그만
@@ -379,7 +388,8 @@ ros2 topic info -v /brake/status
 - `/stm_b_node`가 `/brake/status` 발행
 - STM_TEST 새 firmware는 `/hil/status` JSON의 `protocol`이 `2`
 - EZ CAN frame 수신 시 GUI 중앙 EZ panel이 `ACTIVE`
-- 현재 KEYA 미연결 bench에서는 KEYA panel이 `NO RX / NOT CONNECTED`
+- `lateral_ctrl`을 실행하지 않은 상태에서는 KEYA panel이 `NO RX / NOT CONNECTED`.
+  transceiver는 연결되어 있으므로 이는 Host 쪽 송신자가 없다는 뜻이다.
 
 Protocol 1 구형 STM_TEST도 bridge에는 연결되지만 Plant와 command observation
 field는 사용할 수 없다.
@@ -499,10 +509,10 @@ ros2 param set /hil_command_generator enabled false
 ros2 service call /hil/reset_safe_state std_srvs/srv/Trigger '{}'
 ```
 
-## 10. KEYA 포함 전체 HIL(선택)
+## 10. KEYA 포함 전체 HIL
 
-다음 단계는 STM_TEST FDCAN2 transceiver와 Host USB-CAN이 실제로 연결된 뒤에만
-수행한다. 현재 bench에서는 건너뛴다.
+STM_TEST FDCAN2 transceiver는 PB12(`FDCAN2_RX`)·PB13(`FDCAN2_TX`)에 연결되어
+있고 양단 120 ohm termination과 공통 ground를 갖춘 상태다.
 
 ### 10.1 SocketCAN 준비
 
@@ -513,6 +523,33 @@ sudo ip link set can0 type can bitrate 250000
 sudo ip link set can0 up
 ip -details link show can0
 ```
+
+`state ERROR-ACTIVE`가 정상이다.
+
+`restart-ms`는 주지 않는다. 이 bench의 USB-CAN은 gs_usb(candleLight 계열)이고
+해당 드라이버는 bus-off 자동 복구를 구현하지 않으므로
+`Error: Device doesn't support restart from Bus Off`로 거부된다. Host가 bus-off에
+빠지면 수동으로 복구한다.
+
+```bash
+sudo ip link set can0 down && sudo ip link set can0 up
+```
+
+### 10.1.1 can0을 내린 뒤에는 STM_TEST를 리셋한다
+
+CAN은 수신 노드가 ACK를 주어야 송신이 완료된다. `can0`을 내리거나 USB-CAN을
+분리하면 STM_TEST FDCAN2는 ACK를 받지 못해 TX FIFO가 3개에서 멈추고 에러 상태로
+들어간다. 현재 STM_TEST firmware에는 bus-off 복구 로직이 없으므로 `can0`을 다시
+올리는 것만으로는 회복되지 않는다.
+
+순서는 다음과 같다.
+
+1. `can0`을 먼저 올린다.
+2. 그 다음 STM_TEST 보드의 RESET 버튼(B1)을 누른다.
+
+`/hil/status`의 `keya_tx`가 3에서 멈춰 있으면 이 상태다. 정상 복구되면 heartbeat
+주기에 맞춰 1초에 1씩 증가한다. `keya_ok`는 FDCAN 주변장치 초기화 결과일 뿐
+bus-off를 반영하지 않으므로 판정에 쓰지 않는다.
 
 ### 10.2 lateral controller 실행
 
@@ -546,11 +583,60 @@ ros2 launch lateral_ctrl steering_actuator.launch.py \
   actuator_output_enabled:=false
 ```
 
+### 10.3 조향 폐루프 시험
+
+조향 노드는 AUTO에서만 KEYA를 Enable한다. 명령원은
+`hil_command_generator`를 쓴다. `steering_bench_test_node`는 같은
+`/vehicle/command`를 발행하므로 함께 켜지 않는다.
+
+```bash
+ros2 param set /hil_command_generator enabled false
+ros2 service call /hil/reset_safe_state std_srvs/srv/Trigger '{}'
+ros2 topic pub --once /hil/command std_msgs/msg/String '{data: "SET MODE AUTO"}'
+```
+
+`/steering/status`에서 `drive_mode: 1`, `communication_ok: true`,
+`feedback_valid: true`를 확인한 뒤 목표각을 준다.
+
+```bash
+ros2 param set /hil_command_generator steering_target_rad 0.10
+ros2 param set /hil_command_generator enabled true
+```
+
+기대 결과:
+
+- `/steering/status.state`가 `3`(`STATE_ACTIVE`), `disable_reason`은 `0`
+- `target_wheel_angle_rad` → `actual_wheel_angle_rad` 수렴
+- `/hil/status`의 `keya_enabled=true`, `keya_rx_age_ms`가 10 ms 부근
+- GUI KEYA panel이 `ACTIVE`
+
+계단 입력을 주면 두 단계의 율 제한이 순서대로 관측된다.
+
+| 구간 | 실측 | 근거 |
+|---|---|---|
+| `commanded` 램프 | 60 °/s | `lateral_ctrl`의 `max_steering_rate_deg_s` |
+| `actual` 추종 | 모터축 90 °/s (`motor_speed_rpm` 15.0) | STM_TEST `HIL_KEYA_SIM_RATE_DEG_PER_SEC` |
+
+캘리브레이션 교차 확인: 조향 0.2 rad(11.459°)을
+`wheel_deg = 0.0002·m² + 0.2159·m + 0.1612`로 역산하면 모터 50.02°이고,
+`/hil/status.steer`가 `50.0`으로 일치한다.
+
+이 시험은 CAN 경로와 안전 로직을 검증할 뿐 캘리브레이션 계수의 정확도는
+검증하지 못한다. KEYA emulator는 모터축을 선형으로만 모사하므로 2차 계수와
+`direction_sign`은 실제 조향 기구에서 따로 확인해야 한다.
+
+시험이 끝나면 안전 상태로 되돌린다.
+
+```bash
+ros2 param set /hil_command_generator enabled false
+ros2 service call /hil/reset_safe_state std_srvs/srv/Trigger '{}'
+```
+
 ## 11. 통합 차량 상태와 monitoring GUI(선택)
 
 `vehicle_state_publisher`는 drive, brake, steering status를 모두 최소 한 번 받은 뒤에만
-`/vehicle/state`를 발행한다. KEYA/lateral controller를 실행하지 않은 현재 구성에서는
-`/vehicle/state`가 나오지 않는 것이 정상이다.
+`/vehicle/state`를 발행한다. `lateral_ctrl`를 실행하지 않으면 조향 status가 없으므로
+`/vehicle/state`도 나오지 않는다.
 
 ```bash
 ros2 run vehicle_state_publisher vehicle_state_publisher_node
@@ -604,7 +690,12 @@ ros2 service call /hil/reset_safe_state std_srvs/srv/Trigger '{}'
 ros2 topic echo --once /hil/status
 ```
 
-KEYA 시험에서 `can0`을 올렸고 더 사용하지 않는다면 모든 CAN 프로세스 종료 후 내린다.
+`can0`은 그대로 두는 것을 권한다. 내리면 STM_TEST FDCAN2가 ACK를 받지 못해 에러
+상태에 빠지고, 복구에 보드 리셋이 필요하다([10.1.1](#1011-can0을-내린-뒤에는-stm_test를-리셋한다)).
+계속 켜두면 heartbeat만 오갈 뿐 부하가 없다.
+
+정말 내려야 한다면 모든 CAN 프로세스를 먼저 종료하고, 다음에 쓸 때 `can0`을 올린
+뒤 STM_TEST를 리셋한다.
 
 ```bash
 sudo ip link set can0 down
@@ -667,24 +758,75 @@ git -C ~/KAI_ws/src/kaiev26_msgs rev-parse HEAD
 
 ### KEYA가 `NO RX / NOT CONNECTED`
 
-현재 bench에서는 정상이다. KEYA CAN2 transceiver, termination, common ground,
-SocketCAN `can0`, `lateral_ctrl`가 모두 준비되어야 `ACTIVE`가 된다. `keya_ok`는
-STM_TEST의 FDCAN 주변장치 초기화 결과일 뿐 상대 controller 연결 판정이 아니다.
-
-### `vehicle_dashboard`에서 `No module named pyqtgraph`
+transceiver는 설치되어 있으므로 배선보다 아래 순서로 확인한다.
 
 ```bash
-sudo apt install python3-pyqtgraph
-python3 -c "import pyqtgraph; print(pyqtgraph.__version__)"
+ip -details -statistics link show can0 | grep -E 'state|bus-off'
+candump -T 3000 can0
+ros2 topic echo --once /hil/status --field data
 ```
 
-## 15. 현장 복귀 후 남은 작업
+1. `can0`이 `DOWN`이거나 `BUS-OFF`인가 → [10.1](#101-socketcan-준비)로 복구
+2. `candump`에 heartbeat `07000001`이 안 보이는가 → STM_TEST FDCAN2가 에러 상태다.
+   `keya_tx`가 3에서 멈춰 있으면 확정. `can0`을 올린 뒤 보드를 리셋한다
+3. heartbeat은 보이는데 panel이 `NO RX`인가 → Host 쪽 송신자가 없는 것이다.
+   `lateral_ctrl`이 실행 중이고 출력이 armed인지 확인한다
 
-- USB를 하나씩 연결해 VCP serial과 물리 보드 라벨 재확인
-- CubeProgrammer에서 각 ST-LINK SWD probe가 실제 어느 MCU에 연결되는지 확인
-- STM_TEST target이 확정된 뒤에만 새 `STM_TEST.elf` 플래시
+`keya_ok`는 FDCAN 주변장치 초기화 결과일 뿐 상대 controller 연결이나 bus-off를
+반영하지 않는다. 판정은 `keya_rx` 증가와 `keya_rx_age_ms`로 한다.
+
+### 조향이 `STATE_ACTIVE`로 가지 않음
+
+`/steering/status`의 `disable_reason`을 먼저 읽는다. 흔한 원인은 MANUAL 모드다.
+조향 노드는 AUTO에서만 KEYA를 Enable한다.
+
+```bash
+ros2 topic echo --once /steering/status
+ros2 topic pub --once /hil/command std_msgs/msg/String '{data: "SET MODE AUTO"}'
+```
+
+`/vehicle/command` 발행자가 둘 이상이면 명령이 서로 덮어쓴다.
+`hil_command_generator`와 `steering_bench_test_node`를 동시에 켜지 않는다.
+
+```bash
+ros2 topic info -v /vehicle/command
+```
+
+### `vehicle_dashboard`에서 `No module named PyQt5`
+
+```bash
+sudo apt install python3-pyqt5
+python3 -c "import PyQt5; print('PyQt5 OK')"
+```
+
+## 15. 진행 상태와 남은 작업
+
+### 완료
+
 - `/hil/status.protocol=2`와 EZ command observation field 확인
-- AUTO speed 및 MANUAL pedal 폐루프 시험
-- KEYA transceiver 설치 후 CAN2 RX/feedback 시험
+- KEYA CAN2 transceiver 설치, 양방향 통신 및 조향 폐루프 검증(10.3)
 
-SWD target 불일치가 해소되기 전에는 serial symlink만 근거로 플래시하지 않는다.
+### 남은 작업
+
+- AUTO speed 폐루프 시험(9.2)
+- MANUAL pedal 폐루프 시험(9.3)
+- 조향 캘리브레이션 실측 검증. KEYA emulator는 선형이라 HIL로는 불가능하며
+  실제 조향 기구가 필요하다
+- STM_TEST FDCAN2 bus-off 복구 로직. 현재는 보드 리셋으로만 회복된다
+- 통합 launch와 실행 스크립트 정리
+
+### 플래시 전 SWD target 확인
+
+serial symlink만 근거로 플래시하지 않는다. 대상 MCU는 플래시를 읽어 확인한다.
+
+```bash
+source /etc/profile.d/cubeclt-bin-path_1.20.0.sh
+STM32_Programmer_CLI -l                       # probe SN 목록
+
+STM32_Programmer_CLI -c port=SWD sn=<SN> mode=hotplug \
+  -u 0x08000000 0x18800 /tmp/target_read.bin
+strings -n 5 /tmp/target_read.bin | grep -E 'stm_a_node|stm_b_node|drive/status|brake/status'
+```
+
+node 이름과 토픽 문자열이 firmware에 그대로 박혀 있으므로 어느 보드인지 확정할 수
+있다. 2026-08-12 STM_A 플래시는 이 방법으로 target을 확인한 뒤 수행했다.

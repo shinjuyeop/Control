@@ -161,6 +161,21 @@ position이 10 ms마다 최대 90 motor-deg/s로 target을 따라간다.
 emulator와 GUI는 동작하며, RX count 0/age UINT32_MAX가 물리 link 부재를 명확히
 나타낸다. KEYA 추종 모델은 EZ의 `SET PLANT`와 독립적이다.
 
+### FDCAN2 bus-off 복구가 없다
+
+CAN은 수신 노드가 ACK를 주어야 송신이 완료된다. 상대 노드가 없으면 — transceiver
+미연결, Host `can0` down, USB-CAN 분리 — 송신이 완료되지 않아 TX FIFO가 3개에서
+차고 FDCAN2가 에러 상태로 들어간다. **현재 firmware에는 bus-off 복구 로직이
+없으므로 상대 노드가 돌아와도 자동으로 회복되지 않는다.** 보드 리셋이 필요하다.
+
+- 증상: `keya_tx`가 정확히 `3`에서 멈춤. `keya_rx`는 0
+- 복구: Host `can0`을 먼저 올린 뒤 보드를 리셋한다. 순서가 반대면 리셋 직후 다시
+  같은 상태가 된다
+- `keya_ok`(`keya_can_healthy`)는 `s_initialized && !s_rx_overflow`이므로 초기화
+  성공 여부만 나타내며 bus-off를 반영하지 않는다. 판정에 쓰지 않는다
+
+복구 로직 추가는 미해결 작업이다.
+
 1차 state에는 별도의 KEYA supply/current/temperature 입력이 없으므로 해당 query는
 0을 반환한다. `FAULT KEYA ON`은 매뉴얼의 CAN-disconnected fault bit 14로
 표현한다. Disable 상태는 문서의 status bit 0으로 표현한다. 정의되지 않은 fault

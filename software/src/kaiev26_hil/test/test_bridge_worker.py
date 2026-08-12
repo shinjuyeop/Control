@@ -50,6 +50,21 @@ def test_replay_omits_plant_commands_for_protocol_1_firmware():
     )
 
 
+def test_connect_replay_starts_the_closed_loop_on_protocol_2_firmware():
+    """Closed loop is the bench default; STM_TEST powers on with it off."""
+    events = []
+    worker = make_worker(events)
+    worker._client = FakeClient(make_status(protocol=2))
+    worker._protocol_version = 2
+
+    worker._apply_desired_after_connect()
+
+    commands = worker._client.commands
+    assert "SET PLANT ON" in commands
+    # The plant integrates from the motion injected before it starts.
+    assert commands.index("SET PLANT ON") == len(commands) - 1
+
+
 def test_plant_off_captures_current_output_for_reconnect_replay():
     events = []
     worker = make_worker(events)

@@ -103,6 +103,8 @@ def test_desired_status_comparison_uses_firmware_gear_and_observable_fields():
     desired.steering_position = 2.0
     desired.estop_side = True
     desired.keya_fault = True
+    # The STATUS fixture predates closed loop becoming the default.
+    desired.plant_enabled = False
     assert desired_status_mismatches(desired, status) == []
 
 
@@ -113,12 +115,15 @@ def test_plant_command_round_trips_through_desired_state():
         validate_command("SET PLANT MAYBE")
 
     desired = HilDesiredState()
-    assert desired.plant_enabled is False
-    commands = desired_commands(desired)
-    assert commands[0] == "SET PLANT OFF"
-    update_desired(desired, "SET PLANT ON")
+    # Closed loop is the bench default, and the plant must be started after the
+    # injected motion that forms its initial condition.
     assert desired.plant_enabled is True
     assert desired_commands(desired)[-1] == "SET PLANT ON"
+    update_desired(desired, "SET PLANT OFF")
+    assert desired.plant_enabled is False
+    # Opening the loop has to come first, or the running plant overwrites the
+    # SET SPEED/RPM that follows it.
+    assert desired_commands(desired)[0] == "SET PLANT OFF"
     assert not any(
         command.startswith("SET PLANT ")
         for command in desired_commands(desired, protocol_version=1)
