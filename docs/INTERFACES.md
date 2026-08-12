@@ -253,6 +253,10 @@ sudo ip link set can0 type can bitrate 250000
 sudo ip link set can0 up
 ```
 
+`restart-ms`는 주지 않습니다. HIL bench의 USB-CAN은 gs_usb(candleLight 계열)이고
+이 드라이버는 bus-off 자동 복구를 지원하지 않아 링크 설정 자체가 거부됩니다.
+bus-off에서는 `down` 후 `up`으로 수동 복구합니다.
+
 기본 node ID `1`일 때 ID는 다음과 같습니다.
 
 | 방향 | ID 식 | 기본 ID | 형식 | 설명 |

@@ -165,6 +165,19 @@ KEYA feedback만 들어온 직후에는 `WAIT_CMD`이고, 그 이후 새 명령�
 
 ## 순수 조향 벤치
 
+STM_A/B 없이 조향만 단독으로 돌릴 때 씁니다. 벤치 노드가 `/drive/status`를 직접
+발행하므로 HIL bench나 실차 없이도 `ACTIVE`까지 갈 수 있고, 각도 시퀀스를 자동으로
+순회하므로 캘리브레이션처럼 반복 스윕이 필요한 작업에 적합합니다.
+
+> **HIL bench와 동시에 실행하지 마십시오.** `kaiev26_hil`의
+> `hil_command_generator`와 이 노드가 모두 `/vehicle/command`를 발행하므로
+> 명령이 서로 덮어써집니다. HIL bench에서 조향을 시험할 때는
+> `hil_command_generator`만 사용합니다. 확인은 다음과 같이 합니다.
+>
+> ```bash
+> ros2 topic info -v /vehicle/command   # publisher가 하나인지
+> ```
+
 다음 launch는 actuator 노드와 벤치 명령 노드를 함께 실행합니다.
 
 ```bash
