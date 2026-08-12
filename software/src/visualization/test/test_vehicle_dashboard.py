@@ -175,7 +175,9 @@ def test_healthy_state_asserts_no_conditions(window):
     assert widget.conditions.text() == 'none asserted'
     assert widget.values['mode'].text() == 'AUTO'
     assert widget.values['gear'].text() == 'FORWARD'
-    assert widget.values['speed_actual'].text() == '1.42'
+    # The headline reads km/h; the contract's m/s stays on the line under it.
+    assert widget.values['speed_actual'].text() == '5.11'
+    assert widget.values['speed_actual_mps'].text() == '1.42 m/s'
     assert widget.values['steering_state'].text() == 'ACTIVE'
 
 
@@ -268,3 +270,34 @@ def test_invalid_parts_read_as_na_rather_than_zero(window):
     assert widget.values['motor_temp'].text() == NA
     assert widget.values['part2_age'].text() == NA
     assert is_alarm(widget, 'drive.part2_valid')
+
+
+def test_link_badge_text_is_fixed_width(window):
+    """The badges repaint several times a second.
+
+    If the state word or the age digits set their own width, every badge to
+    the right of a changing one slides sideways. Padding both fields is the
+    only thing keeping the header row still.
+    """
+    widget, _cache = window
+    lengths = {
+        len(widget._link_text('/drive/status', NO_DATA)),
+        len(widget._link_text('/drive/status', 'OK', 7.0)),
+        len(widget._link_text('/drive/status', 'OK', 412.0)),
+        len(widget._link_text('/drive/status', 'STALE', 1234.0)),
+    }
+
+    assert len(lengths) == 1
+
+
+def test_speed_headline_is_kmh_with_mps_underneath(window):
+    """Both units stay on screen: km/h to read, m/s because that is the wire."""
+    widget, cache = window
+    publish_healthy(cache)
+
+    widget.refresh()
+
+    assert widget.values['speed_target'].text() == '5.40'
+    assert widget.values['speed_target_mps'].text() == '1.50 m/s'
+    assert widget.values['speed_error'].text() == '+0.29'
+    assert widget.values['speed_error_mps'].text() == '+0.08 m/s'

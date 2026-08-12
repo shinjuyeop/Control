@@ -76,6 +76,10 @@ BAD_FALSE = 'bad_false'
 WARN_TRUE = 'warn_true'
 INFO = 'info'
 
+#: The vehicle contract carries speed in m/s everywhere. The operator reads
+#: km/h, so every speed is shown in both rather than converted in the head.
+MPS_TO_KMH = 3.6
+
 
 class VehicleStatusSubscriber(Node):
     """Receive vehicle topics and write only to the thread-safe cache."""
@@ -139,14 +143,25 @@ if QtWidgets is not None:
     class VehicleDashboard(QtWidgets.QMainWindow):
         """Developer-oriented, read-only status display on a single page."""
 
-        FG = '#c9d1d9'
+        FG = '#f0f6fc'
+        #: Captions and not-yet-populated values. DIM grey was unreadable on
+        #: the dark background, so only the flag chips still use DIM -- there
+        #: the dim state carries meaning rather than merely being decoration.
+        CAPTION = '#e6edf3'
         DIM = '#6e7681'
         ACCENT = '#58a6ff'
         GOOD = '#3fb950'
         WARN = '#d29922'
         BAD = '#f85149'
 
-        STATUS_COLORS = {NO_DATA: DIM, OK: GOOD, STALE: WARN}
+        #: One place for type scale, so the window can be resized as a unit.
+        BASE_PT = 12
+        CAPTION_PT = 11
+        HEADLINE_PT = 20
+        HEADLINE_SMALL_PT = 15
+        CHIP_PT = 10
+
+        STATUS_COLORS = {NO_DATA: CAPTION, OK: GOOD, STALE: WARN}
 
         DRIVE_FLAGS = (
             ('command_received', 'cmd received', BAD_FALSE),
@@ -193,6 +208,10 @@ if QtWidgets is not None:
 
             self.setWindowTitle('KAI Vehicle Debug Dashboard (Read Only)')
             self._build_ui()
+            # Wide rather than tall: the three columns are the layout, and the
+            # content ends well short of the bottom on any sane height.
+            self.resize(1900, 900)
+            self.setMinimumSize(1280, 780)
 
             interval_ms = max(20, int(1000.0 / self.node.ui_update_hz))
             self.timer = QtCore.QTimer(self)
@@ -225,25 +244,27 @@ if QtWidgets is not None:
 
             self.setCentralWidget(central)
             self.setStyleSheet(
-                'QMainWindow, QWidget { background:#0d1117; color:#c9d1d9; }'
+                f'QMainWindow, QWidget {{ background:#0d1117; color:{self.FG};'
+                f' font-size:{self.BASE_PT}pt; }}'
                 # margin-top has to clear the bold title drawn in it, or the
                 # top of the caption is cut off by the frame.
                 'QGroupBox { border:1px solid #30363d; border-radius:6px;'
-                ' margin-top:14px; font-weight:bold; }'
+                ' margin-top:18px; font-weight:bold; }'
                 'QGroupBox::title { subcontrol-origin:margin; left:9px;'
-                ' padding:0 4px; color:#58a6ff; }'
+                f' padding:0 4px; color:{self.ACCENT}; }}'
             )
 
         def _build_header(self):
             header = QtWidgets.QHBoxLayout()
             title = QtWidgets.QLabel('Vehicle Debug Dashboard')
             title.setStyleSheet(
-                f'color:{self.ACCENT};font-size:15pt;font-weight:bold;'
+                f'color:{self.ACCENT};font-size:{self.HEADLINE_PT}pt;'
+                'font-weight:bold;'
             )
             header.addWidget(title)
             read_only = QtWidgets.QLabel('READ ONLY')
             read_only.setStyleSheet(
-                f'color:{self.DIM};border:1px solid {self.DIM};'
+                f'color:{self.CAPTION};border:1px solid {self.CAPTION};'
                 'border-radius:3px;padding:1px 6px;font-weight:bold;'
             )
             header.addWidget(read_only)
@@ -256,11 +277,26 @@ if QtWidgets is not None:
                 (BRAKE, '/brake/status'),
                 (STEERING, '/steering/status'),
             ):
-                badge = QtWidgets.QLabel(f'{caption}  {NO_DATA}')
+                badge = QtWidgets.QLabel(self._link_text(caption, NO_DATA))
                 badge.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
                 self.values[f'link_{key}'] = badge
                 header.addWidget(badge)
             return header
+
+        @staticmethod
+        def _link_text(caption, state, age_ms=None):
+            """Fixed-width badge text.
+
+            These badges repaint several times a second. Letting the state word
+            and the age digits size themselves made every badge to the right of
+            a changing one jump sideways, so both fields are padded to their
+            widest form: the row keeps its geometry and only the glyphs change.
+            """
+            if age_ms is None:
+                age = '--'
+            else:
+                age = f'{min(float(age_ms), 99999.0):.0f}'
+            return f'{caption}  {state:<7} {age:>5} ms'
 
         def _build_conditions(self):
             box = QtWidgets.QGroupBox(
@@ -316,9 +352,9 @@ if QtWidgets is not None:
             group = QtWidgets.QGroupBox('2. Longitudinal  ·  /drive/status')
             layout = QtWidgets.QVBoxLayout(group)
             layout.addLayout(self._headline_row((
-                ('TARGET', 'speed_target'),
-                ('ACTUAL', 'speed_actual'),
-                ('ERROR', 'speed_error'),
+                ('TARGET  [km/h]', 'speed_target', 'speed_target_mps'),
+                ('ACTUAL  [km/h]', 'speed_actual', 'speed_actual_mps'),
+                ('ERROR  [km/h]', 'speed_error', 'speed_error_mps'),
             )))
             grid = self._grid(layout)
             rows = (
@@ -405,7 +441,7 @@ if QtWidgets is not None:
                 grid.addWidget(spacer, row, 0, 1, 2)
                 return
             name = QtWidgets.QLabel(caption)
-            name.setStyleSheet(f'color:{self.DIM};')
+            name.setStyleSheet(f'color:{self.CAPTION};')
             value = QtWidgets.QLabel(NO_DATA)
             value.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
             value.setStyleSheet(f'color:{self.FG};font-family:monospace;')
@@ -422,27 +458,54 @@ if QtWidgets is not None:
                 grid.addWidget(value, row, 1)
             self.values[key] = value
 
+        def _headline_style(self, color, small):
+            size = self.HEADLINE_SMALL_PT if small else self.HEADLINE_PT
+            return (
+                f'color:{color};font-family:monospace;font-weight:bold;'
+                f'font-size:{size}pt;'
+            )
+
+        def _sub_style(self, color):
+            return (
+                f'color:{color};font-family:monospace;'
+                f'font-size:{self.CAPTION_PT}pt;'
+            )
+
         def _headline_row(self, specs, *, small=False):
-            """A row of large read-at-a-glance values under a caption."""
+            """A row of large read-at-a-glance values under a caption.
+
+            A spec may carry a third element, the key of a secondary line drawn
+            under the value. It exists so a quantity can be shown in both of
+            its units without either one leaving the headline.
+            """
             row = QtWidgets.QHBoxLayout()
             row.setSpacing(12)
-            for caption, key in specs:
+            for spec in specs:
+                caption, key = spec[0], spec[1]
+                sub_key = spec[2] if len(spec) > 2 else None
                 cell = QtWidgets.QVBoxLayout()
                 cell.setSpacing(0)
                 label = QtWidgets.QLabel(caption)
-                label.setStyleSheet(f'color:{self.DIM};font-size:8pt;')
+                label.setStyleSheet(
+                    f'color:{self.CAPTION};font-size:{self.CAPTION_PT}pt;'
+                )
                 value = QtWidgets.QLabel(NO_DATA)
                 value.setTextInteractionFlags(
                     QtCore.Qt.TextSelectableByMouse
                 )
-                value.setStyleSheet(
-                    f'color:{self.FG};font-family:monospace;font-weight:bold;'
-                    f'font-size:{"11" if small else "14"}pt;'
-                )
+                value.setStyleSheet(self._headline_style(self.FG, small))
                 cell.addWidget(label)
                 cell.addWidget(value)
-                row.addLayout(cell)
                 self.values[key] = value
+                if sub_key is not None:
+                    sub = QtWidgets.QLabel('--')
+                    sub.setTextInteractionFlags(
+                        QtCore.Qt.TextSelectableByMouse
+                    )
+                    sub.setStyleSheet(self._sub_style(self.CAPTION))
+                    cell.addWidget(sub)
+                    self.values[sub_key] = sub
+                row.addLayout(cell)
             row.addStretch(1)
             return row
 
@@ -483,11 +546,13 @@ if QtWidgets is not None:
         def _set_headline(self, key, text, color=None, *, small=False):
             value = self.values[key]
             value.setText(str(text))
-            self._style(
-                value,
-                f'color:{color or self.FG};font-family:monospace;'
-                f'font-weight:bold;font-size:{"11" if small else "14"}pt;',
-            )
+            self._style(value, self._headline_style(color or self.FG, small))
+
+        def _set_sub(self, key, text, color=None):
+            """Secondary line under a headline -- the same value, other unit."""
+            value = self.values[key]
+            value.setText(str(text))
+            self._style(value, self._sub_style(color or self.CAPTION))
 
         def _set_chip(self, prefix, field, state):
             """Render one flag. ``state`` is True/False, or None for no data."""
@@ -506,12 +571,14 @@ if QtWidgets is not None:
             if filled:
                 style = (
                     f'background:{color};color:#0d1117;font-weight:bold;'
-                    'border-radius:3px;padding:2px 4px;font-size:8pt;'
+                    'border-radius:3px;padding:2px 4px;'
+                    f'font-size:{self.CHIP_PT}pt;'
                 )
             else:
                 style = (
                     f'color:{color};border:1px solid {color};'
-                    'border-radius:3px;padding:1px 3px;font-size:8pt;'
+                    'border-radius:3px;padding:1px 3px;'
+                    f'font-size:{self.CHIP_PT}pt;'
                 )
             self._style(chip, style)
 
@@ -543,9 +610,9 @@ if QtWidgets is not None:
                 topic = snapshot[key]
                 color = self.STATUS_COLORS.get(topic.state, self.FG)
                 if topic.state == NO_DATA:
-                    text = f'{caption}  {NO_DATA}'
+                    text = self._link_text(caption, NO_DATA)
                 else:
-                    text = f'{caption}  {topic.state} {topic.age_ms:.0f} ms'
+                    text = self._link_text(caption, topic.state, topic.age_ms)
                 badge = self.values[f'link_{key}']
                 badge.setText(text)
                 self._style(
@@ -626,12 +693,12 @@ if QtWidgets is not None:
             self._set_headline(
                 'mode',
                 drive_mode_text(drive.mode) if drive else NO_DATA,
-                self.ACCENT if drive else self.DIM,
+                self.ACCENT if drive else self.FG,
             )
             self._set_headline(
                 'gear',
                 drive_gear_text(drive.gear) if drive else NO_DATA,
-                self.ACCENT if drive else self.DIM,
+                self.ACCENT if drive else self.FG,
             )
             self._set(
                 'pedal',
@@ -644,7 +711,9 @@ if QtWidgets is not None:
 
             self._set(
                 'cmd_speed',
-                f'{command.speed_target_mps:.2f} m/s' if command else NO_DATA,
+                f'{command.speed_target_mps:.2f} m/s  ·  '
+                f'{command.speed_target_mps * MPS_TO_KMH:.2f} km/h'
+                if command else NO_DATA,
             )
             self._set(
                 'cmd_steer',
@@ -683,7 +752,6 @@ if QtWidgets is not None:
                 'brake_actual',
                 ('SUPPORTED' if brake.actual_valid else 'NOT WIRED')
                 if brake else NO_DATA,
-                self.DIM,
             )
 
         def _refresh_longitudinal(self, snapshot):
@@ -692,21 +760,39 @@ if QtWidgets is not None:
             target = command.speed_target_mps if command else None
             actual = drive.speed_mps if drive else None
 
+            # The headline carries km/h because that is the unit the operator
+            # reads; the contract's own m/s stays underneath so the number in
+            # the message is never hidden behind a conversion.
+            error = (
+                target - actual
+                if target is not None and actual is not None else None
+            )
             self._set_headline(
                 'speed_target',
-                f'{target:.2f}' if target is not None else '--',
-                self.ACCENT if target is not None else self.DIM,
+                f'{target * MPS_TO_KMH:.2f}' if target is not None else '--',
+                self.ACCENT if target is not None else self.FG,
+            )
+            self._set_sub(
+                'speed_target_mps',
+                f'{target:.2f} m/s' if target is not None else '--',
             )
             self._set_headline(
                 'speed_actual',
-                f'{actual:.2f}' if actual is not None else '--',
-                self.GOOD if actual is not None else self.DIM,
+                f'{actual * MPS_TO_KMH:.2f}' if actual is not None else '--',
+                self.GOOD if actual is not None else self.FG,
+            )
+            self._set_sub(
+                'speed_actual_mps',
+                f'{actual:.2f} m/s' if actual is not None else '--',
             )
             self._set_headline(
                 'speed_error',
-                f'{target - actual:+.2f}'
-                if target is not None and actual is not None else '--',
-                self.DIM if target is None or actual is None else self.FG,
+                f'{error * MPS_TO_KMH:+.2f}' if error is not None else '--',
+                self.FG,
+            )
+            self._set_sub(
+                'speed_error_mps',
+                f'{error:+.2f} m/s' if error is not None else '--',
             )
 
             if drive is None:
@@ -716,7 +802,7 @@ if QtWidgets is not None:
                     'phase_current', 'controller_temp', 'motor_temp',
                     'drive_cmd_age', 'part1_age', 'part2_age', 'drive_faults',
                 ):
-                    self._set(key, NO_DATA, self.DIM)
+                    self._set(key, NO_DATA, self.FG)
                 self._blank_chips('drive', self.DRIVE_FLAGS)
                 return
 
@@ -781,27 +867,27 @@ if QtWidgets is not None:
             steering = snapshot[STEERING].message
 
             if steering is None:
-                self._set_headline('steering_state', NO_DATA, self.DIM)
-                self._set_headline('steering_reason', NO_DATA, self.DIM)
+                self._set_headline('steering_state', NO_DATA, self.FG)
+                self._set_headline('steering_reason', NO_DATA, self.FG)
                 for key in (
                     'angle_target', 'angle_commanded', 'angle_corrected',
                     'angle_actual', 'angle_error',
                 ):
-                    self._set_headline(key, '--', self.DIM, small=True)
+                    self._set_headline(key, '--', self.FG, small=True)
                 for key in (
                     'motor_position', 'motor_angle', 'motor_speed',
                     'motor_current', 'steer_voltage', 'driver_temp',
                     'feedback_age', 'mode_age', 'steer_cmd_age',
                     'steer_drive_mode', 'steer_faults',
                 ):
-                    self._set(key, NO_DATA, self.DIM)
+                    self._set(key, NO_DATA, self.FG)
                 self._blank_chips('steering', self.STEERING_FLAGS)
                 # The commanded angle still comes from /vehicle/command.
                 self._set_headline(
                     'angle_target',
                     f'{rad_to_deg(command.steering_target_rad):.2f}°'
                     if command else '--',
-                    self.ACCENT if command else self.DIM,
+                    self.ACCENT if command else self.FG,
                     small=True,
                 )
                 return
@@ -818,7 +904,7 @@ if QtWidgets is not None:
             self._set_headline(
                 'steering_reason',
                 steering_disable_reason_text(steering.disable_reason),
-                self.DIM if reason_none else self.BAD,
+                self.FG if reason_none else self.BAD,
             )
 
             self._set_headline(
@@ -841,7 +927,7 @@ if QtWidgets is not None:
                 'angle_actual',
                 f'{rad_to_deg(steering.actual_wheel_angle_rad):.2f}°'
                 if steering.feedback_valid else NA,
-                self.GOOD if steering.feedback_valid else self.DIM,
+                self.GOOD if steering.feedback_valid else self.FG,
                 small=True,
             )
             self._set_headline(
