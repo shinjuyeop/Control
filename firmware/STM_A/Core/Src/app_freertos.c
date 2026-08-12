@@ -247,6 +247,7 @@ static void reset_host_command_state(void);
 static void init_ros_message_buffers(void);
 static uint8_t create_ros_entities(void);
 static void destroy_ros_entities(void);
+static uint32_t age_since(uint32_t now, uint32_t stamp);
 static void publish_drive_status(uint32_t now);
 static void parse_motor_status_part1(const uint8_t data[8], uint32_t now);
 static void parse_motor_status_part2(const uint8_t data[8], uint32_t now);
@@ -368,7 +369,7 @@ void StartControl(void *argument)
       const uint8_t command_received = s_command_received;
       const uint8_t command_timed_out =
           ((command_received == 0u) ||
-           ((uint32_t)(now - s_last_command_tick) >= HOST_COMMAND_TIMEOUT_MS))
+           (age_since(now, s_last_command_tick) >= HOST_COMMAND_TIMEOUT_MS))
               ? 1u : 0u;
       s_command_timeout = command_timed_out;
 
@@ -929,6 +930,16 @@ static void destroy_ros_entities(void)
   rcl_reset_error();
 }
 
+/* now는 호출자가 앞서 읽어둔 tick이고, CAN ISR과 uROS 명령 콜백은 그 뒤에도
+ * 더 최신 tick을 기록한다. 그래서 stamp가 now보다 클 수 있고, 부호 없는
+ * 뺄셈은 그때 ~2^32로 언더플로우해 갓 받은 프레임을 timeout으로 만든다.
+ * snapshot보다 새 프레임의 age는 0이다. */
+static uint32_t age_since(uint32_t now, uint32_t stamp)
+{
+  const int32_t delta = (int32_t)(now - stamp);
+  return (delta < 0) ? 0u : (uint32_t)delta;
+}
+
 static void publish_drive_status(uint32_t now)
 {
   uint8_t pedal_percent;
@@ -980,8 +991,8 @@ static void publish_drive_status(uint32_t now)
   tractive_commanded = s_tractive_commanded;
   taskEXIT_CRITICAL();
 
-  const uint32_t part1_age_ms = (uint32_t)(now - part1_rx_ms);
-  const uint32_t part2_age_ms = (uint32_t)(now - part2_rx_ms);
+  const uint32_t part1_age_ms = age_since(now, part1_rx_ms);
+  const uint32_t part2_age_ms = age_since(now, part2_rx_ms);
   const uint8_t part1_valid =
       ((part1_received != 0u) &&
        (part1_age_ms < MOTOR_FEEDBACK_TIMEOUT_MS)) ? 1u : 0u;
@@ -1004,7 +1015,7 @@ static void publish_drive_status(uint32_t now)
   s_status_msg.command_received = (command_received != 0u);
   s_status_msg.command_timeout = (command_timeout != 0u);
   s_status_msg.command_age_ms = (command_received != 0u) ?
-      (float)((uint32_t)(now - command_rx_ms)) : INFINITY;
+      (float)age_since(now, command_rx_ms) : INFINITY;
   s_status_msg.commanded_phase_current_a = commanded_phase_current_a;
   s_status_msg.commanded_motor_rpm = commanded_motor_rpm;
   s_status_msg.bus_voltage_v = bus_voltage_v;
