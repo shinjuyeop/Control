@@ -9,7 +9,7 @@ steering_actuator_node:
     steer_command_timeout_ms: 200
     wheel_limit_deg: 30.0
     max_steering_rate_deg_s: 60.0
-    hardware_can_enabled: false
-    actuator_output_enabled: false
+    hardware_can_enabled: true
+    actuator_output_enabled: true
     tracking_control_enabled: false
     test_input_injection_enabled: false

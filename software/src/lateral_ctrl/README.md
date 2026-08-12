@@ -17,16 +17,31 @@ TeamKAI-DL 차량의 KEYA 조향 액추에이터를 제어하는 ROS 2 Humble �
 - CAN 인터페이스, 250 kbit/s 설정, 모터 node ID와 기계적 중앙을 확인합니다.
 - 동일한 KEYA 모터를 제어하는 다른 노드를 종료합니다.
 
-출력을 차단하고 ROS 인터페이스만 확인하려면 다음처럼 실행합니다.
+## 출력 모드 3가지
+
+`hardware_can_enabled`와 `actuator_output_enabled`는 중복이 아니라 아래 세 가지
+상태를 만듭니다. 조향이 움직이지 않을 때 가장 먼저 확인할 표입니다.
+
+| `hardware_can_enabled` | `actuator_output_enabled` | 동작 | 용도 |
+| --- | --- | --- | --- |
+| `false` | 무관 | CAN 소켓을 열지 않음 | CAN 어댑터가 없는 PC, CI |
+| `true` | `false` | 읽기 전용 관측 — 피드백만 수신, 명령 송신 없음 | 벤치·실차 진단 |
+| `true` | `true` | 구동 | **launch 기본값** |
+
+노드는 시작할 때 현재 모드를 로그로 알립니다. 구동 중이면
+`HARDWARE OUTPUT ARMED ...`, 꺼져 있으면 무엇을 켜야 하는지 함께 출력합니다.
+
+읽기 전용 관측으로 실행하려면 다음처럼 합니다.
 
 ```bash
 ros2 launch lateral_ctrl steering_actuator.launch.py \
-  hardware_can_enabled:=false \
   actuator_output_enabled:=false
 ```
 
-`ros2 run lateral_ctrl steering_actuator_node`로 직접 실행할 때 두 출력 파라미터의
-기본값은 `false`입니다. 두 값은 노드 생성 시 한 번만 읽으며 런타임 arm/disarm
+CAN 소켓조차 열지 않으려면 `hardware_can_enabled:=false`를 함께 줍니다.
+
+`ros2 run lateral_ctrl steering_actuator_node`로 params file 없이 직접 실행할 때만
+두 파라미터의 코드 기본값인 `false`가 적용됩니다. 두 값은 노드 생성 시 한 번만 읽으며 런타임 arm/disarm
 기능은 없습니다. `node_id`는 `0..255`만 허용하며 범위를 벗어나면 KEYA 드라이버를
 생성하지 않고 노드가 종료됩니다.
 
