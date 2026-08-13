@@ -187,7 +187,7 @@
           "enabled": true,
           "color": "#4e98e2",
           "id": "st-1",
-          "label": "① 요청 (상위)"
+          "label": "요청"
         },
         {
           "timestampMethod": "receiveTime",
@@ -195,7 +195,7 @@
           "enabled": true,
           "color": "#f1c40f",
           "id": "st-2",
-          "label": "② 최종 명령"
+          "label": "명령"
         },
         {
           "timestampMethod": "receiveTime",
@@ -203,7 +203,7 @@
           "enabled": true,
           "color": "#f5774d",
           "id": "st-3",
-          "label": "③ 실측"
+          "label": "실측"
         },
         {
           "timestampMethod": "receiveTime",
@@ -211,7 +211,7 @@
           "enabled": true,
           "color": "#16a085",
           "id": "st-4",
-          "label": "오차 (②-③)"
+          "label": "오차"
         }
       ],
       "yAxisLabel": "rad",
@@ -228,7 +228,7 @@
           "enabled": true,
           "color": "#4e98e2",
           "id": "cur-cmd-0810",
-          "label": "commanded phase"
+          "label": "지령"
         },
         {
           "timestampMethod": "receiveTime",
@@ -236,7 +236,7 @@
           "enabled": true,
           "color": "#f5774d",
           "id": "cur-phase-0810",
-          "label": "actual phase"
+          "label": "상전류"
         },
         {
           "timestampMethod": "receiveTime",
@@ -244,7 +244,7 @@
           "enabled": true,
           "color": "#2ecc71",
           "id": "cur-bus-0810",
-          "label": "bus"
+          "label": "버스"
         }
       ],
       "yAxisLabel": "A",
@@ -261,7 +261,7 @@
           "enabled": true,
           "color": "#4e98e2",
           "id": "v-d",
-          "label": "구동 bus"
+          "label": "구동"
         },
         {
           "timestampMethod": "receiveTime",
@@ -269,7 +269,7 @@
           "enabled": true,
           "color": "#9b59b6",
           "id": "v-s",
-          "label": "조향 드라이버"
+          "label": "조향"
         }
       ],
       "yAxisLabel": "V",
@@ -286,7 +286,7 @@
           "enabled": true,
           "color": "#4e98e2",
           "id": "t-d1",
-          "label": "구동 컨트롤러"
+          "label": "구동CTRL"
         },
         {
           "timestampMethod": "receiveTime",
@@ -294,7 +294,7 @@
           "enabled": true,
           "color": "#f5774d",
           "id": "t-d2",
-          "label": "구동 모터"
+          "label": "구동모터"
         },
         {
           "timestampMethod": "receiveTime",
@@ -302,7 +302,7 @@
           "enabled": true,
           "color": "#9b59b6",
           "id": "t-s",
-          "label": "조향 드라이버"
+          "label": "조향DRV"
         }
       ],
       "yAxisLabel": "°C",
@@ -364,15 +364,20 @@
         {
           "title": "Power",
           "layout": {
-            "first": "Plot!ctrl_current",
+            "first": {
+              "first": "Plot!ctrl_current",
+              "second": "Plot!ctrl_steer_current",
+              "direction": "row",
+              "splitPercentage": 50
+            },
             "second": {
               "first": "Plot!ctrl_voltage",
               "second": "Plot!ctrl_temp",
               "direction": "row",
-              "splitPercentage": 45
+              "splitPercentage": 50
             },
             "direction": "column",
-            "splitPercentage": 45
+            "splitPercentage": 50
           }
         },
         {
@@ -765,6 +770,23 @@
       "selectedHardwareId": "",
       "selectedName": "",
       "splitFraction": 0.5
+    },
+    "Plot!ctrl_steer_current": {
+      "foxglovePanelTitle": "조향 모터 전류",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.motor_current_a",
+          "enabled": true,
+          "color": "#9b59b6",
+          "id": "sc-1",
+          "label": "조향"
+        }
+      ],
+      "yAxisLabel": "A",
+      "showYAxisLabels": true,
+      "legendDisplay": "top",
+      "showPlotValuesInLegend": true
     }
   },
   "globalVariables": {},

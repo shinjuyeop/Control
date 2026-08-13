@@ -328,8 +328,14 @@ ros2 launch kaiev26_hil hil.launch.py \
 ```
 
 이 launch는 연결 시 bridge의 안전한 기본 desired state를 STM_TEST에 재적용한다.
-command generator는 생성되지만 기본값 `enabled=false`라서
-`/vehicle/command`를 발행하지 않는다.
+command generator는 기본값 `enabled=true`로 `/vehicle/command`를 20 Hz로
+발행한다. 목표값은 `speed_target_mps`·`steering_target_rad` 모두 0이고
+`brake_engage`는 false이므로 정지 명령이다. 발행을 멈추려면
+`ros2 param set /hil_command_generator enabled false`.
+
+발행이 없으면 STM_A는 Host command 미수신, STM_B는 command age 증가
+상태가 되고 조향은 `MODE_TIMEOUT`으로 남는다. 진단상 전부 고장으로
+보이므로 기본값을 발행 쪽에 둔다.
 
 레이아웃만 보고 싶을 때는 다음처럼 GUI만 실행할 수 있다. 이 경우 bridge가 없으므로
 `DISCONNECTED`가 정상이다.
