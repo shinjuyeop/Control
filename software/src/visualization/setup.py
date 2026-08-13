@@ -24,6 +24,7 @@ setup(
             'vehicle_dashboard = visualization.vehicle_dashboard:main',
             'test_publisher = visualization.test_publisher:main',
             'gps_waypoint_publisher = visualization.gps_waypoint_publisher:main',
+            'diagnostics_publisher = visualization.diagnostics_publisher:main',
         ],
     },
 )

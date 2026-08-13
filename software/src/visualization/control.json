@@ -120,7 +120,9 @@
       "yAxisLabel": "m/s",
       "showYAxisLabels": true,
       "minYValue": 0,
-      "maxYValue": 20
+      "maxYValue": 20,
+      "legendDisplay": "top",
+      "showPlotValuesInLegend": true
     },
     "Plot!common_age": {
       "foxglovePanelTitle": "파트별 신호 신선도 — 여기에 각 파트 heartbeat 추가",
@@ -144,7 +146,9 @@
       ],
       "yAxisLabel": "ms",
       "showYAxisLabels": true,
-      "minYValue": 0
+      "minYValue": 0,
+      "legendDisplay": "top",
+      "showPlotValuesInLegend": true
     },
     "Parameters!common_param": {},
     "Plot!ctrl_speed": {
@@ -170,7 +174,9 @@
       "yAxisLabel": "m/s",
       "showYAxisLabels": true,
       "minYValue": 0,
-      "maxYValue": 20
+      "maxYValue": 20,
+      "legendDisplay": "top",
+      "showPlotValuesInLegend": true
     },
     "Plot!ctrl_steer": {
       "foxglovePanelTitle": "조향 추종  요청 → 최종명령 → 실측",
@@ -210,95 +216,6 @@
       ],
       "yAxisLabel": "rad",
       "showYAxisLabels": true,
-      "legendDisplay": "top",
-      "showPlotValuesInLegend": true
-    },
-    "Plot!ctrl_rpm": {
-      "foxglovePanelTitle": "RPM 추종  commanded vs actual",
-      "paths": [
-        {
-          "timestampMethod": "receiveTime",
-          "value": "/drive/status.commanded_motor_rpm",
-          "enabled": true,
-          "color": "#4e98e2",
-          "id": "x-rpm-c",
-          "label": "commanded rpm"
-        },
-        {
-          "timestampMethod": "receiveTime",
-          "value": "/drive/status.motor_rpm",
-          "enabled": true,
-          "color": "#f5774d",
-          "id": "x-rpm-a",
-          "label": "actual rpm"
-        }
-      ],
-      "yAxisLabel": "rpm",
-      "showYAxisLabels": true
-    },
-    "Plot!ctrl_age": {
-      "foxglovePanelTitle": "신선도 age (ms) — 임계: 구동cmd 500 / Part I·II 200 / 조향cmd 200 / feedback 500 / mode 1500",
-      "paths": [
-        {
-          "timestampMethod": "receiveTime",
-          "value": "/drive/status.command_age_ms",
-          "enabled": true,
-          "color": "#4e98e2",
-          "id": "age-drvcmd-0810",
-          "label": "drive command"
-        },
-        {
-          "timestampMethod": "receiveTime",
-          "value": "/drive/status.part1_age_ms",
-          "enabled": true,
-          "color": "#f5774d",
-          "id": "age-part1-0810",
-          "label": "EZkontrol Part I"
-        },
-        {
-          "timestampMethod": "receiveTime",
-          "value": "/drive/status.part2_age_ms",
-          "enabled": true,
-          "color": "#2ecc71",
-          "id": "age-part2-0810",
-          "label": "EZkontrol Part II"
-        },
-        {
-          "timestampMethod": "receiveTime",
-          "value": "/brake/status.command_age_ms",
-          "enabled": true,
-          "color": "#9b59b6",
-          "id": "age-brk-0810",
-          "label": "brake command"
-        },
-        {
-          "timestampMethod": "receiveTime",
-          "value": "/steering/status.feedback_age_ms",
-          "enabled": true,
-          "color": "#9b59b6",
-          "id": "ag-s1",
-          "label": "조향 feedback"
-        },
-        {
-          "timestampMethod": "receiveTime",
-          "value": "/steering/status.steer_command_age_ms",
-          "enabled": true,
-          "color": "#16a085",
-          "id": "ag-s2",
-          "label": "조향 cmd"
-        },
-        {
-          "timestampMethod": "receiveTime",
-          "value": "/steering/status.mode_age_ms",
-          "enabled": true,
-          "color": "#e056a0",
-          "id": "ag-s3",
-          "label": "조향 mode"
-        }
-      ],
-      "yAxisLabel": "ms",
-      "showYAxisLabels": true,
-      "minYValue": 0,
       "legendDisplay": "top",
       "showPlotValuesInLegend": true
     },
@@ -356,7 +273,9 @@
         }
       ],
       "yAxisLabel": "V",
-      "showYAxisLabels": true
+      "showYAxisLabels": true,
+      "legendDisplay": "top",
+      "showPlotValuesInLegend": true
     },
     "Plot!ctrl_temp": {
       "foxglovePanelTitle": "온도  구동 컨트롤러·모터 / 조향 드라이버",
@@ -431,26 +350,21 @@
         {
           "title": "Health",
           "layout": {
-            "first": "Plot!ctrl_age",
+            "first": "DiagnosticSummary!ctrl_diag",
             "second": {
-              "first": "RawMessages!ctrl_now",
+              "first": "DiagnosticStatusPanel!ctrl_diag_detail",
               "second": "RawMessages!ctrl_steer_now",
-              "direction": "row",
-              "splitPercentage": 50
+              "direction": "column",
+              "splitPercentage": 55
             },
-            "direction": "column",
-            "splitPercentage": 45
+            "direction": "row",
+            "splitPercentage": 52
           }
         },
         {
           "title": "Power",
           "layout": {
-            "first": {
-              "first": "Plot!ctrl_rpm",
-              "second": "Plot!ctrl_current",
-              "direction": "row",
-              "splitPercentage": 50
-            },
+            "first": "Plot!ctrl_current",
             "second": {
               "first": "Plot!ctrl_voltage",
               "second": "Plot!ctrl_temp",
@@ -458,16 +372,26 @@
               "splitPercentage": 45
             },
             "direction": "column",
-            "splitPercentage": 50
+            "splitPercentage": 45
           }
         },
         {
           "title": "State",
           "layout": {
-            "first": "StateTransitions!ctrl_drive",
-            "second": "StateTransitions!ctrl_steer_state",
+            "first": {
+              "first": "StateTransitions!ctrl_drive",
+              "second": "StateTransitions!ctrl_steer_state",
+              "direction": "row",
+              "splitPercentage": 50
+            },
+            "second": {
+              "first": "Indicator!ctrl_steer_state_now",
+              "second": "Indicator!ctrl_steer_reason_now",
+              "direction": "row",
+              "splitPercentage": 50
+            },
             "direction": "column",
-            "splitPercentage": 50
+            "splitPercentage": 72
           }
         },
         {
@@ -479,9 +403,14 @@
               "direction": "row",
               "splitPercentage": 50
             },
-            "second": "RawMessages!ctrl_brake_now",
+            "second": {
+              "first": "RawMessages!ctrl_now",
+              "second": "RawMessages!ctrl_brake_now",
+              "direction": "row",
+              "splitPercentage": 60
+            },
             "direction": "column",
-            "splitPercentage": 55
+            "splitPercentage": 40
           }
         }
       ]
@@ -681,6 +610,161 @@
       "diffTopicPath": "",
       "showFullMessageForDiff": false,
       "topicPath": "/brake/status"
+    },
+    "Indicator!ctrl_steer_state_now": {
+      "path": "/steering/status.state",
+      "style": "bulb",
+      "fontSize": 16,
+      "fallbackColor": "#e74c3c",
+      "fallbackLabel": "정의되지 않은 값",
+      "foxglovePanelTitle": "조향 state (현재)",
+      "rules": [
+        {
+          "operator": "=",
+          "rawValue": "0",
+          "color": "#95a5a6",
+          "label": "0 · INIT"
+        },
+        {
+          "operator": "=",
+          "rawValue": "1",
+          "color": "#95a5a6",
+          "label": "1 · DISABLED"
+        },
+        {
+          "operator": "=",
+          "rawValue": "2",
+          "color": "#f1c40f",
+          "label": "2 · WAIT_CMD"
+        },
+        {
+          "operator": "=",
+          "rawValue": "3",
+          "color": "#2ecc71",
+          "label": "3 · ACTIVE"
+        },
+        {
+          "operator": "=",
+          "rawValue": "4",
+          "color": "#e74c3c",
+          "label": "4 · ESTOP"
+        },
+        {
+          "operator": "=",
+          "rawValue": "5",
+          "color": "#f1c40f",
+          "label": "5 · BRAKE"
+        },
+        {
+          "operator": "=",
+          "rawValue": "6",
+          "color": "#e74c3c",
+          "label": "6 · CAN_LOST"
+        },
+        {
+          "operator": "=",
+          "rawValue": "7",
+          "color": "#e74c3c",
+          "label": "7 · FEEDBACK_LOST"
+        },
+        {
+          "operator": "=",
+          "rawValue": "8",
+          "color": "#e74c3c",
+          "label": "8 · FAULT"
+        }
+      ]
+    },
+    "Indicator!ctrl_steer_reason_now": {
+      "path": "/steering/status.disable_reason",
+      "style": "bulb",
+      "fontSize": 16,
+      "fallbackColor": "#e74c3c",
+      "fallbackLabel": "정의되지 않은 값",
+      "foxglovePanelTitle": "조향 disable_reason (현재)",
+      "rules": [
+        {
+          "operator": "=",
+          "rawValue": "0",
+          "color": "#2ecc71",
+          "label": "0 · NONE — 정상"
+        },
+        {
+          "operator": "=",
+          "rawValue": "1",
+          "color": "#f1c40f",
+          "label": "1 · MODE_NOT_RECEIVED"
+        },
+        {
+          "operator": "=",
+          "rawValue": "2",
+          "color": "#e74c3c",
+          "label": "2 · MODE_TIMEOUT"
+        },
+        {
+          "operator": "=",
+          "rawValue": "3",
+          "color": "#95a5a6",
+          "label": "3 · MANUAL_MODE"
+        },
+        {
+          "operator": "=",
+          "rawValue": "4",
+          "color": "#e74c3c",
+          "label": "4 · INVALID_MODE"
+        },
+        {
+          "operator": "=",
+          "rawValue": "5",
+          "color": "#e74c3c",
+          "label": "5 · ESTOP"
+        },
+        {
+          "operator": "=",
+          "rawValue": "6",
+          "color": "#f1c40f",
+          "label": "6 · COMMAND_BRAKE"
+        },
+        {
+          "operator": "=",
+          "rawValue": "7",
+          "color": "#e74c3c",
+          "label": "7 · STEER_CMD_TIMEOUT"
+        },
+        {
+          "operator": "=",
+          "rawValue": "8",
+          "color": "#e74c3c",
+          "label": "8 · CAN_TIMEOUT"
+        },
+        {
+          "operator": "=",
+          "rawValue": "9",
+          "color": "#e74c3c",
+          "label": "9 · FEEDBACK_INVALID"
+        },
+        {
+          "operator": "=",
+          "rawValue": "10",
+          "color": "#e74c3c",
+          "label": "10 · MOTOR_FAULT"
+        }
+      ]
+    },
+    "DiagnosticSummary!ctrl_diag": {
+      "foxglovePanelTitle": "진단 요약 (등급순)",
+      "topicToRender": "/diagnostics",
+      "minLevel": 0,
+      "sortByLevel": true,
+      "pinnedIds": [],
+      "hardwareIdFilter": ""
+    },
+    "DiagnosticStatusPanel!ctrl_diag_detail": {
+      "foxglovePanelTitle": "진단 상세",
+      "topicToRender": "/diagnostics",
+      "selectedHardwareId": "",
+      "selectedName": "",
+      "splitFraction": 0.5
     }
   },
   "globalVariables": {},
