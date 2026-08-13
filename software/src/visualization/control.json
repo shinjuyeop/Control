@@ -220,31 +220,39 @@
       "showPlotValuesInLegend": true
     },
     "Plot!ctrl_current": {
-      "foxglovePanelTitle": "전류 (지령 / 상전류 / 버스)",
+      "foxglovePanelTitle": "전류  구동 / 조향",
       "paths": [
         {
           "timestampMethod": "receiveTime",
           "value": "/drive/status.commanded_phase_current_a",
           "enabled": true,
           "color": "#4e98e2",
-          "id": "cur-cmd-0810",
-          "label": "지령"
+          "id": "cur-cmd",
+          "label": "구동 command"
         },
         {
           "timestampMethod": "receiveTime",
           "value": "/drive/status.phase_current_a",
           "enabled": true,
           "color": "#f5774d",
-          "id": "cur-phase-0810",
-          "label": "상전류"
+          "id": "cur-phase",
+          "label": "구동 상전류"
         },
         {
           "timestampMethod": "receiveTime",
           "value": "/drive/status.bus_current_a",
           "enabled": true,
           "color": "#2ecc71",
-          "id": "cur-bus-0810",
-          "label": "버스"
+          "id": "cur-bus",
+          "label": "구동 버스"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.motor_current_a",
+          "enabled": true,
+          "color": "#9b59b6",
+          "id": "cur-steer",
+          "label": "조향 모터"
         }
       ],
       "yAxisLabel": "A",
@@ -278,7 +286,7 @@
       "showPlotValuesInLegend": true
     },
     "Plot!ctrl_temp": {
-      "foxglovePanelTitle": "온도  구동 컨트롤러·모터 / 조향 드라이버",
+      "foxglovePanelTitle": "온도  구동 컨트롤러·모터 / 조향 모터",
       "paths": [
         {
           "timestampMethod": "receiveTime",
@@ -286,7 +294,7 @@
           "enabled": true,
           "color": "#4e98e2",
           "id": "t-d1",
-          "label": "구동CTRL"
+          "label": "구동 컨트롤러"
         },
         {
           "timestampMethod": "receiveTime",
@@ -294,7 +302,7 @@
           "enabled": true,
           "color": "#f5774d",
           "id": "t-d2",
-          "label": "구동모터"
+          "label": "구동 모터"
         },
         {
           "timestampMethod": "receiveTime",
@@ -302,7 +310,7 @@
           "enabled": true,
           "color": "#9b59b6",
           "id": "t-s",
-          "label": "조향DRV"
+          "label": "조향 모터"
         }
       ],
       "yAxisLabel": "°C",
@@ -351,12 +359,7 @@
           "title": "Health",
           "layout": {
             "first": "DiagnosticSummary!ctrl_diag",
-            "second": {
-              "first": "DiagnosticStatusPanel!ctrl_diag_detail",
-              "second": "RawMessages!ctrl_steer_now",
-              "direction": "column",
-              "splitPercentage": 55
-            },
+            "second": "DiagnosticStatusPanel!ctrl_diag_detail",
             "direction": "row",
             "splitPercentage": 52
           }
@@ -364,12 +367,7 @@
         {
           "title": "Power",
           "layout": {
-            "first": {
-              "first": "Plot!ctrl_current",
-              "second": "Plot!ctrl_steer_current",
-              "direction": "row",
-              "splitPercentage": 50
-            },
+            "first": "Plot!ctrl_current",
             "second": {
               "first": "Plot!ctrl_voltage",
               "second": "Plot!ctrl_temp",
@@ -410,12 +408,17 @@
             },
             "second": {
               "first": "RawMessages!ctrl_now",
-              "second": "RawMessages!ctrl_brake_now",
+              "second": {
+                "first": "RawMessages!ctrl_steer_now",
+                "second": "RawMessages!ctrl_brake_now",
+                "direction": "row",
+                "splitPercentage": 50
+              },
               "direction": "row",
-              "splitPercentage": 60
+              "splitPercentage": 33.34
             },
             "direction": "column",
-            "splitPercentage": 40
+            "splitPercentage": 38
           }
         }
       ]
@@ -593,7 +596,7 @@
       "topicPath": "/steering/status.fault_bits"
     },
     "RawMessages!ctrl_now": {
-      "foxglovePanelTitle": "구동 현재값 (전 필드)",
+      "foxglovePanelTitle": "drive status",
       "diffEnabled": false,
       "diffMethod": "custom",
       "diffTopicPath": "",
@@ -601,7 +604,7 @@
       "topicPath": "/drive/status"
     },
     "RawMessages!ctrl_steer_now": {
-      "foxglovePanelTitle": "조향 현재값 (전 필드)",
+      "foxglovePanelTitle": "steering status",
       "diffEnabled": false,
       "diffMethod": "custom",
       "diffTopicPath": "",
@@ -609,7 +612,7 @@
       "topicPath": "/steering/status"
     },
     "RawMessages!ctrl_brake_now": {
-      "foxglovePanelTitle": "브레이크 현재값",
+      "foxglovePanelTitle": "brake status",
       "diffEnabled": false,
       "diffMethod": "custom",
       "diffTopicPath": "",
@@ -770,23 +773,6 @@
       "selectedHardwareId": "",
       "selectedName": "",
       "splitFraction": 0.5
-    },
-    "Plot!ctrl_steer_current": {
-      "foxglovePanelTitle": "조향 모터 전류",
-      "paths": [
-        {
-          "timestampMethod": "receiveTime",
-          "value": "/steering/status.motor_current_a",
-          "enabled": true,
-          "color": "#9b59b6",
-          "id": "sc-1",
-          "label": "조향"
-        }
-      ],
-      "yAxisLabel": "A",
-      "showYAxisLabels": true,
-      "legendDisplay": "top",
-      "showPlotValuesInLegend": true
     }
   },
   "globalVariables": {},
