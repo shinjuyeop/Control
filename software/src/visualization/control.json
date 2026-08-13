@@ -173,23 +173,39 @@
       "maxYValue": 20
     },
     "Plot!ctrl_steer": {
-      "foxglovePanelTitle": "조향 추종  target vs actual",
+      "foxglovePanelTitle": "조향 추종  요청 → 최종명령 → 실측",
       "paths": [
         {
           "timestampMethod": "receiveTime",
           "value": "/vehicle/command.steering_target_rad",
           "enabled": true,
           "color": "#4e98e2",
-          "id": "x-str-t",
-          "label": "target"
+          "id": "st-1",
+          "label": "① 요청 (상위)"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.corrected_wheel_angle_rad",
+          "enabled": true,
+          "color": "#f1c40f",
+          "id": "st-2",
+          "label": "② 최종 명령"
         },
         {
           "timestampMethod": "receiveTime",
           "value": "/steering/status.actual_wheel_angle_rad",
           "enabled": true,
           "color": "#f5774d",
-          "id": "x-str-a",
-          "label": "actual"
+          "id": "st-3",
+          "label": "③ 실측"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.tracking_error_rad",
+          "enabled": true,
+          "color": "#16a085",
+          "id": "st-4",
+          "label": "오차 (②-③)"
         }
       ],
       "yAxisLabel": "rad",
@@ -219,7 +235,7 @@
       "showYAxisLabels": true
     },
     "Plot!ctrl_age": {
-      "foxglovePanelTitle": "메시지 신선도 (age) — 타임아웃 추적",
+      "foxglovePanelTitle": "신선도 age — 구동(파랑계열) / 조향(보라계열)",
       "paths": [
         {
           "timestampMethod": "receiveTime",
@@ -252,6 +268,30 @@
           "color": "#9b59b6",
           "id": "age-brk-0810",
           "label": "brake command"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.feedback_age_ms",
+          "enabled": true,
+          "color": "#9b59b6",
+          "id": "ag-s1",
+          "label": "조향 feedback"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.steer_command_age_ms",
+          "enabled": true,
+          "color": "#16a085",
+          "id": "ag-s2",
+          "label": "조향 cmd"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.mode_age_ms",
+          "enabled": true,
+          "color": "#e056a0",
+          "id": "ag-s3",
+          "label": "조향 mode"
         }
       ],
       "yAxisLabel": "ms",
@@ -336,38 +376,54 @@
       "showYAxisLabels": true
     },
     "Plot!ctrl_voltage": {
-      "foxglovePanelTitle": "버스 전압",
+      "foxglovePanelTitle": "버스 전압  구동 / 조향",
       "paths": [
         {
           "timestampMethod": "receiveTime",
           "value": "/drive/status.bus_voltage_v",
           "enabled": true,
+          "color": "#4e98e2",
+          "id": "v-d",
+          "label": "구동 bus"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.bus_voltage_v",
+          "enabled": true,
           "color": "#9b59b6",
-          "id": "volt-0810",
-          "label": "bus voltage"
+          "id": "v-s",
+          "label": "조향 드라이버"
         }
       ],
       "yAxisLabel": "V",
       "showYAxisLabels": true
     },
     "Plot!ctrl_temp": {
-      "foxglovePanelTitle": "온도 (컨트롤러 / 모터)",
+      "foxglovePanelTitle": "온도  구동 컨트롤러·모터 / 조향 드라이버",
       "paths": [
         {
           "timestampMethod": "receiveTime",
           "value": "/drive/status.controller_temperature_c",
           "enabled": true,
           "color": "#4e98e2",
-          "id": "temp-ctrl-0810",
-          "label": "controller"
+          "id": "t-d1",
+          "label": "구동 컨트롤러"
         },
         {
           "timestampMethod": "receiveTime",
           "value": "/drive/status.motor_temperature_c",
           "enabled": true,
-          "color": "#e74c3c",
-          "id": "temp-motor-0810",
-          "label": "motor"
+          "color": "#f5774d",
+          "id": "t-d2",
+          "label": "구동 모터"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.driver_temperature_c",
+          "enabled": true,
+          "color": "#9b59b6",
+          "id": "t-s",
+          "label": "조향 드라이버"
         }
       ],
       "yAxisLabel": "°C",
@@ -410,7 +466,7 @@
       "isSynced": true
     },
     "RawMessages!ctrl_fault": {
-      "foxglovePanelTitle": "fault bits (원본)",
+      "foxglovePanelTitle": "구동 fault bits (24bit 원본)",
       "diffEnabled": false,
       "diffMethod": "custom",
       "diffTopicPath": "",
@@ -424,31 +480,52 @@
           "title": "Health",
           "layout": {
             "first": "StateTransitions!ctrl_health",
-            "second": "Plot!ctrl_age",
-            "direction": "column",
-            "splitPercentage": 58
-          }
-        },
-        {
-          "title": "Power",
-          "layout": {
-            "first": "Plot!ctrl_current",
             "second": {
-              "first": "Plot!ctrl_voltage",
-              "second": "Plot!ctrl_temp",
-              "direction": "column"
+              "first": "StateTransitions!ctrl_steer_health",
+              "second": "Plot!ctrl_age",
+              "direction": "column",
+              "splitPercentage": 45
             },
             "direction": "column",
             "splitPercentage": 40
           }
         },
         {
+          "title": "Power",
+          "layout": {
+            "first": {
+              "first": "Plot!ctrl_current",
+              "second": "Plot!ctrl_steer_current",
+              "direction": "row",
+              "splitPercentage": 60
+            },
+            "second": {
+              "first": "Plot!ctrl_voltage",
+              "second": "Plot!ctrl_temp",
+              "direction": "row",
+              "splitPercentage": 45
+            },
+            "direction": "column",
+            "splitPercentage": 50
+          }
+        },
+        {
           "title": "State",
-          "layout": "StateTransitions!ctrl_drive"
+          "layout": {
+            "first": "StateTransitions!ctrl_drive",
+            "second": "StateTransitions!ctrl_steer_state",
+            "direction": "column",
+            "splitPercentage": 50
+          }
         },
         {
           "title": "Fault",
-          "layout": "RawMessages!ctrl_fault"
+          "layout": {
+            "first": "RawMessages!ctrl_fault",
+            "second": "RawMessages!ctrl_steer_fault",
+            "direction": "column",
+            "splitPercentage": 50
+          }
         }
       ]
     },
@@ -593,6 +670,101 @@
           }
         }
       ]
+    },
+    "StateTransitions!ctrl_steer_health": {
+      "foxglovePanelTitle": "조향 통신 이력",
+      "isSynced": true,
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.communication_ok",
+          "label": "communication ok"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.can_timeout",
+          "label": "CAN timeout"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.feedback_timeout",
+          "label": "feedback timeout"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.steer_command_timeout",
+          "label": "steer cmd timeout"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.mode_timeout",
+          "label": "mode timeout"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.feedback_valid",
+          "label": "feedback valid"
+        }
+      ]
+    },
+    "Plot!ctrl_steer_current": {
+      "foxglovePanelTitle": "조향 모터 전류",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.motor_current_a",
+          "enabled": true,
+          "color": "#9b59b6",
+          "id": "sc-1",
+          "label": "motor current"
+        }
+      ],
+      "yAxisLabel": "A",
+      "showYAxisLabels": true
+    },
+    "StateTransitions!ctrl_steer_state": {
+      "foxglovePanelTitle": "조향 상태 이력  (state 9종 / disable_reason 11종)",
+      "isSynced": true,
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.state",
+          "label": "state"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.disable_reason",
+          "label": "disable reason"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.enabled_commanded",
+          "label": "enable 지령"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.tracking_control_enabled",
+          "label": "tracking PID on"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.tracking_error_warning",
+          "label": "tracking warn"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.tracking_error_fault",
+          "label": "tracking fault"
+        }
+      ]
+    },
+    "RawMessages!ctrl_steer_fault": {
+      "foxglovePanelTitle": "조향 fault bits (16bit, bit0=Enable/Disable)",
+      "diffEnabled": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "showFullMessageForDiff": false,
+      "topicPath": "/steering/status.fault_bits"
     }
   },
   "globalVariables": {},
