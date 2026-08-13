@@ -196,7 +196,7 @@
       "showYAxisLabels": true
     },
     "Plot!ctrl_rpm": {
-      "foxglovePanelTitle": "RPM 추종 + pedal",
+      "foxglovePanelTitle": "RPM 추종  commanded vs actual",
       "paths": [
         {
           "timestampMethod": "receiveTime",
@@ -213,17 +213,9 @@
           "color": "#f5774d",
           "id": "x-rpm-a",
           "label": "actual rpm"
-        },
-        {
-          "timestampMethod": "receiveTime",
-          "value": "/drive/status.pedal_percent",
-          "enabled": true,
-          "color": "#2ecc71",
-          "id": "x-ped",
-          "label": "pedal %"
         }
       ],
-      "yAxisLabel": "rpm / %",
+      "yAxisLabel": "rpm",
       "showYAxisLabels": true
     },
     "Plot!ctrl_age": {
@@ -612,22 +604,24 @@
     "first": "Tab!parts",
     "second": {
       "first": {
-        "first": "Indicator!bar_estop",
-        "second": "Indicator!bar_brake",
-        "direction": "row"
-      },
-      "second": {
         "first": {
           "first": "Indicator!bar_gear",
           "second": "Indicator!bar_mode",
-          "direction": "row"
+          "direction": "row",
+          "splitPercentage": 50
         },
-        "second": "Gauge!bar_pedal",
+        "second": {
+          "first": "Indicator!bar_estop",
+          "second": "Indicator!bar_brake",
+          "direction": "row",
+          "splitPercentage": 50
+        },
         "direction": "row",
-        "splitPercentage": 62
+        "splitPercentage": 50
       },
+      "second": "Gauge!bar_pedal",
       "direction": "row",
-      "splitPercentage": 44
+      "splitPercentage": 80
     },
     "direction": "column",
     "splitPercentage": 87
