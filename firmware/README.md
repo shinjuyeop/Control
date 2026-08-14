@@ -26,6 +26,21 @@ STM_A와 STM_B는 실차에 올라가는 펌웨어이고, STM_TEST는 실차 없
 구조를 쓰지만, micro-ROS를 사용하는 것은 STM_A와 STM_B뿐입니다. STM_TEST는
 LPUART1 ASCII protocol로 PC와 직접 통신하므로 Agent가 필요 없습니다.
 
+## 보드와 핀 표기
+
+세 보드 모두 NUCLEO-G474RE(MB1367, STM32G474RETx)를 사용합니다. 각 README의 핀맵은
+MCU 핀 이름과 ST morpho 헤더 번호를 함께 적습니다.
+
+- `CN7`, `CN10`은 각각 2×19 ST morpho 헤더이고 홀수 번호와 짝수 번호가 각각 한
+  열을 이룹니다. 예를 들어 `PA11`은 `CN10-14`입니다.
+- 괄호 안의 `A0`, `D7` 같은 표기는 같은 신호가 나오는 Arduino Uno 헤더
+  실크스크린 이름입니다. 표기가 없는 핀은 morpho 헤더에서만 나옵니다.
+- GND는 `CN7-8`, `CN7-19`, `CN7-20`, `CN7-22`, `CN10-9`, `CN10-20`에 있습니다.
+- 커넥터의 물리적 배치와 solder bridge 옵션은 보드 매뉴얼 UM2505를 기준으로
+  합니다. 저장소에는 해당 매뉴얼 사본이 없습니다.
+
+세 보드를 서로 연결하는 핀 짝은 각 README의 `4.4 배선 상대`에 있습니다.
+
 ## 명령과 안전 경로
 
 상위 Planning 또는 motion-control 계층은
@@ -96,7 +111,7 @@ HEX·BIN이 필요하면 사용하는 flash 도구에 맞게 별도로 변환하
 확인하십시오.
 
 STM_TEST는 host에서 도는 logic test를 함께 제공합니다. 절차는
-[`STM_TEST/README.md`](STM_TEST/README.md#8-build-and-host-logic-tests)에
+[`STM_TEST/README.md`](STM_TEST/README.md#9-빌드)에
 있습니다.
 
 ## micro-ROS Agent 빌드

@@ -1,7 +1,7 @@
 # STM_A Firmware
 
 > 이 문서는 현재 작업 브랜치의 소스 코드를 기준으로 작성되었습니다.
-> 코드 변경 시 주기, timeout, 핀, 통신 ID와 안전 조건을 함께 갱신해야 합니다.
+> 코드 변경 시 핀, 주기, timeout, 통신 ID와 안전 조건을 함께 갱신해야 합니다.
 
 ## 1. 역할
 
@@ -19,29 +19,90 @@ STM_A는 STM32G474 기반의 차량 입력·종방향 구동 보드입니다. �
 - `/vehicle/command` 구독과 `/drive/status` 발행
 - AUTO Host command timeout과 traction HALTED 처리
 
-## 3. 하드웨어 및 Peripheral
+## 3. 보드와 MCU
 
-| Peripheral | 용도 | 설정 | 관련 파일 |
+| 항목 | 값 |
+|---|---|
+| 보드 | NUCLEO-G474RE |
+| MCU | STM32G474RETx, Cortex-M4F |
+| 시스템 clock | HSI 16 MHz → PLL(M=4, N=85, R=2) → 170 MHz, FLASH latency 4 |
+| FLASH | origin `0x08000000`, 512 KB |
+| RAM | origin `0x20000000`, 128 KB |
+| 고정 장치 이름 | 실차 `/dev/stm_a`, HIL bench `/dev/hil_a` |
+| CubeMX 프로젝트 | `STM_A.ioc` |
+
+## 4. 핀맵
+
+핀 이름 정의는 `Core/Inc/main.h`, 초기화는 `Core/Src/gpio.c`와 각 Peripheral
+파일에 있습니다. 아래 표는 두 곳을 대조해 정리한 것입니다.
+
+보드 커넥터 번호는 NUCLEO-G474RE(MB1367)의 ST morpho 헤더 기준입니다. `CN7`과
+`CN10`은 각각 2×19 헤더이고 홀수 번호와 짝수 번호가 각각 한 열을 이룹니다.
+괄호 안의 `A0`·`D7`은 같은 신호가 나오는 Arduino Uno 헤더 실크스크린 이름이며,
+표기가 없는 핀은 morpho 헤더에서만 나옵니다. 물리적 배치는 보드 매뉴얼 UM2505를
+확인하십시오. GND는 `CN7-8`, `CN7-19`, `CN7-20`, `CN7-22`, `CN10-9`, `CN10-20`에
+있습니다.
+
+### 4.1 신호 핀
+
+| MCU 핀 | 보드 커넥터 | 신호 이름 | 방향 | 전기적 설정 | 의미 |
+|---|---|---|---|---|---|
+| `PA0` | `CN7-28` (A0) | 가속 페달 (`ADC1_IN1`) | 입력 (analog) | 12-bit, single-ended, software trigger | raw `560`=0%, raw `3100`=100% |
+| `PA8` | `CN10-23` (D7) | `SW_MODE` | 입력 (digital) | internal pull-up | LOW=AUTO(`1`), HIGH=MANUAL(`0`) |
+| `PA9` | `CN10-21` (D8) | `SW_GEAR` | 입력 (digital) | internal pull-up | LOW=REVERSE(`1`), HIGH=FORWARD(`0`) |
+
+모드·기어 스위치는 internal pull-up이므로 접점을 GND에 붙였을 때 AUTO와 REVERSE가
+됩니다. 두 신호에는 EXTI를 걸지 않고 `Inputs` Task가 주기적으로 polling합니다.
+
+### 4.2 통신·주변장치 핀
+
+| MCU 핀 | 보드 커넥터 | Peripheral | 용도 | 설정 | 관련 파일 |
+|---|---|---|---|---|---|
+| `PA11` | `CN10-14` | `FDCAN1_RX` | EZkontrol CAN | Classic CAN, extended ID, 250 kbit/s | `Core/Src/fdcan.c` |
+| `PA12` | `CN10-12` | `FDCAN1_TX` | EZkontrol CAN | 동일 bus | `Core/Src/fdcan.c` |
+| `PA2` | `CN10-35` | `LPUART1_TX` | micro-ROS transport | 115200 8N1, DMA1 CH2 | `Core/Src/usart.c` |
+| `PA3` | `CN10-37` | `LPUART1_RX` | micro-ROS transport | 115200 8N1, DMA1 CH1 | `Core/Src/usart.c` |
+| `PC4` | `CN10-34` | `USART1_TX` | STM_B 보드 간 UART | 115200 8N1, DMA1 CH4 | `Core/Src/usart.c` |
+| `PC5` | `CN10-6` | `USART1_RX` | STM_B 보드 간 UART | Receive-to-Idle circular DMA, DMA1 CH3 | `Core/Src/usart.c` |
+
+`ADC1`은 DMA1 CH5를 사용합니다. FDCAN 핀은 반드시 CAN transceiver를 거쳐야 하며
+MCU 핀을 CANH/CANL에 직접 연결하면 안 됩니다. `PA2`/`PA3`은 NUCLEO의 ST-LINK
+virtual COM port와 연결된 핀이므로 morpho 자리에 다른 신호를 물리면 micro-ROS
+transport와 충돌합니다.
+
+### 4.3 디버그·예약 핀
+
+| MCU 핀 | 보드 커넥터 | 신호 | 비고 |
 |---|---|---|---|
-| `FDCAN1` | EZkontrol CAN | `PA11 RX`, `PA12 TX`, Classic CAN, extended ID, 250 kbit/s | `Core/Src/fdcan.c` |
-| `LPUART1` | micro-ROS transport | `PA2 TX`, `PA3 RX`, 115200 8N1, RX/TX DMA | `Core/Src/usart.c` |
-| `USART1` | STM_B UART | `PC4 TX`, `PC5 RX`, 115200 8N1, Receive-to-Idle circular DMA | `Core/Src/usart.c` |
-| `ADC1 IN1` | 가속 페달 | `PA0`, 12-bit, single-ended, software trigger | `Core/Src/adc.c` |
-| GPIO input | mode·gear | `PA8`, `PA9`, pull-up | `Core/Inc/main.h`, `Core/Src/gpio.c` |
-| FDCAN IRQ | Part I/II 수신 | `FDCAN1_IT0_IRQn`, priority 5 | `Core/Src/fdcan.c` |
-| USART IRQ/DMA | STM_B frame 수신 | `USART1_IRQn`, priority 5, DMA1 CH3/4 | `Core/Src/usart.c` |
+| `PA13` | `CN7-13` | `SWDIO` | ST-LINK SWD |
+| `PA14` | `CN7-15` | `SWCLK` | ST-LINK SWD |
+| `PB3` | `CN10-31` (D3) | `SWO` | trace 출력 |
+| `PF0`/`PF1` | `CN7-29`/`CN7-31` | `RCC_OSC_IN`/`RCC_OSC_OUT` | `.ioc`에만 잡혀 있고 실제 clock은 HSI PLL |
+| `PC14`/`PC15` | `CN7-25`/`CN7-27` | `RCC_OSC32_IN`/`RCC_OSC32_OUT` | application 미사용 |
 
-시스템 clock은 HSI+PLL 170 MHz이며 MCU target과 linker script는
-STM32G474 Cortex-M4F를 기준으로 합니다.
+### 4.4 배선 상대
 
-## 4. 소프트웨어 구조
+| STM_A 핀 | 실차 연결 | HIL bench 연결 |
+|---|---|---|
+| `PA0` `CN7-28` | 가속 페달 포텐쇼미터 출력 | STM_TEST `PA4` `CN7-32` (`DAC1_OUT1`) |
+| `PA8` `CN10-23` | MANUAL/AUTO 모드 스위치 | STM_TEST `PC0` `CN7-38` (`HIL_MODE_OUT`) |
+| `PA9` `CN10-21` | FORWARD/REVERSE 기어 스위치 | STM_TEST `PC1` `CN7-36` (`HIL_GEAR_OUT`) |
+| `PA11`/`PA12` `CN10-14`/`CN10-12` | CAN transceiver → EZkontrol | CAN transceiver → STM_TEST `FDCAN1` (`CN10-14`/`CN10-12`) |
+| `PC4` `CN10-34` | STM_B `PC5` `CN10-6` (TX→RX) | 동일 |
+| `PC5` `CN10-6` | STM_B `PC4` `CN10-34` (RX←TX) | 동일 |
+| `PA2`/`PA3` `CN10-35`/`CN10-37` | ST-LINK virtual COM port → micro-ROS Agent | 동일 |
+
+모든 상대 보드와 signal ground를 공유해야 합니다. 아날로그·GPIO 신호는 3.3 V
+logic 기준입니다.
+
+## 5. 소프트웨어 구조
 
 | 파일 | 역할 |
 |---|---|
 | `Core/Src/main.c` | clock·Peripheral·RTOS 초기화 |
 | `Core/Src/app_freertos.c` | 전체 Task, ROS 2, CAN protocol, UART parser와 안전 로직 |
 | `Core/Src/globals.c` | Task·ISR 공유 상태와 fail-safe 초기값 |
-| `Core/Src/fdcan.c` | FDCAN timing, pin과 interrupt 설정 |
+| `Core/Src/fdcan.c` | FDCAN timing, 핀과 interrupt 설정 |
 | `Core/Src/usart.c` | micro-ROS LPUART1과 보드 간 USART1 설정 |
 | `Core/Src/adc.c`, `gpio.c` | 페달·스위치 입력 하드웨어 설정 |
 | `Middlewares/micro_ros/` | 정적 micro-ROS library, headers와 custom transport |
@@ -50,7 +111,9 @@ Queue, semaphore, mutex, software timer는 생성하지 않습니다. ISR→Task
 원형 buffer, E-stop과 shared 상태 snapshot은 FreeRTOS critical section을
 사용합니다. CAN status parsing은 FDCAN ISR callback에서 수행합니다.
 
-## 5. FreeRTOS Task
+인터럽트 우선순위는 `FDCAN1_IT0_IRQn`과 `USART1_IRQn` 모두 5입니다.
+
+## 6. FreeRTOS Task
 
 | Task | 역할 | 주기/Trigger | 우선순위 | 관련 파일 |
 |---|---|---:|---|---|
@@ -63,10 +126,12 @@ Queue, semaphore, mutex, software timer는 생성하지 않습니다. ISR→Task
 
 `osDelay()` 값은 nominal delay이며 Task 수행 시간은 별도로 더해집니다.
 
-## 6. micro-ROS 인터페이스
+## 7. 외부 인터페이스
 
-LPUART1 custom transport가 별도의 micro-ROS Agent에 연결됩니다. Agent 발견은
-500 ms마다 시도하고 ping call timeout은 100 ms입니다.
+LPUART1(`PA2`/`PA3`) custom transport가 별도의 micro-ROS Agent에 연결됩니다. Agent
+발견은 500 ms마다 시도하고 ping call timeout은 100 ms입니다. node 이름은
+`/stm_a_node`이며 publisher와 subscriber는 micro-ROS default QoS를 사용합니다.
+메시지 원본은 별도 `kaiev26_msgs` 저장소를 따릅니다.
 
 ### Subscribers
 
@@ -80,13 +145,12 @@ LPUART1 custom transport가 별도의 micro-ROS Agent에 연결됩니다. Agent 
 |---|---|---:|---|
 | `/drive/status` | `kaiev26_msgs/msg/DriveActuatorStatus` | 50 ms | mode·gear·속도, command·CAN status freshness와 진단 |
 
-node 이름은 `/stm_a_node`이며 publisher와 subscriber는 micro-ROS default QoS를
-사용합니다. 메시지 원본은 별도 `kaiev26_msgs` 저장소를 따릅니다.
+## 8. 동작 상세
 
-## 7. EZkontrol CAN
+### 8.1 EZkontrol CAN (`PA11`/`PA12`)
 
 STM_A는 handshake ACK가 CAN TX FIFO에 들어가기 전에는 traction command를 보내지
-않습니다. 완료 후 Control task가 AUTO speed-control 또는 MANUAL torque-control
+않습니다. 완료 후 `Control` Task가 AUTO speed-control 또는 MANUAL torque-control
 command를 50 ms nominal 주기로 보냅니다.
 
 - command: `0x0C01EFD0`
@@ -101,7 +165,7 @@ byte layout, 물리 단위와 handshake frame은
 [`../../docs/INTERFACES.md`](../../docs/INTERFACES.md#6-ezkontrol-can)를
 기준으로 합니다.
 
-## 8. STM_B UART
+### 8.2 STM_B UART (`PC4`/`PC5`)
 
 USART1으로 다음 두 frame을 교환합니다.
 
@@ -114,9 +178,9 @@ frame은 SOF `AA 55`, type, payload length, sequence, payload, CRC-8로 구성�
 [`../../docs/INTERFACES.md`](../../docs/INTERFACES.md#5-stm_a--stm_b-uart)를
 참고하십시오.
 
-## 9. 입력 처리
+### 8.3 입력 처리
 
-### 가속 페달
+가속 페달 (`PA0`):
 
 - ADC raw 8회 평균
 - raw clamp: `560`~`3100`
@@ -126,16 +190,14 @@ frame은 SOF `AA 55`, type, payload length, sequence, payload, CRC-8로 구성�
 현재 raw clamp 값은 코드 상수이며 실차 calibration revision이나 측정 근거 파일은
 현재 코드에서 확인되지 않습니다.
 
-### mode와 gear
+모드와 기어 스위치, 두 입력 모두 pull-up입니다.
 
-두 입력 모두 pull-up입니다.
+| 입력 | MCU 핀 | 보드 커넥터 | GPIO low | GPIO high |
+|---|---|---|---|---|
+| `SW_MODE` | `PA8` | `CN10-23` (D7) | AUTO (`1`) | MANUAL (`0`) |
+| `SW_GEAR` | `PA9` | `CN10-21` (D8) | REVERSE (`1`) | FORWARD (`0`) |
 
-| 입력 | GPIO low | GPIO high |
-|---|---|---|
-| `SW_MODE` (`PA8`) | AUTO (`1`) | MANUAL (`0`) |
-| `SW_GEAR` (`PA9`) | REVERSE (`1`) | FORWARD (`0`) |
-
-## 10. 제어 흐름
+### 8.4 제어 흐름
 
 ```mermaid
 sequenceDiagram
@@ -159,7 +221,7 @@ AUTO 속도는 `speed_target_mps`를 타이어 지름 `0.47 m`, 감속비 `4.60`
 motor RPM에 변환합니다. MANUAL에서는 pedal percentage를 torque current로
 변환하고 물리 gear로 부호를 정합니다.
 
-## 11. 안전 동작
+### 8.5 안전 동작
 
 STM_A는 다음 중 하나이면 EZkontrol에 RPM 0, current 0, RUNNING 0의 HALTED
 command를 보냅니다.
@@ -172,7 +234,7 @@ command를 보냅니다.
 상세 논리와 복구 조건은
 [`../../docs/SAFETY.md`](../../docs/SAFETY.md)를 기준으로 합니다.
 
-## 12. 빌드
+## 9. 빌드
 
 권장 워크스페이스인 `~/KAI_ws` 루트에서 STM_A만 Release로 빌드합니다.
 
@@ -182,19 +244,28 @@ cmake -S src/Control/firmware/STM_A --preset Release
 cmake --build src/Control/firmware/STM_A/build/Release
 ```
 
-결과물은 `src/Control/firmware/STM_A/build/Release/STM_A.elf`입니다. 공통 toolchain과
-micro-ROS Agent 빌드는 [`../README.md`](../README.md)를 참고하십시오.
+결과물은 `src/Control/firmware/STM_A/build/Release/STM_A.elf`입니다. STM_A preset은
+`/opt/st/stm32cubeclt_1.20.0/`의 `arm-none-eabi` compiler 경로를 명시합니다. 공통
+toolchain과 micro-ROS Agent 빌드는 [`../README.md`](../README.md)를 참고하십시오.
 
-## 13. 플래시 및 실행
+## 10. 플래시 및 실행
 
 현재 저장소에는 ST-Link flash command나 board-specific flash script가 없습니다.
 사용하는 ST-Link 환경에서 `STM_A.elf`를 대상 STM_A 보드에 flash하십시오.
+
+Agent는 STM_A의 LPUART1 장치에 하나 붙입니다.
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/KAI_ws/install/setup.bash
+ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/stm_a -b 115200
+```
 
 > **경고:** STM_B와 혼동하지 않도록 보드, serial device와 연결된 액추에이터를
 > 먼저 확인하십시오. linker script의 FLASH origin은 `0x08000000`이지만, 사용하는
 > 도구의 flash·reset 명령은 현재 저장소에 없어 TBD입니다.
 
-## 14. 상태 확인
+## 11. 상태 확인
 
 Agent 연결 후 다음을 확인합니다.
 
@@ -207,17 +278,19 @@ ros2 topic echo /drive/status
 `/drive/status`에서 `command_timeout`, `stop_request`, `part1_valid`,
 `part2_valid`, 각 age와 `fault_bits`를 함께 확인하십시오.
 
-## 15. 알려진 제한사항
+## 12. 알려진 제한사항
 
 - EZkontrol Part I/II 200 ms timeout은 진단 valid flag만 내리고 traction을
   HALTED로 만들지 않습니다.
 - CAN TX 실패를 latch하는 fault 상태 머신은 없습니다.
 - MCU independent watchdog 사용은 현재 코드에서 확인되지 않습니다.
 - pedal calibration 값은 코드 상수이고 별도 calibration metadata가 없습니다.
+- `SW_MODE`·`SW_GEAR`에 software debounce가 없습니다.
 - `MotorRx` Task는 실제 수신 작업을 하지 않으며 CAN callback이 처리합니다.
-- flash 절차와 실차 connector pinout은 문서화 필요 상태입니다.
+- flash 절차와 실차 connector pinout은 문서화 필요 상태입니다. 위 핀맵은 MCU 핀
+  기준이며 실차 하네스 connector 번호는 아직 정리되지 않았습니다.
 
-## 16. 관련 문서
+## 13. 관련 문서
 
 - 펌웨어 공통 빌드·Agent: [`../README.md`](../README.md)
 - 상대 보드: [`../STM_B/README.md`](../STM_B/README.md)

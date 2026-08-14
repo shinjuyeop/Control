@@ -110,7 +110,7 @@ Parameters:
 ## Safe state
 
 bridge의 Safe State는 firmware의
-[Safe defaults](../../../firmware/STM_TEST/README.md#3-safe-defaults)와 같다. bridge는 이 상태를
+[부팅 기본값](../../../firmware/STM_TEST/README.md#81-부팅-기본값)과 같다. bridge는 이 상태를
 desired state에 저장하고 serial 재연결 후 재적용한다. command generator의
 `enabled`는 별도 상태이므로 Safe State 적용 전에 따로 끄는다.
 
@@ -118,7 +118,7 @@ desired state에 저장하고 serial 재연결 후 재적용한다. command gene
 
 Plant를 켜면 `/vehicle/command` -> STM_A -> EZ CAN -> STM_TEST -> EZ CAN ->
 `/drive/status` 경로로 피드백이 닫힌다. Plant 모델, 계수와 RPM 계산은 firmware
-[Plant 명세](../../../firmware/STM_TEST/README.md#plant)를 따른다.
+[EZkontrol emulator 명세](../../../firmware/STM_TEST/README.md#82-ezkontrol-emulator-fdcan1-pa11pa12)를 따른다.
 
 plant가 켜져 있으면 motion은 명령을 따라가므로 desired state의 speed/RPM과 다른 것이
 정상이다. `stm_test_bridge`는 이때 speed/RPM 불일치를 diagnostics에서 제외한다.
@@ -136,7 +136,7 @@ GUI는 KEYA 패널을 항상 표시하고 CAN 주변장치 초기화(`keya_ok`)�
 이후 수신이 끊기면 `STALE RX`로 표시한다. 현재 EZ CAN만 연결된
 bench에서는 `NO RX / NOT CONNECTED`가 정상이다. KEYA CAN ID, payload,
 heartbeat와 조향 추종 모델은 firmware
-[KEYA emulator 명세](../../../firmware/STM_TEST/README.md#6-keya-emulator)에 있다.
+[KEYA emulator 명세](../../../firmware/STM_TEST/README.md#83-keya-emulator-fdcan2-pb12pb13)에 있다.
 
 ## Firmware protocol compatibility
 
