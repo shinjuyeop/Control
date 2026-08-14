@@ -26,9 +26,10 @@ KEYA 조향 CAN의 데이터 계약과 주기·timeout을 정리하는 기준 �
 
 | 송신 | 수신 | 방식 | 이름/ID | 데이터 | 주기 | Timeout | 설명 |
 |---|---|---|---|---|---:|---:|---|
-| 상위 제어기 | STM_A | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 현재 코드에서 확인되지 않음 | 500 ms | AUTO 속도·brake |
-| 상위 제어기 | STM_B | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 현재 코드에서 확인되지 않음 | 적용 안 함 | brake만 저장 |
-| 상위 제어기 | 조향 노드 | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 현재 코드에서 확인되지 않음 | 200 ms | ACTIVE 조향 freshness |
+| Planning (TBD) | `command_governor` | ROS 2 | `/planning/command` | `ActuatorCommand` | Planning 미구현; HIL 대역은 20 Hz | 거버너 입력 게이트 200 ms | Planning 의도. HIL은 `hil_command_generator`가 대역 |
+| `command_governor` | STM_A | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 500 ms | AUTO 속도·brake |
+| `command_governor` | STM_B | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 적용 안 함 | brake만 저장 |
+| `command_governor` | 조향 노드 | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 200 ms | ACTIVE 조향 freshness |
 | STM_A | Host·조향·상태 통합 | ROS 2 | `/drive/status` | `DriveActuatorStatus` | 50 ms | 조향에서 1500 ms | mode·gear·구동 진단 |
 | STM_B | Host·조향·상태 통합 | ROS 2 | `/brake/status` | `BrakeActuatorStatus` | 50 ms 및 원인 변경 시 | 조향에서 별도 timeout 없음 | brake·E-stop 원인 |
 | 조향 노드 | Host·상태 통합 | ROS 2 | `/steering/status` | `SteeringActuatorStatus` | 20 ms | 상태 통합에서 별도 timeout 없음 | 조향 상태·진단 |
@@ -47,7 +48,8 @@ KEYA 조향 CAN의 데이터 계약과 주기·timeout을 정리하는 기준 �
 
 | Topic | Publisher | Subscriber | Type | Rate | QoS | 설명 |
 |---|---|---|---|---:|---|---|
-| `/vehicle/command` | Production publisher는 현재 코드에서 확인되지 않음 | STM_A, STM_B, `steering_actuator_node` | `kaiev26_msgs/msg/ActuatorCommand` | TBD | default | 속도·조향·최종 brake 명령 |
+| `/planning/command` | Planning (production 미구현), HIL은 `hil_command_generator` | `command_governor` | `kaiev26_msgs/msg/ActuatorCommand` | Planning TBD; HIL 20 Hz | default | Planning 의도 명령 |
+| `/vehicle/command` | `command_governor` (유일 발행자) | STM_A, STM_B, `steering_actuator_node` | `kaiev26_msgs/msg/ActuatorCommand` | 입력 연동; HIL 20 Hz | default | 속도·조향·최종 brake 명령 |
 | `/drive/status` | `/stm_a_node` | 조향 노드, `vehicle_state_publisher` | `kaiev26_msgs/msg/DriveActuatorStatus` | 20 Hz | default | mode·gear·구동 명령 및 EZkontrol 진단 |
 | `/brake/status` | `/stm_b_node` | 조향 노드, `vehicle_state_publisher` | `kaiev26_msgs/msg/BrakeActuatorStatus` | 20 Hz + 변경 시 | default | 브레이크 command와 stop reason |
 | `/steering/status` | `/steering_actuator_node` | `vehicle_state_publisher`, 진단 도구 | `kaiev26_msgs/msg/SteeringActuatorStatus` | 50 Hz | Keep Last 10, reliable, volatile | 조향 상태 머신·timeout·모터 진단 |
@@ -58,6 +60,7 @@ QoS이며, 조향·상태 통합의 depth `10`도 rclcpp/rclpy default QoS를 �
 실제 RMW별 endpoint 호환성은 다음 명령으로 확인하십시오.
 
 ```bash
+ros2 topic info -v /planning/command
 ros2 topic info -v /vehicle/command
 ros2 topic info -v /drive/status
 ros2 topic info -v /brake/status
@@ -65,10 +68,14 @@ ros2 topic info -v /steering/status
 ros2 topic info -v /vehicle/state
 ```
 
-`/vehicle/command` production publisher와 발행률은 현재 저장소에서 확인되지
-않습니다. 벤치·시각화용 시험 publisher는 존재하지만 실차 제어기의 기준 구현이
-아닙니다. 실차 발행률은 STM_A의 500 ms와 조향의 200 ms freshness 한계보다
-충분히 빨라야 하며, 구체 값은 TBD입니다.
+`/vehicle/command`의 발행자는 `command_governor` 하나입니다. 거버너는
+`/planning/command`를 수신 즉시 정합성 게이트(stamp 0·음수, 나이 ±200 ms,
+finite)를 거쳐 재-stamp 후 재발행하며, 자체 타이머와 keep-alive가 없으므로 발행률은
+입력을 그대로 따릅니다. 따라서 상류(Planning; HIL은 `hil_command_generator`
+20 Hz)가 STM_A의 500 ms와 조향의 200 ms freshness 한계보다 충분히 빠르게
+발행해야 합니다. 5 Hz는 조향 200 ms의 경계라 간헐 timeout이 납니다.
+`/planning/command`의 production Planning publisher는 아직 구현되지 않았습니다
+(`src/Decision` 비어 있음).
 
 ### 4.2 조향 보조 topic
 
@@ -315,6 +322,7 @@ bus voltage·driver temperature는 500 ms 간격으로 번갈아 조회합니다
 | 조향 CAN timeout | 500 ms | `can_timeout_ms` | `steering_actuator.yaml` |
 | 조향 position timeout | 500 ms | `feedback_timeout_ms` | `steering_actuator.yaml` |
 | 조향 mode timeout | 1500 ms | `mode_timeout_ms` | `steering_actuator.yaml` |
+| 거버너 입력 나이 게이트 | 200 ms | `input_timeout_ms` | `command_governor.yaml` |
 | `/vehicle/state` publish | 50 ms | `publish_rate_hz=20.0` | vehicle state publisher |
 
 경계 비교는 구현마다 다릅니다. STM Host와 UART timeout은 `>=`, EZkontrol valid는
@@ -328,12 +336,14 @@ bus voltage·driver temperature는 500 ms 간격으로 번갈아 조회합니다
 - STM_B: `firmware/STM_B/Core/Src/app_freertos.c`
 - STM_B PWM: `firmware/STM_B/Core/Src/tim.c`
 - 조향: `software/src/lateral_ctrl/src/`
+- 명령 거버너: `software/src/command_governor/src/`
 - 상태 통합: `software/src/vehicle_state_publisher/`
 - 메시지 원본: 별도 workspace repository `kaiev26_msgs/msg/`
 
 ## 10. 확인 필요 항목
 
-- Production `/vehicle/command` publisher, 발행률과 명령 생성 책임
+- Production `/planning/command` publisher (Planning)와 발행률.
+  `/vehicle/command` 발행자는 `command_governor`로 확정됨
 - STM_A→STM_B UART timeout을 브레이크 판단에 포함할지 여부
 - EZkontrol Part I/II 손실을 traction stop 조건으로 포함할지 여부
 - EZkontrol status 실제 송신 주기

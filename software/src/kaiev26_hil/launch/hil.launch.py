@@ -1,4 +1,10 @@
-"""STM_TEST bridge와 command generator 위에 GUI 또는 scenario runner를 얹는다.
+"""STM_TEST bridge, command generator와 command governor 위에 GUI 또는
+scenario runner를 얹는다.
+
+명령 체인은 실차와 동일하다: hil_command_generator(Planning 대역)가
+/planning/command를 내고 command_governor가 /vehicle/command로 재발행한다.
+governor를 빼면 /vehicle/command 발행자가 사라져 STM_A Host command 미수신,
+STM_B command age 증가, 조향 MODE_TIMEOUT로 진단이 온통 고장으로 보인다.
 
 `gui`와 `scenario_file`은 서로 독립이다. 기본값(`gui:=true`, scenario 없음)은
 운영자가 GUI로 직접 주입하는 평소 HIL 실행이고, `gui:=false`에 `scenario_file`을
@@ -43,6 +49,15 @@ def generate_launch_description():
         Node(
             package="kaiev26_hil", executable="command_generator", name="hil_command_generator",
             output="screen", parameters=[config],
+        ),
+        # /vehicle/command의 유일한 발행자. 자기 패키지의 config를 그대로 쓴다.
+        Node(
+            package="command_governor", executable="command_governor_node",
+            name="command_governor", output="screen",
+            parameters=[os.path.join(
+                get_package_share_directory("command_governor"),
+                "config", "command_governor.yaml",
+            )],
         ),
         Node(
             package="kaiev26_hil", executable="hil_gui", name="hil_gui", output="screen",

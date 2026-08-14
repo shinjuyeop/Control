@@ -1,4 +1,9 @@
-"""Test-only publisher for the canonical /vehicle/command contract."""
+"""Test-only publisher standing in for Planning on /planning/command.
+
+The command chain is /planning/command -> command_governor -> /vehicle/command.
+This node fills the Planning slot on the bench; the governor remains the only
+/vehicle/command publisher.
+"""
 
 from __future__ import annotations
 
@@ -19,7 +24,7 @@ class CommandGenerator(Node):
         self.declare_parameter("speed_target_mps", 0.0)
         self.declare_parameter("steering_target_rad", 0.0)
         self.declare_parameter("brake_engage", False)
-        self.declare_parameter("command_topic", "/vehicle/command")
+        self.declare_parameter("command_topic", "/planning/command")
         self._publisher = self.create_publisher(
             ActuatorCommand, str(self.get_parameter("command_topic").value), 10
         )
@@ -27,8 +32,9 @@ class CommandGenerator(Node):
         rate = max(1.0, float(self.get_parameter("publish_rate_hz").value))
         self._timer = self.create_timer(1.0 / rate, self._publish)
         self.get_logger().warning(
-            "HIL TEST SOURCE: this node publishes the production /vehicle/command contract. "
-            "Ensure no Planning publisher is active at the same time."
+            "HIL TEST SOURCE: this node stands in for Planning on /planning/command. "
+            "Ensure no real Planning publisher is active at the same time. "
+            "/vehicle/command is owned by command_governor."
         )
 
     @staticmethod

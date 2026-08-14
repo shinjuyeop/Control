@@ -51,7 +51,7 @@ CAN 소켓조차 열지 않으려면 `hardware_can_enabled:=false`를 함께 줍
 
 | 토픽 | 타입 | 발행 주체 | 조향 노드가 사용하는 필드 |
 | --- | --- | --- | --- |
-| `/vehicle/command` | `kaiev26_msgs/msg/ActuatorCommand` | 판단·motion control 노드 | `steering_target_rad`, `brake_engage` |
+| `/vehicle/command` | `kaiev26_msgs/msg/ActuatorCommand` | `command_governor` (판단 계층은 `/planning/command`로 발행) | `steering_target_rad`, `brake_engage` |
 
 `ActuatorCommand`는 `header`, `steering_target_rad`, `speed_target_mps`,
 `brake_engage`만 가집니다. 조향각은 rad, 차량 좌회전 양수입니다. 기어와
@@ -159,9 +159,10 @@ ros2 topic echo /steering/enable_commanded
 candump -L can0
 ```
 
-정상 통합에서는 `/vehicle/command`의 발행자가 하나여야 합니다. AUTO와 유효한
-KEYA feedback만 들어온 직후에는 `WAIT_CMD`이고, 그 이후 새 명령을 받아야
-`ACTIVE`가 됩니다.
+정상 통합에서는 `/vehicle/command`의 발행자가 `command_governor` 하나여야
+합니다. Planning(HIL은 `hil_command_generator`)은 `/planning/command`로 내고
+거버너가 재발행합니다. AUTO와 유효한 KEYA feedback만 들어온 직후에는
+`WAIT_CMD`이고, 그 이후 새 명령을 받아야 `ACTIVE`가 됩니다.
 
 ## 순수 조향 벤치
 
@@ -169,10 +170,11 @@ STM_A/B 없이 조향만 단독으로 돌릴 때 씁니다. 벤치 노드가 `/d
 발행하므로 HIL bench나 실차 없이도 `ACTIVE`까지 갈 수 있고, 각도 시퀀스를 자동으로
 순회하므로 캘리브레이션처럼 반복 스윕이 필요한 작업에 적합합니다.
 
-> **HIL bench와 동시에 실행하지 마십시오.** `kaiev26_hil`의
-> `hil_command_generator`와 이 노드가 모두 `/vehicle/command`를 발행하므로
-> 명령이 서로 덮어써집니다. HIL bench에서 조향을 시험할 때는
-> `hil_command_generator`만 사용합니다. 확인은 다음과 같이 합니다.
+> **HIL bench와 동시에 실행하지 마십시오.** HIL 스택의 `command_governor`와
+> 이 노드가 모두 `/vehicle/command`를 발행하므로 명령이 서로 덮어써집니다.
+> 이 노드는 governor를 우회하는 조향 단독 벤치 전용입니다. HIL bench에서
+> 조향을 시험할 때는 `hil_command_generator`(governor 경유)만 사용합니다.
+> 확인은 다음과 같이 합니다.
 >
 > ```bash
 > ros2 topic info -v /vehicle/command   # publisher가 하나인지

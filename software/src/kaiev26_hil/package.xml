@@ -16,6 +16,8 @@
   <exec_depend>rcl_interfaces</exec_depend>
   <exec_depend>kaiev26_msgs</exec_depend>
   <exec_depend>lateral_ctrl</exec_depend>
+  <!-- hil.launch.py가 /vehicle/command 재발행자인 command_governor를 띄운다. -->
+  <exec_depend>command_governor</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>

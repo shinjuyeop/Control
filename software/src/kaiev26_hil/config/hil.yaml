@@ -13,12 +13,15 @@ stm_test_bridge:
 
 hil_command_generator:
   ros__parameters:
-    # 기본으로 발행한다. 끄면 /vehicle/command가 아예 없어 STM_A는 Host command
-    # 미수신, STM_B는 command age 증가 상태가 되고 조향은 MODE_TIMEOUT으로 남아,
-    # 진단이 온통 고장으로 보인다. 목표값은 모두 0이라 켜져 있어도 정지 명령이다.
+    # 기본으로 발행한다. 끄면 command_governor가 중계할 입력이 없어
+    # /vehicle/command가 끊기고, STM_A는 Host command 미수신, STM_B는 command
+    # age 증가 상태가 되며 조향은 MODE_TIMEOUT으로 남아 진단이 온통 고장으로
+    # 보인다. 목표값은 모두 0이라 켜져 있어도 정지 명령이다.
     enabled: true
     publish_rate_hz: 20.0
     speed_target_mps: 0.0
     steering_target_rad: 0.0
     brake_engage: false
-    command_topic: "/vehicle/command"
+    # Planning 대역이므로 /planning/command로 낸다. /vehicle/command는
+    # command_governor가 재발행하는 출력 토픽이라 직접 발행하지 않는다.
+    command_topic: "/planning/command"

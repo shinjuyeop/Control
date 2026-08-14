@@ -30,15 +30,17 @@ STM_TEST bridge, HIL GUI, KEYA 조향 및 차량 상태 GUI까지 실행·검증
 ## 1. 실행 구성
 
 ```text
-HIL command generator ── /vehicle/command ──┬─> STM_A ── EZ CAN1 ──> STM_TEST
-                                             │                         │
-                                             │    motor feedback CAN1 <┘
-                                             │
-                                             ├─> STM_B ── brake PWM ──> STM_TEST
-                                             │
-                                             └─> lateral_ctrl ─ KEYA CAN2 ─> STM_TEST
-                                                                         │
-                                                   steering feedback <────┘
+HIL command generator ── /planning/command ──> command_governor
+                                                     │
+                              /vehicle/command ──────┼─> STM_A ── EZ CAN1 ──> STM_TEST
+                                                     │                          │
+                                                     │     motor feedback CAN1 <┘
+                                                     │
+                                                     ├─> STM_B ── brake PWM ──> STM_TEST
+                                                     │
+                                                     └─> lateral_ctrl ─ KEYA CAN2 ─> STM_TEST
+                                                                                │
+                                                            steering feedback <─┘
 
 STM_TEST GPIO/DAC ──> STM_A/B mode, gear, pedal, E-stop inputs
 STM_A/B serial ──> micro-ROS Agent ──> /drive/status, /brake/status
@@ -51,7 +53,7 @@ STM_TEST serial ──> stm_test_bridge ──> /hil/status
 |---|---|---|
 | STM_A Agent | `/dev/hil_a` ↔ `/stm_a_node` | 필수 |
 | STM_B Agent | `/dev/hil_b` ↔ `/stm_b_node` | 필수 |
-| `hil.launch.py` | STM_TEST bridge, command generator, HIL GUI | 필수 |
+| `hil.launch.py` | STM_TEST bridge, command generator, command governor, HIL GUI | 필수 |
 | `hil_bench.launch.py` | 위 세 줄을 한 번에 실행 | 위 세 줄의 대안 |
 | `lateral_ctrl` | SocketCAN `can0` KEYA 제어 | 조향을 시험할 때 |
 | `vehicle_state_publisher` | status 3종 → `/vehicle/state` | 조향 status가 있을 때 |
@@ -240,10 +242,11 @@ done
 ### 6.2 중복 프로세스
 
 같은 serial 장치를 두 프로세스가 열거나 `/vehicle/command` publisher가 둘 이상
-생기지 않게 한다.
+생기지 않게 한다. `/vehicle/command`의 정상 발행자는 `command_governor`
+하나뿐이다.
 
 ```bash
-pgrep -af 'micro_ros_agent|stm_test_bridge|hil_gui|steering_actuator_node' || true
+pgrep -af 'micro_ros_agent|stm_test_bridge|hil_gui|steering_actuator_node|command_governor_node' || true
 ros2 node list
 ros2 topic info -v /vehicle/command
 ```
@@ -328,8 +331,9 @@ ros2 launch kaiev26_hil hil.launch.py \
 ```
 
 이 launch는 연결 시 bridge의 안전한 기본 desired state를 STM_TEST에 재적용한다.
-command generator는 기본값 `enabled=true`로 `/vehicle/command`를 20 Hz로
-발행한다. 목표값은 `speed_target_mps`·`steering_target_rad` 모두 0이고
+command generator는 기본값 `enabled=true`로 `/planning/command`를 20 Hz로
+발행하고, 함께 뜨는 `command_governor`가 이를 `/vehicle/command`로 재발행한다.
+목표값은 `speed_target_mps`·`steering_target_rad` 모두 0이고
 `brake_engage`는 false이므로 정지 명령이다. 발행을 멈추려면
 `ros2 param set /hil_command_generator enabled false`.
 
@@ -610,8 +614,8 @@ ros2 launch lateral_ctrl steering_actuator.launch.py \
 ### 10.3 조향 폐루프 시험
 
 조향 노드는 AUTO에서만 KEYA를 Enable한다. 명령원은
-`hil_command_generator`를 쓴다. `steering_bench_test_node`는 같은
-`/vehicle/command`를 발행하므로 함께 켜지 않는다.
+`hil_command_generator`(→ governor 경유)를 쓴다. `steering_bench_test_node`는
+governor를 우회해 `/vehicle/command`를 직접 발행하므로 함께 켜지 않는다.
 
 ```bash
 ros2 param set /hil_command_generator enabled false
@@ -728,7 +732,7 @@ sudo ip link set can0 down
 강제 종료가 필요하면 먼저 PID와 명령을 정확히 확인하고 해당 PID만 종료한다.
 
 ```bash
-pgrep -af 'micro_ros_agent|stm_test_bridge|hil_gui|steering_actuator_node'
+pgrep -af 'micro_ros_agent|stm_test_bridge|hil_gui|steering_actuator_node|command_governor_node'
 ```
 
 ## 14. 문제 해결
@@ -811,8 +815,10 @@ ros2 topic echo --once /steering/status
 ros2 topic pub --once /hil/command std_msgs/msg/String '{data: "SET MODE AUTO"}'
 ```
 
-`/vehicle/command` 발행자가 둘 이상이면 명령이 서로 덮어쓴다.
-`hil_command_generator`와 `steering_bench_test_node`를 동시에 켜지 않는다.
+`/vehicle/command` 발행자가 둘 이상이면 명령이 서로 덮어쓴다. 정상 구성에서
+발행자는 `command_governor` 하나다. governor를 우회하는
+`steering_bench_test_node`나 `visualization`의 `test_publisher`를 HIL 스택과
+동시에 켜지 않는다.
 
 ```bash
 ros2 topic info -v /vehicle/command

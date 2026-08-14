@@ -494,15 +494,16 @@ if QtWidgets is not None:
             page = QtWidgets.QWidget()
             layout = QtWidgets.QVBoxLayout(page)
             warning = QtWidgets.QLabel(
-                "End-to-end test source: /vehicle/command → STM_A/lateral controller → "
-                "physical outputs → STM_TEST. These are not direct STM_TEST injections."
+                "End-to-end test source: /planning/command → command_governor → "
+                "/vehicle/command → STM_A/lateral controller → physical outputs → "
+                "STM_TEST. These are not direct STM_TEST injections."
             )
             warning.setWordWrap(True)
             warning.setStyleSheet(
                 "font-weight:bold;background:#fff8c5;color:#9a6700;padding:10px"
             )
             layout.addWidget(warning)
-            production = QtWidgets.QGroupBox("Production Command Generator (/vehicle/command)")
+            production = QtWidgets.QGroupBox("Production Command Generator (/planning/command)")
             prod = QtWidgets.QFormLayout(production)
             self.prod_enabled = QtWidgets.QCheckBox("Publish commands")
             self.prod_speed = QtWidgets.QDoubleSpinBox()

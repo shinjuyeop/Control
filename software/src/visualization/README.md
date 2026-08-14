@@ -164,20 +164,22 @@ freshness는 MCU의 header stamp가 아니라 GUI 프로세스의 실제 수신 
 조향 feedback이 invalid이면 실제 조향각이라고 단정하지 않고 demo 적분에서
 0 rad를 사용한다.
 
-## 향후 command governor
+## command governor
 
-이번 패키지에는 command governor를 구현하지 않았다. 향후 명령 경로는 다음
-방향을 계획할 수 있다.
+명령 경로에 `command_governor`가 들어와 있다
+([`../command_governor/README.md`](../command_governor/README.md)).
 
 ```text
-/vehicle/command_raw
+/planning/command
         ↓
-command_governor
+command_governor (현재 패스스루, 형상은 이후 단계)
         ↓
 /vehicle/command
 ```
 
-향후 GUI에서는 raw / governed / actual 값을 비교할 예정이다.
+향후 GUI에서는 planning / governed / actual 값을 비교할 예정이다. 거버너가
+형상을 시작하면 `/governor/status`류의 "무엇을 얼마나 잘랐는지" 표시가 함께
+필요하다.
 
 ## 문제 해결
 

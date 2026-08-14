@@ -39,7 +39,7 @@ Control/
 ├── software/
 │   └── src/
 │       ├── lateral_ctrl/            # KEYA 조향 액추에이터 제어
-│       ├── longitudinal_ctrl/       # 종방향 패키지 골격
+│       ├── command_governor/        # /planning/command → /vehicle/command 단일 발행자
 │       ├── vehicle_state_publisher/ # status 3종을 /vehicle/state로 통합
 │       ├── control_launch/          # 통합 launch 자리
 │       ├── kaiev26_hil/             # STM_TEST bridge, HIL GUI, scenario, bench
@@ -64,7 +64,7 @@ Control/
 | 구성요소 | 현재 역할 |
 |---|---|
 | `lateral_ctrl` | `/vehicle/command`와 STM 상태를 사용한 KEYA 조향 모터 제어 및 `/steering/status` |
-| `longitudinal_ctrl` | 현재 패키지 골격만 있고 실행 노드는 없음 |
+| `command_governor` | `/planning/command`를 정합성 게이트 후 `/vehicle/command`로 재발행하는 유일한 발행자. 현재 패스스루이며 형상(속도 상한·램프·축간 협조)은 이후 단계 |
 | `vehicle_state_publisher` | 액추에이터 status 3종을 `/vehicle/state`로 통합 |
 | `control_launch` | 전체 제어 launch 파일용 패키지이며 현재 통합 launch는 없음 |
 | `kaiev26_hil` | STM_TEST serial bridge, 신호 방향 기반 GUI, command generator, HIL scenario와 `vcan` bench simulator |
@@ -94,10 +94,14 @@ source ~/KAI_ws/install/setup.bash
 STM 펌웨어 빌드와 보드별 micro-ROS Agent 실행 절차는
 [`firmware/README.md`](firmware/README.md)를 따릅니다.
 
-현재 `control_launch`에는 통합 launch가 없고 `longitudinal_ctrl`에는 실행 노드가
-없습니다. 문서에 없는 전체 차량 실행 명령을 추정해서 사용하지 마십시오. 지금
-문서화된 실행 절차는 HIL bench([HIL runbook](docs/HIL_RUNBOOK.md))와 조향 단독
-실행([lateral_ctrl](software/src/lateral_ctrl/README.md))뿐입니다.
+현재 `control_launch`에는 통합 launch가 없습니다. 문서에 없는 전체 차량 실행
+명령을 추정해서 사용하지 마십시오. 지금 문서화된 실행 절차는 HIL
+bench([HIL runbook](docs/HIL_RUNBOOK.md)), 조향 단독
+실행([lateral_ctrl](software/src/lateral_ctrl/README.md)), 거버너 단독
+실행([command_governor](software/src/command_governor/README.md))뿐입니다.
+과거의 종방향 패키지 골격 `longitudinal_ctrl`은 노드가 채워진 적 없이
+`command_governor`로 대체되었습니다. 종방향 하드 한도는 계속 STM_A 펌웨어에
+있습니다.
 
 ## 문서
 

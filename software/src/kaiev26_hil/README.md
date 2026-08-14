@@ -7,13 +7,17 @@ firmware나 production controller의 topic contract를 변경하지 않는다.
 ## 역할 구분
 
 ```text
-Production: Planning -> /vehicle/command -> Control -> STM_A/B -> Vehicle
+Production: Planning -> /planning/command -> command_governor -> /vehicle/command -> STM_A/B, lateral_ctrl
 Bench/SIL:  Command Generator -> Control -> vcan -> kaiev26_hil can_sim
-HIL:        Command Generator -> Control -> STM_A/B
-                                      ^       |
-                                      |       v
-                                  STM_TEST emulator
+HIL:        Command Generator -> /planning/command -> command_governor -> /vehicle/command -> STM_A/B
+                                                                                ^       |
+                                                                                |       v
+                                                                            STM_TEST emulator
 ```
+
+HIL도 실차와 같은 governor 경로를 지난다. `/vehicle/command`의 발행자는
+`command_governor` 하나뿐이다
+([`../command_governor/README.md`](../command_governor/README.md)).
 
 - `vehicle_state_publisher`, visualization, Foxglove: 차량 상태 관찰
 - `hil_gui`: STM_TEST 시험 조건 입력과 fault injection
@@ -74,8 +78,9 @@ ros2 topic echo /hil/status
 
 ### command_generator
 
-시험용 Planning 대체 노드다. `kaiev26_msgs/msg/ActuatorCommand`를 production과
-동일한 `/vehicle/command`에 발행한다. 별도 HIL target topic을 만들지 않는다.
+시험용 Planning 대체 노드다. `kaiev26_msgs/msg/ActuatorCommand`를 production
+Planning과 동일한 `/planning/command`에 발행하고, `command_governor`가 이것을
+`/vehicle/command`로 재발행한다. 별도 HIL target topic을 만들지 않는다.
 
 Parameters:
 
@@ -84,10 +89,11 @@ Parameters:
 - `steering_target_rad`
 - `brake_engage`
 - `publish_rate_hz`
+- `command_topic` (기본 `/planning/command`, 생성자에서 한 번만 읽음)
 
-실제 Planning publisher와 동시에 실행하면 안 된다. 기존
-`lateral_ctrl/steering_bench_test_node`는 호환성 때문에 유지했지만 신규 HIL 시험은
-이 node를 사용한다.
+실제 Planning publisher와 동시에 실행하면 안 된다. `/vehicle/command`를 직접
+발행하는 기존 `lateral_ctrl/steering_bench_test_node`는 호환성 때문에 유지했지만
+governor를 우회하므로, 신규 HIL 시험은 이 node를 사용한다.
 
 ### hil_gui
 
@@ -101,7 +107,8 @@ Parameters:
 - `Closed-loop simulation` / `Direct feedback override` 응답 모드
 - CAN enable, TX drop, controller fault는 별도 advanced tab
 - Safe State, AUTO+Forward, pedal preset, E-stop, fault clear, STATUS refresh
-- 별도 tab으로 분리된 production `/vehicle/command` 입력
+- 별도 tab으로 분리된 production `/planning/command` 입력 (governor 경유로
+  `/vehicle/command`가 됨)
 
 연결이 끊기면 일반 command panel은 비활성화되지만 Safe State는 계속 사용할 수
 있다. Safe State는 desired state에 저장되어 재연결 시 적용된다. GUI 종료 시에는
