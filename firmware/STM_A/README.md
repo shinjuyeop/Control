@@ -282,13 +282,45 @@ ros2 topic echo /drive/status
 
 - EZkontrol Part I/II 200 ms timeout은 진단 valid flag만 내리고 traction을
   HALTED로 만들지 않습니다.
-- CAN TX 실패를 latch하는 fault 상태 머신은 없습니다.
+- CAN TX 실패를 latch하는 fault 상태 머신은 없습니다. `tractive_commanded`는 매
+  주기 덮어써지므로 순간적인 TX 실패는 흔적 없이 사라집니다.
+- STM_A 자신의 FDCAN controller 상태를 알 수 없습니다. `part1_valid=false`는
+  EZkontrol 전원이 나간 경우와 STM_A CAN이 오류 상태로 송신을 못 하는 경우에
+  똑같이 나타납니다.
+- `MotorRx` Task는 실제 수신 작업을 하지 않으며 CAN callback이 처리합니다.
 - MCU independent watchdog 사용은 현재 코드에서 확인되지 않습니다.
 - pedal calibration 값은 코드 상수이고 별도 calibration metadata가 없습니다.
 - `SW_MODE`·`SW_GEAR`에 software debounce가 없습니다.
-- `MotorRx` Task는 실제 수신 작업을 하지 않으며 CAN callback이 처리합니다.
 - flash 절차와 실차 connector pinout은 문서화 필요 상태입니다. 위 핀맵은 MCU 핀
   기준이며 실차 하네스 connector 번호는 아직 정리되지 않았습니다.
+
+### 다음 `kaiev26_msgs` 개정에 함께 넣을 후보
+
+위 두 CAN 관련 항목은 `DriveActuatorStatus`에 field를 추가해야 해결됩니다. 지금
+단독으로 착수하지 않는 이유는 펌웨어 변경이 작은 데 비해 배포 비용이 크기
+때문입니다. 메시지가 바뀌면 STM_A와 STM_B의 micro-ROS type support를 함께
+재생성·재빌드하고 **두 보드를 모두 재플래시**해야 합니다
+([`../../docs/HIL_RUNBOOK.md`](../../docs/HIL_RUNBOOK.md#topic-traffic은-있는데-typed-message가-깨짐)).
+
+그 비용은 field를 몇 개 넣든 한 번만 내면 되므로, 다른 이유로 `kaiev26_msgs`를
+개정할 때 아래를 함께 넣는 것이 가장 저렴합니다.
+
+```
+uint32 can_tx_fail_count      # TX 실패 누적. latch 대용
+bool   can_bus_off
+bool   can_error_passive
+uint8  can_tx_error_count     # TEC. 배선·종단 열화의 조기 지표
+```
+
+`tractive_commanded` 자체를 latch시키는 방식은 쓰지 마십시오.
+`diagnostics_publisher`가 `tractive_commanded != tractive_feedback`을 불일치
+오류로 판정하므로, 한 번의 순간적 실패가 영구 고장으로 표시됩니다.
+
+STM_TEST에는 같은 값이 이미 `protocol=3` STATUS로 노출되어 있어
+([`../STM_TEST/README.md`](../STM_TEST/README.md#fdcan-bus-status-field)) field 이름과
+의미를 그대로 따르면 됩니다. 2026-08-14 bench 실측에서 `can0` 단절은
+error-passive이고 상대가 돌아오면 자동 복구되는 것으로 확인됐으므로, 이 field는
+복구 조치를 위한 것이 아니라 원인 구분과 배선 건전성 추세를 보기 위한 것입니다.
 
 ## 13. 관련 문서
 
