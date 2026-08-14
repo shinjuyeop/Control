@@ -194,12 +194,26 @@ void HilKEYA_Task(void)
       osDelay(HIL_KEYA_TASK_PERIOD_MS);
       continue;
     }
+    /* Registers only; read outside the mutex to keep the section short. */
+    FDCAN_ProtocolStatusTypeDef psr;
+    FDCAN_ErrorCountersTypeDef ecr;
+    const bool bus_status_ok =
+        (HAL_FDCAN_GetProtocolStatus(&hfdcan2, &psr) == HAL_OK) &&
+        (HAL_FDCAN_GetErrorCounters(&hfdcan2, &ecr) == HAL_OK);
+
     HilState_t *shared = HilState_Lock(2u);
     if (shared != NULL) {
       shared->keya_can_healthy = s_initialized && !s_rx_overflow;
       shared->keya_motor_enabled = s_motor_enabled;
       shared->keya_rx_age_ms = rx_seen ?
           (uint32_t)(osKernelGetTickCount() - last_rx) : UINT32_MAX;
+      if (bus_status_ok) {
+        shared->keya_bus_off = (psr.BusOff != 0u);
+        shared->keya_error_passive = (psr.ErrorPassive != 0u);
+        shared->keya_warning = (psr.Warning != 0u);
+        shared->keya_tec = (uint8_t)ecr.TxErrorCnt;
+        shared->keya_rec = (uint8_t)ecr.RxErrorCnt;
+      }
       HilState_Unlock();
     }
     s_rx_overflow = false;

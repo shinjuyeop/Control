@@ -160,7 +160,24 @@ _EXTENDED_STATUS_CONVERTERS: Dict[str, Callable[[str], object]] = {
     "keya_rx_age_ms": int,
 }
 
-_STATUS_CONVERTERS = {**_BASE_STATUS_CONVERTERS, **_EXTENDED_STATUS_CONVERTERS}
+_PROTOCOL3_STATUS_CONVERTERS: Dict[str, Callable[[str], object]] = {
+    "ez_busoff": lambda value: bool(int(value)),
+    "ez_errpass": lambda value: bool(int(value)),
+    "ez_warn": lambda value: bool(int(value)),
+    "ez_tec": int,
+    "ez_rec": int,
+    "keya_busoff": lambda value: bool(int(value)),
+    "keya_errpass": lambda value: bool(int(value)),
+    "keya_warn": lambda value: bool(int(value)),
+    "keya_tec": int,
+    "keya_rec": int,
+}
+
+_STATUS_CONVERTERS = {
+    **_BASE_STATUS_CONVERTERS,
+    **_EXTENDED_STATUS_CONVERTERS,
+    **_PROTOCOL3_STATUS_CONVERTERS,
+}
 
 _LEGACY_DEFAULTS = {
     "protocol": 1,
@@ -196,10 +213,14 @@ def parse_status(line: str, *, received_monotonic: float | None = None) -> HilSt
     if missing:
         raise ValueError(f"missing STATUS keys: {sorted(missing)}")
     protocol = int(values.get("protocol", 1))
-    if protocol not in {1, 2}:
+    if protocol not in {1, 2, 3}:
         raise ValueError(f"unsupported STATUS protocol: {protocol}")
     if protocol >= 2:
         missing = set(_EXTENDED_STATUS_CONVERTERS) - set(values)
+        if missing:
+            raise ValueError(f"missing protocol {protocol} STATUS keys: {sorted(missing)}")
+    if protocol >= 3:
+        missing = set(_PROTOCOL3_STATUS_CONVERTERS) - set(values)
         if missing:
             raise ValueError(f"missing protocol {protocol} STATUS keys: {sorted(missing)}")
     else:

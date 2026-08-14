@@ -185,14 +185,16 @@ bool HilLogic_ProcessCommand(HilState_t *state, char *line,
 
   if ((count == 1u) && token_is(tokens[0], "STATUS")) {
     (void)snprintf(reply, reply_size,
-      "STATUS protocol=2 mode=%s gear=%s pedal=%.1f estop_dash=%u estop_side=%u estop_rf=%u "
+      "STATUS protocol=3 mode=%s gear=%s pedal=%.1f estop_dash=%u estop_side=%u estop_rf=%u "
       "speed=%.2f rpm=%.0f voltage=%.1f current=%.1f motor_temp=%.1f "
       "brake_period_us=%lu brake_us=%lu brake=%s pwm_lost=%u "
       "steer=%.2f steer_target=%.2f ez_rx=%lu ez_tx=%lu keya_rx=%lu keya_tx=%lu "
       "ez_can=%u keya_can=%u ez_ok=%u keya_ok=%u ez_fault=%u keya_fault=%u "
       "plant=%u ez_target_rpm=%.0f ez_running=%u ez_speed_control=%u "
       "ez_command_rpm=%.0f ez_command_current=%.1f ez_rx_age_ms=%lu "
-      "keya_enabled=%u keya_rx_age_ms=%lu",
+      "keya_enabled=%u keya_rx_age_ms=%lu "
+      "ez_busoff=%u ez_errpass=%u ez_warn=%u ez_tec=%u ez_rec=%u "
+      "keya_busoff=%u keya_errpass=%u keya_warn=%u keya_tec=%u keya_rec=%u",
       state->auto_mode ? "AUTO" : "MANUAL", state->reverse ? "REV" : "FWD",
       (double)state->pedal_percent, state->estop_dashboard, state->estop_side,
       state->estop_rf, (double)state->vehicle_speed_kph, (double)state->motor_rpm,
@@ -211,7 +213,11 @@ bool HilLogic_ProcessCommand(HilState_t *state, char *line,
       state->ez_running, state->ez_speed_control,
       (double)state->ez_command_rpm, (double)state->ez_command_current_a,
       (unsigned long)state->ez_rx_age_ms, state->keya_motor_enabled,
-      (unsigned long)state->keya_rx_age_ms);
+      (unsigned long)state->keya_rx_age_ms,
+      state->ez_bus_off, state->ez_error_passive, state->ez_warning,
+      state->ez_tec, state->ez_rec,
+      state->keya_bus_off, state->keya_error_passive, state->keya_warning,
+      state->keya_tec, state->keya_rec);
     return true;
   }
   if ((count == 1u) && token_is(tokens[0], "HELP")) {

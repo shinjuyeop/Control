@@ -45,6 +45,18 @@ class HilStatus:
     ez_rx_age_ms: int = 4294967295
     keya_enabled: bool = False
     keya_rx_age_ms: int = 4294967295
+    # FDCAN protocol status per bus, protocol 3 and later. ez_ok/keya_ok only
+    # report peripheral init, so a stalled TX shows up here and not there.
+    ez_busoff: bool = False
+    ez_errpass: bool = False
+    ez_warn: bool = False
+    ez_tec: int = 0
+    ez_rec: int = 0
+    keya_busoff: bool = False
+    keya_errpass: bool = False
+    keya_warn: bool = False
+    keya_tec: int = 0
+    keya_rec: int = 0
     protocol: int = 1
     received_monotonic: float = 0.0
 

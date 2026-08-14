@@ -541,21 +541,39 @@ ip -details link show can0
 sudo ip link set can0 down && sudo ip link set can0 up
 ```
 
-### 10.1.1 can0을 내린 뒤에는 STM_TEST를 리셋한다
+### 10.1.1 can0을 내리면 STM_TEST 송신이 멈췄다가 스스로 복구된다
 
-CAN은 수신 노드가 ACK를 주어야 송신이 완료된다. `can0`을 내리거나 USB-CAN을
-분리하면 STM_TEST FDCAN2는 ACK를 받지 못해 TX FIFO가 3개에서 멈추고 에러 상태로
-들어간다. 현재 STM_TEST firmware에는 bus-off 복구 로직이 없으므로 `can0`을 다시
-올리는 것만으로는 회복되지 않는다.
+CAN은 수신 노드가 ACK를 주어야 송신이 완료된다. `can0`을 내리면 STM_TEST FDCAN2는
+ACK를 받지 못해 TX FIFO 3칸이 그대로 차고 송신이 멈춘다. `keya_tx`가 정확히 3만큼
+오른 뒤 정지하는 것이 이 상태다.
 
-순서는 다음과 같다.
+**보드 리셋은 필요 없다.** `can0`을 다시 올리면 송신이 즉시 재개된다.
 
-1. `can0`을 먼저 올린다.
-2. 그 다음 STM_TEST 보드의 RESET 버튼(B1)을 누른다.
+2026-08-14 실측(firmware protocol 3)에서 확인한 값이다.
 
-`/hil/status`의 `keya_tx`가 3에서 멈춰 있으면 이 상태다. 정상 복구되면 heartbeat
-주기에 맞춰 1초에 1씩 증가한다. `keya_ok`는 FDCAN 주변장치 초기화 결과일 뿐
-bus-off를 반영하지 않으므로 판정에 쓰지 않는다.
+| 시점 | `keya_tx` | `keya_busoff` | `keya_errpass` | `keya_tec` |
+|---|---:|---:|---:|---:|
+| `can0` down 직전 | 362 | 0 | 0 | 0 |
+| down 직후 | 365 | 0 | 1 | 128 |
+| 25초 경과 | 365 | 0 | 1 | 128 |
+| `can0` up 직후 | 365 | 0 | 0 | 125 |
+| 이후 | 재개 | 0 | 0 | 0으로 감소 |
+
+이것은 bus-off가 아니라 **error-passive**다. CAN 규격의 fault confinement 예외 조항
+때문에, error-passive 송신자가 ACK 에러를 겪을 때는 TEC를 올리지 않는다. 그래서
+TEC가 정확히 128에서 고정되고 bus-off 문턱인 255에 도달하지 못한다.
+
+TEC는 성공 송신 1건당 1씩 줄어든다. KEYA heartbeat은 1 Hz라 TEC가 0까지 돌아오는 데
+약 2분 걸리지만, 송신 자체는 `can0` up 즉시 재개되므로 기능상 기다릴 필요는 없다.
+
+판정에는 `keya_busoff`, `keya_errpass`, `keya_tec`을 쓴다. `keya_ok`는 FDCAN 주변장치
+초기화 결과일 뿐이라 이 상태에서도 계속 1이다.
+
+FDCAN1(EZ)도 `WAIT_HANDSHAKE`에서 `0x55`를 무조건 송신하므로 STM_A가 없으면 같은
+상태가 된다. 증상은 `ez_tx`가 3에서 멈추는 것이고, 판정 field는 `ez_*`로 같다.
+
+> transceiver를 물리적으로 분리한 경우는 확인하지 않았다. 그때는 ACK 에러가 아니라
+> bit error가 나므로 위 예외가 적용되지 않고 실제 bus-off로 갈 수 있다.
 
 ### 10.2 lateral controller 실행
 
@@ -696,12 +714,12 @@ ros2 service call /hil/reset_safe_state std_srvs/srv/Trigger '{}'
 ros2 topic echo --once /hil/status
 ```
 
-`can0`은 그대로 두는 것을 권한다. 내리면 STM_TEST FDCAN2가 ACK를 받지 못해 에러
-상태에 빠지고, 복구에 보드 리셋이 필요하다([10.1.1](#1011-can0을-내린-뒤에는-stm_test를-리셋한다)).
-계속 켜두면 heartbeat만 오갈 뿐 부하가 없다.
+`can0`은 그대로 두는 것을 권한다. 계속 켜두면 heartbeat만 오갈 뿐 부하가 없고,
+내리면 STM_TEST FDCAN2 송신이 error-passive로 멈춘다. 다시 올리면 스스로
+복구되므로 보드 리셋은 필요 없지만([10.1.1](#1011-can0을-내리면-stm_test-송신이-멈췄다가-스스로-복구된다)),
+내려둔 동안 KEYA 경로 시험은 할 수 없다.
 
-정말 내려야 한다면 모든 CAN 프로세스를 먼저 종료하고, 다음에 쓸 때 `can0`을 올린
-뒤 STM_TEST를 리셋한다.
+내려야 한다면 모든 CAN 프로세스를 먼저 종료한다.
 
 ```bash
 sudo ip link set can0 down
@@ -773,13 +791,15 @@ ros2 topic echo --once /hil/status --field data
 ```
 
 1. `can0`이 `DOWN`이거나 `BUS-OFF`인가 → [10.1](#101-socketcan-준비)로 복구
-2. `candump`에 heartbeat `07000001`이 안 보이는가 → STM_TEST FDCAN2가 에러 상태다.
-   `keya_tx`가 3에서 멈춰 있으면 확정. `can0`을 올린 뒤 보드를 리셋한다
+2. `candump`에 heartbeat `07000001`이 안 보이는가 → STM_TEST FDCAN2 송신이 멈춘
+   것이다. `keya_errpass=1`, `keya_tec=128`, `keya_tx`가 3만큼 오른 뒤 정지면 확정.
+   `can0`을 올리면 스스로 복구된다([10.1.1](#1011-can0을-내리면-stm_test-송신이-멈췄다가-스스로-복구된다))
 3. heartbeat은 보이는데 panel이 `NO RX`인가 → Host 쪽 송신자가 없는 것이다.
    `lateral_ctrl`이 실행 중이고 출력이 armed인지 확인한다
 
-`keya_ok`는 FDCAN 주변장치 초기화 결과일 뿐 상대 controller 연결이나 bus-off를
-반영하지 않는다. 판정은 `keya_rx` 증가와 `keya_rx_age_ms`로 한다.
+`keya_ok`는 FDCAN 주변장치 초기화 결과일 뿐 상대 controller 연결이나 bus 오류를
+반영하지 않는다. 상대 연결은 `keya_rx` 증가와 `keya_rx_age_ms`로, controller 오류
+상태는 `keya_busoff`·`keya_errpass`·`keya_tec`으로 판정한다.
 
 ### 조향이 `STATE_ACTIVE`로 가지 않음
 
@@ -818,7 +838,9 @@ python3 -c "import PyQt5; print('PyQt5 OK')"
 - MANUAL pedal 폐루프 시험(9.3)
 - 조향 캘리브레이션 실측 검증. KEYA emulator는 선형이라 HIL로는 불가능하며
   실제 조향 기구가 필요하다
-- STM_TEST FDCAN2 bus-off 복구 로직. 현재는 보드 리셋으로만 회복된다
+- transceiver 물리 분리 시 FDCAN이 실제 bus-off로 가는지 확인. `can0` down은
+  error-passive에서 자동 복구되는 것을 2026-08-14에 실측했으나, bit error가 나는
+  이 경우는 미확인이다. bus-off로 확인되면 복구 로직이 필요하다
 - 통합 launch와 실행 스크립트 정리
 
 ### 플래시 전 SWD target 확인

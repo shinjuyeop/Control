@@ -144,6 +144,17 @@ bridge는 먼저 STATUS의 `protocol`을 읽고 desired state를 재적용한다
 구형 firmware에는 지원하지 않는 `SET PLANT`를 보내지 않으므로 새 GUI도 연결할 수
 있지만, command 관측값과 RX age는 unavailable로 표시된다.
 
+| protocol | firmware가 추가한 것 |
+|---:|---|
+| 1 | 기본 STATUS |
+| 2 | plant 및 command 관측 field |
+| 3 | FDCAN protocol status field (`*_busoff`, `*_errpass`, `*_warn`, `*_tec`, `*_rec`) |
+
+parser는 알 수 없는 STATUS key를 만나면 예외를 던진다. 따라서 firmware가 field를
+추가하면 bridge를 함께 올려야 하며, `protocol` 값도 같이 올려야 한다. 반대로 낮은
+protocol의 firmware는 계속 붙는다. 없는 field는 dataclass 기본값으로 채워지고
+protocol 3 이전 firmware에서는 bus status가 전부 0으로 보인다.
+
 ## Scenarios
 
 `scenario_runner`는 timestamped `hil`, `fault`, `command` step을 실행하고 다음

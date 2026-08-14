@@ -16,14 +16,27 @@ from kaiev26_hil.protocol import (
 
 
 STATUS = (
-    "STATUS protocol=2 mode=AUTO gear=FWD pedal=25.0 estop_dash=0 estop_side=1 estop_rf=0 "
+    "STATUS protocol=3 mode=AUTO gear=FWD pedal=25.0 estop_dash=0 estop_side=1 estop_rf=0 "
     "speed=5.20 rpm=487 voltage=52.3 current=12.5 motor_temp=40.0 "
     "brake_period_us=20000 brake_us=1388 brake=RELEASED pwm_lost=0 "
     "steer=1.50 steer_target=2.00 ez_rx=10 ez_tx=20 keya_rx=30 keya_tx=40 "
     "ez_can=1 keya_can=1 ez_ok=1 keya_ok=0 ez_fault=0 keya_fault=1 "
     "plant=0 ez_target_rpm=0 ez_running=1 ez_speed_control=1 "
     "ez_command_rpm=1200 ez_command_current=23.5 ez_rx_age_ms=12 "
-    "keya_enabled=0 keya_rx_age_ms=4294967295"
+    "keya_enabled=0 keya_rx_age_ms=4294967295 "
+    "ez_busoff=0 ez_errpass=0 ez_warn=0 ez_tec=0 ez_rec=0 "
+    "keya_busoff=1 keya_errpass=1 keya_warn=1 keya_tec=248 keya_rec=0"
+)
+
+_PROTOCOL3_PREFIXES = (
+    "ez_busoff=", "ez_errpass=", "ez_warn=", "ez_tec=", "ez_rec=",
+    "keya_busoff=", "keya_errpass=", "keya_warn=", "keya_tec=", "keya_rec=",
+)
+
+# protocol 2 firmware predates the FDCAN protocol-status fields.
+STATUS_V2 = " ".join(
+    token for token in STATUS.replace("protocol=3", "protocol=2").split()
+    if not token.startswith(_PROTOCOL3_PREFIXES)
 )
 
 LEGACY_STATUS = " ".join(
@@ -32,7 +45,7 @@ LEGACY_STATUS = " ".join(
         "protocol=", "plant=", "ez_target_rpm=", "ez_running=",
         "ez_speed_control=", "ez_command_rpm=", "ez_command_current=",
         "ez_rx_age_ms=", "keya_enabled=", "keya_rx_age_ms=",
-    ))
+    ) + _PROTOCOL3_PREFIXES)
 )
 
 
@@ -56,10 +69,31 @@ def test_status_parser_uses_exact_firmware_keys():
     assert status.brake_us == 1388
     assert status.ez_ok is True
     assert status.keya_ok is False
-    assert status.protocol == 2
+    assert status.protocol == 3
     assert status.ez_command_rpm == 1200
     assert status.ez_rx_age_ms == 12
     assert status.received_monotonic == 123.0
+
+
+def test_status_parser_reads_fdcan_protocol_status():
+    status = parse_status(STATUS)
+    # keya_ok stays True-ish per peripheral init while the bus is off, which is
+    # why the judgement has to come from these fields instead.
+    assert status.ez_busoff is False
+    assert status.ez_tec == 0
+    assert status.keya_busoff is True
+    assert status.keya_errpass is True
+    assert status.keya_warn is True
+    assert status.keya_tec == 248
+    assert status.keya_rec == 0
+
+
+def test_status_parser_accepts_protocol_2_firmware_without_bus_status():
+    status = parse_status(STATUS_V2)
+    assert status.protocol == 2
+    assert status.ez_command_rpm == 1200
+    assert status.keya_busoff is False
+    assert status.keya_tec == 0
 
 
 def test_status_parser_accepts_legacy_firmware_without_plant_fields():
@@ -72,7 +106,17 @@ def test_status_parser_accepts_legacy_firmware_without_plant_fields():
 
 def test_protocol_2_status_requires_all_observation_fields():
     with pytest.raises(ValueError, match="missing protocol 2 STATUS keys"):
-        parse_status(STATUS.replace(" ez_command_rpm=1200", ""))
+        parse_status(STATUS_V2.replace(" ez_command_rpm=1200", ""))
+
+
+def test_protocol_3_status_requires_all_bus_status_fields():
+    with pytest.raises(ValueError, match="missing protocol 3 STATUS keys"):
+        parse_status(STATUS.replace(" keya_busoff=1", ""))
+
+
+def test_status_parser_rejects_unsupported_protocol():
+    with pytest.raises(ValueError, match="unsupported STATUS protocol"):
+        parse_status(STATUS.replace("protocol=3", "protocol=4"))
 
 
 def test_response_parser_distinguishes_ok_error_and_status():

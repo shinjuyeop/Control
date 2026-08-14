@@ -179,6 +179,13 @@ HELP
 `SET MODE`, `SET GEAR`, `SET ESTOP`은 4.1의 GPIO 출력을, `SET PEDAL`은 `PA4` DAC
 값을 바꿉니다.
 
+> **`SET EZ_CAN OFF` / `SET KEYA_CAN OFF`는 노드를 bus에서 내리지 않습니다.**
+> 두 flag는 software 처리와 송신만 막고 `HAL_FDCAN_Stop()`은 호출하지 않으므로,
+> FDCAN peripheral은 계속 살아 있고 **ACK는 하드웨어가 그대로 줍니다.** 따라서
+> 이 명령으로 "상대 controller 연결 끊김"을 재현할 수 없습니다. 재현하려면 실제로
+> 배선을 분리하거나 상대 노드를 정지시켜야 합니다. 이 명령이 실제로 만드는 조건은
+> "상대가 살아 있는데 조용함"입니다.
+
 `SET SPEED`는 STM_A와 동일한 tire diameter 0.47 m, gear ratio 4.60을 사용해
 EZkontrol motor RPM으로 환산합니다. `SET RPM`은 반대로 diagnostic speed도
 갱신합니다. `SET STEER_POS`는 KEYA motor shaft degree이며 실제 query/command의
@@ -192,13 +199,34 @@ speed와 RPM은 STM_A가 보낸 CAN 명령을 따라가므로 `SET SPEED`/`SET R
 STATUS 응답 예시는 다음과 같습니다.
 
 ```text
-STATUS protocol=2 mode=AUTO gear=FWD pedal=25.0 estop_dash=0 estop_side=0 estop_rf=0 speed=5.20 rpm=487 voltage=52.3 current=12.5 motor_temp=40.0 brake_period_us=20000 brake_us=1388 brake=RELEASED pwm_lost=0 steer=1.50 steer_target=2.00 ez_rx=10 ez_tx=20 keya_rx=20 keya_tx=21 ez_can=1 keya_can=1 ez_ok=1 keya_ok=1 ez_fault=0 keya_fault=0 plant=1 ez_target_rpm=1200 ez_running=1 ez_speed_control=1 ez_command_rpm=1200 ez_command_current=23.5 ez_rx_age_ms=12 keya_enabled=1 keya_rx_age_ms=15
+STATUS protocol=3 mode=AUTO gear=FWD pedal=25.0 estop_dash=0 estop_side=0 estop_rf=0 speed=5.20 rpm=487 voltage=52.3 current=12.5 motor_temp=40.0 brake_period_us=20000 brake_us=1388 brake=RELEASED pwm_lost=0 steer=1.50 steer_target=2.00 ez_rx=10 ez_tx=20 keya_rx=20 keya_tx=21 ez_can=1 keya_can=1 ez_ok=1 keya_ok=1 ez_fault=0 keya_fault=0 plant=1 ez_target_rpm=1200 ez_running=1 ez_speed_control=1 ez_command_rpm=1200 ez_command_current=23.5 ez_rx_age_ms=12 keya_enabled=1 keya_rx_age_ms=15 ez_busoff=0 ez_errpass=0 ez_warn=0 ez_tec=0 ez_rec=0 keya_busoff=0 keya_errpass=0 keya_warn=0 keya_tec=0 keya_rec=0
 ```
 
 `ez_ok`/`keya_ok`는 FDCAN 초기화 및 queue 상태이지 상대 controller 연결 판정이
 아닙니다. 실제 link는 `*_rx`, `*_rx_age_ms`로 판단합니다. 아직 유효 frame을 받지
 않았거나 CAN을 껐다가 다시 켠 직후의 age는 `UINT32_MAX`(4294967295)입니다.
-`protocol=2`는 plant 및 command-observation field가 포함된 STATUS 계약입니다.
+
+### FDCAN bus status field
+
+`protocol=3`에서 추가된 field로, 각 bus의 CAN controller 오류 상태를 그대로
+노출합니다. `HAL_FDCAN_GetProtocolStatus()`와 `HAL_FDCAN_GetErrorCounters()`를
+task 주기마다 읽습니다.
+
+| Field | 의미 |
+|---|---|
+| `ez_busoff` / `keya_busoff` | bus-off 상태. controller가 `CCCR.INIT`에 갇혀 있음 |
+| `ez_errpass` / `keya_errpass` | error-passive 상태 |
+| `ez_warn` / `keya_warn` | 오류 카운터가 경고 한계 96에 도달 |
+| `ez_tec` / `keya_tec` | Transmit Error Counter, 0~255 |
+| `ez_rec` / `keya_rec` | Receive Error Counter, 0~127 |
+
+`*_ok`는 초기화 결과일 뿐 bus 오류를 반영하지 않으므로, **송신이 멈춘 원인을
+판정할 때는 반드시 이 field를 봅니다.** TEC가 올라가다 128 근처에서 멈추고
+`errpass=1`이면 error-passive, `busoff=1`이면 bus-off이며 복구 방법이 서로
+다릅니다.
+
+STATUS 계약을 바꿀 때는 `protocol` 값을 함께 올려야 합니다. bridge parser는 알 수
+없는 key를 거부하므로 field 추가는 bridge 갱신과 같은 커밋에서 이루어져야 합니다.
 
 ## 8. 동작 상세
 
@@ -344,15 +372,27 @@ GPIO 출력 상태를 확인하십시오.
 
 ## 12. 알려진 제한사항
 
-- FDCAN2 bus-off 복구 로직이 없습니다. CAN은 수신 노드가 ACK를 주어야 송신이
-  완료되므로, 상대 노드가 없으면(transceiver 미연결, Host `can0` down, USB-CAN
-  분리) TX FIFO가 3개에서 차고 FDCAN2가 에러 상태로 들어갑니다. **상대 노드가
-  돌아와도 자동으로 회복되지 않으며 보드 리셋이 필요합니다.**
-  - 증상: `keya_tx`가 정확히 `3`에서 멈춤. `keya_rx`는 0
-  - 복구: Host `can0`을 먼저 올린 뒤 보드를 리셋합니다. 순서가 반대면 리셋 직후
-    다시 같은 상태가 됩니다
-  - `keya_ok`(`keya_can_healthy`)는 `s_initialized && !s_rx_overflow`이므로 초기화
-    성공 여부만 나타내며 bus-off를 반영하지 않습니다. 판정에 쓰지 마십시오
+- **ACK를 줄 상대가 없으면 해당 bus의 송신이 멈춥니다.** CAN은 수신 노드가 ACK를
+  주어야 송신이 완료되므로, TX FIFO 3칸이 그대로 차고 controller가 error-passive로
+  들어갑니다. 상대가 돌아오면 **스스로 복구되며 보드 리셋은 필요 없습니다.**
+  - FDCAN2(KEYA): 1 Hz heartbeat을 무조건 송신하므로 Host `can0` down이나 USB-CAN
+    분리에서 발생합니다. `keya_tx`가 3만큼 오른 뒤 정지합니다
+  - FDCAN1(EZ): `WAIT_HANDSHAKE`에서 50 ms마다 `0x55`를 무조건 송신하므로,
+    **STM_A를 붙이지 않고 STM_TEST만 켜도 동일하게 발생합니다.** `ez_tx`가 3만큼
+    오른 뒤 정지합니다
+  - 2026-08-14 실측(`can0` down): `errpass=1`, `tec=128`에서 고정되고 `busoff=0`을
+    유지했습니다. `can0`을 올리자 송신이 즉시 재개되고 TEC가 0까지 감소했습니다.
+    CAN 규격의 fault confinement 예외 조항 때문에 error-passive 송신자의 ACK
+    에러는 TEC를 올리지 않아 bus-off 문턱 255에 도달하지 못합니다
+  - 멈춰 있는 동안에는 정지 명령을 포함해 어떤 frame도 나가지 못합니다
+  - `ez_ok`/`keya_ok`(`*_can_healthy`)는 `s_initialized && !s_rx_overflow`이므로
+    초기화 성공 여부만 나타내며 이 상태에서도 1입니다. 판정에는 `*_busoff`,
+    `*_errpass`, `*_tec`를 사용하십시오
+  - transceiver를 물리적으로 분리한 경우는 미확인입니다. ACK 에러가 아니라 bit
+    error가 나므로 위 예외가 적용되지 않고 실제 bus-off로 갈 수 있으며, 그때는
+    `CCCR.INIT`를 해제하는 복구 로직이 필요합니다
+- `SET EZ_CAN OFF` / `SET KEYA_CAN OFF`는 peripheral을 정지시키지 않아 상대 노드
+  단절을 재현하지 못합니다. 실제로 bus에서 내리는 명령이 없습니다.
 - EZkontrol plant는 1차 지연만 모사하며 차량 질량과 주행 저항은 없습니다.
 - KEYA supply voltage/current/temperature 입력이 없어 해당 query는 0을 반환합니다.
 - brake PWM은 관측만 하며 STM_B로 되먹임하는 경로가 없습니다.

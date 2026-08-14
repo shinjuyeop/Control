@@ -189,13 +189,30 @@ static void test_command_parser(void)
   state.ez_target_rpm = -32000.0f;
   state.ez_command_rpm = -32000.0f;
   state.ez_command_current_a = -3200.0f;
+  /* Widest FDCAN protocol-status values, so the length assert below covers the
+   * worst-case STATUS line against HIL_UART_REPLY_SIZE. */
+  state.ez_bus_off = true;
+  state.ez_error_passive = true;
+  state.ez_warning = true;
+  state.ez_tec = 255u;
+  state.ez_rec = 255u;
+  state.keya_bus_off = true;
+  state.keya_error_passive = true;
+  state.keya_warning = true;
+  state.keya_tec = 255u;
+  state.keya_rec = 255u;
   assert(HilLogic_ProcessCommand(&state, status, reply, sizeof(reply)));
-  assert(strstr(reply, "STATUS protocol=2 mode=AUTO") != NULL);
-  assert(strstr(reply, "protocol=2") != NULL);
+  assert(strstr(reply, "STATUS protocol=3 mode=AUTO") != NULL);
+  assert(strstr(reply, "protocol=3") != NULL);
   assert(strstr(reply, "plant=0") != NULL);
   assert(strstr(reply, "ez_target_rpm=") != NULL);
   assert(strstr(reply, "ez_command_rpm=") != NULL);
   assert(strstr(reply, "keya_rx_age_ms=") != NULL);
+  assert(strstr(reply, "ez_busoff=1") != NULL);
+  assert(strstr(reply, "ez_tec=255") != NULL);
+  assert(strstr(reply, "keya_busoff=1") != NULL);
+  assert(strstr(reply, "keya_errpass=1") != NULL);
+  assert(strstr(reply, "keya_rec=255") != NULL);
   assert(strlen(reply) < sizeof(reply) - 1u);
 }
 

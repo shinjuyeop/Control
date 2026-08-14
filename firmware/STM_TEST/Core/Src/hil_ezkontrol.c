@@ -114,11 +114,25 @@ void HilEZKontrol_Task(void)
       continue;
     }
 
+    /* Registers only; read outside the mutex to keep the section short. */
+    FDCAN_ProtocolStatusTypeDef psr;
+    FDCAN_ErrorCountersTypeDef ecr;
+    const bool bus_status_ok =
+        (HAL_FDCAN_GetProtocolStatus(&hfdcan1, &psr) == HAL_OK) &&
+        (HAL_FDCAN_GetErrorCounters(&hfdcan1, &ecr) == HAL_OK);
+
     HilState_t *shared = HilState_Lock(2u);
     if (shared != NULL) {
       shared->ez_can_healthy = s_initialized && !s_rx_overflow;
       shared->ez_rx_age_ms = rx_seen ?
           (uint32_t)(osKernelGetTickCount() - last_rx) : UINT32_MAX;
+      if (bus_status_ok) {
+        shared->ez_bus_off = (psr.BusOff != 0u);
+        shared->ez_error_passive = (psr.ErrorPassive != 0u);
+        shared->ez_warning = (psr.Warning != 0u);
+        shared->ez_tec = (uint8_t)ecr.TxErrorCnt;
+        shared->ez_rec = (uint8_t)ecr.RxErrorCnt;
+      }
       HilState_Unlock();
     }
     s_rx_overflow = false;
