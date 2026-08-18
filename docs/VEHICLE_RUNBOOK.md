@@ -42,18 +42,6 @@ can0는 부팅 때 자동으로 준비되어 있다. 이 시점에는 차가 **�
 
 각각 별도 터미널에서 아래 블록을 그대로 붙여 넣으면 된다.
 
-Foxglove bridge (`/diagnostics` 요약은 구동 스택이 이미 발행 중이라 bridge만
-켜면 된다):
-
-```bash
-cd ~/KAI_ws
-source /opt/ros/humble/setup.zsh
-source ~/KAI_ws/install/setup.zsh
-export ROS_DOMAIN_ID=0
-
-ros2 launch visualization foxglove_bridge.launch.py
-```
-
 디버그 대시보드 (화면 필요 — 모니터 직결이면 그대로, 원격이면 `ssh -Y`
 터미널에서):
 
@@ -64,6 +52,19 @@ source ~/KAI_ws/install/setup.zsh
 export ROS_DOMAIN_ID=0
 
 ros2 launch visualization vehicle_dashboard.launch.py
+```
+
+Foxglove bridge — 팀 단위로 PC당 하나만 띄운다. 이미 떠 있으면 켜지 않고
+아래 접속만 한다 (`/diagnostics` 요약은 구동 스택이 이미 발행 중이라
+bridge만 켜면 된다):
+
+```bash
+cd ~/KAI_ws
+source /opt/ros/humble/setup.zsh
+source ~/KAI_ws/install/setup.zsh
+export ROS_DOMAIN_ID=0
+
+ros2 launch visualization foxglove_bridge.launch.py
 ```
 
 - **Foxglove 접속**: 노트북의 Foxglove 앱에서 `ws://100.112.72.26:8765`
