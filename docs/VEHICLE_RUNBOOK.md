@@ -38,20 +38,38 @@ ros2 launch control_launch vehicle.launch.py
 can0는 부팅 때 자동으로 준비되어 있다. 이 시점에는 차가 **안전 대기**
 상태다 — 명령이 없으면 아무것도 움직이지 않는다.
 
-### ③ 시각화 (선택이지만 권장, 별도 터미널)
+### ③ 시각화 (선택이지만 권장)
+
+각각 별도 터미널에서 아래 블록을 그대로 붙여 넣으면 된다.
+
+Foxglove bridge (+ `/diagnostics`):
 
 ```bash
-ros2 launch visualization foxglove_bridge.launch.py      # Foxglove bridge + /diagnostics
-ros2 launch visualization vehicle_dashboard.launch.py    # 디버그 대시보드 GUI
+cd ~/KAI_ws
+source /opt/ros/humble/setup.zsh
+source ~/KAI_ws/install/setup.zsh
+export ROS_DOMAIN_ID=0
+
+ros2 launch visualization foxglove_bridge.launch.py
 ```
 
-- **Foxglove**: 노트북의 Foxglove 앱에서 `ws://100.112.72.26:8765` 접속
+디버그 대시보드 (화면 필요 — 모니터 직결이면 그대로, 원격이면 `ssh -Y`
+터미널에서):
+
+```bash
+cd ~/KAI_ws
+source /opt/ros/humble/setup.zsh
+source ~/KAI_ws/install/setup.zsh
+export ROS_DOMAIN_ID=0
+
+ros2 launch visualization vehicle_dashboard.launch.py
+```
+
+- **Foxglove 접속**: 노트북의 Foxglove 앱에서 `ws://100.112.72.26:8765`
   (Tailscale 기준. 이 PC가 스스로 보는 IP와 노트북에서 보이는 IP가 다르니,
   안 붙으면 노트북에서 `tailscale status`로 이 PC의 IP를 다시 확인한다).
   레이아웃은 `software/src/visualization/control.json`을 import한다.
   Diagnostics 패널에서 문제 항목이 위로 정렬되어 뜬다
-- **vehicle_dashboard**: 화면이 필요하다 — PC에 모니터가 붙어 있으면 그대로,
-  원격이면 `ssh -Y` 터미널에서 실행한다
 
 ### ④ Planning 실행 (판단팀)
 
