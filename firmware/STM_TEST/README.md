@@ -339,8 +339,12 @@ src/Control/firmware/STM_TEST/tests/run_host_tests.sh
 
 ## 10. 플래시 및 실행
 
-현재 저장소에는 ST-Link flash command나 board-specific flash script가 없습니다.
-사용하는 ST-Link 환경에서 `STM_TEST.elf`를 bench의 STM_TEST 보드에 flash하십시오.
+`STM32_Programmer_CLI`로 probe SN을 지정해 flash합니다. 명령 양식은
+[`../../docs/VEHICLE_RUNBOOK.md`](../../docs/VEHICLE_RUNBOOK.md#5-보드-교체-시)와
+같고(ELF 경로만 `STM_TEST.elf`), 여러 보드가 꽂힌 bench에서는 반드시
+[`../../docs/HIL_RUNBOOK.md`](../../docs/HIL_RUNBOOK.md#플래시-전-swd-target-확인)의
+SWD target 확인을 먼저 거칩니다. 2026-08-14 protocol 3 flash는 이 절차로
+수행했습니다.
 
 STM_TEST는 micro-ROS를 쓰지 않으므로 Agent를 붙이지 않습니다. PC에서는 serial
 terminal로 직접 명령을 보냅니다.
@@ -353,8 +357,8 @@ ROS 2 bridge와 GUI로 운용할 때의 절차는
 [`../../docs/HIL_RUNBOOK.md`](../../docs/HIL_RUNBOOK.md)를 따릅니다.
 
 > **경고:** 실차 보드(`/dev/stm_a`, `/dev/stm_b`)에 STM_TEST 펌웨어를 올리지
-> 마십시오. linker script의 FLASH origin은 `0x08000000`이지만, 사용하는 도구의
-> flash·reset 명령은 현재 저장소에 없어 TBD입니다.
+> 마십시오. serial symlink는 virtual COM port 식별일 뿐 SWD target 확인을
+> 대신하지 않습니다.
 
 ## 11. 상태 확인
 
@@ -397,7 +401,7 @@ GPIO 출력 상태를 확인하십시오.
 - KEYA supply voltage/current/temperature 입력이 없어 해당 query는 0을 반환합니다.
 - brake PWM은 관측만 하며 STM_B로 되먹임하는 경로가 없습니다.
 - MCU independent watchdog 사용은 현재 코드에서 확인되지 않습니다.
-- flash 절차와 bench 하네스 connector pinout은 문서화 필요 상태입니다. 위 핀맵은
+- bench 하네스 connector pinout은 문서화 필요 상태입니다. 위 핀맵은
   MCU 핀 기준입니다.
 
 ## 13. 관련 문서

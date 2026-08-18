@@ -250,8 +250,12 @@ toolchain과 micro-ROS Agent 빌드는 [`../README.md`](../README.md)를 참고�
 
 ## 10. 플래시 및 실행
 
-현재 저장소에는 ST-Link flash command나 board-specific flash script가 없습니다.
-사용하는 ST-Link 환경에서 `STM_A.elf`를 대상 STM_A 보드에 flash하십시오.
+`STM32_Programmer_CLI`로 probe SN을 지정해 flash합니다. 절차 전체(빌드,
+SN 확인, flash, 고정 이름·역할 확인)는
+[`../../docs/VEHICLE_RUNBOOK.md`](../../docs/VEHICLE_RUNBOOK.md#5-보드-교체-시)를
+따르고, 여러 보드가 꽂힌 상태라면 먼저
+[`../../docs/HIL_RUNBOOK.md`](../../docs/HIL_RUNBOOK.md#플래시-전-swd-target-확인)의
+SWD target 확인을 거칩니다.
 
 Agent는 STM_A의 LPUART1 장치에 하나 붙입니다.
 
@@ -262,8 +266,8 @@ ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/stm_a -b 115200
 ```
 
 > **경고:** STM_B와 혼동하지 않도록 보드, serial device와 연결된 액추에이터를
-> 먼저 확인하십시오. linker script의 FLASH origin은 `0x08000000`이지만, 사용하는
-> 도구의 flash·reset 명령은 현재 저장소에 없어 TBD입니다.
+> 먼저 확인하십시오. serial symlink는 virtual COM port 식별일 뿐 SWD target
+> 확인을 대신하지 않습니다.
 
 ## 11. 상태 확인
 
@@ -291,7 +295,7 @@ ros2 topic echo /drive/status
 - MCU independent watchdog 사용은 현재 코드에서 확인되지 않습니다.
 - pedal calibration 값은 코드 상수이고 별도 calibration metadata가 없습니다.
 - `SW_MODE`·`SW_GEAR`에 software debounce가 없습니다.
-- flash 절차와 실차 connector pinout은 문서화 필요 상태입니다. 위 핀맵은 MCU 핀
+- 실차 connector pinout은 문서화 필요 상태입니다. 위 핀맵은 MCU 핀
   기준이며 실차 하네스 connector 번호는 아직 정리되지 않았습니다.
 
 ### 다음 `kaiev26_msgs` 개정에 함께 넣을 후보

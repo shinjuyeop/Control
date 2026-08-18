@@ -277,8 +277,12 @@ cmake --build src/Control/firmware/STM_B/build/Release
 
 ## 10. 플래시 및 실행
 
-현재 저장소에는 ST-Link flash command나 board-specific flash script가 없습니다.
-사용하는 ST-Link 환경에서 `STM_B.elf`를 대상 STM_B 보드에 flash하십시오.
+`STM32_Programmer_CLI`로 probe SN을 지정해 flash합니다. 절차 전체(빌드,
+SN 확인, flash, 고정 이름·역할 확인)는
+[`../../docs/VEHICLE_RUNBOOK.md`](../../docs/VEHICLE_RUNBOOK.md#5-보드-교체-시)를
+따르고, 여러 보드가 꽂힌 상태라면 먼저
+[`../../docs/HIL_RUNBOOK.md`](../../docs/HIL_RUNBOOK.md#플래시-전-swd-target-확인)의
+SWD target 확인을 거칩니다.
 
 Agent는 STM_B의 LPUART1 장치에 하나 붙입니다.
 
@@ -289,8 +293,8 @@ ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/stm_b -b 115200
 ```
 
 > **경고:** flash와 전원 인가 전에 brake servo 방향, E-stop 배선과 초기 engage
-> pulse를 확인하십시오. linker script의 FLASH origin은 `0x08000000`이지만,
-> 사용하는 도구의 flash·reset 명령은 현재 저장소에 없어 TBD입니다.
+> pulse를 확인하십시오. serial symlink는 virtual COM port 식별일 뿐 SWD target
+> 확인을 대신하지 않습니다.
 
 ## 11. 상태 확인
 
@@ -321,7 +325,7 @@ field가 없으므로 LCD 또는 debugger의 `VEHICLE_FRAME_VALID_FROM_A`로 확
 - `LED_GREEN`(`PC13`)은 NUCLEO 사용자 버튼 B1과 같은 핀을 push-pull 출력으로
   구동합니다. 보드 LD2(`PA5`)가 아니므로 실제 표시 LED 배선을 확인해야 합니다.
 - MCU independent watchdog 사용은 현재 코드에서 확인되지 않습니다.
-- flash 절차와 실차 connector pinout은 문서화 필요 상태입니다. 위 핀맵은 MCU 핀
+- 실차 connector pinout은 문서화 필요 상태입니다. 위 핀맵은 MCU 핀
   기준이며 실차 하네스 connector 번호는 아직 정리되지 않았습니다.
 
 ## 13. 관련 문서
