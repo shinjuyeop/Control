@@ -563,9 +563,13 @@ configured 상태인 것과 다른 인터페이스가 전부 unmanaged(NetworkMa
 > ```
 >
 > `systemctl restart NetworkManager`도 복구되지만 wifi가 수 초 끊겨 SSH
-> 세션이 얼어붙으므로 원격 작업 중에는 쓰지 않는다. 재부팅 후에도 DNS가 비어
-> 있으면 networkd 방식이 이 호스트와 맞지 않는 것이므로, networkd를 내리고
-> can0에만 작용하는 udev+oneshot 서비스 방식으로 전환한다.
+> 세션이 얼어붙으므로 원격 작업 중에는 쓰지 않는다.
+>
+> 2026-08-18 재부팅으로 판정 완료: can0는 수동 명령 없이 이 설정 파일로
+> 자동 준비됐고(bitrate 250000), wifi DNS와 tailscale MagicDNS 모두 정상
+> 재등록됐다. DNS 소거는 networkd를 처음 활성화하는 순간에만 나타나는
+> 일회성 부작용이며, 새 호스트에 설치할 때는 위 resolvectl 복구를 바로
+> 실행하면 된다. 부팅 재발이 없으므로 networkd 방식을 확정한다.
 
 수동으로 할 때는 다음과 같다.
 
