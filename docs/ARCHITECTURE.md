@@ -228,6 +228,7 @@ traction 차단 조건으로 사용하지 않습니다.
 
 ## 9. 관련 문서
 
+- 실차 시동 절차: [`VEHICLE_STARTUP.md`](VEHICLE_STARTUP.md)
 - 데이터 계약과 주기: [`INTERFACES.md`](INTERFACES.md)
 - 안전 조건과 복구: [`SAFETY.md`](SAFETY.md)
 - 공통 펌웨어 빌드: [`../firmware/README.md`](../firmware/README.md)
