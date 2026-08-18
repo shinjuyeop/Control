@@ -38,7 +38,22 @@ ros2 launch control_launch vehicle.launch.py
 can0는 부팅 때 자동으로 준비되어 있다. 이 시점에는 차가 **안전 대기**
 상태다 — 명령이 없으면 아무것도 움직이지 않는다.
 
-### ③ Planning 실행 (판단팀)
+### ③ 시각화 (선택이지만 권장, 별도 터미널)
+
+```bash
+ros2 launch visualization foxglove_bridge.launch.py      # Foxglove bridge + /diagnostics
+ros2 launch visualization vehicle_dashboard.launch.py    # 디버그 대시보드 GUI
+```
+
+- **Foxglove**: 노트북의 Foxglove 앱에서 `ws://100.112.72.26:8765` 접속
+  (Tailscale 기준. 이 PC가 스스로 보는 IP와 노트북에서 보이는 IP가 다르니,
+  안 붙으면 노트북에서 `tailscale status`로 이 PC의 IP를 다시 확인한다).
+  레이아웃은 `software/src/visualization/control.json`을 import한다.
+  Diagnostics 패널에서 문제 항목이 위로 정렬되어 뜬다
+- **vehicle_dashboard**: 화면이 필요하다 — PC에 모니터가 붙어 있으면 그대로,
+  원격이면 `ssh -Y` 터미널에서 실행한다
+
+### ④ Planning 실행 (판단팀)
 
 판단 노드가 `/planning/command`(`kaiev26_msgs/ActuatorCommand`)를 **20 Hz
 이상, `header.stamp` 필수**로 발행하면 명령 경로가 완성된다.
@@ -51,21 +66,12 @@ ros2 run kaiev26_hil command_generator        # 정지 명령, 발행 꺼진 채
 ros2 param set /hil_command_generator enabled true
 ```
 
-### ④ 모드 스위치 AUTO
+### ⑤ 모드 스위치 AUTO
 
 차량의 물리 모드 스위치를 AUTO로 올리면 자율주행이 시작된다. host에서는
 모드를 바꿀 수 없다 — 스위치가 유일한 기준이다.
 
 MANUAL 주행은 Planning 없이도 된다(페달·기어가 보드 직결).
-
-### 관찰 (선택, 별도 터미널)
-
-```bash
-ros2 launch visualization foxglove_bridge.launch.py
-```
-
-노트북 Foxglove에서 `ws://<PC주소>:8765` 접속. `/diagnostics`에 문제 항목이
-위로 정렬되어 뜬다.
 
 ---
 
