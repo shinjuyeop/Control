@@ -541,7 +541,31 @@ cd ~/KAI_ws/src/Control
 sudo install -m 0644 host/systemd/80-can0-kaiev26.network /etc/systemd/network/
 sudo systemctl enable --now systemd-networkd
 ip -details link show can0   # state UP, bitrate 250000 확인
+networkctl status can0       # SETUP=configured, Network File이 위 파일이면 관리 인수 완료
 ```
+
+2026-08-18 bench PC에 설치했다. `networkctl`에서 can0가 이 설정 파일로
+configured 상태인 것과 다른 인터페이스가 전부 unmanaged(NetworkManager 충돌
+없음)인 것을 확인했다. 부팅·USB 재연결 자동 적용은 networkd가 링크 출현 시
+설정을 다시 적용하는 동작이며, 다음 재부팅에서 자연 확인된다. 실차 PC에도
+셋업 시 같은 명령으로 설치한다.
+
+> **주의:** 같은 날 networkd 활성화 직후 systemd-resolved의 per-link DNS
+> 등록이 전부 비어 DNS 해석이 죽는 현상이 있었다(IP 직결은 정상). resolved와
+> NetworkManager는 재시작되지 않았고 정확한 소거 경로는 확정하지 못했다.
+> 복구는 NM이 이미 아는 DHCP DNS 값을 되돌려 넣는 두 줄이며 연결이 끊기지
+> 않는다:
+>
+> ```bash
+> nmcli dev show <wifi_if> | grep IP4.DNS   # 값 확인
+> sudo resolvectl dns <wifi_if> <DNS1> <DNS2>
+> sudo resolvectl default-route <wifi_if> yes
+> ```
+>
+> `systemctl restart NetworkManager`도 복구되지만 wifi가 수 초 끊겨 SSH
+> 세션이 얼어붙으므로 원격 작업 중에는 쓰지 않는다. 재부팅 후에도 DNS가 비어
+> 있으면 networkd 방식이 이 호스트와 맞지 않는 것이므로, networkd를 내리고
+> can0에만 작용하는 udev+oneshot 서비스 방식으로 전환한다.
 
 수동으로 할 때는 다음과 같다.
 
