@@ -1,8 +1,9 @@
-# 실차 시동 절차
+# 실차 운용 절차
 
-실차를 구동하는 데 필요한 것만 순서대로 담은 문서다. 배경 설명은
-[`ARCHITECTURE.md`](ARCHITECTURE.md), HIL bench는
-[`HIL_RUNBOOK.md`](HIL_RUNBOOK.md)를 본다.
+차량 탑재 PC에서 보면서 쓰는 문서다. PC 셋업(빌드, serial 권한, 보드 고정
+이름, can0 자동 준비)은 이 PC에 이미 완료되어 있어 여기 담지 않는다 — PC를
+새로 꾸릴 때는 [`HIL_RUNBOOK.md`](HIL_RUNBOOK.md) 2절과 10.1을 따른다.
+배경 설명은 [`ARCHITECTURE.md`](ARCHITECTURE.md)에 있다.
 
 명령 흐름은 한 줄이다:
 
@@ -12,42 +13,7 @@ Planning ─ /planning/command → command_governor ─ /vehicle/command → STM
 
 ---
 
-## 1. 최초 1회 — 실차 PC 셋업
-
-이미 셋업된 PC라면 [2절](#2-구동-순서-매번)로 간다.
-
-```bash
-# ① 빌드
-cd ~/KAI_ws
-source /opt/ros/humble/setup.zsh
-colcon build --symlink-install
-source ~/KAI_ws/install/setup.zsh
-
-# ② serial 권한 — 실행 후 SSH를 완전히 끊고 재접속해야 적용된다
-sudo usermod -aG dialout "$USER"
-
-# ③ 보드 고정 이름 (/dev/stm_a, /dev/stm_b)
-cd ~/KAI_ws/src/Control
-sudo install -m 0644 firmware/udev/99-kaiev26-stm.rules /etc/udev/rules.d/
-sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=tty
-
-# ④ can0 자동 준비 — 이후 부팅·USB 재연결 때마다 자동
-sudo install -m 0644 host/systemd/80-can0-kaiev26.network /etc/systemd/network/
-sudo systemctl enable --now systemd-networkd
-```
-
-> ④ 직후 인터넷 이름 해석(DNS)이 죽을 수 있다. **최초 활성화 때만 나타나는
-> 일회성 증상**이며 재부팅 후에는 재발하지 않는다. 즉시 복구:
->
-> ```bash
-> nmcli dev show <wifi_인터페이스> | grep IP4.DNS     # 값 확인 후
-> sudo resolvectl dns <wifi_인터페이스> <DNS1> <DNS2>
-> sudo resolvectl default-route <wifi_인터페이스> yes
-> ```
-
----
-
-## 2. 구동 순서 (매번)
+## 1. 구동 순서
 
 ### ① 전원 전 확인
 
@@ -69,8 +35,8 @@ export ROS_DOMAIN_ID=0
 ros2 launch control_launch vehicle.launch.py
 ```
 
-can0는 부팅 때 자동으로 준비되어 있다(1절 ④). 이 시점에는 차가 **안전
-대기** 상태다 — 명령이 없으면 아무것도 움직이지 않는다.
+can0는 부팅 때 자동으로 준비되어 있다. 이 시점에는 차가 **안전 대기**
+상태다 — 명령이 없으면 아무것도 움직이지 않는다.
 
 ### ③ Planning 실행 (판단팀)
 
@@ -103,7 +69,7 @@ ros2 launch visualization foxglove_bridge.launch.py
 
 ---
 
-## 3. 잘 떴는지 확인
+## 2. 잘 떴는지 확인
 
 ```bash
 ros2 node list
@@ -117,7 +83,7 @@ ros2 topic echo --once /vehicle/state # 나오면 상태 3종 전부 정상
 
 ---
 
-## 4. 멈추기·끄기
+## 3. 멈추기·끄기
 
 | 상황 | 방법 |
 |---|---|
@@ -127,12 +93,12 @@ ros2 topic echo --once /vehicle/state # 나오면 상태 3종 전부 정상
 
 ---
 
-## 5. 문제가 있을 때
+## 4. 문제가 있을 때
 
 | 증상 | 확인 | 조치 |
 |---|---|---|
-| `/dev/stm_a`(또는 `stm_b`)가 없음 | `ls -l /dev/stm_*` | 1절 ③ udev 설치, USB 재연결. 보드 전원 확인 |
-| 조향 노드가 CAN 오류 로그 | `ip link show can0` | can0가 down이면 1절 ④ 설치 여부 확인 후 **launch 재시작** (조향은 CAN을 시작 때 한 번만 연다) |
+| `/dev/stm_a`(또는 `stm_b`)가 없음 | `ls -l /dev/stm_*` | 보드 전원·USB 확인. 보드를 교체했다면 [5절](#5-보드-교체-시-고정-이름-갱신) |
+| 조향 노드가 CAN 오류 로그 | `ip link show can0` | USB-CAN 재연결(자동 재설정됨) 후 **launch 재시작** — 조향은 CAN을 시작 때 한 번만 연다 |
 | `Publisher count: 2` | `ros2 topic info -v /vehicle/command` | 시험 발행자(`command_generator`·`steering_bench_test_node`·`test_publisher`) 중복 실행 — 하나만 남기고 종료 |
 | AUTO인데 안 움직임 | `/drive/status`의 `command_received` | `false`면 Planning 미발행/stamp 누락. `stop_request: true`면 E-stop·브레이크 원인 확인 |
 | 조향이 Enable 안 됨 | `/steering/status`의 `disable_reason` | MANUAL 모드, E-stop, 명령 끊김(200 ms), mode 미수신이 흔한 원인 |
@@ -140,10 +106,41 @@ ros2 topic echo --once /vehicle/state # 나오면 상태 3종 전부 정상
 
 ---
 
+## 5. 보드 교체 시 고정 이름 갱신
+
+`/dev/stm_a`·`/dev/stm_b`는 보드의 ST-LINK serial 번호에 묶여 있다. 보드를
+교체하면 규칙의 serial을 새 보드 것으로 바꿔야 한다.
+
+```bash
+# ① 새 보드만 USB에 꽂고 serial 확인
+ls /dev/serial/by-id/          # ..._STLINK..._<serial>-if02 의 <serial> 부분
+
+# ② 규칙 파일에서 교체된 역할(stm_a 또는 stm_b)의 serial을 새 값으로 수정
+vi ~/KAI_ws/src/Control/firmware/udev/99-kaiev26-stm.rules
+
+# ③ 재설치·재적용
+cd ~/KAI_ws/src/Control
+sudo install -m 0644 firmware/udev/99-kaiev26-stm.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=tty
+
+# ④ 확인
+readlink -f /dev/stm_a /dev/stm_b
+```
+
+serial은 장치 이름일 뿐 **올라간 펌웨어가 STM_A인지 STM_B인지는 별개다.**
+교체 보드에 펌웨어를 새로 플래시했다면
+[`../firmware/README.md`](../firmware/README.md#stm-보드-고정-장치-이름)의
+방법대로 Agent를 붙여 node 이름(`/stm_a_node`·`/stm_b_node`)으로 역할까지
+확인한 뒤 규칙을 갱신한다. 수정한 규칙 파일은 커밋해서 저장소의 serial 표와
+실물이 어긋나지 않게 한다.
+
+---
+
 ## 아직 검증 안 된 것
 
-- 이 절차의 launch를 **실차 장치에서 실행한 적은 아직 없다** (HIL bench
-  동형 구조로 검증됨). 첫 실행은 구동륜을 들어 올리고 3절 확인부터 통과시킨다
+- 이 절차의 launch를 **실차 보드(`/dev/stm_a`·`stm_b`)로 실행한 적은 아직
+  없다** (HIL bench 보드로 동형 구조 검증됨). 첫 실행은 구동륜을 들어 올리고
+  2절 확인부터 통과시킨다
 - 조향 캘리브레이션(`steering_motor_calibration.yaml`)의 실차 실측 검증
 
 확인이 끝나면 이 절을 지우고 확인 날짜를 기록한다.

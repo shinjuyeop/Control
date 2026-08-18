@@ -95,7 +95,7 @@ STM 펌웨어 빌드와 보드별 micro-ROS Agent 실행 절차는
 [`firmware/README.md`](firmware/README.md)를 따릅니다.
 
 실차 구동 스택은 `control_launch`의 통합 launch로 실행합니다. **처음부터
-끝까지의 절차는 [실차 시동 절차](docs/VEHICLE_STARTUP.md)를 따라 하십시오.**
+끝까지의 절차는 [실차 운용 절차](docs/VEHICLE_RUNBOOK.md)를 따라 하십시오.**
 Planning은
 포함되지 않으며(별도 실행, `/planning/command` 발행), Planning이 없으면
 안전한 대기 상태(STM_A HALTED, 조향 WAIT_CMD)로 섭니다. 조향은 기본
@@ -129,7 +129,7 @@ bench([HIL runbook](docs/HIL_RUNBOOK.md)), 조향 단독
 
 | 문서 | 내용 |
 |---|---|
-| [Vehicle startup](docs/VEHICLE_STARTUP.md) | 실차 시동 절차 — PC 셋업부터 구동·정지까지 |
+| [Vehicle runbook](docs/VEHICLE_RUNBOOK.md) | 실차 운용 절차 — 구동·확인·정지와 보드 교체 |
 | [Architecture](docs/ARCHITECTURE.md) | 전체 시스템 구성, 역할과 데이터 흐름 |
 | [Interfaces](docs/INTERFACES.md) | ROS 2, STM 간 UART, EZkontrol·KEYA CAN 계약 |
 | [Safety](docs/SAFETY.md) | E-stop, timeout, fail-safe와 복구 동작 |
