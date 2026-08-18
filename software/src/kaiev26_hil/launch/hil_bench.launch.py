@@ -1,10 +1,12 @@
-"""Whole HIL bench in one launch: both micro-ROS Agents plus bridge/generator/GUI.
+"""Whole HIL bench in one launch: both micro-ROS Agents plus bridge/generator/
+governor/GUI, optionally with steering and vehicle state.
 
-This is the runbook's "현재 bench 실행" section as a single command. It is the HIL
-bench stack only. It is not the integrated vehicle launch: `lateral_ctrl`,
-`vehicle_state_publisher` and `visualization` stay out, because the bench has no
-KEYA CAN2 transceiver yet and those nodes are started per the runbook when it
-does.
+This is the runbook's "현재 bench 실행" section as a single command. Defaults
+keep the historical minimal scope (no `lateral_ctrl`, no
+`vehicle_state_publisher`); the KEYA CAN2 transceiver has been installed since
+2026-08-12, so `steering:=true` adds the steering stack on `can0` and
+`state:=true` adds `/vehicle/state` fusion — replacing the manual runbook
+steps. `visualization` stays out: observation is launched separately.
 
 Each Agent owns one serial device, so a device that is already open elsewhere
 makes only that Agent fail. Run the parts separately when you need to read one
@@ -35,12 +37,20 @@ def _agent(name, port, baud):
 def generate_launch_description():
     share = get_package_share_directory("kaiev26_hil")
     hil_launch = os.path.join(share, "launch", "hil.launch.py")
+    steering_launch = os.path.join(
+        get_package_share_directory("lateral_ctrl"),
+        "launch", "steering_actuator.launch.py",
+    )
     baud = LaunchConfiguration("agent_baud")
     return LaunchDescription([
         DeclareLaunchArgument("serial_port", default_value="/dev/hil_test"),
         DeclareLaunchArgument("stm_a_port", default_value="/dev/hil_a"),
         DeclareLaunchArgument("stm_b_port", default_value="/dev/hil_b"),
         DeclareLaunchArgument("agent_baud", default_value="115200"),
+        DeclareLaunchArgument(
+            "gui", default_value="true",
+            description="HIL GUI를 함께 띄운다. headless/scenario 실행이면 false.",
+        ),
         DeclareLaunchArgument(
             "gui_refresh_ms", default_value="200",
             description="GUI 갱신 주기(ms). 원격 X11 기준값이며 로컬 화면이면 100.",
@@ -49,14 +59,33 @@ def generate_launch_description():
             "agents", default_value="true",
             description="Start both micro-ROS Agents. Set false when they already run.",
         ),
+        DeclareLaunchArgument(
+            "steering", default_value="false",
+            description="can0의 KEYA 조향 스택을 함께 띄운다 (runbook 10절 대체).",
+        ),
+        DeclareLaunchArgument(
+            "state", default_value="false",
+            description="vehicle_state_publisher를 함께 띄운다 (runbook 11절 대체).",
+        ),
         _agent("stm_a_agent", LaunchConfiguration("stm_a_port"), baud),
         _agent("stm_b_agent", LaunchConfiguration("stm_b_port"), baud),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(hil_launch),
             launch_arguments={
                 "serial_port": LaunchConfiguration("serial_port"),
-                "gui": "true",
+                "gui": LaunchConfiguration("gui"),
                 "gui_refresh_ms": LaunchConfiguration("gui_refresh_ms"),
             }.items(),
+        ),
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(steering_launch),
+            condition=IfCondition(LaunchConfiguration("steering")),
+        ),
+        Node(
+            package="vehicle_state_publisher",
+            executable="vehicle_state_publisher_node",
+            name="vehicle_state_publisher",
+            output="screen",
+            condition=IfCondition(LaunchConfiguration("state")),
         ),
     ])

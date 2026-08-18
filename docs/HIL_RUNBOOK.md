@@ -61,8 +61,12 @@ STM_TEST serial ──> stm_test_bridge ──> /hil/status
 
 `hil.launch.py`는 micro-ROS Agent, `lateral_ctrl`,
 `vehicle_state_publisher`를 실행하지 않는다. `hil_bench.launch.py`는 Agent 두
-개까지 포함하지만 `lateral_ctrl`과 `vehicle_state_publisher`는 마찬가지로
-포함하지 않는다. 전체 차량 stack의 통합 launch는 아직 없다.
+개까지 기본 포함하고, `steering:=true`로 `lateral_ctrl`(can0),
+`state:=true`로 `vehicle_state_publisher`를 함께 띄울 수 있다(기본은 둘 다
+꺼져 있어 종전 범위와 같다). headless로 돌릴 때는 `gui:=false`를 준다.
+실차 구동 스택의 통합 launch는 `control_launch/vehicle.launch.py`다 — HIL
+bench가 아닌 실차 장치(`/dev/stm_a`, `/dev/stm_b`) 기준이며 이 runbook의
+범위 밖이다.
 
 ## 2. 호스트 최초 1회 준비
 
@@ -281,9 +285,10 @@ ros2 launch kaiev26_hil hil_bench.launch.py \
   agents:=false
 ```
 
-이 launch는 HIL bench 범위만 실행한다. `lateral_ctrl`,
-`vehicle_state_publisher`, `vehicle_dashboard`는 포함하지 않으므로 필요할 때
-[10절](#10-keya-포함-전체-hil)과 [11절](#11-통합-차량-상태와-monitoring-gui선택)에서
+기본값은 HIL bench 최소 범위만 실행한다. 조향과 상태 통합까지 한 번에
+띄우려면 `steering:=true state:=true`를 주면 되고, 이는
+[10절](#10-keya-포함-전체-hil)·[11절](#11-통합-차량-상태와-monitoring-gui선택)의
+수동 실행을 대체한다. `vehicle_dashboard`는 포함하지 않으므로 필요하면 11절대로
 따로 실행한다.
 
 모든 로그가 한 터미널에 섞이므로, XRCE session 생성 실패처럼 Agent 로그만
@@ -525,6 +530,20 @@ STM_TEST FDCAN2 transceiver는 PB12(`FDCAN2_RX`)·PB13(`FDCAN2_TX`)에 연결되
 있고 양단 120 ohm termination과 공통 ground를 갖춘 상태다.
 
 ### 10.1 SocketCAN 준비
+
+권장: 호스트에 1회 systemd-networkd 설정을 설치하면 부팅과 USB-CAN 재연결
+때마다 can0가 자동으로 준비되어 아래 수동 명령이 필요 없어진다. launch 전에
+can0가 안 올라와 있으면 조향 노드가 CAN 열기에 한 번 실패한 뒤 재시도 없이
+뜨므로, 자동화가 이 실수 자체를 없앤다.
+
+```bash
+cd ~/KAI_ws/src/Control
+sudo install -m 0644 host/systemd/80-can0-kaiev26.network /etc/systemd/network/
+sudo systemctl enable --now systemd-networkd
+ip -details link show can0   # state UP, bitrate 250000 확인
+```
+
+수동으로 할 때는 다음과 같다.
 
 ```bash
 ip link show can0

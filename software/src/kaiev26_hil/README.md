@@ -222,8 +222,10 @@ ros2 launch kaiev26_hil hil_bench.launch.py \
 
 `hil_bench.launch.py`는 위 `hil.launch.py`에 STM_A/B micro-ROS Agent 두 개를
 더한 것이다. Agent를 이미 따로 실행 중이면 `agents:=false`를 준다. 로그가 한
-터미널에 모이므로 Agent 로그만 읽어야 할 때는 터미널을 나눠 실행한다. 이 launch도
-`lateral_ctrl`과 `vehicle_state_publisher`는 포함하지 않는다.
+터미널에 모이므로 Agent 로그만 읽어야 할 때는 터미널을 나눠 실행한다.
+`steering:=true`는 can0의 `lateral_ctrl`을, `state:=true`는
+`vehicle_state_publisher`를 함께 띄운다(기본은 둘 다 꺼짐). `gui:=false`는
+headless 실행이다.
 
 Scenario. GUI 대신 scenario runner를 붙이려면 `gui:=false`와 `scenario_file`을
 함께 준다.

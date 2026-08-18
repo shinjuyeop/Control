@@ -9,6 +9,15 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <!-- vehicle.launch.py가 띄우는 패키지들 -->
+  <exec_depend>micro_ros_agent</exec_depend>
+  <exec_depend>command_governor</exec_depend>
+  <exec_depend>lateral_ctrl</exec_depend>
+  <exec_depend>vehicle_state_publisher</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
 

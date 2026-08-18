@@ -53,11 +53,12 @@ flowchart LR
 STM_A와 STM_B는 각각 별도의 LPUART1 serial transport와 micro-ROS Agent를
 사용합니다. 두 Agent는 MCU의 ROS 2 endpoint를 Host의 ROS graph에 연결합니다.
 
-> **주의:** 현재 `software/src/control_launch/launch/`에는 통합 launch가
-> 없습니다. Planning(`/planning/command` 발행자)의 구체 구현은 현재 코드에서
-> 확인되지 않으며, HIL에서는 `kaiev26_hil`의 `hil_command_generator`가 그
-> 자리를 대신합니다. `/vehicle/command`는 `command_governor`가 유일하게
-> 발행합니다.
+> **주의:** 실차 구동 스택은 `control_launch`의 `vehicle.launch.py`로
+> 실행합니다(Agent 2개 + `command_governor` + 조향 + 상태 통합, 관찰 계열
+> 제외). Planning(`/planning/command` 발행자)의 구체 구현은 현재 코드에서
+> 확인되지 않으며 launch에도 포함되지 않습니다 — HIL에서는 `kaiev26_hil`의
+> `hil_command_generator`가 그 자리를 대신합니다. `/vehicle/command`는
+> `command_governor`가 유일하게 발행합니다.
 
 ## 3. 구성요소별 역할
 
@@ -107,8 +108,10 @@ STM_B는 물리 E-stop 입력과 브레이크 서보의 직접 구동을 담당�
   조향을 제어합니다.
 - `vehicle_state_publisher`가 `/drive/status`, `/brake/status`,
   `/steering/status`를 합성해 `/vehicle/state`를 20 Hz로 발행합니다.
-- software 전체 실행 구조는 현재 정리 중이며 통합 실행 절차는 아직 확정되지
-  않았습니다.
+- 실차 구동 스택은 `control_launch/launch/vehicle.launch.py`로 실행합니다.
+  구동 노드만 포함하며 관찰(Foxglove bridge·dashboard·diagnostics)은
+  `visualization`의 launch로 따로 켭니다. 실차 장치에서의 최종 확인은 아직이며
+  HIL bench에서 동형 구조로 검증했습니다.
 
 ### 3.4 조향 제어
 
@@ -203,8 +206,10 @@ traction 차단 조건으로 사용하지 않습니다.
   안전 로직은 검증되지만 `calibration_a/b/c`와 `direction_sign`의 정확도는
   검증되지 않으며, 실제 조향 기구에서 따로 확인해야 합니다.
 
-현재 실차와 시뮬레이션을 동일한 통합 launch로 전환하는 구조는 구현되어 있지
-않습니다.
+실차는 `control_launch/vehicle.launch.py`, HIL bench는
+`kaiev26_hil/hil_bench.launch.py`로 실행합니다. 두 launch 모두
+`command_governor` 경유의 동일한 명령 체인을 쓰지만, 하나의 launch로 실차와
+시뮬레이션을 전환하는 구조는 아닙니다.
 
 ## 8. 설계 경계와 책임 분리
 

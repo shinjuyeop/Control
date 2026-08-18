@@ -66,7 +66,7 @@ Control/
 | `lateral_ctrl` | `/vehicle/command`와 STM 상태를 사용한 KEYA 조향 모터 제어 및 `/steering/status` |
 | `command_governor` | `/planning/command`를 정합성 게이트 후 `/vehicle/command`로 재발행하는 유일한 발행자. 현재 패스스루이며 형상(속도 상한·램프·축간 협조)은 이후 단계 |
 | `vehicle_state_publisher` | 액추에이터 status 3종을 `/vehicle/state`로 통합 |
-| `control_launch` | 전체 제어 launch 파일용 패키지이며 현재 통합 launch는 없음 |
+| `control_launch` | 실차 구동 스택 통합 `vehicle.launch.py` (Agent 2개 + 거버너 + 조향 + 상태 통합) |
 | `kaiev26_hil` | STM_TEST serial bridge, 신호 방향 기반 GUI, command generator, HIL scenario와 `vcan` bench simulator |
 | `visualization` | read-only 차량 상태 GUI와 Foxglove bridge·demo helper |
 | `gazebo` | PID 및 SILS 관련 시뮬레이션 자원 |
@@ -94,11 +94,26 @@ source ~/KAI_ws/install/setup.bash
 STM 펌웨어 빌드와 보드별 micro-ROS Agent 실행 절차는
 [`firmware/README.md`](firmware/README.md)를 따릅니다.
 
-현재 `control_launch`에는 통합 launch가 없습니다. 문서에 없는 전체 차량 실행
-명령을 추정해서 사용하지 마십시오. 지금 문서화된 실행 절차는 HIL
+실차 구동 스택은 `control_launch`의 통합 launch로 실행합니다. Planning은
+포함되지 않으며(별도 실행, `/planning/command` 발행), Planning이 없으면
+안전한 대기 상태(STM_A HALTED, 조향 WAIT_CMD)로 섭니다. 조향은 기본
+armed이므로 전원 인가 전에 배선과 E-stop을 먼저 확인하십시오. 관찰
+(Foxglove·dashboard·diagnostics)은 별도로 켭니다.
+
+```bash
+ros2 launch control_launch vehicle.launch.py            # 실차 구동 스택
+ros2 launch visualization foxglove_bridge.launch.py     # 관찰 (선택, 별도)
+```
+
+can0는 launch 전에 올라와 있어야 합니다. `host/systemd/`의 networkd 설정을
+호스트에 1회 설치하면 부팅·USB 재연결 시 자동 준비됩니다
+([HIL runbook 10.1](docs/HIL_RUNBOOK.md#101-socketcan-준비)).
+
+실차 장치(`/dev/stm_a`, `/dev/stm_b`)에서의 최종 확인은 아직이며, HIL
+bench에서 동형 구조로 검증했습니다. 그 외 문서화된 실행 절차는 HIL
 bench([HIL runbook](docs/HIL_RUNBOOK.md)), 조향 단독
 실행([lateral_ctrl](software/src/lateral_ctrl/README.md)), 거버너 단독
-실행([command_governor](software/src/command_governor/README.md))뿐입니다.
+실행([command_governor](software/src/command_governor/README.md))입니다.
 과거의 종방향 패키지 골격 `longitudinal_ctrl`은 노드가 채워진 적 없이
 `command_governor`로 대체되었습니다. 종방향 하드 한도는 계속 STM_A 펌웨어에
 있습니다.
