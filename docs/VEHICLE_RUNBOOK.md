@@ -70,6 +70,10 @@ ros2 launch visualization vehicle_dashboard.launch.py
   안 붙으면 노트북에서 `tailscale status`로 이 PC의 IP를 다시 확인한다).
   레이아웃은 `software/src/visualization/control.json`을 import한다.
   Diagnostics 패널에서 문제 항목이 위로 정렬되어 뜬다
+- **bridge는 PC당 하나만 띄운다.** bridge 하나가 모든 파트의 토픽을
+  서빙하고 노트북 여러 대가 동시에 접속할 수 있다. 각 파트의 launch에
+  bridge를 넣으면 같은 포트를 두고 bind 실패가 나므로, 다른 파트도 자기
+  bridge를 만들지 말고 위 주소에 접속한다
 
 ### ④ Planning 실행 (판단팀)
 
