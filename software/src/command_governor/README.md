@@ -103,6 +103,11 @@ ros2 launch command_governor command_governor.launch.py
 ros2 topic info -v /vehicle/command   # Publisher count: 1 (command_governor)
 ```
 
+위 단독 launch는 개발용이다. 실차에서는
+[`control_launch/vehicle.launch.py`](../control_launch/launch/vehicle.launch.py)가
+respawn과 함께 띄우고, HIL에서는 `kaiev26_hil`의 `hil.launch.py`가
+respawn 없이(크래시가 드러나도록) 띄운다.
+
 ## 관련 문서
 
 - 통신 계약: [`../../../docs/INTERFACES.md`](../../../docs/INTERFACES.md)

@@ -628,6 +628,9 @@ FDCAN1(EZ)도 `WAIT_HANDSHAKE`에서 `0x55`를 무조건 송신하므로 STM_A�
 
 ### 10.2 lateral controller 실행
 
+`hil_bench.launch.py steering:=true`로 bench 스택과 함께 띄웠다면 이 절은
+건너뛴다. 아래는 따로 실행할 때다.
+
 출력이 활성화된 `lateral_ctrl`는 `can0`에 KEYA Disable·position frame을 보낸다.
 동일 bus를 제어하는 다른 노드가 없는지 먼저 확인한다.
 
@@ -712,6 +715,8 @@ ros2 service call /hil/reset_safe_state std_srvs/srv/Trigger '{}'
 `vehicle_state_publisher`는 drive, brake, steering status를 모두 최소 한 번 받은 뒤에만
 `/vehicle/state`를 발행한다. `lateral_ctrl`를 실행하지 않으면 조향 status가 없으므로
 `/vehicle/state`도 나오지 않는다.
+
+`hil_bench.launch.py state:=true`로 함께 띄웠다면 아래 수동 실행은 건너뛴다.
 
 ```bash
 ros2 run vehicle_state_publisher vehicle_state_publisher_node
@@ -894,7 +899,8 @@ python3 -c "import PyQt5; print('PyQt5 OK')"
 - transceiver 물리 분리 시 FDCAN이 실제 bus-off로 가는지 확인. `can0` down은
   error-passive에서 자동 복구되는 것을 2026-08-14에 실측했으나, bit error가 나는
   이 경우는 미확인이다. bus-off로 확인되면 복구 로직이 필요하다
-- 통합 launch와 실행 스크립트 정리
+- `hil_bench.launch.py`에 `scenario_file` 인자 통과. 자동 scenario는 현재
+  Agent를 따로 띄우고 `hil.launch.py`를 직접 실행해야 한다
 
 ### 플래시 전 SWD target 확인
 

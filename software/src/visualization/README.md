@@ -53,6 +53,24 @@ Foxglove는 custom message 내부 필드를 직접 표시할 수 있으므로 �
 voltage/current, motor temperature, brake reason, steering state, message
 timeout과 age다.
 
+bridge는 `foxglove_bridge.launch.py`로 띄우며 **PC당 하나만** 실행한다 —
+하나가 ROS graph 전체를 서빙하고 클라이언트 여러 대가 동시 접속한다. launch가
+기본값과 다른 `send_buffer_limit`(100 MB)을 고정하므로 `ros2 run`으로 직접
+띄우지 않는다.
+
+## diagnostics_publisher
+
+status 3종(`/drive/status`, `/brake/status`, `/steering/status`)을 판정해
+`/diagnostics`(`diagnostic_msgs/DiagnosticArray`)로 1 Hz 요약하는 headless
+노드다. Foxglove Diagnostics 패널이 등급순으로 정렬하므로 문제 항목만 위로
+올라온다.
+
+실차에서는 관찰이 아니라 구동 스택 소속이라
+`control_launch/vehicle.launch.py`가 띄운다 — Foxglove를 켜지 않아도
+발행되어 bag에 남는다. 단독 실행은 `ros2 run visualization
+diagnostics_publisher`. 구독하는 status가 없으면 STALE로 표시되므로, 조향
+없는 최소 HIL bench에는 포함하지 않는다.
+
 ## 빌드
 
 현재 workspace에서 `kaiev26_msgs`와 `Control`은 나란히 있으므로 다음처럼

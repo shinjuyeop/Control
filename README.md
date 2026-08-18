@@ -41,10 +41,11 @@ Control/
 │       ├── lateral_ctrl/            # KEYA 조향 액추에이터 제어
 │       ├── command_governor/        # /planning/command → /vehicle/command 단일 발행자
 │       ├── vehicle_state_publisher/ # status 3종을 /vehicle/state로 통합
-│       ├── control_launch/          # 통합 launch 자리
+│       ├── control_launch/          # 실차 구동 통합 launch (vehicle.launch.py)
 │       ├── kaiev26_hil/             # STM_TEST bridge, HIL GUI, scenario, bench
 │       ├── visualization/           # 관찰용 GUI와 Foxglove helper
 │       └── gazebo/                  # PID·SILS 시뮬레이션 자원
+├── host/                            # 차량 PC 호스트 설정 (can0 systemd-networkd)
 └── archive/                         # 과거 구현 보관소, 빌드 대상 아님
 ```
 
