@@ -1,20 +1,19 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
+    # bridge만 띄운다. /diagnostics 요약(diagnostics_publisher)은 관찰이
+    # 아니라 구동 스택 소속이라 control_launch/vehicle.launch.py가 띄운다.
+    # bridge는 PC당 하나만 실행한다 — 하나가 ROS graph 전체를 서빙하고
+    # 클라이언트 여러 대가 동시 접속할 수 있다.
     return LaunchDescription(
         [
             DeclareLaunchArgument('port', default_value='8765'),
             DeclareLaunchArgument('address', default_value='0.0.0.0'),
-            DeclareLaunchArgument(
-                'diagnostics', default_value='true',
-                description='status 3종을 /diagnostics로 요약하는 노드를 함께 띄운다.',
-            ),
             Node(
                 package='foxglove_bridge',
                 executable='foxglove_bridge',
@@ -29,16 +28,6 @@ def generate_launch_description():
                         'send_buffer_limit': 100000000,
                     }
                 ],
-            ),
-            # 관찰 계열은 이 launch에 모은다. 실차 vehicle.launch.py는 구동
-            # 노드만 띄우므로 Foxglove Diagnostics 패널의 소스가 여기 있어야
-            # 관찰을 켤 때 함께 올라온다.
-            Node(
-                package='visualization',
-                executable='diagnostics_publisher',
-                name='diagnostics_publisher',
-                output='screen',
-                condition=IfCondition(LaunchConfiguration('diagnostics')),
             ),
         ]
     )

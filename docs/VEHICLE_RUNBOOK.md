@@ -42,7 +42,8 @@ can0는 부팅 때 자동으로 준비되어 있다. 이 시점에는 차가 **�
 
 각각 별도 터미널에서 아래 블록을 그대로 붙여 넣으면 된다.
 
-Foxglove bridge (+ `/diagnostics`):
+Foxglove bridge (`/diagnostics` 요약은 구동 스택이 이미 발행 중이라 bridge만
+켜면 된다):
 
 ```bash
 cd ~/KAI_ws
@@ -102,7 +103,7 @@ MANUAL 주행은 Planning 없이도 된다(페달·기어가 보드 직결).
 ```bash
 ros2 node list
 # stm_a_node, stm_b_node, command_governor, steering_actuator_node,
-# vehicle_state_publisher 다섯이 보이면 정상
+# vehicle_state_publisher, diagnostics_publisher 여섯이 보이면 정상
 
 ros2 topic info /vehicle/command      # Publisher count: 1 이어야 함 (2 이상 = 이상)
 ros2 topic echo --once /drive/status  # AUTO에서 command_received: true = 명령 도달

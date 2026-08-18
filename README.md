@@ -100,7 +100,8 @@ Planning은
 포함되지 않으며(별도 실행, `/planning/command` 발행), Planning이 없으면
 안전한 대기 상태(STM_A HALTED, 조향 WAIT_CMD)로 섭니다. 조향은 기본
 armed이므로 전원 인가 전에 배선과 E-stop을 먼저 확인하십시오. 관찰
-(Foxglove·dashboard·diagnostics)은 별도로 켭니다.
+GUI(Foxglove·dashboard)는 별도로 켭니다. `/diagnostics` 요약은 구동 스택에
+포함되어 있습니다.
 
 ```bash
 ros2 launch control_launch vehicle.launch.py            # 실차 구동 스택

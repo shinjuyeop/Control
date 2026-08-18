@@ -14,6 +14,8 @@
   <exec_depend>command_governor</exec_depend>
   <exec_depend>lateral_ctrl</exec_depend>
   <exec_depend>vehicle_state_publisher</exec_depend>
+  <!-- vehicle.launch.py가 diagnostics_publisher를 띄운다. -->
+  <exec_depend>visualization</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>

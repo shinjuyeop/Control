@@ -109,7 +109,7 @@ STM_B는 물리 E-stop 입력과 브레이크 서보의 직접 구동을 담당�
 - `vehicle_state_publisher`가 `/drive/status`, `/brake/status`,
   `/steering/status`를 합성해 `/vehicle/state`를 20 Hz로 발행합니다.
 - 실차 구동 스택은 `control_launch/launch/vehicle.launch.py`로 실행합니다.
-  구동 노드만 포함하며 관찰(Foxglove bridge·dashboard·diagnostics)은
+  구동 노드와 `/diagnostics` 요약을 포함하며 관찰 GUI(Foxglove bridge·dashboard)는
   `visualization`의 launch로 따로 켭니다. 실차 장치에서의 최종 확인은 아직이며
   HIL bench에서 동형 구조로 검증했습니다.
 
