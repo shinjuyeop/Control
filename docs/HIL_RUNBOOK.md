@@ -542,7 +542,12 @@ sudo install -m 0644 host/systemd/80-can0-kaiev26.network /etc/systemd/network/
 sudo systemctl enable --now systemd-networkd
 ip -details link show can0   # state UP, bitrate 250000 확인
 networkctl status can0       # SETUP=configured, Network File이 위 파일이면 관리 인수 완료
+candump -T 3000 can0         # 실제 트래픽 확인 — bench면 heartbeat 07000001이 보여야 함
 ```
+
+**UP + bitrate만으로는 부족하다.** 2026-08-19에 인터페이스가 UP이고 bitrate도
+정상인데 adapter의 USB 데이터 경로가 죽어 양방향 모두 0프레임인 상태를 겪었다
+(아래 문제 해결 참조). 검증은 반드시 트래픽 관찰까지 한다.
 
 2026-08-18 bench PC에 설치했다. `networkctl`에서 can0가 이 설정 파일로
 configured 상태인 것과 다른 인터페이스가 전부 unmanaged(NetworkManager 충돌
@@ -847,9 +852,19 @@ ros2 topic echo --once /hil/status --field data
 ```
 
 1. `can0`이 `DOWN`이거나 `BUS-OFF`인가 → [10.1](#101-socketcan-준비)로 복구
-2. `candump`에 heartbeat `07000001`이 안 보이는가 → STM_TEST FDCAN2 송신이 멈춘
-   것이다. `keya_errpass=1`, `keya_tec=128`, `keya_tx`가 3만큼 오른 뒤 정지면 확정.
-   `can0`을 올리면 스스로 복구된다([10.1.1](#1011-can0을-내리면-stm_test-송신이-멈췄다가-스스로-복구된다))
+2. `candump`에 heartbeat `07000001`이 안 보이는가 → 원인이 둘이다.
+   `/hil/status`의 protocol 3 field로 가른다.
+   - STM_TEST 송신 정지: `keya_errpass=1`, `keya_tec=128`, `keya_tx`가 3만큼
+     오른 뒤 정지. `can0`을 올리면 스스로 복구된다
+     ([10.1.1](#1011-can0을-내리면-stm_test-송신이-멈췄다가-스스로-복구된다))
+   - **USB-CAN adapter의 USB 경로 사망**: `keya_tx`는 1 Hz로 계속 증가하고
+     `keya_tec≈0`(보드는 정상 송신·ACK 수신 중)인데 host의
+     `ip -statistics link show can0` RX/TX packets가 0에서 멈춰 있다.
+     `cansend`가 성공해도 프레임이 나가지 않는다. 2026-08-19 실측: adapter의
+     CAN 코어는 하드웨어라 ACK를 계속 치지만 firmware의 USB 스트리밍이 굳은
+     상태로, `ip link down/up`과 USB unbind/bind(재열거)로도 복구되지 않았고
+     **adapter 물리 재연결(전원 차단)만이 해법이다.** 재연결하면 networkd가
+     자동 설정한다
 3. heartbeat은 보이는데 panel이 `NO RX`인가 → Host 쪽 송신자가 없는 것이다.
    `lateral_ctrl`이 실행 중이고 출력이 armed인지 확인한다
 
@@ -899,8 +914,8 @@ python3 -c "import PyQt5; print('PyQt5 OK')"
 - transceiver 물리 분리 시 FDCAN이 실제 bus-off로 가는지 확인. `can0` down은
   error-passive에서 자동 복구되는 것을 2026-08-14에 실측했으나, bit error가 나는
   이 경우는 미확인이다. bus-off로 확인되면 복구 로직이 필요하다
-- `hil_bench.launch.py`에 `scenario_file` 인자 통과. 자동 scenario는 현재
-  Agent를 따로 띄우고 `hil.launch.py`를 직접 실행해야 한다
+- KEYA USB-CAN adapter 재연결 후 `keya_can_timeout` scenario 재실행. 전제조건
+  추가판은 2026-08-19에 adapter USB 경로 사망으로 전제 FAIL이 확인된 상태다
 
 ### 플래시 전 SWD target 확인
 

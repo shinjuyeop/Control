@@ -228,14 +228,18 @@ ros2 launch kaiev26_hil hil_bench.launch.py \
 headless 실행이다.
 
 Scenario. GUI 대신 scenario runner를 붙이려면 `gui:=false`와 `scenario_file`을
-함께 준다.
+함께 준다. `hil_bench.launch.py`도 같은 인자를 통과시키므로 Agent까지 포함해
+한 명령으로 돌릴 수 있다.
 
 ```bash
-ros2 launch kaiev26_hil hil.launch.py \
-  serial_port:=/dev/hil_test \
-  gui:=false \
+ros2 launch kaiev26_hil hil_bench.launch.py \
+  gui:=false steering:=true \
   scenario_file:=$(ros2 pkg prefix kaiev26_hil)/share/kaiev26_hil/config/scenarios/smoke_test.yaml
 ```
+
+scenario에는 fault 주입 전에 해당 경로가 정상임을 확인하는 전제조건
+expectation이 들어 있다. 경로가 처음부터 죽어 있으면 결과 expectation이
+공허하게 통과할 수 있기 때문으로, 전제가 FAIL하면 시험 환경부터 고친다.
 
 ## CAN Bench/SIL simulator
 
