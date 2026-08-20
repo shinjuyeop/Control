@@ -283,6 +283,22 @@ bus-off에서는 `down` 후 `up`으로 수동 복구합니다.
 | Motor speed query | `40 03 21 01 00 00 00 00` |
 | Motor current query | `40 00 21 01 00 00 00 00` |
 | Fault query | `40 12 21 01 00 00 00 00` |
+| Bus voltage query | `40 0D 21 02 00 00 00 00` |
+| Driver temperature query | `40 0F 21 01 00 00 00 00` |
+
+제조사 `KEYA KY170DJD01005-08G-V1 User Manual V1.1` 인쇄면 12~13쪽의
+query response와 heartbeat 인코딩은 다음과 같습니다. multi-byte 값은 high
+byte가 먼저 옵니다. 아래 byte 위치는 8-byte CAN payload의 0-based index입니다.
+
+| 응답 | payload layout | 값 위치·폭 | 의미 |
+|---|---|---|---|
+| Encoder position query | `60 04 21 02 DATA_H(h) DATA_H(l) DATA_L(h) DATA_L(l)` | byte 4~7, 4 byte | position count (`10000 count/rev`) |
+| Motor speed query | `60 03 21 01 DATA_H(h) DATA_H(l) DATA_L(h) DATA_L(l)` | byte 4~7, 4 byte | motor speed `[rpm]` |
+| Motor current query | `60 00 21 01 00 00 00 DATA` | byte 7, 1 byte | working current `[A]` |
+| Fault query | `60 12 21 01 DATA_H DATA_L 00 00` | byte 4~5, 2 byte | failure code |
+| Bus voltage query | `60 0D 21 02 00 00 00 DATA` | byte 7, 1 byte | supply voltage `[V]` |
+| Driver temperature query | `60 0F 21 01 00 00 DATA 00` | byte 6, 1 byte | driver temperature `[°C]` |
+| Heartbeat | `ELE_H ELE_L SPEED_H SPEED_L CURRENT_H CURRENT_L ERR_H ERR_L` | position byte 0~1, speed 2~3, current 4~5, fault 6~7 | position `360 count/rev`, speed `[rpm]`, current `[A]`, failure code. 현재 driver는 heartbeat position을 사용하지 않음 |
 
 control tick 20 ms마다 position을 조회하며 ACTIVE에서는 rate-limit된 position
 command도 매 tick 전송합니다. fault는 100 ms, speed·current는 200 ms,
@@ -290,7 +306,9 @@ bus voltage·driver temperature는 500 ms 간격으로 번갈아 조회합니다
 
 - CAN timeout: heartbeat 또는 feedback frame이 500 ms 동안 없을 때
 - position feedback timeout: 유효 position response가 500 ms 동안 없을 때
-- KEYA 내부 watchdog 설정값: 현재 actuator 코드에서 설정하거나 확인하지 않음
+- KEYA 매뉴얼은 speed·torque command 간격이 1000 ms를 넘으면 CAN disconnect
+  error가 발생하고 재시작 시 Enable을 다시 보내야 한다고 규정. 현재 통합 경로의
+  position command에도 같은 watchdog과 출력 차단이 적용되는지는 미확인
 - 제어 mode: 현재 통합 경로는 position command만 사용
 - motor-axis diagnostic scaling: `10000 count/rev`
 - 조향 calibration은 raw KEYA count를 중앙 등가각으로 직접 환산하며

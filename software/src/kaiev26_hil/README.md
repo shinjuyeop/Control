@@ -95,6 +95,14 @@ Parameters:
 발행하는 기존 `lateral_ctrl/steering_bench_test_node`는 호환성 때문에 유지했지만
 governor를 우회하므로, 신규 HIL 시험은 이 node를 사용한다.
 
+실차 sysid에서는 이 node를 open-loop 시험입력으로만 사용한다. STM_A AUTO frame의
+phase-current 상한은 현재 300 A이므로 EZkontrol 내부 active current limit이 승인된
+값인지 export로 확인하거나 STM_A 상한을 안전하게 입증된 값으로 낮추기 전에는
+움직이는 실차에서 `enabled=true`로 두지 않는다. 시작할 때
+`ros2 topic info -v /vehicle/command`로 publisher가 하나인지 확인하고, 속도 target은
+0.25 m/s씩 1초 간격으로 올려 첫 1 m/s crawl을 만든다. 큰 속도 step, 무인 운행,
+communication timeout을 정상 정지수단으로 쓰는 것은 이 경로의 계약이 아니다.
+
 ### hil_gui
 
 기존 visualization과 동일하게 PyQt5를 사용한다. GUI는 serial을 열지 않고 ROS를
