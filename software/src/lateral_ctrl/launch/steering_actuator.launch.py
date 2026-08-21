@@ -10,7 +10,9 @@ import yaml
 CALIBRATION_PARAMETER_NAMES = (
     "count_scale",
     "equivalent_k1_deg",
+    "equivalent_k2_deg",
     "equivalent_k3_deg",
+    "equivalent_k4_deg",
     "equivalent_k5_deg",
     "command_count_limit",
     "counts_per_rev",
