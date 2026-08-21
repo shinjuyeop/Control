@@ -23,7 +23,7 @@ Two devices carry most of the work:
 import sys
 import threading
 
-from kaiev26_hil.qt_runtime import ensure_bundled_qt_first
+from control_gui_common.qt_runtime import ensure_bundled_qt_first
 from kaiev26_msgs.msg import (
     ActuatorCommand,
     BrakeActuatorStatus,

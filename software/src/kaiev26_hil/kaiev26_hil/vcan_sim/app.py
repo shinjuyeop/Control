@@ -40,8 +40,8 @@ class RuntimeDiagnosticsSnapshot:
     bus_health: BusHealthSnapshot | None
 
 
-class CanLabRuntime:
-    """CAN lab 전체를 하나로 묶는 runtime."""
+class VcanSimRuntime:
+    """vcan simulator 전체를 하나로 묶는 runtime."""
 
     LOOP_PERIOD_S = 0.01
     MOTOR_HANDSHAKE_PERIOD_S = 0.50

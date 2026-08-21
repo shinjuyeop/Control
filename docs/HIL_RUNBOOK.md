@@ -178,6 +178,7 @@ Agent 셸에서 `ROS_DOMAIN_ID`만 190으로 바꾸면 STM이 이동하지 않�
 ros2 pkg prefix kaiev26_hil
 ros2 pkg prefix micro_ros_agent
 ros2 pkg prefix lateral_ctrl
+ros2 pkg prefix control_gui_common
 ros2 pkg prefix visualization
 ```
 
@@ -197,6 +198,7 @@ colcon build --symlink-install \
   kaiev26_hil \
   lateral_ctrl \
   vehicle_state_publisher \
+  control_gui_common \
   visualization
 
 source ~/KAI_ws/install/setup.zsh
@@ -206,7 +208,7 @@ export ROS_DOMAIN_ID=0
 HIL·시각화 테스트:
 
 ```bash
-colcon test --packages-select kaiev26_hil visualization
+colcon test --packages-select control_gui_common kaiev26_hil visualization
 colcon test-result --verbose
 ```
 
@@ -746,7 +748,7 @@ runner만 실행한다.
 ```bash
 HIL_SHARE="$(ros2 pkg prefix kaiev26_hil)/share/kaiev26_hil"
 
-ros2 run kaiev26_hil scenario_runner --ros-args \
+ros2 run kaiev26_hil hil_scenario_runner --ros-args \
   -p scenario_file:="$HIL_SHARE/config/scenarios/smoke_test.yaml" \
   -p results_dir:="$HOME/KAI_ws/hil_test_results"
 ```
@@ -884,8 +886,7 @@ ros2 topic pub --once /hil/command std_msgs/msg/String '{data: "SET MODE AUTO"}'
 
 `/vehicle/command` 발행자가 둘 이상이면 명령이 서로 덮어쓴다. 정상 구성에서
 발행자는 `command_governor` 하나다. governor를 우회하는
-`steering_bench_test_node`나 `visualization`의 `test_publisher`를 HIL 스택과
-동시에 켜지 않는다.
+`steering_bench_test_node`를 HIL 스택과 동시에 켜지 않는다.
 
 ```bash
 ros2 topic info -v /vehicle/command

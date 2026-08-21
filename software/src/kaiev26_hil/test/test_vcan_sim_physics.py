@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from kaiev26_hil.bench.can_io import MotorCommand, SteeringCommand
-from kaiev26_hil.bench.physics import MotorPlant, SteeringPlant
+from kaiev26_hil.vcan_sim.can_io import MotorCommand, SteeringCommand
+from kaiev26_hil.vcan_sim.physics import MotorPlant, SteeringPlant
 
 
 def _enable_motor(plant: MotorPlant) -> None:

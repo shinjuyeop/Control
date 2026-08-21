@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Team KAI CAN Lab 실행 진입점.
+"""Team KAI vcan simulator 실행 진입점.
 
 이 파일은 실행 옵션만 해석하고,
 실제 CAN runtime과 GUI는 분리된 모듈에 위임한다.
@@ -10,12 +10,12 @@ import argparse
 import signal
 import time
 
-from .app import CanLabRuntime
+from .app import VcanSimRuntime
 
 
 def parse_args() -> argparse.Namespace:
     """실행 모드와 CAN 인터페이스를 명령줄에서 읽는다."""
-    parser = argparse.ArgumentParser(description="Team KAI CAN training lab")
+    parser = argparse.ArgumentParser(description="Team KAI vcan simulator")
     parser.add_argument("--motor-iface", default="vcan0", help="motor CAN interface")
     parser.add_argument("--steer-iface", default="vcan1", help="steering CAN interface")
     parser.add_argument("--no-gui", action="store_true", help="run without Tk dashboard")
@@ -31,7 +31,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     """headless 또는 GUI 모드로 lab runtime을 실행한다."""
     args = parse_args()
-    runtime = CanLabRuntime(args.motor_iface, args.steer_iface)
+    runtime = VcanSimRuntime(args.motor_iface, args.steer_iface)
     try:
         if args.no_gui or args.ros_no_gui == "true":
             # GUI 없이도 vcan 위에서 동일한 runtime을 돌린다.

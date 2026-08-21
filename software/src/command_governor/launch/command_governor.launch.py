@@ -1,9 +1,8 @@
 """command_governor 단독 실행. /planning/command -> /vehicle/command 패스스루.
 
 이 노드가 /vehicle/command의 유일한 발행자여야 한다. hil_command_generator를
-/vehicle/command로 직접 발행하도록 되돌리거나, steering_bench_test_node 또는
-visualization test_publisher와 함께 띄우면 발행자가 둘이 되어 명령이 서로
-덮어쓴다.
+/vehicle/command로 직접 발행하도록 되돌리거나 steering_bench_test_node와 함께
+띄우면 발행자가 둘이 되어 명령이 서로 덮어쓴다.
 """
 
 import os

@@ -55,10 +55,11 @@ STM_A와 STM_B는 각각 별도의 LPUART1 serial transport와 micro-ROS Agent�
 
 > **주의:** 실차 구동 스택은 `control_launch`의 `vehicle.launch.py`로
 > 실행합니다(Agent 2개 + `command_governor` + 조향 + 상태 통합, 관찰 계열
-> 제외). Planning(`/planning/command` 발행자)의 구체 구현은 현재 코드에서
-> 확인되지 않으며 launch에도 포함되지 않습니다 — HIL에서는 `kaiev26_hil`의
-> `hil_command_generator`가 그 자리를 대신합니다. `/vehicle/command`는
-> `command_governor`가 유일하게 발행합니다.
+> 제외). Production Planning(`/planning/command` 발행자)의 구체 구현은 현재
+> 코드에서 확인되지 않으며 launch에도 포함되지 않습니다. 실차 시험에서는
+> `vehicle_test_scenarios`, HIL에서는 `kaiev26_hil`의 `hil_command_generator`가
+> 그 자리를 대신합니다. `/vehicle/command`는 `command_governor`가 유일하게
+> 발행합니다.
 
 ## 3. 구성요소별 역할
 
@@ -103,7 +104,8 @@ STM_B는 물리 E-stop 입력과 브레이크 서보의 직접 구동을 담당�
 - `command_governor`가 상위 Planning 계층의 `/planning/command`를 받아
   `/vehicle/command`로 재발행합니다. 이 노드가 `/vehicle/command`의 유일한
   발행자이며, 현재는 패스스루(정합성 게이트만, 형상 없음)입니다. Planning의
-  production 구현은 아직 없고 HIL에서는 `hil_command_generator`가 대역입니다.
+  production 구현은 아직 없고 실차 시험은 `vehicle_test_scenario_runner`, HIL은
+  `hil_command_generator`가 대역입니다. 두 시험 발행자는 동시에 실행하지 않습니다.
 - `lateral_ctrl/steering_actuator_node`가 KEYA 모터의 SocketCAN 소유자가 되어
   조향을 제어합니다.
 - `vehicle_state_publisher`가 `/drive/status`, `/brake/status`,
@@ -134,7 +136,9 @@ STM_B는 물리 E-stop 입력과 브레이크 서보의 직접 구동을 담당�
 ## 4. 명령 데이터 흐름
 
 ```text
-Planning / Motion Control (TBD; HIL은 hil_command_generator가 대역)
+Planning / Motion Control (production TBD)
+  또는 vehicle_test_scenario_runner (실차 시험)
+  또는 hil_command_generator (HIL)
   └─ /planning/command: ActuatorCommand
       └─ command_governor (정합성 게이트, 재-stamp; 현재 패스스루)
           └─ /vehicle/command: ActuatorCommand
@@ -191,15 +195,15 @@ traction 차단 조건으로 사용하지 않습니다.
 
 ## 7. 실차와 시뮬레이션의 관계
 
-- `kaiev26_hil`의 `bench` 모듈은 `vcan`에서 구동·조향 CAN 동작을 시험하는
-  simulator입니다. `ros2 launch kaiev26_hil bench.launch.py`로 실행합니다.
+- `kaiev26_hil.vcan_sim`은 `vcan`에서 구동·조향 CAN 동작을 시험하는
+  software-only simulator입니다. `ros2 launch kaiev26_hil vcan_sim.launch.py`로
+  실행합니다.
 - `gazebo/pid_gazebo`는 PID와 SILS 실험용 Python 패키지·자원을 포함합니다.
 - 벤치용 `steering_bench_test_node`는 시험 `/vehicle/command`,
   `/drive/status`, `/steering/test/estop`을 선택적으로 발행합니다. STM_A/B 없이
   조향만 단독 시험할 때 쓰며, **`command_governor`를 우회해 `/vehicle/command`에
   직접 발행하므로** governor 또는 HIL bench 스택(`hil.launch.py`)과 동시에
   실행하면 `/vehicle/command` 발행자가 둘이 됩니다. 함께 켜지 않습니다.
-  `visualization`의 `test_publisher`도 같은 이유로 함께 켜지 않습니다.
 - 이 시험 입력은 실제 STM의 안전 경로를 대체하는 인증된 fail-safe로 간주할 수
   없습니다.
 - HIL bench의 KEYA emulator는 모터축을 선형으로만 모사합니다. 따라서 CAN 경로와
@@ -224,7 +228,9 @@ traction 차단 조건으로 사용하지 않습니다.
 | 공통 `/vehicle/state` 합성 | Host `vehicle_state_publisher` |
 | `/vehicle/command` 단일 발행과 명령 정합성 게이트 | Host `command_governor` |
 | 명령 형상 (속도 상한·램프·축간 협조) | Host `command_governor` (예정, 현재 패스스루) |
-| Planning / motion-control 명령 생성 (`/planning/command`) | 현재 코드에서 확인되지 않음; HIL은 `hil_command_generator` 대역 |
+| Production Planning / motion-control 명령 생성 (`/planning/command`) | 현재 코드에서 확인되지 않음 |
+| 실차 시험 `/planning/command` 생성 | Host `vehicle_test_scenarios` |
+| HIL `/planning/command` 생성 | Host `kaiev26_hil/hil_command_generator` |
 
 ## 9. 관련 문서
 
@@ -236,4 +242,5 @@ traction 차단 조건으로 사용하지 않습니다.
 - STM_B 내부 구조: [`../firmware/STM_B/README.md`](../firmware/STM_B/README.md)
 - STM_TEST HIL emulator: [`../firmware/STM_TEST/README.md`](../firmware/STM_TEST/README.md)
 - 조향 패키지: [`../software/src/lateral_ctrl/README.md`](../software/src/lateral_ctrl/README.md)
+- 실차 시험 시나리오: [`../software/src/vehicle_test_scenarios/README.md`](../software/src/vehicle_test_scenarios/README.md)
 - HIL 운용 절차: [`HIL_RUNBOOK.md`](HIL_RUNBOOK.md)

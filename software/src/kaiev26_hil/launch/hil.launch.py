@@ -47,7 +47,8 @@ def generate_launch_description():
             parameters=[config, {"serial_port": LaunchConfiguration("serial_port")}],
         ),
         Node(
-            package="kaiev26_hil", executable="command_generator", name="hil_command_generator",
+            package="kaiev26_hil", executable="hil_command_generator",
+            name="hil_command_generator",
             output="screen", parameters=[config],
         ),
         # /vehicle/command의 유일한 발행자. 자기 패키지의 config를 그대로 쓴다.
@@ -69,7 +70,8 @@ def generate_launch_description():
             condition=IfCondition(LaunchConfiguration("gui")),
         ),
         Node(
-            package="kaiev26_hil", executable="scenario_runner", name="hil_scenario_runner",
+            package="kaiev26_hil", executable="hil_scenario_runner",
+            name="hil_scenario_runner",
             output="screen",
             parameters=[{
                 "scenario_file": scenario_file,

@@ -26,7 +26,7 @@ KEYA 조향 CAN의 데이터 계약과 주기·timeout을 정리하는 기준 �
 
 | 송신 | 수신 | 방식 | 이름/ID | 데이터 | 주기 | Timeout | 설명 |
 |---|---|---|---|---|---:|---:|---|
-| Planning (TBD) | `command_governor` | ROS 2 | `/planning/command` | `ActuatorCommand` | Planning 미구현; HIL 대역은 20 Hz | 거버너 입력 게이트 200 ms | Planning 의도. HIL은 `hil_command_generator`가 대역 |
+| Planning 또는 시험 명령원 | `command_governor` | ROS 2 | `/planning/command` | `ActuatorCommand` | production 미구현; 실차 시험·HIL은 20 Hz | 거버너 입력 게이트 200 ms | 실차 시험은 `vehicle_test_scenario_runner`, HIL은 `hil_command_generator` |
 | `command_governor` | STM_A | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 500 ms | AUTO 속도·brake |
 | `command_governor` | STM_B | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 적용 안 함 | brake만 저장 |
 | `command_governor` | 조향 노드 | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 200 ms | ACTIVE 조향 freshness |
@@ -48,7 +48,7 @@ KEYA 조향 CAN의 데이터 계약과 주기·timeout을 정리하는 기준 �
 
 | Topic | Publisher | Subscriber | Type | Rate | QoS | 설명 |
 |---|---|---|---|---:|---|---|
-| `/planning/command` | Planning (production 미구현), HIL은 `hil_command_generator` | `command_governor` | `kaiev26_msgs/msg/ActuatorCommand` | Planning TBD; HIL 20 Hz | default | Planning 의도 명령 |
+| `/planning/command` | Planning (production 미구현), 실차 시험 `vehicle_test_scenario_runner`, HIL `hil_command_generator` 중 하나 | `command_governor` | `kaiev26_msgs/msg/ActuatorCommand` | 시험 명령원 20 Hz | default | Planning 의도 명령 |
 | `/vehicle/command` | `command_governor` (유일 발행자) | STM_A, STM_B, `steering_actuator_node` | `kaiev26_msgs/msg/ActuatorCommand` | 입력 연동; HIL 20 Hz | default | 속도·조향·최종 brake 명령 |
 | `/drive/status` | `/stm_a_node` | 조향 노드, `vehicle_state_publisher` | `kaiev26_msgs/msg/DriveActuatorStatus` | 20 Hz | default | mode·gear·구동 명령 및 EZkontrol 진단 |
 | `/brake/status` | `/stm_b_node` | 조향 노드, `vehicle_state_publisher` | `kaiev26_msgs/msg/BrakeActuatorStatus` | 20 Hz + 변경 시 | default | 브레이크 command와 stop reason |
@@ -71,11 +71,12 @@ ros2 topic info -v /vehicle/state
 `/vehicle/command`의 발행자는 `command_governor` 하나입니다. 거버너는
 `/planning/command`를 수신 즉시 정합성 게이트(stamp 0·음수, 나이 ±200 ms,
 finite)를 거쳐 재-stamp 후 재발행하며, 자체 타이머와 keep-alive가 없으므로 발행률은
-입력을 그대로 따릅니다. 따라서 상류(Planning; HIL은 `hil_command_generator`
-20 Hz)가 STM_A의 500 ms와 조향의 200 ms freshness 한계보다 충분히 빠르게
-발행해야 합니다. 5 Hz는 조향 200 ms의 경계라 간헐 timeout이 납니다.
-`/planning/command`의 production Planning publisher는 아직 구현되지 않았습니다
-(`src/Decision` 비어 있음).
+입력을 그대로 따릅니다. 따라서 상류(실차 시험은
+`vehicle_test_scenario_runner`, HIL은 `hil_command_generator`, 모두 20 Hz)가
+STM_A의 500 ms와 조향의 200 ms freshness 한계보다 충분히 빠르게 발행해야
+합니다. 5 Hz는 조향 200 ms의 경계라 간헐 timeout이 납니다.
+`/planning/command`의 production Planning publisher는 아직 구현되지 않았습니다.
+실차 시험·HIL·production publisher 중 하나만 실행합니다.
 
 ### 4.2 조향 보조 topic
 

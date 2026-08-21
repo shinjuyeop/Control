@@ -16,7 +16,7 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 
 
-class CommandGenerator(Node):
+class HilCommandGenerator(Node):
     def __init__(self) -> None:
         super().__init__("hil_command_generator")
         self.declare_parameter("enabled", False)
@@ -66,7 +66,7 @@ class CommandGenerator(Node):
 
 def main(args=None) -> None:
     rclpy.init(args=args)
-    node = CommandGenerator()
+    node = HilCommandGenerator()
     try:
         rclpy.spin(node)
     except (KeyboardInterrupt, ExternalShutdownException):

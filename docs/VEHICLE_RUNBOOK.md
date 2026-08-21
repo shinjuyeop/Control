@@ -77,23 +77,148 @@ ros2 launch visualization foxglove_bridge.launch.py
   bridge를 넣으면 같은 포트를 두고 bind 실패가 나므로, 다른 파트도 자기
   bridge를 만들지 말고 위 주소에 접속한다
 
-### ④ Planning 실행 (판단팀)
+### ④ 자율주행 명령 준비
+
+#### 실제 Planning (판단팀)
 
 판단 노드가 `/planning/command`(`kaiev26_msgs/ActuatorCommand`)를 **20 Hz
 이상, `header.stamp` 필수**로 발행하면 명령 경로가 완성된다.
 
-Planning 없이 경로만 확인할 때는 시험 대역을 쓸 수 있다. **구동륜을 들어
-올리고 E-stop을 잡은 상태에서만**:
+#### 실차 테스트 시나리오
+
+Planning 없이 실차 동작을 확인할 때는 `vehicle_test_scenarios`의 시험 runner를
+쓴다. HIL 전용 `hil_command_generator`는 실차에서 사용하지 않는다. 새
+터미널에서 실행한다.
+
+**터미널 1 — scenario runner 실행:**
 
 ```bash
-ros2 run kaiev26_hil command_generator        # 정지 명령, 발행 꺼진 채 시작
-ros2 param set /hil_command_generator enabled true
+cd ~/KAI_ws
+source /opt/ros/humble/setup.zsh
+source ~/KAI_ws/install/setup.zsh
+export ROS_DOMAIN_ID=0
+
+ros2 run vehicle_test_scenarios vehicle_test_scenario_runner
 ```
+
+runner는 `enabled=false`로 시작하므로 이 시점에는 명령 메시지를 발행하지 않는다.
+다른 터미널에서 실제 Planning이나 다른 시험 명령원이 없는지 먼저 확인한다.
+
+**터미널 2 — 상태 확인 및 파라미터 설정:**
+
+```bash
+cd ~/KAI_ws
+source /opt/ros/humble/setup.zsh
+source ~/KAI_ws/install/setup.zsh
+export ROS_DOMAIN_ID=0
+
+ros2 topic info /planning/command
+# Publisher count: 1 (vehicle_test_scenario_runner 하나)이어야 함
+
+ros2 param set /vehicle_test_scenario_runner enabled false
+ros2 param set /vehicle_test_scenario_runner brake_override false
+# 시나리오 설정 전 준비 상태: 명령 발행 중지 + software brake override 해제
+```
+
+두 파라미터의 `true`/`false` 의미는 다음과 같다. 각 쌍에서 필요한 명령 하나만
+실행한다.
+
+`enabled` — `/planning/command` 발행 여부:
+
+```bash
+# true: 선택한 시나리오를 20 Hz로 발행해 주행/조향 명령을 시작
+ros2 param set /vehicle_test_scenario_runner enabled true
+```
+
+```bash
+# false: /planning/command 발행 중지. brake 명령을 보내는 것은 아님
+ros2 param set /vehicle_test_scenario_runner enabled false
+```
+
+`brake_override` — 활성 시나리오를 software brake 명령으로 덮어쓸지 여부:
+
+```bash
+# true: enabled=true일 때 speed 0 + steer 0 + brake_engage true를 계속 발행
+ros2 param set /vehicle_test_scenario_runner brake_override true
+```
+
+```bash
+# false: software brake override 해제. enabled=true면 선택한 시나리오가 다시 발행됨
+# 물리 E-stop 상태를 바꾸는 명령은 아님
+ros2 param set /vehicle_test_scenario_runner brake_override false
+```
+
+아래 블록 중 **시험할 시나리오 하나만** 설정한다. 파라미터 단위는 속도
+`km/h`, 조향 중앙 등가각 `deg`, 시간 `sec`다.
+
+##### 일정 속도 직진 — 기본 3 km/h
+
+```bash
+ros2 param set /vehicle_test_scenario_runner cruise_speed_kph 3.0
+ros2 param set /vehicle_test_scenario_runner steering_center_deg 0.0
+ros2 param set /vehicle_test_scenario_runner scenario straight
+```
+
+##### 조향 sweep/slalom — 3 km/h, ±3°, 4초 주기
+
+첫 실차 시험은 `3 deg`부터 시작한다. 방향과 tracking을 확인한 뒤에만 진폭을
+단계적으로 올린다.
+
+```bash
+ros2 param set /vehicle_test_scenario_runner cruise_speed_kph 3.0
+ros2 param set /vehicle_test_scenario_runner steering_center_deg 0.0
+ros2 param set /vehicle_test_scenario_runner steering_amplitude_deg 3.0
+ros2 param set /vehicle_test_scenario_runner steering_period_sec 4.0
+ros2 param set /vehicle_test_scenario_runner scenario steering_sweep
+```
+
+##### 속도 step — 1↔3 km/h, 2초 간격
+
+```bash
+ros2 param set /vehicle_test_scenario_runner speed_low_kph 1.0
+ros2 param set /vehicle_test_scenario_runner speed_high_kph 3.0
+ros2 param set /vehicle_test_scenario_runner speed_step_interval_sec 2.0
+ros2 param set /vehicle_test_scenario_runner steering_center_deg 0.0
+ros2 param set /vehicle_test_scenario_runner scenario speed_step
+```
+
+##### 속도 ramp — 0→3→0 km/h, 편도 5초
+
+```bash
+ros2 param set /vehicle_test_scenario_runner speed_low_kph 0.0
+ros2 param set /vehicle_test_scenario_runner speed_high_kph 3.0
+ros2 param set /vehicle_test_scenario_runner speed_ramp_duration_sec 5.0
+ros2 param set /vehicle_test_scenario_runner steering_center_deg 0.0
+ros2 param set /vehicle_test_scenario_runner scenario speed_ramp
+```
+
+##### 제동 시험 — 3 km/h 명령 3초 후 brake 유지
+
+```bash
+ros2 param set /vehicle_test_scenario_runner cruise_speed_kph 3.0
+ros2 param set /vehicle_test_scenario_runner steering_center_deg 0.0
+ros2 param set /vehicle_test_scenario_runner brake_delay_sec 3.0
+ros2 param set /vehicle_test_scenario_runner scenario brake_test
+```
+
+시나리오 세부 계약과 전체 파라미터는
+[`vehicle_test_scenarios/README.md`](../software/src/vehicle_test_scenarios/README.md)에
+있다.
 
 ### ⑤ 모드 스위치 AUTO
 
 차량의 물리 모드 스위치를 AUTO로 올리면 자율주행이 시작된다. host에서는
-모드를 바꿀 수 없다 — 스위치가 유일한 기준이다.
+모드를 바꿀 수 없다 — 스위치가 유일한 기준이다. 실제 Planning 대신 ④의 시험
+runner를 쓴다면 AUTO가 확인된 뒤 마지막에 발행을 활성화한다.
+
+```bash
+ros2 topic echo --once /drive/status   # mode: 1, stop_request: false 확인
+ros2 param set /vehicle_test_scenario_runner enabled true
+ros2 topic echo --once /planning/command
+```
+
+활성화 이후 시나리오나 동작 파라미터를 바꾸면 해당 시나리오의 경과 시간이
+0으로 초기화되어 처음부터 다시 시작한다.
 
 MANUAL 주행은 Planning 없이도 된다(페달·기어가 보드 직결).
 
@@ -106,6 +231,7 @@ ros2 node list
 # stm_a_node, stm_b_node, command_governor, steering_actuator_node,
 # vehicle_state_publisher, diagnostics_publisher 여섯이 보이면 정상
 
+ros2 topic info /planning/command     # 시험 runner 사용 시 Publisher count: 1
 ros2 topic info /vehicle/command      # Publisher count: 1 이어야 함 (2 이상 = 이상)
 ros2 topic echo --once /drive/status  # AUTO에서 command_received: true = 명령 도달
 ros2 topic echo --once /vehicle/state # 나오면 상태 3종 전부 정상
@@ -119,7 +245,12 @@ ros2 topic echo --once /vehicle/state # 나오면 상태 3종 전부 정상
 |---|---|
 | **비상 정지** | 물리 E-stop — launch·소프트웨어와 무관하게 항상 동작한다 |
 | 자율주행만 중단 | 모드 스위치 MANUAL |
-| 정상 종료 | 모드 MANUAL → Planning 종료 → launch 터미널 `Ctrl-C` |
+| 시험 명령으로 제동 | `ros2 param set /vehicle_test_scenario_runner brake_override true` — speed/steer 0 + brake를 계속 발행 |
+| 정상 종료 | 모드 MANUAL → 시험 runner `enabled false` → runner `Ctrl-C` → Planning/launch 종료 |
+
+다음 시험 전에 `brake_override false`를 다시 설정한다. `enabled=false`만 먼저
+주면 명령 발행이 즉시 끊기고 STM_A 500 ms·조향 200 ms timeout으로 정지한다.
+계획된 종료는 물리 MANUAL을 먼저 사용한다.
 
 ---
 
@@ -129,7 +260,8 @@ ros2 topic echo --once /vehicle/state # 나오면 상태 3종 전부 정상
 |---|---|---|
 | `/dev/stm_a`(또는 `stm_b`)가 없음 | `ls -l /dev/stm_*` | 보드 전원·USB 확인. 보드를 교체했다면 [5절](#5-보드-교체-시-고정-이름-갱신) |
 | 조향 노드가 CAN 오류 로그 | `ip link show can0` | USB-CAN 재연결(자동 재설정됨) 후 **launch 재시작** — 조향은 CAN을 시작 때 한 번만 연다 |
-| `Publisher count: 2` | `ros2 topic info -v /vehicle/command` | 시험 발행자(`command_generator`·`steering_bench_test_node`·`test_publisher`) 중복 실행 — 하나만 남기고 종료 |
+| `/planning/command` publisher가 2개 이상 | `ros2 topic info -v /planning/command` | 실제 Planning·`vehicle_test_scenario_runner`·`hil_command_generator` 중복 — 하나만 남기고 종료 |
+| `/vehicle/command` publisher가 2개 이상 | `ros2 topic info -v /vehicle/command` | governor를 우회하는 `steering_bench_test_node` 중복 — 실차에서는 종료 |
 | AUTO인데 안 움직임 | `/drive/status`의 `command_received` | `false`면 Planning 미발행/stamp 누락. `stop_request: true`면 E-stop·브레이크 원인 확인 |
 | 조향이 Enable 안 됨 | `/steering/status`의 `disable_reason` | MANUAL 모드, E-stop, 명령 끊김(200 ms), mode 미수신이 흔한 원인 |
 | 명령이 끊겼다 | — | 설계된 안전 동작: 0.5초 내 구동 정지, 조향 대기. Planning 재개하면 자동 복귀 |

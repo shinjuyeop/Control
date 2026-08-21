@@ -1,4 +1,4 @@
-"""디버그용 HMI 계층.
+"""vcan simulator 디버그용 HMI 계층.
 
 runtime이 만든 상태 스냅샷과 raw frame 로그를 화면에 보여준다.
 """

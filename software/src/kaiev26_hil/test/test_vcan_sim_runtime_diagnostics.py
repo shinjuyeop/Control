@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import threading
 
-from kaiev26_hil.bench import app
-from kaiev26_hil.bench.can_io import CanFrame, ID_MOTOR_CMD, SocketCANBusHub
+from kaiev26_hil.vcan_sim import app
+from kaiev26_hil.vcan_sim.can_io import CanFrame, ID_MOTOR_CMD, SocketCANBusHub
 
 
 class DummyHub:
@@ -42,7 +42,7 @@ def test_socketcan_hub_tracks_callback_errors(caplog):
 
 def test_runtime_tracks_frame_listener_errors(monkeypatch):
     monkeypatch.setattr(app, "SocketCANBusHub", DummyHub)
-    runtime = app.CanLabRuntime("vcan0", "vcan1")
+    runtime = app.VcanSimRuntime("vcan0", "vcan1")
 
     try:
         runtime.add_frame_listener(lambda _frame: (_ for _ in ()).throw(RuntimeError("listener boom")))

@@ -1,4 +1,4 @@
-"""Bench/SIL CAN communication layer.
+"""vcan SIL communication layer.
 
 이 모듈은 세 가지를 맡는다.
 1. SocketCAN 송수신
@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import logging
-import math
 import struct
 import threading
 import time
@@ -39,8 +38,7 @@ CTRL_SPEED = 1 << 1
 # 실차 프로토콜에서 쓰는 raw offset을 그대로 유지한다.
 MOTOR_RPM_OFFSET = 32000
 MOTOR_CURRENT_OFFSET_A = -3200.0
-# Keep the historical logger name so existing log filters keep matching. It is a
-# literal, not __name__, so it survived the move out of the old can_lab package.
+# Keep the stable logger name so existing log filters continue to match.
 LOGGER = logging.getLogger("can_io")
 
 

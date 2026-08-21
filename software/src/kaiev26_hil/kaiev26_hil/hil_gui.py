@@ -17,7 +17,7 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 
-from .qt_runtime import ensure_bundled_qt_first
+from control_gui_common.qt_runtime import ensure_bundled_qt_first
 
 ensure_bundled_qt_first()
 

@@ -1,4 +1,4 @@
-"""Shared KEYA count-to-central-equivalent steering calibration."""
+"""Shared KEYA steering calibration for the vcan simulator."""
 
 from __future__ import annotations
 

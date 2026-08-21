@@ -160,9 +160,10 @@ candump -L can0
 ```
 
 정상 통합에서는 `/vehicle/command`의 발행자가 `command_governor` 하나여야
-합니다. Planning(HIL은 `hil_command_generator`)은 `/planning/command`로 내고
-거버너가 재발행합니다. AUTO와 유효한 KEYA feedback만 들어온 직후에는
-`WAIT_CMD`이고, 그 이후 새 명령을 받아야 `ACTIVE`가 됩니다.
+합니다. Planning 또는 시험 명령원(실차는 `vehicle_test_scenario_runner`, HIL은
+`hil_command_generator`)은 `/planning/command`로 내고 거버너가 재발행합니다.
+AUTO와 유효한 KEYA feedback만 들어온 직후에는 `WAIT_CMD`이고, 그 이후 새
+명령을 받아야 `ACTIVE`가 됩니다.
 
 ## 순수 조향 벤치
 

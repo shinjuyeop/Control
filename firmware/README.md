@@ -47,7 +47,8 @@ MCU 핀 이름과 ST morpho 헤더 번호를 함께 적습니다.
 `/planning/command`로 발행하고, Host의 `command_governor`가 이를
 `/vehicle/command`로 재발행합니다. `/vehicle/command`의 발행자는
 `command_governor` 하나입니다. Planning의 production 구현은 아직 없으며
-HIL에서는 `hil_command_generator`가 그 자리를 대신합니다.
+실차 시험에서는 `vehicle_test_scenario_runner`, HIL에서는
+`hil_command_generator`가 그 자리를 대신합니다.
 
 - STM_A는 `speed_target_mps`와 `brake_engage`를 직접 받습니다.
 - STM_B는 같은 메시지의 `brake_engage`를 독립적으로 받습니다.

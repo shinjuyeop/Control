@@ -1,13 +1,12 @@
 # visualization
 
 `visualization`은 현재 차량의 canonical ROS 2 명령과 액추에이터 상태를
-관찰하는 패키지다. 개발자용 read-only Qt 디버깅 GUI, Foxglove에서 경로와
-장면을 확인하기 위한 Marker/GPS demo helper, 실차 없이 화면을 점검하기 위한
-synthetic test publisher를 제공한다.
+관찰하는 패키지다. 개발자용 read-only Qt 디버깅 GUI, 상태를 요약하는
+diagnostics publisher, ROS graph를 전달하는 Foxglove bridge launch를 제공한다.
 
 ## 이 패키지가 하지 않는 일
 
-- 실차 운용용 차량 명령 생성 또는 중재(synthetic test publisher 제외)
+- 실차 운용용 차량 명령 생성 또는 중재
 - 안전 판단
 - command governor
 - 액추에이터 제어
@@ -24,9 +23,6 @@ synthetic test publisher를 제공한다.
 | `/drive/status` | `kaiev26_msgs/msg/DriveActuatorStatus` | 구동 액추에이터 상태 노드 | mode, gear, 속도, RPM, 전압/전류/온도, timeout, valid/age, fault bits |
 | `/brake/status` | `kaiev26_msgs/msg/BrakeActuatorStatus` | 브레이크 액추에이터 상태 노드 | brake commanded, stop reason, actual valid, command age |
 | `/steering/status` | `kaiev26_msgs/msg/SteeringActuatorStatus` | 조향 액추에이터 상태 노드 | state/reason, 목표/명령/실제 각도, timeout/valid/age, 모터 진단, fault bits |
-
-`foxglove_test.launch.py`를 실행할 때만 위 네 토픽의 발행 주체는
-`test_publisher`다.
 
 ## Foxglove
 
@@ -81,13 +77,13 @@ source /opt/ros/humble/setup.bash
 cd ~/KAI_ws
 colcon build \
   --base-paths src/kaiev26_msgs src/Control/software/src \
-  --packages-select kaiev26_msgs kaiev26_hil visualization
+  --packages-select kaiev26_msgs control_gui_common visualization
 source install/setup.bash
 ```
 
 `vehicle_dashboard`는 PyQt5 번들 Qt 우선순위 workaround인
-`kaiev26_hil.qt_runtime`을 공유하므로 `kaiev26_hil`도 함께 빌드한다. 같은 파일을
-두 패키지에 복제하지 않기 위한 선택이다.
+`control_gui_common.qt_runtime`을 HIL GUI와 공유한다. Dashboard가 HIL 패키지에
+의존하지 않으면서도 같은 파일을 두 패키지에 복제하지 않기 위한 선택이다.
 
 ## 실제 차량 GUI 실행
 
@@ -139,22 +135,6 @@ ros2 launch visualization vehicle_dashboard.launch.py
 바뀐 위젯만 다시 그리므로 예전보다 훨씬 가볍다. 로컬 화면에서는 10으로 올리고,
 링크가 느리면 2로 낮추거나 Foxglove bridge를 쓴다(픽셀 대신 데이터만 보낸다).
 
-## Synthetic test 실행
-
-> **경고: `test_publisher`는 `/vehicle/command`를 직접 발행한다. 실제 차량
-> 제어 시스템과 절대로 동시에 실행하지 않는다.**
-
-실차와 분리된 환경에서 다음 launch는 `test_publisher`,
-`gps_waypoint_publisher`, `vehicle_dashboard`를 함께 실행한다.
-
-```bash
-ros2 launch visualization foxglove_test.launch.py
-```
-
-약 70초 동안 AUTO 정상 주행, 완만한 속도/조향 변화, command brake, 물리
-E-stop, command timeout, motor fault bit, steering fault 상태가 반복된다.
-random noise를 쓰지 않아 매 실행 결과가 같다.
-
 ## 상태 표기의 의미
 
 - `NO DATA`: GUI 프로세스가 해당 토픽을 아직 받지 못했다.
@@ -166,21 +146,6 @@ random noise를 쓰지 않아 매 실행 결과가 같다.
 freshness는 MCU의 header stamp가 아니라 GUI 프로세스의 실제 수신 시각을
 기준으로 계산한다. 예를 들어 `BrakeActuatorStatus.actual_valid=false`는
 현행 브레이크 서보의 실제 피드백 미지원 상태이며 fault가 아니다.
-
-## GPS/waypoint demo helper
-
-`gps_waypoint_publisher`는 실제 GNSS 수신기나 localization estimator가 아니다.
-`/drive/status.speed_mps`와 valid한
-`/steering/status.actual_wheel_angle_rad`를 이용해 Foxglove용 가상 장면을
-움직이는 demo/helper다. 다음 시각화 출력만 발행한다.
-
-- `/gps/fix`
-- `/viz/waypoints`
-- `/viz/scene`
-- TF (`map` → `base_link` → `gps`)
-
-조향 feedback이 invalid이면 실제 조향각이라고 단정하지 않고 demo 적분에서
-0 rad를 사용한다.
 
 ## command governor
 
@@ -207,6 +172,4 @@ command_governor (현재 패스스루, 형상은 이후 단계)
   forwarding 또는 적절한 원격 desktop 환경이 필요하다.
 - 토픽이 `NO DATA`이면 `ros2 topic list`와 `ros2 topic info <토픽>`으로
   발행 주체와 ROS domain을 확인한다.
-- 실제 차량에서는 `test_publisher` 또는 `foxglove_test.launch.py`가 함께
-  실행되고 있지 않은지 반드시 확인한다.
 - `ros2 topic info /vehicle/command -v`로 publisher가 하나인지 확인한다.

@@ -73,8 +73,9 @@ HALTED로 정지한다.
   즉시 Disable한다
 - `brake_engage`를 매 메시지 명시 — 걸린 브레이크는 fresh한
   `brake_engage=false`로만 풀린다
-- 발행률은 입력을 따른다. 입력(HIL은 `hil_command_generator` 20 Hz)이 조향
-  200 ms 예산 대비 충분히 빨라야 한다. 5 Hz는 경계라 간헐 Disable이 난다
+- 발행률은 입력을 따른다. 실차 시험의 `vehicle_test_scenario_runner`와 HIL의
+  `hil_command_generator`는 20 Hz로 발행한다. 5 Hz는 조향 200 ms 예산의
+  경계라 간헐 Disable이 난다
 
 ## 파라미터
 
@@ -113,4 +114,5 @@ respawn 없이(크래시가 드러나도록) 띄운다.
 - 통신 계약: [`../../../docs/INTERFACES.md`](../../../docs/INTERFACES.md)
 - 시스템 구조: [`../../../docs/ARCHITECTURE.md`](../../../docs/ARCHITECTURE.md)
 - HIL 경로: [`../kaiev26_hil/README.md`](../kaiev26_hil/README.md)
+- 실차 시험 입력: [`../vehicle_test_scenarios/README.md`](../vehicle_test_scenarios/README.md)
 - 횡방향 소비자: [`../lateral_ctrl/README.md`](../lateral_ctrl/README.md)

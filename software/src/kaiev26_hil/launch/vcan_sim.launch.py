@@ -10,7 +10,7 @@ def generate_launch_description():
         DeclareLaunchArgument("steer_iface", default_value="vcan1"),
         DeclareLaunchArgument("no_gui", default_value="false"),
         Node(
-            package="kaiev26_hil", executable="can_sim", name="kaiev26_can_sim",
+            package="kaiev26_hil", executable="vcan_sim", name="kaiev26_vcan_sim",
             output="screen",
             arguments=[
                 "--motor-iface", LaunchConfiguration("motor_iface"),

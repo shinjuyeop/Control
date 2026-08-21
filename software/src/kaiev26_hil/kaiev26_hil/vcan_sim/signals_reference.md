@@ -1,4 +1,4 @@
-# Bench/SIL Signals Reference (교육용 요약)
+# vcan SIL Signals Reference (교육용 요약)
 
 ## 1. Motor command `0x0C01EFD0` (EFF, 8 bytes)
 

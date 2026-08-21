@@ -42,8 +42,10 @@ Control/
 │       ├── command_governor/        # /planning/command → /vehicle/command 단일 발행자
 │       ├── vehicle_state_publisher/ # status 3종을 /vehicle/state로 통합
 │       ├── control_launch/          # 실차 구동 통합 launch (vehicle.launch.py)
-│       ├── kaiev26_hil/             # STM_TEST bridge, HIL GUI, scenario, bench
-│       ├── visualization/           # 관찰용 GUI와 Foxglove helper
+│       ├── kaiev26_hil/             # STM_TEST HIL, scenario, vcan SIL
+│       ├── vehicle_test_scenarios/  # /planning/command 실차 시험 시나리오
+│       ├── control_gui_common/      # HIL/dashboard 공용 Qt runtime helper
+│       ├── visualization/           # read-only GUI, diagnostics, Foxglove bridge
 │       └── gazebo/                  # PID·SILS 시뮬레이션 자원
 ├── host/                            # 차량 PC 호스트 설정 (can0 systemd-networkd)
 └── archive/                         # 과거 구현 보관소, 빌드 대상 아님
@@ -68,8 +70,10 @@ Control/
 | `command_governor` | `/planning/command`를 정합성 게이트 후 `/vehicle/command`로 재발행하는 유일한 발행자. 현재 패스스루이며 형상(속도 상한·램프·축간 협조)은 이후 단계 |
 | `vehicle_state_publisher` | 액추에이터 status 3종을 `/vehicle/state`로 통합 |
 | `control_launch` | 실차 구동 스택 통합 `vehicle.launch.py` (Agent 2개 + 거버너 + 조향 + 상태 통합) |
-| `kaiev26_hil` | STM_TEST serial bridge, 신호 방향 기반 GUI, command generator, HIL scenario와 `vcan` bench simulator |
-| `visualization` | read-only 차량 상태 GUI와 Foxglove bridge·demo helper |
+| `kaiev26_hil` | STM_TEST serial bridge, HIL GUI·scenario, software-only `vcan` simulator |
+| `vehicle_test_scenarios` | production Planning 대신 `/planning/command`를 발행하는 실차 직진·조향·속도·제동 시험 시나리오 |
+| `control_gui_common` | HIL GUI와 vehicle dashboard가 공유하는 PyQt5/Qt runtime helper |
+| `visualization` | read-only 차량 상태 GUI, `/diagnostics` 요약과 Foxglove bridge launch |
 | `gazebo` | PID 및 SILS 관련 시뮬레이션 자원 |
 
 ## 빠른 빌드
@@ -102,7 +106,8 @@ Planning은
 안전한 대기 상태(STM_A HALTED, 조향 WAIT_CMD)로 섭니다. 조향은 기본
 armed이므로 전원 인가 전에 배선과 E-stop을 먼저 확인하십시오. 관찰
 GUI(Foxglove·dashboard)는 별도로 켭니다. `/diagnostics` 요약은 구동 스택에
-포함되어 있습니다.
+포함되어 있습니다. production Planning 없이 실차 명령 경로를 시험할 때는
+`vehicle_test_scenarios`를 사용합니다.
 
 ```bash
 ros2 launch control_launch vehicle.launch.py            # 실차 구동 스택
@@ -153,6 +158,8 @@ bench([HIL runbook](docs/HIL_RUNBOOK.md)), 조향 단독
 | [STM_TEST](firmware/STM_TEST/README.md) | HIL emulator의 pin map, UART protocol과 Plant |
 | [lateral_ctrl](software/src/lateral_ctrl/README.md) | KEYA 조향 패키지 사용법과 상태 머신 |
 | [kaiev26_hil](software/src/kaiev26_hil/README.md) | STM_TEST bridge, GUI, protocol과 scenario 상세 |
+| [vehicle_test_scenarios](software/src/vehicle_test_scenarios/README.md) | 실차 직진·조향 sweep·속도 step/ramp·제동 시험 입력 |
+| [control_gui_common](software/src/control_gui_common/README.md) | HIL GUI와 dashboard 공용 Qt runtime 처리 |
 | [visualization](software/src/visualization/README.md) | 관찰용 GUI와 Foxglove 사용법 |
 
 ## 개발 규칙

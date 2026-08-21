@@ -1,102 +1,5 @@
 {
   "configById": {
-    "map!common_gps": {
-      "zoomLevel": 17,
-      "customTileUrl": "",
-      "disabledTopics": [],
-      "followTopic": "",
-      "followFrame": "",
-      "layer": "map",
-      "topicColors": {},
-      "maxNativeZoom": 18,
-      "topicConfig": {
-        "/gps/fix": {
-          "historyMode": "none",
-          "pointSize": 6
-        }
-      },
-      "layers": [],
-      "foxglovePanelTitle": "차량 위치 (GPS)"
-    },
-    "3D!common_scene": {
-      "cameraState": {
-        "perspective": true,
-        "distance": 47.833119595859685,
-        "phi": 60.000000000004384,
-        "thetaOffset": 60.000000000011354,
-        "targetOffset": [
-          0,
-          0,
-          0
-        ],
-        "target": [
-          0,
-          0,
-          0
-        ],
-        "targetOrientation": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "fovy": 45,
-        "near": 0.5,
-        "far": 5000
-      },
-      "followMode": "follow-pose",
-      "fixedFrame": "map",
-      "scene": {},
-      "transforms": {},
-      "topics": {
-        "/initialpose": {
-          "visible": false
-        },
-        "/viz/scene": {
-          "visible": true
-        },
-        "/viz/waypoints": {
-          "visible": true
-        },
-        "/move_base_simple/goal": {
-          "visible": true
-        }
-      },
-      "layers": {
-        "grid": {
-          "visible": false,
-          "drawBehind": false,
-          "instanceId": "grid-0810",
-          "layerId": "foxglove.Grid",
-          "size": 10,
-          "divisions": 10,
-          "lineWidth": 1,
-          "color": "#248eff",
-          "position": [
-            0,
-            0,
-            0
-          ],
-          "rotation": [
-            0,
-            0,
-            0
-          ]
-        }
-      },
-      "publish": {
-        "type": "point",
-        "poseTopic": "/move_base_simple/goal",
-        "pointTopic": "/clicked_point",
-        "poseEstimateTopic": "/initialpose",
-        "poseEstimateXDeviation": 0.5,
-        "poseEstimateYDeviation": 0.5,
-        "poseEstimateThetaDeviation": 0.26179939
-      },
-      "synchronize": false,
-      "imageMode": {},
-      "foxglovePanelTitle": "주행 씬 / 웨이포인트"
-    },
     "Plot!common_speed": {
       "foxglovePanelTitle": "속도 (공통)",
       "paths": [
@@ -524,25 +427,15 @@
         {
           "title": "공통",
           "layout": {
-            "first": {
-              "first": "map!common_gps",
-              "second": "3D!common_scene",
-              "direction": "column",
-              "splitPercentage": 45
-            },
+            "first": "Plot!common_speed",
             "second": {
-              "first": "Plot!common_speed",
-              "second": {
-                "first": "Plot!common_age",
-                "second": "Parameters!common_param",
-                "direction": "column",
-                "splitPercentage": 55
-              },
+              "first": "Plot!common_age",
+              "second": "Parameters!common_param",
               "direction": "column",
-              "splitPercentage": 38
+              "splitPercentage": 55
             },
-            "direction": "row",
-            "splitPercentage": 58
+            "direction": "column",
+            "splitPercentage": 45
           }
         },
         {

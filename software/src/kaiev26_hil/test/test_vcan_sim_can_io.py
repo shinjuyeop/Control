@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from kaiev26_hil.bench.can_io import (
+from kaiev26_hil.vcan_sim.can_io import (
     CTRL_RUN,
     CTRL_SPEED,
     ID_MOTOR_STAT1,
@@ -16,7 +16,7 @@ from kaiev26_hil.bench.can_io import (
     parse_steering_command,
     wheel_to_handle_deg_for_cmd,
 )
-from kaiev26_hil.bench.physics import MotorPlant
+from kaiev26_hil.vcan_sim.physics import MotorPlant
 
 
 def test_motor_command_round_trip_preserves_target_and_ctrl_bits():

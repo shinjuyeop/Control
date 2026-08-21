@@ -23,7 +23,7 @@ from .scenario import evaluate_expectation, hil_commands, load_scenario
 from .remote_parameters import RemoteParameterClient
 
 
-class ScenarioRunner(Node):
+class HilScenarioRunner(Node):
     def __init__(self) -> None:
         super().__init__("hil_scenario_runner")
         self.declare_parameter("scenario_file", "")
@@ -200,7 +200,7 @@ def main(args=None) -> None:
     rclpy.init(args=args)
     node = None
     try:
-        node = ScenarioRunner()
+        node = HilScenarioRunner()
         rclpy.spin(node)
     except (KeyboardInterrupt, ExternalShutdownException):
         pass

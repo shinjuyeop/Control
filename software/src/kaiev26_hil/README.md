@@ -8,8 +8,8 @@ firmware나 production controller의 topic contract를 변경하지 않는다.
 
 ```text
 Production: Planning -> /planning/command -> command_governor -> /vehicle/command -> STM_A/B, lateral_ctrl
-Bench/SIL:  Command Generator -> Control -> vcan -> kaiev26_hil can_sim
-HIL:        Command Generator -> /planning/command -> command_governor -> /vehicle/command -> STM_A/B
+vcan SIL:   Test commands -> Control -> vcan -> kaiev26_hil vcan_sim
+HIL:        HIL command generator -> /planning/command -> command_governor -> /vehicle/command -> STM_A/B
                                                                                 ^       |
                                                                                 |       v
                                                                             STM_TEST emulator
@@ -21,7 +21,7 @@ HIL도 실차와 같은 governor 경로를 지난다. `/vehicle/command`의 발�
 
 - `vehicle_state_publisher`, visualization, Foxglove: 차량 상태 관찰
 - `hil_gui`: STM_TEST 시험 조건 입력과 fault injection
-- `bench.can_sim`: vcan 기반 SIL/교육용 plant. 실제 STM_TEST HIL과 별도 경로
+- `vcan_sim`: vcan 기반 SIL/교육용 plant. 실제 STM_TEST HIL과 별도 경로
 
 SSH/X11 접속, host 준비, STM_A/B Agent, STM_TEST GUI, 기능 시험, KEYA 확장 및
 정상 종료를 한 번에 따라 하려면
@@ -76,7 +76,7 @@ ros2 service call /hil/reset_safe_state std_srvs/srv/Trigger '{}'
 ros2 topic echo /hil/status
 ```
 
-### command_generator
+### hil_command_generator
 
 시험용 Planning 대체 노드다. `kaiev26_msgs/msg/ActuatorCommand`를 production
 Planning과 동일한 `/planning/command`에 발행하고, `command_governor`가 이것을
@@ -164,7 +164,7 @@ protocol 3 이전 firmware에서는 bus status가 전부 0으로 보인다.
 
 ## Scenarios
 
-`scenario_runner`는 timestamped `hil`, `fault`, `command` step을 실행하고 다음
+`hil_scenario_runner`는 timestamped `hil`, `fault`, `command` step을 실행하고 다음
 production status의 field equality/range/bitmask를 검사한다.
 
 - `/drive/status`
@@ -211,7 +211,7 @@ STM_A/B용 micro-ROS Agent, `lateral_ctrl`, `vehicle_state_publisher`는 포함�
 `gui`와 `scenario_file`은 서로 독립인 인자다. GUI 없이 bridge와 generator만
 띄우려면 `gui:=false`만 주면 된다.
 
-Bench 전체를 한 번에:
+Hardware HIL bench 전체를 한 번에:
 
 ```bash
 ros2 launch kaiev26_hil hil_bench.launch.py \
@@ -241,18 +241,19 @@ scenario에는 fault 주입 전에 해당 경로가 정상임을 확인하는 �
 expectation이 들어 있다. 경로가 처음부터 죽어 있으면 결과 expectation이
 공허하게 통과할 수 있기 때문으로, 전제가 FAIL하면 시험 환경부터 고친다.
 
-## CAN Bench/SIL simulator
+## vcan SIL simulator
 
-`vcan`에서 구동·조향 CAN 동작을 시험하는 simulator다. 구현은 `kaiev26_hil.bench`
-하나이며, 과거 `software/src/can_lab`의 source-tree 실행 경로와 compatibility
-wrapper는 제거했다.
+`vcan`에서 구동·조향 CAN 동작을 시험하는 software-only simulator다. 구현은
+`kaiev26_hil.vcan_sim` 아래에 있으며 물리 STM 보드나 serial 장치를 사용하지
+않는다.
 
 ```bash
-ros2 launch kaiev26_hil bench.launch.py motor_iface:=vcan0 steer_iface:=vcan1
-ros2 run kaiev26_hil can_sim --motor-iface vcan0 --steer-iface vcan1 --no-gui --duration 5
+ros2 launch kaiev26_hil vcan_sim.launch.py motor_iface:=vcan0 steer_iface:=vcan1
+ros2 run kaiev26_hil vcan_sim --motor-iface vcan0 --steer-iface vcan1 --no-gui --duration 5
 ```
 
-vcan 생성과 simulator protocol은 `kaiev26_hil/bench/signals_reference.md`를 참고한다.
+vcan 생성과 simulator protocol은
+`kaiev26_hil/vcan_sim/signals_reference.md`를 참고한다.
 
 ## Foxglove/visualization
 
@@ -265,21 +266,21 @@ Foxglove에서 `/hil/status`, `/vehicle/state`, `/drive/status`, `/brake/status`
 ```bash
 cd ~/KAI_ws
 source /opt/ros/humble/setup.zsh
-colcon build --symlink-install --packages-select kaiev26_hil
+colcon build --symlink-install --packages-up-to kaiev26_hil
 source ~/KAI_ws/install/setup.zsh
-colcon test --packages-select kaiev26_hil
+colcon test --packages-select control_gui_common kaiev26_hil
 colcon test-result --verbose
 ```
 
-`test/test_bench_*.py`는 bench simulator의 CAN encode/decode, plant 물리와 runtime
-진단을 덮는다. can_lab 패키지에 있던 test를 옮긴 것이라 `kaiev26_hil.bench`를
-직접 import한다.
+`test/test_vcan_sim_*.py`는 vcan simulator의 CAN encode/decode, plant 물리와
+runtime 진단을 덮고 `kaiev26_hil.vcan_sim`을 직접 import한다.
 
 `test/test_hil_gui_smoke.py`는 `QT_QPA_PLATFORM=offscreen`으로 GUI window를 실제로
 구성하고 STATUS를 rendering하므로 X11 없이도 실행된다. PyQt5가 없으면 skip된다.
 사용하는 STATUS 문자열은 firmware README의 예시와 같은 형식이므로, firmware가
 field를 바꾸면 bench가 아니라 이 test에서 먼저 드러난다.
 
-필수 runtime dependency는 ROS 2 Humble, `pyserial`, `PyYAML`, PyQt5다. bench GUI는
-추가로 Tkinter와 Matplotlib를 사용한다. host 준비와 전체 build 대상은
-[HIL runbook](../../../docs/HIL_RUNBOOK.md#5-소프트웨어-빌드와-테스트)를 따른다.
+필수 runtime dependency는 ROS 2 Humble, `pyserial`, `PyYAML`, PyQt5다. vcan
+simulator GUI는 추가로 Tkinter와 Matplotlib를 사용한다. host 준비와 전체 build
+대상은 [HIL runbook](../../../docs/HIL_RUNBOOK.md#5-소프트웨어-빌드와-테스트)를
+따른다.
