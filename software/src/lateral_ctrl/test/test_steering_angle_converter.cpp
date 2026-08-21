@@ -7,7 +7,9 @@ namespace
 lateral_ctrl::SteeringAngleConverter MakeConverter()
 {
   return lateral_ctrl::SteeringAngleConverter(
-    3500.0, 46.79149152, -39.22366242, 22.73814759, 3321, 10000.0);
+    3500.0, 45.36712598527852, -3.534573536433758,
+    -44.4281013734926, 2.7876017898037944, 28.96220619772027,
+    3279, 10000.0);
 }
 }
 
@@ -21,20 +23,20 @@ TEST(SteeringAngleConverter, UsesMeasuredCanonicalRelation)
 {
   const auto converter = MakeConverter();
   EXPECT_DOUBLE_EQ(converter.countToEquivalentDeg(0), 0.0);
-  EXPECT_NEAR(converter.countToEquivalentDeg(500), 6.5714969851, 1e-9);
-  EXPECT_NEAR(converter.countToEquivalentDeg(3321), 28.3790454907, 1e-9);
-  EXPECT_NEAR(converter.countToEquivalentDeg(-3321), -28.3790454907, 1e-9);
+  EXPECT_NEAR(converter.countToEquivalentDeg(500), 6.2822400916, 1e-9);
+  EXPECT_NEAR(converter.countToEquivalentDeg(3279), 25.9178130178, 1e-9);
+  EXPECT_NEAR(converter.countToEquivalentDeg(-3279), -27.8275011334, 1e-9);
 }
 TEST(SteeringAngleConverter, DoesNotClampFeedback)
 {
   const auto converter = MakeConverter();
-  EXPECT_GT(converter.countToEquivalentDeg(3500), converter.countToEquivalentDeg(3321));
+  EXPECT_GT(converter.countToEquivalentDeg(3500), converter.countToEquivalentDeg(3279));
 }
 TEST(SteeringAngleConverter, ClampsCommandsToMeasuredCountRange)
 {
   const auto converter = MakeConverter();
-  EXPECT_EQ(converter.equivalentDegToCount(90.0), 3321);
-  EXPECT_EQ(converter.equivalentDegToCount(-90.0), -3321);
+  EXPECT_EQ(converter.equivalentDegToCount(90.0), 3279);
+  EXPECT_EQ(converter.equivalentDegToCount(-90.0), -3279);
 }
 TEST(SteeringAngleConverter, RoundTripsEveryCommandCount)
 {

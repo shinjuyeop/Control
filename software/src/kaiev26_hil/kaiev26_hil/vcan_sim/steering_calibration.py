@@ -30,7 +30,9 @@ with _calibration_path().open("r", encoding="utf-8") as stream:
 
 COUNT_SCALE = float(_CONFIG["count_scale"])
 EQUIVALENT_K1_DEG = float(_CONFIG["equivalent_k1_deg"])
+EQUIVALENT_K2_DEG = float(_CONFIG["equivalent_k2_deg"])
 EQUIVALENT_K3_DEG = float(_CONFIG["equivalent_k3_deg"])
+EQUIVALENT_K4_DEG = float(_CONFIG["equivalent_k4_deg"])
 EQUIVALENT_K5_DEG = float(_CONFIG["equivalent_k5_deg"])
 COMMAND_COUNT_LIMIT = int(_CONFIG["command_count_limit"])
 COUNTS_PER_REV = float(_CONFIG["counts_per_rev"])
@@ -41,7 +43,9 @@ if (
         for value in (
             COUNT_SCALE,
             EQUIVALENT_K1_DEG,
+            EQUIVALENT_K2_DEG,
             EQUIVALENT_K3_DEG,
+            EQUIVALENT_K4_DEG,
             EQUIVALENT_K5_DEG,
             COUNTS_PER_REV,
         )
@@ -55,14 +59,20 @@ if (
 
 def count_to_equivalent_deg(count: float) -> float:
     v = float(count) / COUNT_SCALE
-    v2 = v * v
     return v * (
         EQUIVALENT_K1_DEG
-        + v2 * (EQUIVALENT_K3_DEG + v2 * EQUIVALENT_K5_DEG)
+        + v * (
+            EQUIVALENT_K2_DEG
+            + v * (
+                EQUIVALENT_K3_DEG
+                + v * (EQUIVALENT_K4_DEG + v * EQUIVALENT_K5_DEG)
+            )
+        )
     )
 
 
-COMMAND_ANGLE_LIMIT_DEG = count_to_equivalent_deg(COMMAND_COUNT_LIMIT)
+COMMAND_MIN_ANGLE_DEG = count_to_equivalent_deg(-COMMAND_COUNT_LIMIT)
+COMMAND_MAX_ANGLE_DEG = count_to_equivalent_deg(COMMAND_COUNT_LIMIT)
 
 _previous_angle_deg = count_to_equivalent_deg(-COMMAND_COUNT_LIMIT)
 for _count in range(-COMMAND_COUNT_LIMIT + 1, COMMAND_COUNT_LIMIT + 1):
@@ -78,8 +88,8 @@ def equivalent_deg_to_count(equivalent_deg: float) -> int:
     if not math.isfinite(equivalent_deg):
         return 0
     target = max(
-        -COMMAND_ANGLE_LIMIT_DEG,
-        min(COMMAND_ANGLE_LIMIT_DEG, equivalent_deg),
+        COMMAND_MIN_ANGLE_DEG,
+        min(COMMAND_MAX_ANGLE_DEG, equivalent_deg),
     )
     lower = -COMMAND_COUNT_LIMIT
     upper = COMMAND_COUNT_LIMIT

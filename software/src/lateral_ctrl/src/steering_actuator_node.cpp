@@ -15,7 +15,9 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
   converter_(
     declare_parameter<double>("count_scale"),
     declare_parameter<double>("equivalent_k1_deg"),
+    declare_parameter<double>("equivalent_k2_deg"),
     declare_parameter<double>("equivalent_k3_deg"),
+    declare_parameter<double>("equivalent_k4_deg"),
     declare_parameter<double>("equivalent_k5_deg"),
     declare_parameter<std::int64_t>("command_count_limit"),
     declare_parameter<double>("counts_per_rev")),

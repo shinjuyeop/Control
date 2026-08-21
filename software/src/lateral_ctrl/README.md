@@ -228,13 +228,15 @@ ros2 launch lateral_ctrl steering_bench_test.launch.py \
 | `feedback_timeout_ms` | 500 | position feedback timeout |
 | `mode_timeout_ms` | 1500 | `/drive/status` timeout |
 | `steer_command_timeout_ms` | 200 | `ACTIVE`에서 `/vehicle/command` timeout |
-| `command_count_limit` | 3321 | 명령 가능한 KEYA raw count 절댓값. 약 28.38° 중앙 등가각 |
+| `command_count_limit` | 3279 | 명령 가능한 KEYA raw count 절댓값. nominal 중앙 등가각 약 -27.83°..+25.92° |
 | `max_steering_rate_deg_s` | 60.0 | 중앙 등가각 변화율 제한 |
 | `tracking_control_enabled` | false | 중앙 등가각 tracking 보정 |
 
 count-to-angle 계수와 `counts_per_rev`는
 `config/steering_motor_calibration.yaml` 한 파일이 소유합니다. Control, active HIL,
-Gazebo CAN bridge가 같은 값을 사용합니다.
+Gazebo CAN bridge가 같은 값을 사용합니다. 2026-08-21 dual wheel-hub IMU
+측정에서 얻은 full 5차 `k1..k5` nominal-centered shape이며 절대 toe나 IMU 장착
+yaw 보정값은 아닙니다.
 
 벤치 시퀀스의 기본값은 다음과 같습니다.
 
