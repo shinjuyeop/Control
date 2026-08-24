@@ -86,7 +86,7 @@ for _count in range(-COMMAND_COUNT_LIMIT + 1, COMMAND_COUNT_LIMIT + 1):
 
 def equivalent_deg_to_count(equivalent_deg: float) -> int:
     if not math.isfinite(equivalent_deg):
-        return 0
+        raise ValueError("steering angle command must be finite")
     target = max(
         COMMAND_MIN_ANGLE_DEG,
         min(COMMAND_MAX_ANGLE_DEG, equivalent_deg),

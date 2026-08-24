@@ -223,7 +223,7 @@ class DashboardApp:
             "1.0",
             f"Motor ACK: {ID_MOTOR_CMD:08X}#AAAAAAAAAAAAAAAA\n"
             f"Steer enable: {ID_STEER_CMD:08X}#230D200100000000\n"
-            f"Steer disable: {ID_STEER_CMD:08X}#230D200101000000\n"
+            f"Steer disable: {ID_STEER_CMD:08X}#230C200100000000\n"
             f"Steer +10deg wheel: {ID_STEER_CMD:08X}#23022001FFFFFB3F\n"
             f"Motor +1000rpm (500A cap): {ID_MOTOR_CMD:08X}#8890E88003000000\n"
         )

@@ -171,15 +171,14 @@ class SocketCANBusHub(BusHub):
         """구독자 목록을 복사해서 lock 밖에서 안전하게 callback을 돈다."""
         with self._lock:
             callbacks = list(self._subs.get(frame.iface, []))
-        self._dispatched_frames = getattr(self, "_dispatched_frames", 0) + 1
+        self._dispatched_frames += 1
         for callback in callbacks:
             try:
                 callback(frame)
             except Exception as exc:
-                self._callback_errors = getattr(self, "_callback_errors", 0) + 1
+                self._callback_errors += 1
                 now = time.monotonic()
-                last_log = getattr(self, "_last_callback_error_log_monotonic", 0.0)
-                if now - last_log >= 2.0:
+                if now - self._last_callback_error_log_monotonic >= 2.0:
                     _warning(
                         "SocketCAN subscriber callback raised; callback_errors=%d: %s",
                         self._callback_errors,
@@ -239,11 +238,11 @@ class SocketCANBusHub(BusHub):
     def health_snapshot(self) -> BusHealthSnapshot:
         """HMI와 runtime이 읽을 버스 상태 스냅샷을 만든다."""
         return BusHealthSnapshot(
-            sent_frames=getattr(self, "_sent_frames", 0),
-            received_frames=getattr(self, "_received_frames", 0),
-            dispatched_frames=getattr(self, "_dispatched_frames", 0),
-            callback_errors=getattr(self, "_callback_errors", 0),
-            socket_errors=getattr(self, "_socket_errors", 0),
+            sent_frames=self._sent_frames,
+            received_frames=self._received_frames,
+            dispatched_frames=self._dispatched_frames,
+            callback_errors=self._callback_errors,
+            socket_errors=self._socket_errors,
         )
 
 
@@ -295,7 +294,9 @@ def parse_steering_command(frame: CanFrame) -> Optional[SteeringCommand]:
         return None
     data = frame.data
     if data[:4] == bytes([0x23, 0x0D, 0x20, 0x01]):
-        return SteeringCommand(enable=(data[4] == 0x00))
+        return SteeringCommand(enable=True)
+    if data[:4] == bytes([0x23, 0x0C, 0x20, 0x01]):
+        return SteeringCommand(enable=False)
     if data[:4] == bytes([0x23, 0x02, 0x20, 0x01]):
         scaled = int.from_bytes(data[4:8], byteorder="big", signed=True)
         return SteeringCommand(target_handle_deg=(scaled / 10000.0) * 360.0)
@@ -391,7 +392,8 @@ def wheel_to_handle_deg_for_cmd(wheel_deg: float) -> float:
 
 def make_steer_enable_frame(iface: str, enable: bool = True) -> CanFrame:
     """조향 enable/disable SDO frame."""
-    data = bytes([0x23, 0x0D, 0x20, 0x01, 0x00 if enable else 0x01, 0, 0, 0])
+    index = 0x0D if enable else 0x0C
+    data = bytes([0x23, index, 0x20, 0x01, 0, 0, 0, 0])
     return CanFrame(iface, ID_STEER_CMD, data, True, source="dashboard")
 
 

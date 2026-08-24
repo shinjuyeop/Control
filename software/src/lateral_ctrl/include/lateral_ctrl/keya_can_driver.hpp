@@ -6,8 +6,6 @@
 #include <cstdint>
 #include <string>
 
-struct can_frame;
-
 namespace lateral_ctrl
 {
 class KeyaCanDriver
@@ -33,11 +31,9 @@ public:
   static std::array<uint8_t, 8> enablePayload();
   static std::array<uint8_t, 8> disablePayload();
   static std::array<uint8_t, 8> positionPayload(int32_t count);
-  void parseFrameForTest(uint32_t can_id, const std::array<uint8_t, 8> & data);
 
 private:
   bool send(const std::array<uint8_t, 8> & data);
-  void parseFrame(const can_frame & frame);
   std::string interface_name_;
   int socket_fd_{-1};
   uint32_t command_id_, feedback_id_, heartbeat_id_;

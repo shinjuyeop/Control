@@ -50,7 +50,7 @@
 ### disable
 
 ```text
-23 0D 20 01 01 00 00 00
+23 0C 20 01 00 00 00 00
 ```
 
 ### position write

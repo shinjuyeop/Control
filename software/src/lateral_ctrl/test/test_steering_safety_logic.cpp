@@ -3,6 +3,8 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+
 using lateral_ctrl::DriveMode;
 using lateral_ctrl::SafetyInputs;
 using lateral_ctrl::SteeringDisableReason;
@@ -37,13 +39,6 @@ TEST(SteeringSafetyLogic, ModeAndFeedbackGatesAuto)
     reasonWithoutTimeouts(true, DriveMode::AUTO, safety, false, false, false),
     SteeringDisableReason::FEEDBACK_INVALID);
 }
-TEST(SteeringSafetyLogic, RealAndTestEstopAreMonotonicOr)
-{
-  SafetyInputs safety;
-  safety.real_estop = true;
-  safety.test_estop = false;
-  EXPECT_TRUE(safety.effectiveEstop());
-}
 TEST(SteeringSafetyLogic, RealOrTestEstopActivates)
 {
   SafetyInputs safety;
@@ -72,13 +67,6 @@ TEST(SteeringSafetyLogic, CommandBrakeReleasesOnlyWithFreshStamp)
   EXPECT_TRUE(lateral_ctrl::nextCommandBrakeState(true, true, true));
 }
 
-TEST(SteeringSafetyLogic, TestEstopFalseCannotClearRealEstop)
-{
-  SafetyInputs safety;
-  safety.real_estop = true;
-  safety.test_estop = false;
-  EXPECT_TRUE(safety.effectiveEstop());
-}
 TEST(SteeringSafetyLogic, AutoWithoutInhibitMapsToWaitCommand)
 {
   SafetyInputs safety;
@@ -94,13 +82,6 @@ TEST(SteeringSafetyLogic, InvalidModeDisables)
   EXPECT_EQ(
     reasonWithoutTimeouts(true, DriveMode::UNKNOWN, safety, false, false, true),
     SteeringDisableReason::INVALID_MODE);
-}
-TEST(SteeringSafetyLogic, InvalidFeedbackDisables)
-{
-  SafetyInputs safety;
-  EXPECT_EQ(
-    reasonWithoutTimeouts(true, DriveMode::AUTO, safety, false, false, false),
-    SteeringDisableReason::FEEDBACK_INVALID);
 }
 TEST(SteeringSafetyLogic, FaultDisables)
 {
@@ -139,6 +120,16 @@ TEST(SteeringSafetyLogic, RateLimiterBoundsMovement)
 {
   EXPECT_DOUBLE_EQ(lateral_ctrl::rateLimit(0.0, 10.0, 5.0, 0.1), 0.5);
   EXPECT_DOUBLE_EQ(lateral_ctrl::rateLimit(0.5, -10.0, 5.0, 0.1), 0.0);
+  EXPECT_DOUBLE_EQ(
+    lateral_ctrl::rateLimit(0.5, 10.0, 5.0, -1.0), 0.5);
+  EXPECT_THROW(
+    lateral_ctrl::rateLimit(
+      std::numeric_limits<double>::quiet_NaN(), 10.0, 5.0, 0.1),
+    std::invalid_argument);
+  EXPECT_THROW(
+    lateral_ctrl::rateLimit(
+      0.0, 10.0, std::numeric_limits<double>::quiet_NaN(), 0.1),
+    std::invalid_argument);
 }
 TEST(SteeringSafetyLogic, DisableReasonsMapToStates)
 {

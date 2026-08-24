@@ -16,6 +16,7 @@ setup(
     maintainer_email="kai.driverless@gmail.com",
     description="서브시스템 status 3종을 합성해 /vehicle/state를 발행",
     license="TODO",
+    tests_require=["pytest"],
     entry_points={
         "console_scripts": [
             "vehicle_state_publisher_node = "

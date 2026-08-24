@@ -41,7 +41,9 @@ SteeringAngleConverter::SteeringAngleConverter(
 
 double SteeringAngleConverter::clampEquivalentDeg(double value) const
 {
-  if (!std::isfinite(value)) return 0.0;
+  if (!std::isfinite(value)) {
+    throw std::invalid_argument("steering angle command must be finite");
+  }
   return std::clamp(value, command_min_angle_deg_, command_max_angle_deg_);
 }
 

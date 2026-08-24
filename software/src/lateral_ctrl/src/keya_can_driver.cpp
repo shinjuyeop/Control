@@ -1,5 +1,7 @@
 #include "lateral_ctrl/keya_can_driver.hpp"
 
+#include "keya_can_frame_decoder.hpp"
+
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
@@ -24,6 +26,53 @@ int32_t be32(const uint8_t * p)
     (static_cast<uint32_t>(p[2]) << 8) | p[3]);
 }
 }
+
+namespace detail
+{
+bool applyKeyaCanFrame(
+  KeyaMotorState & state, uint32_t feedback_id, uint32_t heartbeat_id,
+  uint32_t can_id, uint8_t dlc, const uint8_t data[8],
+  std::chrono::steady_clock::time_point received_at)
+{
+  if (dlc != 8 || (can_id != feedback_id && can_id != heartbeat_id)) return false;
+  state.last_feedback = received_at;
+  state.communication_ok = true;
+  if (can_id == heartbeat_id) {
+    // The manual defines this as 360-count/multi-turn data. It is communication evidence,
+    // but the 10,000-count query below remains the authoritative steering position source.
+    state.motor_speed_rpm = be16(&data[2]);
+    state.motor_current_a = be16(&data[4]);
+    state.fault_bits = static_cast<uint16_t>(
+      (static_cast<uint16_t>(data[6]) << 8) | data[7]);
+    state.speed_valid = state.current_valid = true;
+    return true;
+  }
+  if (data[0] != 0x60) return true;
+  const uint8_t index_lo = data[1], index_hi = data[2], sub = data[3];
+  if (index_lo == 0x04 && index_hi == 0x21 && sub == 0x02) {
+    state.motor_position_count = be32(&data[4]);
+    state.position_valid = true;
+    state.last_position_feedback = state.last_feedback;
+  } else if (index_lo == 0x03 && index_hi == 0x21 && sub == 0x01) {
+    state.motor_speed_rpm = be32(&data[4]);
+    state.speed_valid = true;
+  } else if (index_lo == 0x00 && index_hi == 0x21 && sub == 0x01) {
+    state.motor_current_a = data[7];
+    state.current_valid = true;
+  } else if (index_lo == 0x12 && index_hi == 0x21 && sub == 0x01) {
+    state.fault_bits = static_cast<uint16_t>((data[4] << 8) | data[5]);
+  } else if (index_lo == 0x0D && index_hi == 0x21 && sub == 0x02) {
+    state.bus_voltage_v = data[7];
+    state.voltage_valid = true;
+  } else if (index_lo == 0x0F && index_hi == 0x21 && sub == 0x01) {
+    state.driver_temperature_c = data[6];
+    state.temperature_valid = true;
+  }
+  // ACK frames confirm receipt only. The datasheet does not define a trustworthy actual
+  // enable-state query, so enabled_feedback_valid deliberately remains false.
+  return true;
+}
+}  // namespace detail
 
 KeyaCanDriver::KeyaCanDriver(std::string interface_name, uint8_t node_id)
 : interface_name_(std::move(interface_name)),
@@ -124,56 +173,9 @@ void KeyaCanDriver::receiveAvailableFrames()
   if (socket_fd_ < 0) return;
   can_frame frame{};
   while (read(socket_fd_, &frame, sizeof(frame)) == static_cast<ssize_t>(sizeof(frame))) {
-    parseFrame(frame);
+    detail::applyKeyaCanFrame(
+      state_, feedback_id_, heartbeat_id_, frame.can_id & CAN_EFF_MASK,
+      frame.can_dlc, frame.data, std::chrono::steady_clock::now());
   }
-}
-void KeyaCanDriver::parseFrameForTest(
-  uint32_t can_id, const std::array<uint8_t, 8> & data)
-{
-  can_frame frame{};
-  frame.can_id = can_id | CAN_EFF_FLAG;
-  frame.can_dlc = 8;
-  std::memcpy(frame.data, data.data(), 8);
-  parseFrame(frame);
-}
-void KeyaCanDriver::parseFrame(const can_frame & frame)
-{
-  const uint32_t id = frame.can_id & CAN_EFF_MASK;
-  if (frame.can_dlc != 8 || (id != feedback_id_ && id != heartbeat_id_)) return;
-  state_.last_feedback = std::chrono::steady_clock::now();
-  state_.communication_ok = true;
-  if (id == heartbeat_id_) {
-    // The manual defines this as 360-count/multi-turn data. It is communication evidence,
-    // but the 10,000-count query below remains the authoritative steering position source.
-    state_.motor_speed_rpm = be16(&frame.data[2]);
-    state_.motor_current_a = be16(&frame.data[4]);
-    state_.fault_bits = static_cast<uint16_t>(
-      (static_cast<uint16_t>(frame.data[6]) << 8) | frame.data[7]);
-    state_.speed_valid = state_.current_valid = true;
-    return;
-  }
-  if (frame.data[0] != 0x60) return;
-  const uint8_t index_lo = frame.data[1], index_hi = frame.data[2], sub = frame.data[3];
-  if (index_lo == 0x04 && index_hi == 0x21 && sub == 0x02) {
-    state_.motor_position_count = be32(&frame.data[4]);
-    state_.position_valid = true;
-    state_.last_position_feedback = state_.last_feedback;
-  } else if (index_lo == 0x03 && index_hi == 0x21 && sub == 0x01) {
-    state_.motor_speed_rpm = be32(&frame.data[4]);
-    state_.speed_valid = true;
-  } else if (index_lo == 0x00 && index_hi == 0x21 && sub == 0x01) {
-    state_.motor_current_a = frame.data[7];
-    state_.current_valid = true;
-  } else if (index_lo == 0x12 && index_hi == 0x21 && sub == 0x01) {
-    state_.fault_bits = static_cast<uint16_t>((frame.data[4] << 8) | frame.data[5]);
-  } else if (index_lo == 0x0D && index_hi == 0x21 && sub == 0x02) {
-    state_.bus_voltage_v = frame.data[7];
-    state_.voltage_valid = true;
-  } else if (index_lo == 0x0F && index_hi == 0x21 && sub == 0x01) {
-    state_.driver_temperature_c = frame.data[6];
-    state_.temperature_valid = true;
-  }
-  // ACK frames confirm receipt only. The datasheet does not define a trustworthy actual
-  // enable-state query, so enabled_feedback_valid deliberately remains false.
 }
 }  // namespace lateral_ctrl

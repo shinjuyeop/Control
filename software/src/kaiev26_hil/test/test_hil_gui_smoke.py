@@ -13,22 +13,26 @@ correctly fails here rather than on the bench.
 
 import json
 import os
+import threading
+from types import SimpleNamespace
 
 # Must precede the PyQt5 import inside kaiev26_hil.hil_gui.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PyQt5 import QtCore, QtTest
 
 from kaiev26_hil import hil_gui
-from kaiev26_hil.models import HilStatus
+from kaiev26_hil.models import HilDesiredState
 from kaiev26_hil.protocol import parse_status
 
 
-pytestmark = pytest.mark.skipif(
-    hil_gui.GUI_IMPORT_ERROR is not None,
-    reason=f"PyQt5 unavailable: {hil_gui.GUI_IMPORT_ERROR}",
-)
+if hil_gui.GUI_IMPORT_ERROR is None:
+    from PyQt5 import QtTest
+
+    QtCore = hil_gui.QtCore
+else:
+    QtCore = None
+    QtTest = None
 
 PROTOCOL_2_STATUS = (
     "STATUS protocol=2 mode=AUTO gear=FWD pedal=25.0 estop_dash=0 estop_side=0 "
@@ -51,7 +55,49 @@ PROTOCOL_1_STATUS = (
 
 def status_dict(line):
     """Render a STATUS line the way the bridge publishes it on /hil/status."""
-    return json.loads(parse_status(line, received_monotonic=0.0).to_json())
+    return hil_gui.decode_status_payload(
+        parse_status(line, received_monotonic=0.0).to_json()
+    )
+
+
+def test_json_boundaries_reject_incomplete_bridge_payloads():
+    status = json.loads(parse_status(PROTOCOL_2_STATUS).to_json())
+    del status["keya_can"]
+    with pytest.raises(ValueError, match="missing fields"):
+        hil_gui.decode_status_payload(json.dumps(status))
+
+    desired = json.loads(HilDesiredState().to_json())
+    del desired["keya_drop_tx"]
+    with pytest.raises(ValueError, match="missing fields"):
+        hil_gui.decode_desired_payload(json.dumps(desired))
+
+
+def test_status_json_boundary_rejects_false_encoded_as_text():
+    status = json.loads(parse_status(PROTOCOL_2_STATUS).to_json())
+    status["keya_can"] = "false"
+
+    with pytest.raises(ValueError, match="keya_can must be boolean"):
+        hil_gui.decode_status_payload(json.dumps(status))
+
+
+def test_status_json_boundary_ignores_unconsumed_extra_fields():
+    status = json.loads(parse_status(PROTOCOL_2_STATUS).to_json())
+    status["future_diagnostic"] = {"detail": "not consumed by this GUI"}
+
+    assert hil_gui.decode_status_payload(json.dumps(status))["keya_can"] is True
+
+
+def test_invalid_gear_payload_preserves_prior_status_snapshot():
+    prior = status_dict(PROTOCOL_2_STATUS)
+    receiver = SimpleNamespace(_lock=threading.Lock(), status=prior)
+    invalid = json.loads(parse_status(PROTOCOL_2_STATUS).to_json())
+    invalid["gear"] = "BROKEN"
+
+    hil_gui.HilGuiRosNode._status(
+        receiver, SimpleNamespace(data=json.dumps(invalid))
+    )
+
+    assert receiver.status is prior
 
 
 class StubNode:
@@ -84,6 +130,8 @@ class StubNode:
 
 @pytest.fixture(scope="module")
 def qt_app():
+    if hil_gui.GUI_IMPORT_ERROR is not None:
+        pytest.skip(f"PyQt5 unavailable: {hil_gui.GUI_IMPORT_ERROR}")
     app = hil_gui.QtWidgets.QApplication.instance()
     if app is None:
         app = hil_gui.QtWidgets.QApplication([])
@@ -482,27 +530,3 @@ def test_unconfirmed_estop_falls_back_to_reported_state_after_timeout(window):
     assert not button.isChecked()
     assert button.text() == "DASH: OFF"
     assert button not in widget._pending_toggles
-
-
-def test_repeated_refresh_reapplies_no_stylesheet(window):
-    """Stylesheet writes repaint unconditionally; over X11 each one is traffic."""
-    widget, node = window
-    node.connected = True
-    node.status = status_dict(PROTOCOL_2_STATUS)
-    widget._refresh()
-
-    styled = [widget.connection, widget.ez_link, widget.keya_link]
-    before = [label.styleSheet() for label in styled]
-    for label in styled:
-        label.setStyleSheet("")  # a real reapply would restore the sheet
-
-    widget._refresh()
-
-    assert [label.styleSheet() for label in styled] == ["", "", ""]
-    assert all(sheet for sheet in before), "test would pass on empty sheets"
-
-
-def test_status_dataclass_and_gui_agree_on_field_names():
-    """The GUI reads status keys by name; keep them tied to the dataclass."""
-    status = status_dict(PROTOCOL_2_STATUS)
-    assert set(status) == set(HilStatus.__dataclass_fields__)

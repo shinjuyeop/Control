@@ -4,7 +4,51 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import json
-from typing import Optional
+import math
+from typing import Iterable, Optional, TypeVar, get_type_hints
+
+
+_Model = TypeVar("_Model")
+
+
+def decode_json_fields(
+    payload: str, model: type[_Model], required_fields: Iterable[str]
+) -> dict[str, object]:
+    """Decode and canonicalize only the fields consumed at a JSON boundary."""
+    try:
+        raw = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise ValueError("payload is not valid JSON") from exc
+    if not isinstance(raw, dict):
+        raise ValueError("payload root must be an object")
+
+    names = tuple(required_fields)
+    missing = sorted(set(names) - set(raw))
+    if missing:
+        raise ValueError(f"payload is missing fields: {missing}")
+
+    hints = get_type_hints(model)
+    canonical: dict[str, object] = {}
+    for name in names:
+        value = raw[name]
+        expected = hints[name]
+        if expected is bool:
+            if not isinstance(value, bool):
+                raise ValueError(f"payload field {name} must be boolean")
+        elif expected is int:
+            if not isinstance(value, int) or isinstance(value, bool):
+                raise ValueError(f"payload field {name} must be an integer")
+        elif expected is float:
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"payload field {name} must be numeric")
+            value = float(value)
+            if not math.isfinite(value):
+                raise ValueError(f"payload field {name} must be finite")
+        elif expected is str and not isinstance(value, str):
+            raise ValueError(f"payload field {name} must be a string")
+        canonical[name] = value
+
+    return canonical
 
 
 @dataclass(frozen=True)

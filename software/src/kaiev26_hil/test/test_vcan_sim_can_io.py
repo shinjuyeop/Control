@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import pytest
+
 from kaiev26_hil.vcan_sim.can_io import (
+    CanFrame,
     CTRL_RUN,
     CTRL_SPEED,
+    ID_MOTOR_CMD,
     ID_MOTOR_STAT1,
     ID_STEER_CMD,
     MotorCommand,
@@ -14,40 +18,69 @@ from kaiev26_hil.vcan_sim.can_io import (
     make_steer_pos_frame_from_wheel_deg,
     parse_motor_command,
     parse_steering_command,
-    wheel_to_handle_deg_for_cmd,
 )
 from kaiev26_hil.vcan_sim.physics import MotorPlant
 
 
-def test_motor_command_round_trip_preserves_target_and_ctrl_bits():
-    frame = make_motor_cmd_frame("vcan0", 1234, current_limit_a=420.0, run=True)
-    parsed = parse_motor_command(frame)
+def test_motor_command_decoder_matches_interface_bytes():
+    frame = CanFrame(
+        "vcan0",
+        ID_MOTOR_CMD,
+        bytes.fromhex("68 8D D2 81 03 00 00 5A"),
+    )
 
-    assert parsed == MotorCommand(
+    assert parse_motor_command(frame) == MotorCommand(
         handshake_ack=False,
         target_rpm=1234.0,
         phase_limit_a=420.0,
         ctrl_run=True,
         ctrl_speed_mode=True,
-        life=0,
+        life=0x5A,
     )
 
 
-def test_motor_handshake_ack_is_detected():
-    parsed = parse_motor_command(make_motor_handshake_ack("vcan0"))
-    assert parsed == MotorCommand(handshake_ack=True)
+def test_motor_command_encoder_matches_interface_bytes():
+    frame = make_motor_cmd_frame("vcan0", 1234, current_limit_a=420.0, run=True)
+
+    assert frame.can_id == ID_MOTOR_CMD
+    assert frame.data == bytes.fromhex("68 8D D2 81 03 00 00 00")
 
 
-def test_steering_frames_round_trip_for_enable_and_position():
-    enable = parse_steering_command(make_steer_enable_frame("vcan1", True))
-    position_frame = make_steer_pos_frame_from_wheel_deg("vcan1", 10.0)
-    position = parse_steering_command(position_frame)
+def test_motor_handshake_matches_firmware_bytes():
+    received = CanFrame("vcan0", ID_MOTOR_CMD, b"\xAA" * 8)
 
-    assert enable == SteeringCommand(enable=True)
-    assert position is not None
-    assert position.enable is None
-    assert abs(position.target_handle_deg - wheel_to_handle_deg_for_cmd(10.0)) < 0.05
-    assert position_frame.can_id == ID_STEER_CMD
+    assert parse_motor_command(received) == MotorCommand(handshake_ack=True)
+    assert make_motor_handshake_ack("vcan0").data == b"\xAA" * 8
+
+
+def test_steering_decoder_matches_keya_firmware_bytes():
+    enable = CanFrame(
+        "vcan1", ID_STEER_CMD, bytes.fromhex("23 0D 20 01 00 00 00 00")
+    )
+    disable = CanFrame(
+        "vcan1", ID_STEER_CMD, bytes.fromhex("23 0C 20 01 00 00 00 00")
+    )
+    position = CanFrame(
+        "vcan1", ID_STEER_CMD, bytes.fromhex("23 02 20 01 00 00 27 10")
+    )
+
+    assert parse_steering_command(enable) == SteeringCommand(enable=True)
+    assert parse_steering_command(disable) == SteeringCommand(enable=False)
+    assert parse_steering_command(position) == SteeringCommand(target_handle_deg=360.0)
+
+
+def test_steering_encoder_matches_keya_firmware_bytes():
+    assert make_steer_enable_frame("vcan1", True).data == bytes.fromhex(
+        "23 0D 20 01 00 00 00 00"
+    )
+    assert make_steer_enable_frame("vcan1", False).data == bytes.fromhex(
+        "23 0C 20 01 00 00 00 00"
+    )
+    assert make_steer_pos_frame_from_wheel_deg("vcan1", 0.0).data == bytes.fromhex(
+        "23 02 20 01 00 00 00 00"
+    )
+    with pytest.raises(ValueError, match="must be finite"):
+        make_steer_pos_frame_from_wheel_deg("vcan1", float("nan"))
 
 
 def test_motor_status_frames_encode_status_bits():

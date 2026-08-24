@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 
 namespace lateral_ctrl
 {
@@ -10,13 +11,20 @@ WheelAngleTrackingController::WheelAngleTrackingController(
   double correction_limit_deg)
 : enabled_(enabled), kp_(kp), ki_(ki), kd_(kd),
   integral_limit_(std::abs(integral_limit)),
-  correction_limit_deg_(std::abs(correction_limit_deg)) {}
+  correction_limit_deg_(std::abs(correction_limit_deg))
+{
+  if (!std::isfinite(kp_) || !std::isfinite(ki_) || !std::isfinite(kd_) ||
+    !std::isfinite(integral_limit_) || !std::isfinite(correction_limit_deg_))
+  {
+    throw std::invalid_argument("steering tracking parameters must be finite");
+  }
+}
 
 double WheelAngleTrackingController::update(double target, double actual, double dt)
 {
   if (!std::isfinite(target) || !std::isfinite(actual)) {
     reset();
-    return std::isfinite(target) ? target : 0.0;
+    throw std::invalid_argument("steering target and feedback must be finite");
   }
   error_deg_ = target - actual;
   if (!enabled_) {

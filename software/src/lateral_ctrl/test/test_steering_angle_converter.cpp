@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+
 namespace
 {
 lateral_ctrl::SteeringAngleConverter MakeConverter()
@@ -37,6 +39,13 @@ TEST(SteeringAngleConverter, ClampsCommandsToMeasuredCountRange)
   const auto converter = MakeConverter();
   EXPECT_EQ(converter.equivalentDegToCount(90.0), 3279);
   EXPECT_EQ(converter.equivalentDegToCount(-90.0), -3279);
+}
+TEST(SteeringAngleConverter, RejectsNonFiniteCommand)
+{
+  const auto converter = MakeConverter();
+  EXPECT_THROW(
+    converter.equivalentDegToCount(std::numeric_limits<double>::quiet_NaN()),
+    std::invalid_argument);
 }
 TEST(SteeringAngleConverter, RoundTripsEveryCommandCount)
 {

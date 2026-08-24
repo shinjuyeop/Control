@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import signal
 import sys
 import threading
@@ -40,7 +39,30 @@ from .protocol import (
     build_set_numeric,
     build_set_plant,
 )
+from .models import HilDesiredState, HilStatus, decode_json_fields
 from .remote_parameters import RemoteParameterClient
+
+
+_GUI_STATUS_FIELDS = (
+    "mode", "gear", "estop_dash", "estop_side", "estop_rf", "speed", "rpm",
+    "brake_period_us", "brake_us", "brake", "pwm_lost", "steer", "steer_target",
+    "ez_rx", "keya_rx", "ez_can", "keya_can", "ez_ok", "keya_ok", "ez_fault",
+    "keya_fault", "plant", "ez_target_rpm", "ez_running", "ez_speed_control",
+    "ez_command_rpm", "ez_command_current", "ez_rx_age_ms", "keya_enabled",
+    "keya_rx_age_ms", "protocol", "received_monotonic",
+)
+_GUI_DESIRED_FIELDS = ("ez_drop_tx", "keya_drop_tx")
+
+
+def decode_status_payload(payload: str) -> dict[str, object]:
+    status = decode_json_fields(payload, HilStatus, _GUI_STATUS_FIELDS)
+    if status["gear"] not in GEAR_COMMAND_NAMES:
+        raise ValueError("payload field gear must be FWD or REV")
+    return status
+
+
+def decode_desired_payload(payload: str) -> dict[str, object]:
+    return decode_json_fields(payload, HilDesiredState, _GUI_DESIRED_FIELDS)
 
 
 class HilGuiRosNode(Node):
@@ -77,16 +99,16 @@ class HilGuiRosNode(Node):
 
     def _status(self, message):
         try:
-            status = json.loads(message.data)
-        except json.JSONDecodeError:
+            status = decode_status_payload(message.data)
+        except (TypeError, ValueError):
             return
         with self._lock:
             self.status = status
 
     def _desired(self, message):
         try:
-            desired = json.loads(message.data)
-        except json.JSONDecodeError:
+            desired = decode_desired_payload(message.data)
+        except (TypeError, ValueError):
             return
         with self._lock:
             self.desired = desired
@@ -271,10 +293,10 @@ if QtWidgets is not None:
             # the same confirmation the e-stop buttons below use.
             self.mode_row = self._choice_row(
                 grid, 0, "Mode [GPIO]", ["MANUAL", "AUTO"], build_set_mode,
-                lambda status: status.get("mode"))
+                lambda status: status["mode"])
             self.gear_row = self._choice_row(
                 grid, 1, "Gear [GPIO]", ["FORWARD", "REVERSE"], build_set_gear,
-                lambda status: GEAR_COMMAND_NAMES.get(status.get("gear")))
+                lambda status: GEAR_COMMAND_NAMES[status["gear"]])
 
             # The pedal applies itself, so it has no Apply button and no
             # applied/staged badge: what the row shows is always what was sent.
@@ -773,11 +795,11 @@ if QtWidgets is not None:
             )
 
         def _render_can_link(self, label, status, prefix):
-            enabled = bool(status.get(f"{prefix}_can"))
-            interface_ok = bool(status.get(f"{prefix}_ok"))
-            rx_count = int(status.get(f"{prefix}_rx", 0))
-            protocol = int(status.get("protocol", 1))
-            rx_age = int(status.get(f"{prefix}_rx_age_ms", 4294967295))
+            enabled = status[f"{prefix}_can"]
+            interface_ok = status[f"{prefix}_ok"]
+            rx_count = status[f"{prefix}_rx"]
+            protocol = status["protocol"]
+            rx_age = status[f"{prefix}_rx_age_ms"]
             if not enabled:
                 self._set_badge(label, "DISABLED", "#57606a")
             elif not interface_ok:
@@ -802,7 +824,7 @@ if QtWidgets is not None:
             for group in self.control_groups: group.setEnabled(connected)
             self.result.setText("Command result: " + (result or "--"))
             if status:
-                age = max(0.0, time.monotonic() - float(status.get("received_monotonic", 0.0)))
+                age = max(0.0, time.monotonic() - status["received_monotonic"])
                 self.age.setText(f"STATUS age: {age:.2f}s")
                 self._render_can_link(self.ez_link, status, "ez")
                 self._render_can_link(self.keya_link, status, "keya")
@@ -811,27 +833,27 @@ if QtWidgets is not None:
                 self.keya_health.setText("KEYA RX: " + self.keya_link.text())
                 display = dict(status)
                 display["ez_control_mode"] = (
-                    "SPEED" if status.get("ez_speed_control") else "TORQUE"
+                    "SPEED" if status["ez_speed_control"] else "TORQUE"
                 )
-                display["ez_running"] = "RUN" if status.get("ez_running") else "STOP"
-                display["keya_enabled"] = "ENABLED" if status.get("keya_enabled") else "DISABLED"
+                display["ez_running"] = "RUN" if status["ez_running"] else "STOP"
+                display["keya_enabled"] = "ENABLED" if status["keya_enabled"] else "DISABLED"
                 for key in ("ez_rx_age_ms", "keya_rx_age_ms"):
-                    age_value = int(status.get(key, 4294967295))
+                    age_value = status[key]
                     display[key] = "never / unavailable" if age_value >= 4294967295 else f"{age_value} ms"
-                display["ez_command_rpm"] = f"{float(status.get('ez_command_rpm', 0.0)):.0f} rpm"
-                display["ez_command_current"] = f"{float(status.get('ez_command_current', 0.0)):.1f} A"
-                display["ez_target_rpm"] = f"{float(status.get('ez_target_rpm', 0.0)):.0f} rpm"
-                display["brake_period_us"] = f"{int(status.get('brake_period_us', 0))} µs"
-                display["brake_us"] = f"{int(status.get('brake_us', 0))} µs"
-                display["pwm_lost"] = "LOST" if status.get("pwm_lost") else "RECEIVING"
-                display["steer_target"] = f"{float(status.get('steer_target', 0.0)):.2f} deg"
+                display["ez_command_rpm"] = f"{status['ez_command_rpm']:.0f} rpm"
+                display["ez_command_current"] = f"{status['ez_command_current']:.1f} A"
+                display["ez_target_rpm"] = f"{status['ez_target_rpm']:.0f} rpm"
+                display["brake_period_us"] = f"{status['brake_period_us']} µs"
+                display["brake_us"] = f"{status['brake_us']} µs"
+                display["pwm_lost"] = "LOST" if status["pwm_lost"] else "RECEIVING"
+                display["steer_target"] = f"{status['steer_target']:.2f} deg"
                 for key, label in self.observed.items():
-                    label.setText(str(display.get(key, "--")))
-                self.actual_rpm.setText(f"{float(status.get('rpm', 0.0)):.0f} rpm")
-                self.actual_speed.setText(f"{float(status.get('speed', 0.0)):.2f} km/h")
-                self.steer_actual.setText(f"{float(status.get('steer', 0.0)):.2f} deg")
-                self.steer_target.setText(f"{float(status.get('steer_target', 0.0)):.2f} deg")
-                mode_index = 0 if status.get("plant") else 1
+                    label.setText(str(display[key]))
+                self.actual_rpm.setText(f"{status['rpm']:.0f} rpm")
+                self.actual_speed.setText(f"{status['speed']:.2f} km/h")
+                self.steer_actual.setText(f"{status['steer']:.2f} deg")
+                self.steer_target.setText(f"{status['steer_target']:.2f} deg")
+                mode_index = 0 if status["plant"] else 1
                 if self.response_mode.currentIndex() != mode_index:
                     self.response_mode.blockSignals(True)
                     self.response_mode.setCurrentIndex(mode_index)
@@ -839,20 +861,23 @@ if QtWidgets is not None:
                 self._set_direct_controls(mode_index == 1 and connected)
                 # Matches the firmware gate: keya_can_enabled && motor_enabled.
                 self._set_steer_override(
-                    following=bool(status.get("keya_can"))
-                    and bool(status.get("keya_enabled")),
+                    following=status["keya_can"] and status["keya_enabled"],
                     connected=connected,
                 )
             toggle_values = {
-                self.estop_buttons["DASH"]: status.get("estop_dash"),
-                self.estop_buttons["SIDE"]: status.get("estop_side"),
-                self.estop_buttons["RF"]: status.get("estop_rf"),
-                self.fault_buttons["EZ TX DROP"]: desired.get("ez_drop_tx"),
-                self.fault_buttons["KEYA TX DROP"]: desired.get("keya_drop_tx"),
-                self.fault_buttons["EZ FAULT"]: status.get("ez_fault"),
-                self.fault_buttons["KEYA FAULT"]: status.get("keya_fault"),
-                self.fault_buttons["EZ CAN"]: status.get("ez_can"),
-                self.fault_buttons["KEYA CAN"]: status.get("keya_can"),
+                self.estop_buttons["DASH"]: status["estop_dash"] if status else None,
+                self.estop_buttons["SIDE"]: status["estop_side"] if status else None,
+                self.estop_buttons["RF"]: status["estop_rf"] if status else None,
+                self.fault_buttons["EZ TX DROP"]: (
+                    desired["ez_drop_tx"] if desired else None
+                ),
+                self.fault_buttons["KEYA TX DROP"]: (
+                    desired["keya_drop_tx"] if desired else None
+                ),
+                self.fault_buttons["EZ FAULT"]: status["ez_fault"] if status else None,
+                self.fault_buttons["KEYA FAULT"]: status["keya_fault"] if status else None,
+                self.fault_buttons["EZ CAN"]: status["ez_can"] if status else None,
+                self.fault_buttons["KEYA CAN"]: status["keya_can"] if status else None,
             }
             now = time.monotonic()
             for button, value in toggle_values.items():

@@ -40,6 +40,20 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
   tracking_error_fault_deg_ = declare_parameter("tracking_error_fault_deg", 3.0);
   tracking_error_fault_duration_ms_ =
     declare_parameter("tracking_error_fault_duration_ms", 500);
+  if (control_period_ms_ <= 0 || can_timeout_ms_ <= 0 || feedback_timeout_ms_ <= 0 ||
+    mode_timeout_ms_ <= 0 || steer_command_timeout_ms_ <= 0)
+  {
+    throw std::invalid_argument("steering periods and timeouts must be positive");
+  }
+  if (!std::isfinite(max_steering_rate_deg_s_) || max_steering_rate_deg_s_ <= 0.0) {
+    throw std::invalid_argument("max_steering_rate_deg_s must be finite and positive");
+  }
+  if (!std::isfinite(tracking_error_warning_deg_) || tracking_error_warning_deg_ < 0.0 ||
+    !std::isfinite(tracking_error_fault_deg_) || tracking_error_fault_deg_ < 0.0 ||
+    tracking_error_fault_duration_ms_ < 0)
+  {
+    throw std::invalid_argument("steering tracking error limits must be finite and nonnegative");
+  }
   hardware_can_enabled_ = declare_parameter("hardware_can_enabled", false);
   actuator_output_enabled_ = declare_parameter("actuator_output_enabled", false);
   test_input_injection_enabled_ = declare_parameter("test_input_injection_enabled", false);
