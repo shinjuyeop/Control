@@ -14,6 +14,7 @@ int main(void)
       .pedal_percent = 37U,
       .bus_voltage_dv = 724U,
       .bus_current_da = -183,
+      .phase_current_da = 2567,
       .controller_temperature_dc = 412,
       .motor_temperature_dc = 487,
       .motor_fault_bits = 0x00123456UL};
@@ -38,8 +39,9 @@ int main(void)
   assert(frame[4] == 0x2AU);
   assert(frame[7] == 0xD4U && frame[8] == 0x02U);
   assert(frame[9] == 0x49U && frame[10] == 0xFFU);
+  assert(frame[11] == 0x07U && frame[12] == 0x0AU);
   assert(BoardUart_Crc8(crc_check, 9U) == 0xF4U);
-  assert(frame[size - 1U] == 0x92U);
+  assert(frame[size - 1U] == 0x6CU);
 
   assert(BoardUart_DecodeDriveDetailPayload(
       &frame[5], frame[3], &output));
@@ -47,6 +49,7 @@ int main(void)
   assert(output.pedal_percent == input.pedal_percent);
   assert(output.bus_voltage_dv == input.bus_voltage_dv);
   assert(output.bus_current_da == input.bus_current_da);
+  assert(output.phase_current_da == input.phase_current_da);
   assert(output.controller_temperature_dc == input.controller_temperature_dc);
   assert(output.motor_temperature_dc == input.motor_temperature_dc);
   assert(output.motor_fault_bits == input.motor_fault_bits);

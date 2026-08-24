@@ -78,7 +78,7 @@ STM_A가 EZkontrol 모터 드라이버와 CAN으로 통신합니다.
 - STM_A는 모터 드라이버의 handshake 요청을 받고 ACK 전송에 성공하기 전까지
   traction 명령을 보내지 않습니다.
 - STM_A는 EZkontrol status Part I과 Part II를 모두 수신합니다.
-- Part I은 RPM, phase current와 DC voltage를 갱신합니다.
+- Part I은 RPM, bus voltage, bus current와 phase current를 갱신합니다.
 - Part II는 RUN 상태, control mode, controller·motor temperature와 fault bits를
   갱신합니다.
 - STM_A는 이 값을 `/drive/status`의 `DriveActuatorStatus`로 발행합니다.

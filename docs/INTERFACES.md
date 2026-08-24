@@ -156,14 +156,14 @@ badge와 `STM A COMM LOST` 배너를 표시하지만, 현재 `BRAKE_REQUEST` 계
 - message type: `0x03`
 - 주기: 100 ms (`DRIVE_DETAIL_TX_PERIOD_MS`)
 - 수신 timeout: 300 ms (`DRIVE_DETAIL_COMM_TIMEOUT_MS`)
-- frame length: 20 bytes
-- payload length: 14 bytes
+- frame length: 22 bytes
+- payload length: 16 bytes
 - 용도: ROS 없이 STM_A가 이미 보유한 EZkontrol·command 상태를 STM_B LCD에 전달
 
 | Byte | Field | Type | Unit | 설명 |
 |---:|---|---|---|---|
 | 0..4 | 공통 header | - | - | SOF, type, length, type별 sequence |
-| 5 bit 0 | Part I valid | `uint1` | - | bus voltage/current 유효 |
+| 5 bit 0 | Part I valid | `uint1` | - | bus voltage·bus/phase current 유효 |
 | 5 bit 1 | Part II valid | `uint1` | - | 온도·fault·RUN feedback 유효 |
 | 5 bit 2 | tractive commanded | `uint1` | - | STM_A가 CAN command를 실었음 |
 | 5 bit 3 | tractive feedback | `uint1` | - | EZkontrol RUN feedback |
@@ -174,10 +174,11 @@ badge와 `STM A COMM LOST` 배너를 표시하지만, 현재 `BRAKE_REQUEST` 계
 | 6 | pedal percent | `uint8` | `%` | MANUAL 페달 0..100 |
 | 7..8 | bus voltage | `uint16` | `0.1 V` | little-endian |
 | 9..10 | bus current | `int16` | `0.1 A` | little-endian |
-| 11..12 | controller temperature | `int16` | `0.1 °C` | little-endian |
-| 13..14 | motor temperature | `int16` | `0.1 °C` | little-endian |
-| 15..18 | motor fault bits | `uint32` | - | little-endian, 하위 24비트 사용 |
-| 19 | CRC-8 | `uint8` | - | byte 2..18 |
+| 11..12 | phase current | `int16` | `0.1 A` | little-endian |
+| 13..14 | controller temperature | `int16` | `0.1 °C` | little-endian |
+| 15..16 | motor temperature | `int16` | `0.1 °C` | little-endian |
+| 17..20 | motor fault bits | `uint32` | - | little-endian, 하위 24비트 사용 |
+| 21 | CRC-8 | `uint8` | - | byte 2..20 |
 
 `0x03` sequence는 `0x01`과 별도로 증가합니다. detail timeout이나 Part validity
 저하는 LCD의 해당 값을 `--`로 만들 뿐 `VEHICLE_FRAME_VALID_FROM_A`나 brake 판단을
@@ -245,7 +246,7 @@ STM_A Control task가 handshake 이후 nominal 50 ms마다 송신합니다.
 
 | Byte | Field | Encoding | 설명 |
 |---:|---|---|---|
-| 0..1 | phase-current target | `(A + 3200) / 0.1`, little-endian | AUTO 한계 300 A, MANUAL 한계 175 A |
+| 0..1 | phase-current target | `(A + 3200) / 0.1`, little-endian | AUTO·MANUAL 한계 300 A |
 | 2..3 | motor RPM target/limit | `rpm + 32000`, little-endian | 전진 +4500, 후진 -1500 rpm clamp |
 | 4 bit 0 | RUNNING | `1=RUN`, `0=HALTED` | 정지 조건에서 0 |
 | 4 bit 1 | control mode | `1=speed`, `0=torque` | AUTO speed, MANUAL torque |

@@ -86,9 +86,10 @@ void BoardUart_EncodeDriveDetailPayload(
   payload[1] = detail->pedal_percent;
   put_u16_le(&payload[2], detail->bus_voltage_dv);
   put_u16_le(&payload[4], (uint16_t)detail->bus_current_da);
-  put_u16_le(&payload[6], (uint16_t)detail->controller_temperature_dc);
-  put_u16_le(&payload[8], (uint16_t)detail->motor_temperature_dc);
-  put_u32_le(&payload[10], detail->motor_fault_bits);
+  put_u16_le(&payload[6], (uint16_t)detail->phase_current_da);
+  put_u16_le(&payload[8], (uint16_t)detail->controller_temperature_dc);
+  put_u16_le(&payload[10], (uint16_t)detail->motor_temperature_dc);
+  put_u32_le(&payload[12], detail->motor_fault_bits);
 }
 
 bool BoardUart_DecodeDriveDetailPayload(
@@ -106,8 +107,9 @@ bool BoardUart_DecodeDriveDetailPayload(
   detail->pedal_percent = payload[1];
   detail->bus_voltage_dv = get_u16_le(&payload[2]);
   detail->bus_current_da = (int16_t)get_u16_le(&payload[4]);
-  detail->controller_temperature_dc = (int16_t)get_u16_le(&payload[6]);
-  detail->motor_temperature_dc = (int16_t)get_u16_le(&payload[8]);
-  detail->motor_fault_bits = get_u32_le(&payload[10]);
+  detail->phase_current_da = (int16_t)get_u16_le(&payload[6]);
+  detail->controller_temperature_dc = (int16_t)get_u16_le(&payload[8]);
+  detail->motor_temperature_dc = (int16_t)get_u16_le(&payload[10]);
+  detail->motor_fault_bits = get_u32_le(&payload[12]);
   return true;
 }

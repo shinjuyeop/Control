@@ -18,7 +18,7 @@ extern "C" {
 
 #define BOARD_UART_VEHICLE_PAYLOAD_LEN     3u
 #define BOARD_UART_SAFETY_PAYLOAD_LEN      1u
-#define BOARD_UART_DRIVE_DETAIL_PAYLOAD_LEN 14u
+#define BOARD_UART_DRIVE_DETAIL_PAYLOAD_LEN 16u
 #define BOARD_UART_FRAME_OVERHEAD          6u
 #define BOARD_UART_MAX_FRAME_SIZE \
   (BOARD_UART_DRIVE_DETAIL_PAYLOAD_LEN + BOARD_UART_FRAME_OVERHEAD)
@@ -37,6 +37,7 @@ typedef struct
   uint8_t pedal_percent;
   uint16_t bus_voltage_dv;
   int16_t bus_current_da;
+  int16_t phase_current_da;
   int16_t controller_temperature_dc;
   int16_t motor_temperature_dc;
   uint32_t motor_fault_bits;

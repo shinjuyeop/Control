@@ -272,7 +272,7 @@ STM_A만 재시작했을 때 양쪽이 서로를 영원히 기다립니다.
 - speed control(bit1=1): 목표 RPM은 command의 RPM field 그대로입니다
 - torque control(bit1=0): RPM field는 상한이므로 phase current를
   `HIL_EZ_PLANT_TORQUE_FULL_SCALE_A`(350 A) 대비 비율로 곱합니다. STM_A는 MANUAL
-  pedal 0~100%를 0~175 A로 보내므로 pedal 100%가 상한의 절반이 됩니다
+  pedal 0~100%를 0~300 A로 보냅니다
 - RUN bit가 0이거나 handshake가 안 끝났으면 목표는 0입니다
 
 `ez_target_rpm`은 이렇게 계산한 목표값이며 STATUS로 관찰할 수 있습니다.

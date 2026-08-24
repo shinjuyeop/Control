@@ -983,6 +983,7 @@ static void capture_drive_detail(uint32_t now,
   uint8_t drive_stop_request;
   float bus_voltage_v;
   float bus_current_a;
+  float phase_current_a;
   float controller_temperature_c;
   float motor_temperature_c;
   uint32_t motor_fault_bits;
@@ -1000,6 +1001,7 @@ static void capture_drive_detail(uint32_t now,
   drive_stop_request = DRIVE_STOP_REQUEST;
   bus_voltage_v = s_bus_voltage_v;
   bus_current_a = s_bus_current_a;
+  phase_current_a = s_phase_current_a;
   controller_temperature_c = s_controller_temperature_c;
   motor_temperature_c = s_motor_temperature_c;
   motor_fault_bits = s_motor_fault_bits;
@@ -1037,6 +1039,7 @@ static void capture_drive_detail(uint32_t now,
 
   detail->bus_voltage_dv = encode_tenths_u16(bus_voltage_v);
   detail->bus_current_da = encode_tenths_i16(bus_current_a);
+  detail->phase_current_da = encode_tenths_i16(phase_current_a);
   detail->controller_temperature_dc =
       encode_tenths_i16(controller_temperature_c);
   detail->motor_temperature_dc = encode_tenths_i16(motor_temperature_c);

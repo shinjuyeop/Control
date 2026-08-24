@@ -159,7 +159,7 @@ command를 50 ms nominal 주기로 보냅니다.
 - 전진 motor RPM 한계: `4500`
 - 후진 motor RPM 한계: `-1500`
 - AUTO phase-current 한계: `300 A`
-- MANUAL torque-current 한계: `175 A`
+- MANUAL torque-current 한계: `300 A`
 
 byte layout, 물리 단위와 handshake frame은
 [`../../docs/INTERFACES.md`](../../docs/INTERFACES.md#6-ezkontrol-can)를
@@ -170,7 +170,7 @@ byte layout, 물리 단위와 handshake frame은
 USART1으로 다음 frame을 교환합니다.
 
 - STM_A → STM_B vehicle status: 20 ms, mode·gear·speed
-- STM_A → STM_B drive detail: 100 ms, bus 전압·전류, 모터/컨트롤러 온도,
+- STM_A → STM_B drive detail: 100 ms, bus 전압·bus/phase 전류, 모터/컨트롤러 온도,
   fault와 command 상태
 - STM_B → STM_A safety status: 20 ms, final brake request
 - STM_B safety timeout: 100 ms

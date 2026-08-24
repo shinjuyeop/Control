@@ -24,7 +24,7 @@
 #define UI_FAULT LCD_COLOR_RED
 
 #define HV_VOLTAGE_CHARS 7U
-#define HV_CURRENT_CHARS 9U
+#define HV_CURRENT_CHARS 13U
 #define SPEED_CHARS 5U
 #define METRIC_CHARS 8U
 #define BOTTOM_LEFT_CHARS 20U
@@ -182,10 +182,12 @@ static bool DrawFixedTextDiff(uint16_t x,
 
 static void BuildHvText(const DashboardState_t *state,
                         char voltage[HV_VOLTAGE_CHARS + 1U],
-                        char current[HV_CURRENT_CHARS + 1U])
+                        char bus_current[HV_CURRENT_CHARS + 1U],
+                        char phase_current[HV_CURRENT_CHARS + 1U])
 {
   char raw_voltage[20] = "--.- V";
-  char raw_current[20] = "--.- A";
+  char raw_bus_current[24] = "BUS --.- A";
+  char raw_phase_current[24] = "PHS --.- A";
   const uint8_t part1_valid =
       ((state->detail.flags & BOARD_UART_DETAIL_PART1_VALID) != 0U) ? 1U : 0U;
 
@@ -202,13 +204,27 @@ static void BuildHvText(const DashboardState_t *state,
     {
       (void)snprintf(raw_voltage, sizeof(raw_voltage), ">999 V");
     }
-    FormatTenthsSigned(raw_current,
-                       sizeof(raw_current),
+    char formatted_current[16];
+    FormatTenthsSigned(formatted_current,
+                       sizeof(formatted_current),
                        state->detail.bus_current_da,
                        "A");
+    (void)snprintf(raw_bus_current,
+                   sizeof(raw_bus_current),
+                   "BUS %s",
+                   formatted_current);
+    FormatTenthsSigned(formatted_current,
+                       sizeof(formatted_current),
+                       state->detail.phase_current_da,
+                       "A");
+    (void)snprintf(raw_phase_current,
+                   sizeof(raw_phase_current),
+                   "PHS %s",
+                   formatted_current);
   }
   PadLeft(voltage, HV_VOLTAGE_CHARS, raw_voltage);
-  PadLeft(current, HV_CURRENT_CHARS, raw_current);
+  PadLeft(bus_current, HV_CURRENT_CHARS, raw_bus_current);
+  PadLeft(phase_current, HV_CURRENT_CHARS, raw_phase_current);
 }
 
 static void BuildSpeedText(const DashboardState_t *state,
@@ -409,12 +425,14 @@ static bool Dashboard_DrawTop(const DashboardState_t *state)
 static bool Dashboard_DrawHv(const DashboardState_t *state)
 {
   char voltage[HV_VOLTAGE_CHARS + 1U];
-  char current[HV_CURRENT_CHARS + 1U];
-  BuildHvText(state, voltage, current);
+  char bus_current[HV_CURRENT_CHARS + 1U];
+  char phase_current[HV_CURRENT_CHARS + 1U];
+  BuildHvText(state, voltage, bus_current, phase_current);
 
   return LCD_FillRect(18U, 88U, 270U, 96U, UI_CARD) &&
          LCD_DrawStringScaled(18U, 92U, voltage, 6U, UI_TEXT, UI_CARD) &&
-         LCD_DrawStringScaled(18U, 158U, current, 3U, UI_TEXT, UI_CARD);
+         LCD_DrawStringScaled(18U, 138U, bus_current, 3U, UI_TEXT, UI_CARD) &&
+         LCD_DrawStringScaled(18U, 162U, phase_current, 3U, UI_TEXT, UI_CARD);
 }
 
 static bool Dashboard_DrawHvChanges(const DashboardState_t *current,
@@ -422,10 +440,12 @@ static bool Dashboard_DrawHvChanges(const DashboardState_t *current,
 {
   char current_voltage[HV_VOLTAGE_CHARS + 1U];
   char previous_voltage[HV_VOLTAGE_CHARS + 1U];
-  char current_current[HV_CURRENT_CHARS + 1U];
-  char previous_current[HV_CURRENT_CHARS + 1U];
-  BuildHvText(current, current_voltage, current_current);
-  BuildHvText(previous, previous_voltage, previous_current);
+  char current_bus[HV_CURRENT_CHARS + 1U];
+  char previous_bus[HV_CURRENT_CHARS + 1U];
+  char current_phase[HV_CURRENT_CHARS + 1U];
+  char previous_phase[HV_CURRENT_CHARS + 1U];
+  BuildHvText(current, current_voltage, current_bus, current_phase);
+  BuildHvText(previous, previous_voltage, previous_bus, previous_phase);
 
   return DrawFixedTextDiff(18U,
                            92U,
@@ -437,9 +457,18 @@ static bool Dashboard_DrawHvChanges(const DashboardState_t *current,
                            UI_CARD,
                            false) &&
          DrawFixedTextDiff(18U,
-                           158U,
-                           current_current,
-                           previous_current,
+                           138U,
+                           current_bus,
+                           previous_bus,
+                           HV_CURRENT_CHARS,
+                           3U,
+                           UI_TEXT,
+                           UI_CARD,
+                           false) &&
+         DrawFixedTextDiff(18U,
+                           162U,
+                           current_phase,
+                           previous_phase,
                            HV_CURRENT_CHARS,
                            3U,
                            UI_TEXT,
@@ -779,7 +808,9 @@ static bool DetailPowerChanged(const DashboardState_t *current,
          (((current->detail.flags ^ previous->detail.flags) &
            BOARD_UART_DETAIL_PART1_VALID) != 0U) ||
          (current->detail.bus_voltage_dv != previous->detail.bus_voltage_dv) ||
-         (current->detail.bus_current_da != previous->detail.bus_current_da);
+         (current->detail.bus_current_da != previous->detail.bus_current_da) ||
+         (current->detail.phase_current_da !=
+          previous->detail.phase_current_da);
 }
 
 static bool DetailThermalChanged(const DashboardState_t *current,

@@ -17,7 +17,7 @@ Host brake를 조합해 최종 `BRAKE_REQUEST`를 만들고, 브레이크 서보
 - 최종 brake request 계산과 STM_A 전달
 - TIM2 PWM brake servo 직접 구동
 - `/brake/status` 발행
-- LCD에 속도·기어·mode·brake·통신 fault 표시
+- LCD에 속도·기어·mode·bus/phase 전류·brake·통신 fault 표시
 
 ## 3. 보드와 MCU
 
@@ -207,7 +207,7 @@ command를 읽어 최종 상태를 갱신합니다.
 
 - STM_A vehicle status 수신: mode, gear, speed, nominal 20 ms
 - vehicle frame timeout: 200 ms
-- STM_A drive detail 수신: bus 전압·전류, 온도, fault와 command 상태, nominal 100 ms
+- STM_A drive detail 수신: bus 전압·bus/phase 전류, 온도, fault와 command 상태, nominal 100 ms
 - drive detail timeout: 300 ms, LCD 관련 값만 invalid
 - STM_B safety status 송신: final brake request, nominal 20 ms
 
