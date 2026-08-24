@@ -35,6 +35,7 @@ KEYA 조향 CAN의 데이터 계약과 주기·timeout을 정리하는 기준 �
 | 조향 노드 | Host·상태 통합 | ROS 2 | `/steering/status` | `SteeringActuatorStatus` | 20 ms | 상태 통합에서 별도 timeout 없음 | 조향 상태·진단 |
 | 상태 통합 | ROS 2 consumers | ROS 2 | `/vehicle/state` | `VehicleState` | 50 ms | 없음 | 세 status의 마지막 값 합성 |
 | STM_A | STM_B | USART1 | type `0x01` | mode, gear, speed | 20 ms | STM_B에서 200 ms | vehicle status |
+| STM_A | STM_B | USART1 | type `0x03` | 구동 bus·온도·fault·command 상태 | 100 ms | STM_B에서 300 ms | LCD drive detail |
 | STM_B | STM_A | USART1 | type `0x02` | final brake request | 20 ms | STM_A에서 100 ms | safety status |
 | STM_A | EZkontrol | FDCAN1 | `0x0C01EFD0` | handshake ACK 또는 command | 50 ms command | 명시적 TX timeout 없음 | AUTO speed / MANUAL torque |
 | EZkontrol | STM_A | FDCAN1 | `0x1801D0EF`, `0x1802D0EF` | Part I/II status | 외부 장치 설정 | 200 ms validity | 진단 validity에만 사용 |
@@ -114,7 +115,7 @@ STM_A의 500 ms와 조향의 200 ms freshness 한계보다 충분히 빠르게 �
 |---:|---|---|---|
 | 0 | SOF1 | `uint8` | `0xAA` |
 | 1 | SOF2 | `uint8` | `0x55` |
-| 2 | message type | `uint8` | `0x01` 또는 `0x02` |
+| 2 | message type | `uint8` | `0x01`, `0x02` 또는 `0x03` |
 | 3 | payload length | `uint8` | payload byte 수 |
 | 4 | sequence | `uint8` | 송신 때마다 증가 |
 | 5.. | payload | bytes | message별 layout |
@@ -144,10 +145,46 @@ CRC가 유효하면 payload는 반영합니다.
 | 7 | speed MSB | `int16` 일부 | `0.01 m/s` | 범위 clamp 후 전송 |
 | 8 | CRC-8 | `uint8` | - | byte 2..7 |
 
-STM_B timeout은 `VEHICLE_FRAME_VALID_FROM_A`를 false로 만들어 LCD에
-`COMM FAULT`를 표시하지만, 현재 `BRAKE_REQUEST` 계산에는 직접 사용되지 않습니다.
+STM_B timeout은 `VEHICLE_FRAME_VALID_FROM_A`를 false로 만들어 LCD의 `A-B LOST`
+badge와 `STM A COMM LOST` 배너를 표시하지만, 현재 `BRAKE_REQUEST` 계산에는 직접
+사용되지 않습니다.
 
-### 5.3 Safety Status Frame
+### 5.3 Drive Detail Frame
+
+- 송신: STM_A
+- 수신: STM_B
+- message type: `0x03`
+- 주기: 100 ms (`DRIVE_DETAIL_TX_PERIOD_MS`)
+- 수신 timeout: 300 ms (`DRIVE_DETAIL_COMM_TIMEOUT_MS`)
+- frame length: 20 bytes
+- payload length: 14 bytes
+- 용도: ROS 없이 STM_A가 이미 보유한 EZkontrol·command 상태를 STM_B LCD에 전달
+
+| Byte | Field | Type | Unit | 설명 |
+|---:|---|---|---|---|
+| 0..4 | 공통 header | - | - | SOF, type, length, type별 sequence |
+| 5 bit 0 | Part I valid | `uint1` | - | bus voltage/current 유효 |
+| 5 bit 1 | Part II valid | `uint1` | - | 온도·fault·RUN feedback 유효 |
+| 5 bit 2 | tractive commanded | `uint1` | - | STM_A가 CAN command를 실었음 |
+| 5 bit 3 | tractive feedback | `uint1` | - | EZkontrol RUN feedback |
+| 5 bit 4 | command received | `uint1` | - | Host command 수신 이력 있음 |
+| 5 bit 5 | command timeout | `uint1` | - | AUTO command timeout |
+| 5 bit 6 | drive stop | `uint1` | - | STM_A 최종 traction stop 요청 |
+| 5 bit 7 | reserved | `uint1` | - | 송신값 0 |
+| 6 | pedal percent | `uint8` | `%` | MANUAL 페달 0..100 |
+| 7..8 | bus voltage | `uint16` | `0.1 V` | little-endian |
+| 9..10 | bus current | `int16` | `0.1 A` | little-endian |
+| 11..12 | controller temperature | `int16` | `0.1 °C` | little-endian |
+| 13..14 | motor temperature | `int16` | `0.1 °C` | little-endian |
+| 15..18 | motor fault bits | `uint32` | - | little-endian, 하위 24비트 사용 |
+| 19 | CRC-8 | `uint8` | - | byte 2..18 |
+
+`0x03` sequence는 `0x01`과 별도로 증가합니다. detail timeout이나 Part validity
+저하는 LCD의 해당 값을 `--`로 만들 뿐 `VEHICLE_FRAME_VALID_FROM_A`나 brake 판단을
+바꾸지 않습니다. 따라서 새 STM_B와 구형 STM_A, 구형 STM_B와 새 STM_A 조합에서도
+기존 mode·gear·speed·safety frame은 계속 동작합니다.
+
+### 5.4 Safety Status Frame
 
 - 송신: STM_B
 - 수신: STM_A
@@ -174,6 +211,7 @@ traction stop을 요청합니다.
 - `firmware/STM_A/Core/Src/usart.c`
 - `firmware/STM_B/Core/Src/app_freertos.c`
 - `firmware/STM_B/Core/Src/usart.c`
+- `firmware/common/board_uart_protocol.{h,c}`
 
 ## 6. EZkontrol CAN
 

@@ -91,7 +91,9 @@ STM_B는 물리 E-stop 입력과 브레이크 서보의 직접 구동을 담당�
 - TIM2 CH2 PWM으로 브레이크 서보를 움직입니다.
 - 최종 브레이크 요청을 STM_A에 UART로 전달합니다.
 - `/brake/status`로 command 상태와 정지 원인을 발행합니다.
-- STM_A 상태를 LCD dashboard에 표시합니다.
+- STM_A의 mode·gear·speed와 EZkontrol drive detail을 UART로 받아, ROS와 독립적인
+  LCD dashboard에 표시합니다. 현재 write-only 실차 하네스에서는 SPI HAL 실패를
+  기준으로 LCD를 재초기화하며, 부동 SDO/MISO 값은 health gate로 사용하지 않습니다.
 
 브레이크 서보를 직접 구동하는 보드는 STM_B뿐입니다. STM_B의 FDCAN1은 초기화되지만
 현재 application 코드에서 CAN 송수신에 사용되지 않습니다.

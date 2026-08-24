@@ -167,9 +167,11 @@ byte layout, 물리 단위와 handshake frame은
 
 ### 8.2 STM_B UART (`PC4`/`PC5`)
 
-USART1으로 다음 두 frame을 교환합니다.
+USART1으로 다음 frame을 교환합니다.
 
 - STM_A → STM_B vehicle status: 20 ms, mode·gear·speed
+- STM_A → STM_B drive detail: 100 ms, bus 전압·전류, 모터/컨트롤러 온도,
+  fault와 command 상태
 - STM_B → STM_A safety status: 20 ms, final brake request
 - STM_B safety timeout: 100 ms
 
@@ -214,6 +216,7 @@ sequenceDiagram
     A->>Motor: CAN speed/torque 또는 HALTED (50 ms)
     Motor->>A: Status Part I / II
     A->>B: Vehicle status UART (20 ms)
+    A->>B: Drive detail UART (100 ms)
     A->>Host: /drive/status (50 ms)
 ```
 

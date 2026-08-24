@@ -70,7 +70,7 @@ LED는 `PA5`입니다(vendored BSP `stm32g4xx_nucleo.h`의 `USER_BUTTON_PIN`,
 | `PA3` | `CN10-37` | `LPUART1_RX` | micro-ROS transport | 115200 8N1, DMA1 CH1 | `Core/Src/usart.c` |
 | `PC4` | `CN10-34` | `USART1_TX` | STM_A 보드 간 UART | 115200 8N1, DMA1 CH4 | `Core/Src/usart.c` |
 | `PC5` | `CN10-6` | `USART1_RX` | STM_A 보드 간 UART | Receive-to-Idle circular DMA, DMA1 CH3 | `Core/Src/usart.c` |
-| `PB13` | `CN10-30` | `SPI2_SCK` | LCD dashboard | master, CPOL=1/CPHA=2edge, prescaler 64, TX DMA1 CH5 | `Core/Src/spi.c` |
+| `PB13` | `CN10-30` | `SPI2_SCK` | LCD dashboard | master, CPOL=1/CPHA=2edge, prescaler 128, TX DMA1 CH5 | `Core/Src/spi.c` |
 | `PB15` | `CN10-26` | `SPI2_MOSI` | LCD dashboard | 동일 | `Core/Src/spi.c` |
 | `PB14` | `CN10-28` | `SPI2_MISO` | LCD dashboard | 초기화만 되고 데이터는 TX 방향만 사용 | `Core/Src/spi.c` |
 | `PB0` | `CN7-34` (A3) | `LCD_CS` | LCD chip select | push-pull 출력, 부팅 시 HIGH | `Core/Src/lcd.c` |
@@ -121,7 +121,7 @@ NUCLEO의 ST-LINK virtual COM port와 연결된 핀이므로 morpho 자리에 �
 | `Core/Src/globals.c` | 공유 상태와 brake-engaged 초기값 |
 | `Core/Src/tim.c` | 50 Hz brake PWM |
 | `Core/Src/gpio.c` | E-stop input과 EXTI 설정 |
-| `Core/Src/display_app.c`, `lcd.c` | 100 ms dashboard update와 ST7796S 드라이버 |
+| `Core/Src/display_app.c`, `lcd.c` | dirty-cell update, rolling band refresh와 SPI DMA 복구 |
 | `Core/Src/usart.c` | micro-ROS LPUART1과 STM_A USART1 |
 | `Core/Src/spi.c` | LCD SPI2와 TX DMA |
 | `Middlewares/micro_ros/` | 정적 micro-ROS library, headers와 custom transport |
@@ -137,7 +137,7 @@ thread flag, UART ISR→Task 전달은 원형 buffer, 공유 snapshot은 critica
 | `Brake` | brake target에 따라 servo pulse ramp | 5 ms loop, 20 ms step | `High1` | `app_freertos.c` |
 | `EStop` | GPIO 재판독과 final brake 계산 | edge flag 또는 최대 10 tick | `Realtime` | `app_freertos.c` |
 | `uROS` | Agent 연결, command callback, status publish | 5 ms running loop, 50 ms status | `Normal` | `app_freertos.c` |
-| `Display` | LCD dashboard | 내부 update 100 ms | `Low` | `display_app.c` |
+| `Display` | LCD dashboard | 50 ms rolling refresh, gear gesture recovery | `Low` | `display_app.c` |
 | `ARx` | STM_A vehicle frame parse와 timeout | continuous loop, 1 ms delay | `AboveNormal` | `app_freertos.c` |
 | `ATx` | STM_A로 safety frame 송신 | 20 ms | `High` | `app_freertos.c` |
 
@@ -207,12 +207,29 @@ command를 읽어 최종 상태를 갱신합니다.
 
 - STM_A vehicle status 수신: mode, gear, speed, nominal 20 ms
 - vehicle frame timeout: 200 ms
+- STM_A drive detail 수신: bus 전압·전류, 온도, fault와 command 상태, nominal 100 ms
+- drive detail timeout: 300 ms, LCD 관련 값만 invalid
 - STM_B safety status 송신: final brake request, nominal 20 ms
 
-vehicle timeout은 frame validity와 LCD `COMM FAULT`에는 반영되지만 현재 final
-brake 판단에는 들어가지 않습니다. frame byte layout은
+vehicle timeout은 frame validity와 LCD `A-B LOST` badge에는 반영되지만 현재
+final brake 판단에는 들어가지 않습니다. frame byte layout은
 [`../../docs/INTERFACES.md`](../../docs/INTERFACES.md#5-stm_a--stm_b-uart)를
 기준으로 합니다.
+
+LCD는 주간용 흰 배경을 사용하고 AUTO는 청색, MANUAL은 주황색으로 표시합니다.
+SPI2는 1.328125 Mbit/s를 사용하며 4 scanline 고정 buffer와 TX DMA로 변경 영역만
+전송합니다. 평상시 숫자 갱신은 고정 폭 문자열에서 바뀐 character cell만 배경을
+포함한 최종 glyph로 덮어써, 카드 전체 clear 뒤 redraw하는 플리커를 피합니다. 동시에
+매 50 ms마다 다음 4개 scanline의 배경·테두리·문자를 RAM에서 최종 합성한 뒤 한 번의
+DMA로 전송합니다. 약 5초마다 화면 전체가 순환 복원되며 중간 clear 화면은 전송하지
+않습니다. 유효한 gear stream에서 `F-R-F-R-F` 전환이 첫 `F-R`부터 1초 안에 끝나면
+backlight-off, panel reset·초기화, 최종 화면 band 합성, backlight-on 순서로 LCD
+controller만 재기동합니다. STM_B의 brake·E-stop·UART task는 재시작하지 않으며,
+gesture detector는 차량 명령을 차단하거나 추가 안전 조건을 적용하지 않습니다. 부팅
+표시는 SPI write 성공만으로 완료합니다. 현재 실차 하네스의 SDO/MISO readback은
+부동값으로 정상 bit를 오인할 수 있어 주기적 `RDDPM` health gate에 사용하지 않습니다.
+실제 SPI HAL 실패나 DMA timeout을 감지해도 같은 LCD 전용 복구를 수행합니다. 복구
+실패 시 1초마다 다시 시도하며 brake 판단에는 관여하지 않습니다.
 
 ### 8.4 안전 상태 결정
 

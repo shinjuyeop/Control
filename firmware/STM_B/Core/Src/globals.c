@@ -13,6 +13,13 @@
  volatile uint32_t VEHICLE_RX_COUNT                  = 0;
  volatile uint32_t VEHICLE_CRC_ERROR_COUNT           = 0;
  volatile uint32_t VEHICLE_SEQUENCE_ERROR_COUNT      = 0;
+
+ volatile BoardUartDriveDetail_t DRIVE_DETAIL_FROM_A = {0};
+ volatile uint8_t  DRIVE_DETAIL_FRAME_VALID_FROM_A   = 0;
+ volatile uint32_t LAST_DRIVE_DETAIL_RX_MS           = 0;
+ volatile uint32_t DRIVE_DETAIL_RX_COUNT              = 0;
+ volatile uint32_t DRIVE_DETAIL_CRC_ERROR_COUNT       = 0;
+ volatile uint32_t DRIVE_DETAIL_SEQUENCE_ERROR_COUNT  = 0;
  
  volatile uint8_t COMMAND_BRAKE_REQUEST = 0; // /vehicle/command.brake_engage
  volatile uint8_t ESTOP_DASHBOARD       = 0; // PC0 active-low / write: EStop
