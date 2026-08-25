@@ -2,12 +2,14 @@ import math
 
 import pytest
 import rclpy
+from kaiev26_msgs.msg import DriveActuatorStatus
 from rclpy.parameter import Parameter
 
 from vehicle_test_scenarios.scenario_runner import (
     ScenarioConfig,
     VehicleTestScenarioRunner,
     kph_to_mps,
+    scheduled_scenario_setpoint,
     scenario_setpoint,
 )
 
@@ -35,6 +37,25 @@ def test_steering_sweep_is_smooth_periodic_sine(elapsed_sec, expected_deg):
 
 
 @pytest.mark.parametrize(
+    ("elapsed_sec", "expected_deg"),
+    [(0.0, -2.0), (5.0, -1.0), (10.0, -2.0), (15.0, -3.0), (20.0, -2.0)],
+)
+def test_steering_step_returns_to_center_between_directions(
+    elapsed_sec, expected_deg
+):
+    config = ScenarioConfig(
+        scenario="steering_step",
+        cruise_speed_kph=3.6,
+        steering_center_deg=-2.0,
+        steering_amplitude_deg=1.0,
+        steering_step_interval_sec=5.0,
+    )
+    output = scenario_setpoint(config, elapsed_sec)
+    assert output.speed_kph == 3.6
+    assert output.steering_deg == expected_deg
+
+
+@pytest.mark.parametrize(
     ("elapsed_sec", "expected_kph"),
     [(0.0, 0.0), (1.99, 0.0), (2.0, 3.0), (3.99, 3.0), (4.0, 0.0)],
 )
@@ -51,6 +72,42 @@ def test_speed_ramp_moves_linearly_up_and_down(elapsed_sec, expected_kph):
     config = ScenarioConfig(scenario="speed_ramp")
     output = scenario_setpoint(config, elapsed_sec)
     assert output.speed_kph == pytest.approx(expected_kph)
+
+
+def test_finite_scenario_holds_initial_setpoint_after_repetitions():
+    config = ScenarioConfig(
+        scenario="speed_step",
+        speed_low_kph=3.6,
+        speed_high_kph=7.2,
+        speed_step_interval_sec=5.0,
+        scenario_repetitions=2,
+    )
+    active, active_complete = scheduled_scenario_setpoint(config, 15.0)
+    finished, finished_complete = scheduled_scenario_setpoint(config, 20.0)
+    assert active.speed_kph == 7.2
+    assert not active_complete
+    assert finished.speed_kph == 3.6
+    assert finished_complete
+
+
+def test_initial_hold_precedes_sine_repetitions():
+    config = ScenarioConfig(
+        scenario="steering_sweep",
+        steering_center_deg=-2.0,
+        steering_amplitude_deg=1.0,
+        steering_period_sec=8.0,
+        initial_hold_sec=5.0,
+        scenario_repetitions=1,
+    )
+    initial, initial_complete = scheduled_scenario_setpoint(config, 4.9)
+    peak, peak_complete = scheduled_scenario_setpoint(config, 7.0)
+    finished, finished_complete = scheduled_scenario_setpoint(config, 13.0)
+    assert initial.steering_deg == -2.0
+    assert not initial_complete
+    assert peak.steering_deg == pytest.approx(-1.0)
+    assert not peak_complete
+    assert finished.steering_deg == -2.0
+    assert finished_complete
 
 
 def test_brake_test_holds_brake_after_delay():
@@ -84,6 +141,33 @@ def test_runtime_scenario_parameters_update_without_crashing():
         rclpy.shutdown()
 
 
+def test_auto_mode_transition_starts_and_resets_scenario_timeline():
+    rclpy.init(
+        args=[
+            "--ros-args",
+            "-p",
+            "enabled:=true",
+            "-p",
+            "wait_for_auto_mode:=true",
+        ]
+    )
+    node = VehicleTestScenarioRunner()
+    try:
+        assert node._started_at is None
+
+        status = DriveActuatorStatus()
+        status.mode = DriveActuatorStatus.MODE_AUTO
+        node._on_drive_status(status)
+        assert node._started_at is not None
+
+        status.mode = DriveActuatorStatus.MODE_MANUAL
+        node._on_drive_status(status)
+        assert node._started_at is None
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
 @pytest.mark.parametrize(
     ("parameter", "value"),
     [
@@ -93,7 +177,10 @@ def test_runtime_scenario_parameters_update_without_crashing():
         ("speed_low_kph", 4.0),
         ("steering_center_deg", 20.0),
         ("steering_amplitude_deg", 28.1),
+        ("steering_step_interval_sec", 0.0),
         ("steering_period_sec", 0.0),
+        ("initial_hold_sec", -0.1),
+        ("scenario_repetitions", -1),
         ("brake_delay_sec", math.nan),
     ],
 )

@@ -25,6 +25,7 @@ DEFAULT_OUTPUT_BASE_DIR = os.path.join(
 )
 
 SYSID_TOPICS = (
+    "/planning/command",
     "/vehicle/command",
     "/steering/status",
     "/steering/angle",
@@ -45,6 +46,7 @@ SYSID_TOPICS = (
     "/tf",
     "/tf_static",
     "/diagnostics",
+    "/parameter_events",
 )
 
 

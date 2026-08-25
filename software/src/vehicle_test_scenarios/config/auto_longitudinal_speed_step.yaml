@@ -1,0 +1,23 @@
+# A02 — AUTO longitudinal moving speed step
+#
+# MANUAL에서 직진·약 1.0 m/s로 맞춘 뒤 AUTO로 전환한다.
+# AUTO 전환 시점부터 1.0 m/s 5 s → 2.0 m/s 5 s를 4회 반복하고,
+# 끝나면 1.0 m/s·중앙 조향을 계속 유지한다. MANUAL 전환 후 정지하고 Ctrl+C.
+# 어제 실차의 직진 count-derived angle은 약 -2 deg였다. 얼라인먼트 후에는
+# steering_center_deg만 새 직진각으로 고치고 launch 명령에는 옵션을 붙이지 않는다.
+vehicle_test_scenario_runner:
+  ros__parameters:
+    enabled: true
+    wait_for_auto_mode: true
+    command_topic: /planning/command
+    drive_status_topic: /drive/status
+    publish_rate_hz: 20.0
+
+    scenario: speed_step
+    speed_low_kph: 3.6       # 1.0 m/s
+    speed_high_kph: 7.2      # 2.0 m/s
+    speed_step_interval_sec: 5.0
+    scenario_repetitions: 4  # high-speed step 4회
+    initial_hold_sec: 0.0    # 첫 low phase 5 s가 baseline
+    steering_center_deg: -2.0
+    brake_override: false
