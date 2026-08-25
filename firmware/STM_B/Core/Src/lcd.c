@@ -13,6 +13,7 @@
 #define LCD_CMD_RAMWR   0x2CU
 #define LCD_CMD_MADCTL  0x36U
 #define LCD_CMD_COLMOD  0x3AU
+#define LCD_CMD_RDDST   0x09U
 
 #define LCD_SPI_TIMEOUT_MS 100U
 #define LCD_CHAR_W 5U
@@ -20,6 +21,8 @@
 #define LCD_CHAR_SCALE 3U
 #define LCD_CHAR_ADVANCE ((LCD_CHAR_W + 1U) * LCD_CHAR_SCALE)
 #define LCD_INIT_MAX_DATA 14U
+#define LCD_STATUS_LEN 4U
+#define LCD_STATUS_DUMMY_BYTES 1U
 
 #define LCD_MADCTL_BGR 0x08U
 #define LCD_MADCTL_MV  0x20U
@@ -36,6 +39,9 @@ static LCD_Handle_t active_lcd = {
     LCD_LANDSCAPE_WIDTH,
     LCD_LANDSCAPE_HEIGHT,
     LCD_ROTATION_LANDSCAPE};
+
+static uint8_t status_baseline[LCD_STATUS_LEN];
+static bool status_baseline_valid = false;
 
 /* MSP4030 vendor sequence for its TN panel and ST7796S controller.
  * The power, gate and gamma values are panel-specific. */
@@ -148,6 +154,41 @@ static bool LCD_WriteCommandData(uint8_t command, const uint8_t *data, uint16_t 
   return LCD_WriteCommand(command) && ((length == 0U) || LCD_WriteData(data, length));
 }
 
+/* Reads the RDDST status register: the command byte is sent with DC low,
+ * then a dummy byte plus LCD_STATUS_LEN data bytes are clocked in with DC
+ * high while MOSI drives don't-care bytes. The leading dummy byte is
+ * discarded; only the trailing LCD_STATUS_LEN bytes are returned. */
+static bool LCD_ReadStatus(uint8_t status[LCD_STATUS_LEN])
+{
+  HAL_StatusTypeDef spi_status;
+  uint8_t command = LCD_CMD_RDDST;
+  uint8_t tx[LCD_STATUS_DUMMY_BYTES + LCD_STATUS_LEN] = {0};
+  uint8_t rx[LCD_STATUS_DUMMY_BYTES + LCD_STATUS_LEN] = {0};
+
+  HAL_GPIO_WritePin(LCD_DC_GPIO_Port, LCD_DC_Pin, GPIO_PIN_RESET);
+  LCD_Select();
+  spi_status = HAL_SPI_Transmit(&hspi2, &command, 1U, LCD_SPI_TIMEOUT_MS);
+  if (spi_status != HAL_OK)
+  {
+    LCD_Unselect();
+    return false;
+  }
+
+  HAL_GPIO_WritePin(LCD_DC_GPIO_Port, LCD_DC_Pin, GPIO_PIN_SET);
+  spi_status = HAL_SPI_TransmitReceive(&hspi2, tx, rx, (uint16_t)sizeof(rx), LCD_SPI_TIMEOUT_MS);
+  LCD_Unselect();
+  if (spi_status != HAL_OK)
+  {
+    return false;
+  }
+
+  for (uint32_t i = 0U; i < LCD_STATUS_LEN; i++)
+  {
+    status[i] = rx[LCD_STATUS_DUMMY_BYTES + i];
+  }
+  return true;
+}
+
 static bool LCD_SetAddressWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
 {
   uint8_t data[4];
@@ -238,7 +279,36 @@ bool LCD_Init(const LCD_Handle_t *lcd)
   }
   HAL_Delay(20U);
   HAL_GPIO_WritePin(LCD_BL_GPIO_Port, LCD_BL_Pin, GPIO_PIN_SET);
+
+  /* Snapshot the controller status right after a known-good init so
+   * LCD_IsFaulted() can later detect state corrupted by a ground bounce. */
+  status_baseline_valid = LCD_ReadStatus(status_baseline);
   return true;
+}
+
+bool LCD_IsFaulted(void)
+{
+  uint8_t status[LCD_STATUS_LEN];
+
+  if (!status_baseline_valid)
+  {
+    return false;
+  }
+
+  if (!LCD_ReadStatus(status))
+  {
+    /* SPI read itself failed: inconclusive, not a confirmed fault. */
+    return false;
+  }
+
+  for (uint32_t i = 0U; i < LCD_STATUS_LEN; i++)
+  {
+    if (status[i] != status_baseline[i])
+    {
+      return true;
+    }
+  }
+  return false;
 }
 
 void LCD_FillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color)
