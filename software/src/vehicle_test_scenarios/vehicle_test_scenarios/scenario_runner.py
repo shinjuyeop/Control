@@ -11,6 +11,7 @@ import rclpy
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from std_msgs.msg import String
 
 
 SCENARIOS = {
@@ -28,6 +29,9 @@ STARTUP_ONLY_PARAMETERS = {
     "command_topic",
     "drive_status_topic",
     "wait_for_auto_mode",
+    "auto_start_delay_sec",
+    "scenario_status_topic",
+    "scenario_label",
 }
 
 
@@ -126,6 +130,11 @@ def scenario_cycle_duration_sec(config: ScenarioConfig) -> float | None:
     return None
 
 
+def zero_speed_baseline_setpoint(config: ScenarioConfig) -> ScenarioSetpoint:
+    """Return a zero-speed target without engaging the brake command."""
+    return ScenarioSetpoint(0.0, config.steering_center_deg)
+
+
 def scheduled_scenario_setpoint(
     config: ScenarioConfig, elapsed_sec: float
 ) -> tuple[ScenarioSetpoint, bool]:
@@ -142,7 +151,7 @@ def scheduled_scenario_setpoint(
         >= config.scenario_repetitions * cycle_duration_sec
     )
     if complete:
-        return scenario_setpoint(config, 0.0), True
+        return zero_speed_baseline_setpoint(config), True
     return scenario_setpoint(config, scenario_elapsed_sec), False
 
 
@@ -208,14 +217,29 @@ class VehicleTestScenarioRunner(Node):
         self.declare_parameter("command_topic", "/planning/command")
         self.declare_parameter("drive_status_topic", "/drive/status")
         self.declare_parameter("wait_for_auto_mode", False)
+        self.declare_parameter("auto_start_delay_sec", 0.0)
+        self.declare_parameter("scenario_status_topic", "/sysid/scinario")
+        self.declare_parameter("scenario_label", "")
 
         self._enabled = bool(self.get_parameter("enabled").value)
         self._brake_override = bool(self.get_parameter("brake_override").value)
         self._wait_for_auto_mode = bool(
             self.get_parameter("wait_for_auto_mode").value
         )
+        self._auto_start_delay_sec = float(
+            self.get_parameter("auto_start_delay_sec").value
+        )
+        if (
+            not math.isfinite(self._auto_start_delay_sec)
+            or self._auto_start_delay_sec < 0.0
+        ):
+            raise ValueError(
+                "auto_start_delay_sec must be finite and non-negative"
+            )
         self._auto_mode = False
         self._reported_complete = False
+        self._reported_started = False
+        self._last_countdown_second = None
         self._config = self._read_config()
         publish_rate_hz = float(self.get_parameter("publish_rate_hz").value)
         validate_config(self._config, publish_rate_hz)
@@ -223,6 +247,16 @@ class VehicleTestScenarioRunner(Node):
         command_topic = str(self.get_parameter("command_topic").value)
         self._publisher = self.create_publisher(
             ActuatorCommand, command_topic, 10
+        )
+        scenario_status_topic = str(
+            self.get_parameter("scenario_status_topic").value
+        )
+        configured_label = str(self.get_parameter("scenario_label").value)
+        self._scenario_label = configured_label or self._config.scenario
+        self._scenario_status_publisher = self.create_publisher(
+            String,
+            scenario_status_topic,
+            10,
         )
         drive_status_topic = str(self.get_parameter("drive_status_topic").value)
         self._drive_status_type = DriveActuatorStatus
@@ -233,7 +267,7 @@ class VehicleTestScenarioRunner(Node):
             10,
         )
         self._started_at = (
-            time.monotonic()
+            time.monotonic() + self._auto_start_delay_sec
             if self._enabled and not self._wait_for_auto_mode
             else None
         )
@@ -257,10 +291,13 @@ class VehicleTestScenarioRunner(Node):
         if not self._enabled or not self._wait_for_auto_mode:
             return
         self._reported_complete = False
+        self._reported_started = False
+        self._last_countdown_second = None
         if auto_mode:
-            self._started_at = time.monotonic()
+            self._started_at = time.monotonic() + self._auto_start_delay_sec
             self.get_logger().warning(
-                "AUTO observed: starting scenario timeline from t=0"
+                "AUTO observed: publishing speed_target=0.0 m/s, brake=false; "
+                f"scenario starts after {self._auto_start_delay_sec:.0f} s countdown"
             )
         else:
             self._started_at = None
@@ -304,40 +341,63 @@ class VehicleTestScenarioRunner(Node):
             if parameter.name == "enabled":
                 self._enabled = bool(parameter.value)
                 self._started_at = (
-                    time.monotonic()
+                    time.monotonic() + self._auto_start_delay_sec
                     if self._enabled
                     and (not self._wait_for_auto_mode or self._auto_mode)
                     else None
                 )
                 self._reported_complete = False
+                self._reported_started = False
+                self._last_countdown_second = None
             elif parameter.name == "brake_override":
                 self._brake_override = bool(parameter.value)
         if reset_scenario and self._enabled:
             self._started_at = (
-                time.monotonic()
+                time.monotonic() + self._auto_start_delay_sec
                 if not self._wait_for_auto_mode or self._auto_mode
                 else None
             )
             self._reported_complete = False
+            self._reported_started = False
+            self._last_countdown_second = None
         return SetParametersResult(successful=True)
 
     def _publish(self) -> None:
         if not self._enabled:
             return
 
-        elapsed_sec = (
-            0.0
-            if self._started_at is None
-            else time.monotonic() - self._started_at
-        )
-        setpoint, complete = scheduled_scenario_setpoint(
-            self._config, elapsed_sec
-        )
+        scenario_status = String()
+        scenario_status.data = self._scenario_label
+        self._scenario_status_publisher.publish(scenario_status)
+
+        now = time.monotonic()
+        if self._wait_for_auto_mode and not self._auto_mode:
+            setpoint = zero_speed_baseline_setpoint(self._config)
+            complete = False
+        elif self._started_at is not None and now < self._started_at:
+            remaining_second = max(1, math.ceil(self._started_at - now))
+            if remaining_second != self._last_countdown_second:
+                self._last_countdown_second = remaining_second
+                self.get_logger().warning(
+                    f"AUTO sysid starts in {remaining_second}..."
+                )
+            setpoint = zero_speed_baseline_setpoint(self._config)
+            complete = False
+        elif self._started_at is None:
+            setpoint = zero_speed_baseline_setpoint(self._config)
+            complete = False
+        else:
+            if not self._reported_started:
+                self._reported_started = True
+                self.get_logger().warning("AUTO sysid START: scenario t=0")
+            setpoint, complete = scheduled_scenario_setpoint(
+                self._config, now - self._started_at
+            )
         if complete and not self._reported_complete:
             self._reported_complete = True
             self.get_logger().warning(
-                "Scenario repetitions complete: holding initial setpoint; "
-                "switch to MANUAL, stop the vehicle, then Ctrl+C the launch"
+                "Scenario repetitions complete: holding speed_target=0.0 m/s, "
+                "brake=false at center; switch to MANUAL and Ctrl+C when ready"
             )
         brake_engage = self._brake_override or setpoint.brake_engage
 

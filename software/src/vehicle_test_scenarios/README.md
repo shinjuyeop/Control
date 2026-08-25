@@ -44,8 +44,11 @@ fresh한 `ActuatorCommand`를 계속 발행한다.
 | `steering_period_sec` | `4.0` | sweep 한 주기 |
 | `brake_delay_sec` | `3.0` | brake test에서 제동 전 주행 시간 |
 | `initial_hold_sec` | `0.0` | 반복 시나리오 시작 전 초기 setpoint 유지 시간 |
-| `scenario_repetitions` | `0` | 반복 횟수. 0이면 무한 반복, 완료 후 초기 setpoint 유지 |
-| `wait_for_auto_mode` | `false` | MANUAL에서는 t=0 setpoint 유지, AUTO 전환 순간 timeline 시작 |
+| `scenario_repetitions` | `0` | 0이면 무한 반복. 유한 반복 완료 후 speed target 0·brake false 유지 |
+| `wait_for_auto_mode` | `false` | true이면 MANUAL에서 zero-speed baseline, AUTO 감지 후 timeline 준비 |
+| `auto_start_delay_sec` | `0.0` | AUTO 감지 후 speed target 0·brake false countdown |
+| `scenario_status_topic` | `/sysid/scinario` | 현재 시나리오 label `std_msgs/msg/String` 토픽 |
+| `scenario_label` | 빈 문자열 | 빈 값이면 scenario 이름, 고정 launch는 run label 사용 |
 | `brake_override` | `false` | 모든 시나리오를 즉시 speed/steer 0 + brake로 덮어씀 |
 
 속도는 `0..10 km/h`, 중앙 절댓값과 조향 진폭의 합은 `28 deg` 이하로 제한한다.
@@ -116,10 +119,11 @@ ros2 param set /vehicle_test_scenario_runner enabled false  # MANUAL 전환 후
 ## 2026-08-25 AUTO sysid 고정 launch
 
 다음 세 launch는 명령행 인자를 받지 않는다. 각 파일이 실차 `vehicle.launch.py`,
-고정 YAML runner, MCAP logger를 한 번에 시작한다. MCAP은 launch 즉시 기록되고,
-시나리오 시간은 `/drive/status`가 MANUAL에서 AUTO로 바뀐 순간부터 시작한다.
-정해진 반복이 끝나면 각 YAML의 초기 속도·중앙 조향을 계속 유지하므로 물리 스위치를
-MANUAL로 전환하고 차량을 정지한 뒤 launch에 Ctrl+C를 보낸다.
+고정 YAML runner, MCAP logger를 한 번에 시작한다. MCAP은 launch 즉시 기록된다.
+`/drive/status`가 MANUAL에서 AUTO로 바뀌면 10초 동안 `/planning/command`에
+`speed_target_mps=0.0`, `brake_engage=false`, 중앙 조향을 발행하며 countdown을
+로그에 표시한다. countdown 뒤 시나리오 `t=0`이 시작된다. 정해진 반복이 끝나면
+다시 speed target 0·brake false·중앙 조향을 유지한다.
 
 ```bash
 ros2 launch vehicle_test_scenarios auto_longitudinal_speed_step.launch.py
@@ -129,7 +133,7 @@ ros2 launch vehicle_test_scenarios auto_lateral_steering_sine.launch.py
 
 | Launch | 고정 조건 | MCAP session prefix |
 | --- | --- | --- |
-| `auto_longitudinal_speed_step.launch.py` | 1↔2 m/s, 각 5 s, 4 cycle | `A02_speed_step_10_20` |
+| `auto_longitudinal_speed_step.launch.py` | 10 s zero baseline 후 0→1, 1↔2 m/s, 각 5 s, 4 cycle | `A02_speed_step_10_20` |
 | `auto_lateral_steering_step.launch.py` | 1 m/s, center/+1/center/-1°, 각 5 s, 3 cycle | `A11_steering_step_center_pm1` |
 | `auto_lateral_steering_sine.launch.py` | 1 m/s, center±1°, 8 s, 6 cycle | `A12_steering_sine_center_pm1_8s` |
 
@@ -138,3 +142,4 @@ ros2 launch vehicle_test_scenarios auto_lateral_steering_sine.launch.py
 직진각으로 수정하고 다시 빌드한다. 각 run은 실차 제어컴의
 `~/KAI_ws/records/260825_auto_sysid/` 아래 별도 MCAP으로 저장된다. logger는
 `/planning/command`와 `/vehicle/command`를 모두 기록한다.
+`/sysid/scinario`에는 각 YAML의 고정 `std_msgs/msg/String` label이 20 Hz로 기록된다.

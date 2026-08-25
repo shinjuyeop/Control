@@ -40,7 +40,7 @@ def auto_sysid_launch_description(
             LogInfo(
                 msg=(
                     f"AUTO sysid: {scenario_summary}; "
-                    "MCAP starts now, scenario time starts on MANUAL->AUTO"
+                    "MCAP starts now; AUTO detection starts the YAML countdown"
                 )
             ),
             IncludeLaunchDescription(

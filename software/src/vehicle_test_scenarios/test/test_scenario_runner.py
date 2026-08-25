@@ -1,4 +1,5 @@
 import math
+import time
 
 import pytest
 import rclpy
@@ -11,6 +12,7 @@ from vehicle_test_scenarios.scenario_runner import (
     kph_to_mps,
     scheduled_scenario_setpoint,
     scenario_setpoint,
+    zero_speed_baseline_setpoint,
 )
 
 
@@ -86,7 +88,9 @@ def test_finite_scenario_holds_initial_setpoint_after_repetitions():
     finished, finished_complete = scheduled_scenario_setpoint(config, 20.0)
     assert active.speed_kph == 7.2
     assert not active_complete
-    assert finished.speed_kph == 3.6
+    assert finished.speed_kph == 0.0
+    assert finished.steering_deg == config.steering_center_deg
+    assert not finished.brake_engage
     assert finished_complete
 
 
@@ -107,7 +111,18 @@ def test_initial_hold_precedes_sine_repetitions():
     assert peak.steering_deg == pytest.approx(-1.0)
     assert not peak_complete
     assert finished.steering_deg == -2.0
+    assert finished.speed_kph == 0.0
+    assert not finished.brake_engage
     assert finished_complete
+
+
+def test_zero_speed_baseline_does_not_engage_brake():
+    output = zero_speed_baseline_setpoint(
+        ScenarioConfig(steering_center_deg=-2.0)
+    )
+    assert output.speed_kph == 0.0
+    assert output.steering_deg == -2.0
+    assert not output.brake_engage
 
 
 def test_brake_test_holds_brake_after_delay():
@@ -149,6 +164,10 @@ def test_auto_mode_transition_starts_and_resets_scenario_timeline():
             "enabled:=true",
             "-p",
             "wait_for_auto_mode:=true",
+            "-p",
+            "auto_start_delay_sec:=10.0",
+            "-p",
+            "scenario_label:=test_speed_step",
         ]
     )
     node = VehicleTestScenarioRunner()
@@ -157,8 +176,28 @@ def test_auto_mode_transition_starts_and_resets_scenario_timeline():
 
         status = DriveActuatorStatus()
         status.mode = DriveActuatorStatus.MODE_AUTO
+        before_transition = time.monotonic()
         node._on_drive_status(status)
         assert node._started_at is not None
+        assert node._started_at >= before_transition + 9.9
+
+        commands = []
+        scenario_statuses = []
+
+        class CapturePublisher:
+            def __init__(self, output):
+                self._output = output
+
+            def publish(self, message):
+                self._output.append(message)
+
+        node._publisher = CapturePublisher(commands)
+        node._scenario_status_publisher = CapturePublisher(scenario_statuses)
+        node._publish()
+        assert commands[-1].speed_target_mps == 0.0
+        assert commands[-1].steering_target_rad == 0.0
+        assert not commands[-1].brake_engage
+        assert scenario_statuses[-1].data == "test_speed_step"
 
         status.mode = DriveActuatorStatus.MODE_MANUAL
         node._on_drive_status(status)

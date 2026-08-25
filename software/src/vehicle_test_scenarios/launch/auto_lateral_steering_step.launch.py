@@ -1,7 +1,7 @@
 """No-argument A11 launch.
 
 Available AUTO sysid launches in this package:
-  auto_longitudinal_speed_step.launch.py  1.0 <-> 2.0 m/s, 5 s, 4 cycles
+  auto_longitudinal_speed_step.launch.py  0->1 then 1<->2 m/s, 5 s, 4 cycles
   auto_lateral_steering_step.launch.py    center/+1/center/-1 deg, 5 s, 3 cycles
   auto_lateral_steering_sine.launch.py    center +/-1 deg, period 8 s, 6 cycles
 

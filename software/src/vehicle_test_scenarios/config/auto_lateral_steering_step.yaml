@@ -1,16 +1,20 @@
 # A11 — AUTO center-region steering step
 #
-# MANUAL에서 직진·약 1.0 m/s로 맞춘 뒤 AUTO로 전환한다.
-# 각 phase는 5 s: center → center+1 deg → center → center-1 deg.
-# 이 20 s cycle을 3회 반복한 뒤 center·1.0 m/s를 계속 유지한다.
+# MANUAL 정지 상태에서 AUTO로 전환한다. AUTO 감지 후 10 s 동안
+# speed_target=0.0 m/s, brake=false를 발행한 뒤 1.0 m/s를 명령한다.
+# 각 조향 phase는 5 s: center → center+1 deg → center → center-1 deg.
+# 이 20 s cycle을 3회 반복한 뒤 speed_target=0.0 m/s·center를 유지한다.
 # 현재 center=-2 deg는 어제 실차 직진 추정값이다. 얼라인먼트 후에는 이 YAML의
 # steering_center_deg만 수정한다.
 vehicle_test_scenario_runner:
   ros__parameters:
     enabled: true
     wait_for_auto_mode: true
+    auto_start_delay_sec: 10.0  # AUTO 감지 후 speed_target=0, brake=false countdown
     command_topic: /planning/command
     drive_status_topic: /drive/status
+    scenario_status_topic: /sysid/scinario
+    scenario_label: A11_steering_step_center_pm1
     publish_rate_hz: 20.0
 
     scenario: steering_step
@@ -19,5 +23,5 @@ vehicle_test_scenario_runner:
     steering_amplitude_deg: 1.0
     steering_step_interval_sec: 5.0
     scenario_repetitions: 3  # 좌·우 step cycle 3회
-    initial_hold_sec: 0.0    # 첫 center phase 5 s가 baseline
+    initial_hold_sec: 0.0    # countdown 후 center/1 m/s phase 5 s
     brake_override: false
