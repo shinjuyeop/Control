@@ -217,6 +217,7 @@ final brake 판단에는 들어가지 않습니다. frame byte layout은
 기준으로 합니다.
 
 LCD는 주간용 흰 배경을 사용하고 AUTO는 청색, MANUAL은 주황색으로 표시합니다.
+HV 카드는 voltage·bus current·phase current를 같은 크기의 세 행으로 표시합니다.
 SPI2는 1.328125 Mbit/s를 사용하며 4 scanline 고정 buffer와 TX DMA로 변경 영역만
 전송합니다. 평상시 숫자 갱신은 고정 폭 문자열에서 바뀐 character cell만 배경을
 포함한 최종 glyph로 덮어써, 카드 전체 clear 뒤 redraw하는 플리커를 피합니다. 동시에
