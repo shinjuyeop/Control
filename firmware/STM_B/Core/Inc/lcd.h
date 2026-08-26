@@ -31,13 +31,6 @@ typedef struct
 /* Portrait and landscape geometries are supported. False means that the
  * selected geometry is invalid or an SPI transfer failed during setup. */
 bool LCD_Init(const LCD_Handle_t *lcd);
-
-/* Re-reads the display status register (RDDST) and compares it against the
- * baseline captured right after the last successful LCD_Init(). Returns
- * true only when a successful read differs from that baseline, meaning the
- * controller state was corrupted (e.g. by a ground bounce) since init. */
-bool LCD_IsFaulted(void);
-
 void LCD_FillScreen(uint16_t color);
 void LCD_FillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color);
 void LCD_DrawChar(uint16_t x, uint16_t y, char c, uint16_t fg, uint16_t bg);

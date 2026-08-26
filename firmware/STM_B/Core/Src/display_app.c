@@ -71,23 +71,6 @@ void Dashboard_Task(void *argument)
       uint8_t mode;
       uint8_t vehicle_valid;
 
-      /* REV 진입 시 모터 전류 방향 전환으로 인한 그라운드 흔들림이 컨트롤러
-       * 상태를 깨뜨려 화면이 하얗게 되는 현상에 대한 SW 복구: MISO로 상태
-       * 레지스터를 읽어 baseline과 달라졌으면 재초기화한다. */
-      if (LCD_IsFaulted())
-      {
-        while (!LCD_Init(&lcd))
-        {
-          osDelay(1000U);
-        }
-        Dashboard_DrawStaticLayout();
-        previous_kmh = -1.0f;
-        previous_brake = UINT8_MAX;
-        previous_gear = UINT8_MAX;
-        previous_mode = UINT8_MAX;
-        previous_vehicle_valid = UINT8_MAX;
-      }
-
       /* UART parser가 함께 갱신하는 속도/기어/모드를 일관된 snapshot으로 읽는다. */
       taskENTER_CRITICAL();
       kmh = CURRENT_SPEED_FROM_A * 3.6f;
