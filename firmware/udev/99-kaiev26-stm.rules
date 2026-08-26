@@ -1,4 +1,5 @@
-# KAIEV26 vehicle boards
+# KAIEV26 STM_A: NUCLEO-G474RE ST-LINK virtual COM port
+ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="003D00433234511137333934", SYMLINK+="stm_a"
 
 # STM_A: NUCLEO-G474RE ST-LINK virtual COM port, STM_A firmware
 ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="003E002E3235510B37333439", SYMLINK+="stm_a"
