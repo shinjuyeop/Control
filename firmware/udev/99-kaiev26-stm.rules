@@ -1,5 +1,5 @@
 # KAIEV26 STM_A: NUCLEO-G474RE ST-LINK virtual COM port
-ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="0025002B3234511137333934", SYMLINK+="stm_a"
+ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="003D00433234511137333934", SYMLINK+="stm_a"
 
 # KAIEV26 STM_B: NUCLEO-G474RE ST-LINK virtual COM port
 ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="003D00433234511137333934", SYMLINK+="stm_b"

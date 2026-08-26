@@ -113,7 +113,7 @@ vendored upstream revision과 로컬 빌드 수정은
 
 | 보드 | ST-LINK serial | 고정 장치 이름 |
 |---|---|---|
-| STM_A | `0025002B3234511137333934` | `/dev/stm_a` |
+| STM_A | `003D00433234511137333934` | `/dev/stm_a` |
 | STM_B | `003D00433234511137333934` | `/dev/stm_b` |
 
 규칙 원본은 `firmware/udev/99-kaiev26-stm.rules`입니다. 호스트에 설치한 뒤 규칙을
