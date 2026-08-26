@@ -7,9 +7,13 @@ extern "C" {
 
 #include <stdint.h>
 
-#define DISPLAY_UPDATE_MS 100U
+#define DISPLAY_UPDATE_MS 50U
+#define DISPLAY_RECOVERY_RETRY_MS 1000U
+#define DISPLAY_GEAR_GESTURE_WINDOW_MS 1000U
 
-void Dashboard_DrawStaticLayout(void);
+extern volatile uint32_t DISPLAY_RECOVERY_COUNT;
+extern volatile uint32_t DISPLAY_LAST_RECOVERY_ERROR;
+
 void Dashboard_Task(void *argument);
 
 #ifdef __cplusplus

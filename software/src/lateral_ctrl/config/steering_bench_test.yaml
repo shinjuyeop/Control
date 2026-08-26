@@ -9,5 +9,6 @@ steering_bench_test_node:
     steer_target_change_interval_ms: 3000
     steer_sequence_repeat: true
     steer_sequence_start_delay_sec: 3.0
+    max_abs_sequence_deg: 28.0
     safety_injection_enabled: true
     test_estop_active: false

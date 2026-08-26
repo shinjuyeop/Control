@@ -18,6 +18,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include "board_uart_protocol.h"
 #include "display_app.h"
 #include "globals.h"
 #include "usart.h"
@@ -43,7 +44,7 @@ size_t cubemx_transport_read(struct uxrCustomTransport *transport,
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 typedef struct {
-  uint8_t data[16];
+  uint8_t data[BOARD_UART_MAX_FRAME_SIZE];
   uint8_t index;
   uint8_t expected_size;
 } uart_frame_parser_t;
@@ -68,15 +69,10 @@ typedef enum {
 #define ESTOP_EVENT_SIDE (1u << 1)
 #define ESTOP_EVENT_RF   (1u << 2)
 #define ESTOP_EVENT_MASK (ESTOP_EVENT_DASH | ESTOP_EVENT_SIDE | ESTOP_EVENT_RF)
-#define UART_SOF1 0xAAu
-#define UART_SOF2 0x55u
-#define UART_MSG_A_TO_B_VEHICLE_STATUS 0x01u
-#define UART_MSG_B_TO_A_SAFETY_STATUS  0x02u
-#define UART_VEHICLE_PAYLOAD_LEN 3u
-#define UART_SAFETY_PAYLOAD_LEN  1u
 #define UART_RX_DMA_SIZE 64u
 #define UART_RX_RING_SIZE 128u
 #define VEHICLE_COMM_TIMEOUT_MS 200u
+#define DRIVE_DETAIL_COMM_TIMEOUT_MS 300u
 #define SAFETY_TX_PERIOD_MS 20u
 #define VEHICLE_MODE_AUTO 1u
 #define AGENT_PING_PERIOD_MS 500u
@@ -134,6 +130,8 @@ static uint16_t s_usart1_rx_dma_pos = 0u;
 static uart_frame_parser_t s_vehicle_parser;
 static uint8_t s_vehicle_last_sequence = 0u;
 static uint8_t s_vehicle_sequence_initialized = 0u;
+static uint8_t s_detail_last_sequence = 0u;
+static uint8_t s_detail_sequence_initialized = 0u;
 
 static uint8_t read_active_low(GPIO_TypeDef *port, uint16_t pin)
 {
@@ -208,7 +206,6 @@ const osThreadAttr_t ATx_attributes = {
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
-static uint8_t uart_crc8(const uint8_t *data, uint8_t length);
 static void usart1_rx_ring_push(uint8_t byte);
 static uint8_t usart1_rx_ring_pop(uint8_t *byte);
 static void reset_vehicle_parser(uint8_t last_byte);
@@ -527,6 +524,11 @@ void StartARx(void *argument)
         ((uint32_t)(now - LAST_VEHICLE_RX_MS) >= VEHICLE_COMM_TIMEOUT_MS)) {
       VEHICLE_FRAME_VALID_FROM_A = 0u;
     }
+    if ((DRIVE_DETAIL_FRAME_VALID_FROM_A != 0u) &&
+        ((uint32_t)(now - LAST_DRIVE_DETAIL_RX_MS) >=
+         DRIVE_DETAIL_COMM_TIMEOUT_MS)) {
+      DRIVE_DETAIL_FRAME_VALID_FROM_A = 0u;
+    }
 
     if ((s_usart1_rx_restart_requested != 0u) ||
         (((VEHICLE_FRAME_VALID_FROM_A == 0u) &&
@@ -555,18 +557,21 @@ void StartATx(void *argument)
   uint8_t sequence = 0u;
 
   for (;;) {
-    uint8_t frame[7];
+    uint8_t frame[BOARD_UART_MAX_FRAME_SIZE];
+    uint8_t payload[BOARD_UART_SAFETY_PAYLOAD_LEN];
     uint8_t stop_bits = (BRAKE_REQUEST != 0u) ? 0x01u : 0x00u;
-
-    frame[0] = UART_SOF1;
-    frame[1] = UART_SOF2;
-    frame[2] = UART_MSG_B_TO_A_SAFETY_STATUS;
-    frame[3] = UART_SAFETY_PAYLOAD_LEN;
-    frame[4] = sequence++;
-    frame[5] = stop_bits;
-    frame[6] = uart_crc8(&frame[2], 4u);
-
-    (void)HAL_UART_Transmit(&huart1, frame, sizeof(frame), 10u);
+    payload[0] = stop_bits;
+    const size_t frame_size = BoardUart_EncodeFrame(
+        BOARD_UART_MSG_B_TO_A_SAFETY_STATUS,
+        sequence++,
+        payload,
+        BOARD_UART_SAFETY_PAYLOAD_LEN,
+        frame,
+        sizeof(frame));
+    if (frame_size != 0u) {
+      (void)HAL_UART_Transmit(
+          &huart1, frame, (uint16_t)frame_size, 10u);
+    }
     osDelay(SAFETY_TX_PERIOD_MS);
   }
   /* USER CODE END StartATx */
@@ -705,19 +710,6 @@ static uint8_t ros_operation_failed(rcl_ret_t result)
   return ((result != RCL_RET_OK) && (result != RCL_RET_TIMEOUT)) ? 1u : 0u;
 }
 
-static uint8_t uart_crc8(const uint8_t *data, uint8_t length)
-{
-  uint8_t crc = 0x00u;
-  for (uint8_t i = 0u; i < length; ++i) {
-    crc ^= data[i];
-    for (uint8_t bit = 0u; bit < 8u; ++bit) {
-      crc = (crc & 0x80u) ? (uint8_t)((crc << 1) ^ 0x07u)
-                          : (uint8_t)(crc << 1);
-    }
-  }
-  return crc;
-}
-
 static void usart1_rx_ring_push(uint8_t byte)
 {
   uint16_t next = (uint16_t)(s_usart1_rx_head + 1u);
@@ -759,8 +751,8 @@ static void reset_vehicle_parser(uint8_t last_byte)
 {
   s_vehicle_parser.index = 0u;
   s_vehicle_parser.expected_size = 0u;
-  if (last_byte == UART_SOF1) {
-    s_vehicle_parser.data[0] = UART_SOF1;
+  if (last_byte == BOARD_UART_SOF1) {
+    s_vehicle_parser.data[0] = BOARD_UART_SOF1;
     s_vehicle_parser.index = 1u;
   }
 }
@@ -770,7 +762,7 @@ static void process_vehicle_rx_byte(uint8_t byte)
   uart_frame_parser_t *parser = &s_vehicle_parser;
 
   if (parser->index == 0u) {
-    if (byte == UART_SOF1) {
+    if (byte == BOARD_UART_SOF1) {
       parser->data[0] = byte;
       parser->index = 1u;
     }
@@ -778,7 +770,7 @@ static void process_vehicle_rx_byte(uint8_t byte)
   }
 
   if (parser->index == 1u) {
-    if (byte == UART_SOF2) {
+    if (byte == BOARD_UART_SOF2) {
       parser->data[1] = byte;
       parser->index = 2u;
     } else {
@@ -794,8 +786,15 @@ static void process_vehicle_rx_byte(uint8_t byte)
   parser->data[parser->index++] = byte;
 
   if (parser->index == 4u) {
-    if ((parser->data[2] != UART_MSG_A_TO_B_VEHICLE_STATUS) ||
-        (parser->data[3] != UART_VEHICLE_PAYLOAD_LEN)) {
+    const uint8_t message_type = parser->data[2];
+    const uint8_t payload_length = parser->data[3];
+    const uint8_t valid_vehicle =
+        ((message_type == BOARD_UART_MSG_A_TO_B_VEHICLE_STATUS) &&
+         (payload_length == BOARD_UART_VEHICLE_PAYLOAD_LEN)) ? 1u : 0u;
+    const uint8_t valid_detail =
+        ((message_type == BOARD_UART_MSG_A_TO_B_DRIVE_DETAIL) &&
+         (payload_length == BOARD_UART_DRIVE_DETAIL_PAYLOAD_LEN)) ? 1u : 0u;
+    if ((valid_vehicle == 0u) && (valid_detail == 0u)) {
       reset_vehicle_parser(byte);
       return;
     }
@@ -806,12 +805,17 @@ static void process_vehicle_rx_byte(uint8_t byte)
       (parser->index == parser->expected_size)) {
     uint8_t payload_len = parser->data[3];
     uint8_t received_crc = parser->data[5u + payload_len];
-    uint8_t calculated_crc = uart_crc8(&parser->data[2],
-                                       (uint8_t)(3u + payload_len));
+    uint8_t calculated_crc = BoardUart_Crc8(
+        &parser->data[2], (uint8_t)(3u + payload_len));
+    const uint8_t message_type = parser->data[2];
 
     if (received_crc != calculated_crc) {
-      VEHICLE_CRC_ERROR_COUNT++;
-    } else {
+      if (message_type == BOARD_UART_MSG_A_TO_B_DRIVE_DETAIL) {
+        DRIVE_DETAIL_CRC_ERROR_COUNT++;
+      } else {
+        VEHICLE_CRC_ERROR_COUNT++;
+      }
+    } else if (message_type == BOARD_UART_MSG_A_TO_B_VEHICLE_STATUS) {
       uint8_t sequence = parser->data[4];
       if ((s_vehicle_sequence_initialized != 0u) &&
           (sequence != (uint8_t)(s_vehicle_last_sequence + 1u))) {
@@ -833,6 +837,25 @@ static void process_vehicle_rx_byte(uint8_t byte)
       VEHICLE_FRAME_VALID_FROM_A = 1u;
       VEHICLE_RX_COUNT++;
       taskEXIT_CRITICAL();
+    } else {
+      BoardUartDriveDetail_t detail;
+      if (BoardUart_DecodeDriveDetailPayload(
+              &parser->data[5], payload_len, &detail)) {
+        uint8_t sequence = parser->data[4];
+        if ((s_detail_sequence_initialized != 0u) &&
+            (sequence != (uint8_t)(s_detail_last_sequence + 1u))) {
+          DRIVE_DETAIL_SEQUENCE_ERROR_COUNT++;
+        }
+        s_detail_last_sequence = sequence;
+        s_detail_sequence_initialized = 1u;
+
+        taskENTER_CRITICAL();
+        DRIVE_DETAIL_FROM_A = detail;
+        LAST_DRIVE_DETAIL_RX_MS = HAL_GetTick();
+        DRIVE_DETAIL_FRAME_VALID_FROM_A = 1u;
+        DRIVE_DETAIL_RX_COUNT++;
+        taskEXIT_CRITICAL();
+      }
     }
     reset_vehicle_parser(byte);
   }

@@ -51,6 +51,34 @@ typedef struct {
   bool ez_running;
   bool ez_speed_control;
 
+  /* FDCAN protocol status per bus. ez_can_healthy/keya_can_healthy only report
+   * peripheral init and RX overflow, so they stay 1 while the controller sits
+   * in error-passive or bus-off. These carry the actual bus error state and
+   * are the fields to judge a stalled TX by. */
+  bool ez_bus_off;
+  bool ez_error_passive;
+  bool ez_warning;
+  uint8_t ez_tec;
+  uint8_t ez_rec;
+  bool keya_bus_off;
+  bool keya_error_passive;
+  bool keya_warning;
+  uint8_t keya_tec;
+  uint8_t keya_rec;
+
+  /* Last controller commands observed on the two CAN inputs. RX age uses
+   * UINT32_MAX until a valid frame has been received. */
+  float ez_command_rpm;
+  float ez_command_current_a;
+  uint32_t ez_rx_age_ms;
+  bool keya_motor_enabled;
+  uint32_t keya_rx_age_ms;
+
+  /* Closed-loop plant: derive motor_rpm from the received STM_A command
+   * instead of holding whatever SET SPEED/SET RPM last injected. */
+  bool ez_plant_enabled;
+  float ez_target_rpm;
+
   uint32_t ez_rx_count;
   uint32_t ez_tx_count;
   uint32_t keya_rx_count;

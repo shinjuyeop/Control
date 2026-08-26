@@ -1,0 +1,8 @@
+command_governor:
+  ros__parameters:
+    input_topic: "/planning/command"
+    output_topic: "/vehicle/command"
+    # 이보다 오래된 입력은 버린다. 출력을 재-stamp하므로, 이 게이트가 없으면
+    # 오래된 입력이 신선한 명령으로 되살아나 조향의 steer_command_timeout_ms(200)
+    # 검사를 무력화한다. 같은 값으로 맞춘다. 미래 stamp 허용 폭도 같은 값이다.
+    input_timeout_ms: 200.0

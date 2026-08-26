@@ -41,5 +41,15 @@ HAL_StatusTypeDef HAL_SPI_Transmit(SPI_HandleTypeDef *spi,
                                    uint8_t *data,
                                    uint16_t length,
                                    uint32_t timeout_ms);
+HAL_StatusTypeDef HAL_SPI_Transmit_DMA(SPI_HandleTypeDef *spi,
+                                       uint8_t *data,
+                                       uint16_t length);
+HAL_StatusTypeDef HAL_SPI_TransmitReceive(SPI_HandleTypeDef *spi,
+                                          uint8_t *tx_data,
+                                          uint8_t *rx_data,
+                                          uint16_t length,
+                                          uint32_t timeout_ms);
+HAL_StatusTypeDef HAL_SPI_Abort(SPI_HandleTypeDef *spi);
+uint32_t HAL_GetTick(void);
 
 #endif /* TEST_MAIN_H */

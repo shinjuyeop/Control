@@ -34,7 +34,7 @@ public:
     sequence_start_delay_sec_ = declare_parameter("steer_sequence_start_delay_sec", 3.0);
     safety_injection_enabled_ = declare_parameter("safety_injection_enabled", true);
     test_estop_active_ = declare_parameter("test_estop_active", false);
-    max_abs_sequence_deg_ = declare_parameter("wheel_limit_deg", 30.0);
+    max_abs_sequence_deg_ = declare_parameter("max_abs_sequence_deg", 28.0);
     if (!validSequence(sequence_)) {
       steer_sequence_publish_enabled_ = false;
       RCLCPP_ERROR(get_logger(), "Initial steer_sequence_deg is invalid; sequence disabled");
@@ -257,9 +257,8 @@ private:
     }
     if (sequence_complete_) return;
     if (now < next_steer_command_publish_) return;
-    // 벤치 시퀀스는 deg·좌회전 음수(실차 관례)로 정의되어 있으므로
-    // canonical(rad·좌회전 양수)로 변환해 발행한다.
-    constexpr double kDegToCanonicalRad = -3.14159265358979323846 / 180.0;
+    // 벤치 시퀀스와 canonical 명령은 모두 중앙 등가각·좌회전 양수다.
+    constexpr double kDegToCanonicalRad = 3.14159265358979323846 / 180.0;
     kaiev26_msgs::msg::ActuatorCommand command;
     command.header.stamp = this->now();
     command.steering_target_rad =

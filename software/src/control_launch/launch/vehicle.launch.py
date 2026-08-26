@@ -1,0 +1,119 @@
+"""실차 구동 스택 통합 launch.
+
+구동에 필요한 것만 띄운다: STM_A/B micro-ROS Agent, command_governor,
+steering_actuator, vehicle_state_publisher, 그리고 상태 3종을 /diagnostics로
+요약하는 diagnostics_publisher(headless라 구동 스택 소속). 관찰
+GUI(foxglove_bridge, vehicle_dashboard)는 의도적으로 제외한다 — 모니터링은
+`ros2 launch visualization foxglove_bridge.launch.py`를 따로 띄운다.
+
+Planning은 포함하지 않는다. 판단 계층은 별도로 실행되어 /planning/command를
+발행한다. Planning 없이 이 launch만 켜면 command_governor가 중계할 입력이
+없어 /vehicle/command가 발행되지 않고, STM_A는 500 ms Host timeout으로
+HALTED, 조향은 WAIT_CMD로 대기한다 — 이것이 안전한 기본 상태다.
+hil_command_generator는 Planning 대역 시험 노드이므로 실차 launch에 절대
+넣지 않는다.
+
+조향은 기본 armed다(hardware_can_enabled=true, actuator_output_enabled=true).
+launch가 뜨면 바로 구동 가능한 상태가 되므로, 전원 인가 전에 KEYA 배선과
+E-stop을 먼저 확인한다.
+
+can0는 launch 전에 올라와 있어야 한다. 조향 노드는 SocketCAN을 시작 시 한
+번만 열고 실패해도 재시도하지 않으므로, can0가 늦으면 조향만 조용히 CAN이
+죽은 채 뜬다. host/systemd/의 networkd 설정을 설치하면 부팅·USB 재연결 시
+자동으로 준비된다(HIL_RUNBOOK 10.1).
+
+command_governor는 /vehicle/command의 유일한 발행자라서 죽으면 명령이
+끊긴다(안전망은 위 timeout들). 노드가 stateless라 재시작만 하면 그대로
+복구되므로 respawn을 걸어 둔다. 반복 크래시는 로그와 /diagnostics의 명령
+두절로 드러난다.
+
+이 launch는 HIL bench(2026-08-14)에서 동형 구조로 검증했고, 실차 장치
+(/dev/stm_a, /dev/stm_b)에서의 최종 확인은 아직이다.
+"""
+
+import os
+
+from ament_index_python.packages import get_package_share_directory
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.conditions import IfCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
+
+
+def _agent(name, port, baud):
+    return Node(
+        package="micro_ros_agent",
+        executable="micro_ros_agent",
+        name=name,
+        output="screen",
+        arguments=["serial", "--dev", port, "-b", baud],
+        condition=IfCondition(LaunchConfiguration("agents")),
+    )
+
+
+def generate_launch_description():
+    governor_config = os.path.join(
+        get_package_share_directory("command_governor"),
+        "config", "command_governor.yaml",
+    )
+    steering_launch = os.path.join(
+        get_package_share_directory("lateral_ctrl"),
+        "launch", "steering_actuator.launch.py",
+    )
+    baud = LaunchConfiguration("agent_baud")
+    return LaunchDescription([
+        DeclareLaunchArgument("stm_a_port", default_value="/dev/stm_a"),
+        DeclareLaunchArgument("stm_b_port", default_value="/dev/stm_b"),
+        DeclareLaunchArgument("agent_baud", default_value="115200"),
+        DeclareLaunchArgument(
+            "agents", default_value="true",
+            description="STM_A/B micro-ROS Agent를 함께 띄운다. 이미 따로 실행 중이면 false.",
+        ),
+        DeclareLaunchArgument(
+            "steering", default_value="true",
+            description="KEYA 조향 스택을 함께 띄운다. 조향 없이 종방향만 시험할 때 false.",
+        ),
+        DeclareLaunchArgument(
+            "can_interface", default_value="can0",
+            description="KEYA SocketCAN 인터페이스.",
+        ),
+        _agent("stm_a_agent", LaunchConfiguration("stm_a_port"), baud),
+        _agent("stm_b_agent", LaunchConfiguration("stm_b_port"), baud),
+        # /vehicle/command의 유일한 발행자. stateless라 respawn으로 복구한다.
+        Node(
+            package="command_governor",
+            executable="command_governor_node",
+            name="command_governor",
+            output="screen",
+            parameters=[governor_config],
+            respawn=True,
+            respawn_delay=2.0,
+        ),
+        # 조향 armed 기본값을 launch 인자로 명시해, lateral_ctrl 쪽 기본값이
+        # 바뀌어도 실차 launch는 즉시 구동 가능 상태를 유지한다.
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(steering_launch),
+            launch_arguments={
+                "can_interface": LaunchConfiguration("can_interface"),
+                "hardware_can_enabled": "true",
+                "actuator_output_enabled": "true",
+            }.items(),
+            condition=IfCondition(LaunchConfiguration("steering")),
+        ),
+        Node(
+            package="vehicle_state_publisher",
+            executable="vehicle_state_publisher_node",
+            name="vehicle_state_publisher",
+            output="screen",
+        ),
+        # status 3종 → /diagnostics 요약. Foxglove 없이도 발행되어야 bag
+        # 기록과 나중에 붙는 관찰 클라이언트가 바로 쓸 수 있다.
+        Node(
+            package="visualization",
+            executable="diagnostics_publisher",
+            name="diagnostics_publisher",
+            output="screen",
+        ),
+    ])

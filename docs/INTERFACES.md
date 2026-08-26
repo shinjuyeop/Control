@@ -26,14 +26,16 @@ KEYA 조향 CAN의 데이터 계약과 주기·timeout을 정리하는 기준 �
 
 | 송신 | 수신 | 방식 | 이름/ID | 데이터 | 주기 | Timeout | 설명 |
 |---|---|---|---|---|---:|---:|---|
-| 상위 제어기 | STM_A | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 현재 코드에서 확인되지 않음 | 500 ms | AUTO 속도·brake |
-| 상위 제어기 | STM_B | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 현재 코드에서 확인되지 않음 | 적용 안 함 | brake만 저장 |
-| 상위 제어기 | 조향 노드 | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 현재 코드에서 확인되지 않음 | 200 ms | ACTIVE 조향 freshness |
+| Planning 또는 시험 명령원 | `command_governor` | ROS 2 | `/planning/command` | `ActuatorCommand` | production 미구현; 실차 시험·HIL은 20 Hz | 거버너 입력 게이트 200 ms | 실차 시험은 `vehicle_test_scenario_runner`, HIL은 `hil_command_generator` |
+| `command_governor` | STM_A | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 500 ms | AUTO 속도·brake |
+| `command_governor` | STM_B | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 적용 안 함 | brake만 저장 |
+| `command_governor` | 조향 노드 | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 200 ms | ACTIVE 조향 freshness |
 | STM_A | Host·조향·상태 통합 | ROS 2 | `/drive/status` | `DriveActuatorStatus` | 50 ms | 조향에서 1500 ms | mode·gear·구동 진단 |
 | STM_B | Host·조향·상태 통합 | ROS 2 | `/brake/status` | `BrakeActuatorStatus` | 50 ms 및 원인 변경 시 | 조향에서 별도 timeout 없음 | brake·E-stop 원인 |
 | 조향 노드 | Host·상태 통합 | ROS 2 | `/steering/status` | `SteeringActuatorStatus` | 20 ms | 상태 통합에서 별도 timeout 없음 | 조향 상태·진단 |
 | 상태 통합 | ROS 2 consumers | ROS 2 | `/vehicle/state` | `VehicleState` | 50 ms | 없음 | 세 status의 마지막 값 합성 |
 | STM_A | STM_B | USART1 | type `0x01` | mode, gear, speed | 20 ms | STM_B에서 200 ms | vehicle status |
+| STM_A | STM_B | USART1 | type `0x03` | 구동 bus·온도·fault·command 상태 | 100 ms | STM_B에서 300 ms | LCD drive detail |
 | STM_B | STM_A | USART1 | type `0x02` | final brake request | 20 ms | STM_A에서 100 ms | safety status |
 | STM_A | EZkontrol | FDCAN1 | `0x0C01EFD0` | handshake ACK 또는 command | 50 ms command | 명시적 TX timeout 없음 | AUTO speed / MANUAL torque |
 | EZkontrol | STM_A | FDCAN1 | `0x1801D0EF`, `0x1802D0EF` | Part I/II status | 외부 장치 설정 | 200 ms validity | 진단 validity에만 사용 |
@@ -47,7 +49,8 @@ KEYA 조향 CAN의 데이터 계약과 주기·timeout을 정리하는 기준 �
 
 | Topic | Publisher | Subscriber | Type | Rate | QoS | 설명 |
 |---|---|---|---|---:|---|---|
-| `/vehicle/command` | Production publisher는 현재 코드에서 확인되지 않음 | STM_A, STM_B, `steering_actuator_node` | `kaiev26_msgs/msg/ActuatorCommand` | TBD | default | 속도·조향·최종 brake 명령 |
+| `/planning/command` | Planning (production 미구현), 실차 시험 `vehicle_test_scenario_runner`, HIL `hil_command_generator` 중 하나 | `command_governor` | `kaiev26_msgs/msg/ActuatorCommand` | 시험 명령원 20 Hz | default | Planning 의도 명령 |
+| `/vehicle/command` | `command_governor` (유일 발행자) | STM_A, STM_B, `steering_actuator_node` | `kaiev26_msgs/msg/ActuatorCommand` | 입력 연동; HIL 20 Hz | default | 속도·조향·최종 brake 명령 |
 | `/drive/status` | `/stm_a_node` | 조향 노드, `vehicle_state_publisher` | `kaiev26_msgs/msg/DriveActuatorStatus` | 20 Hz | default | mode·gear·구동 명령 및 EZkontrol 진단 |
 | `/brake/status` | `/stm_b_node` | 조향 노드, `vehicle_state_publisher` | `kaiev26_msgs/msg/BrakeActuatorStatus` | 20 Hz + 변경 시 | default | 브레이크 command와 stop reason |
 | `/steering/status` | `/steering_actuator_node` | `vehicle_state_publisher`, 진단 도구 | `kaiev26_msgs/msg/SteeringActuatorStatus` | 50 Hz | Keep Last 10, reliable, volatile | 조향 상태 머신·timeout·모터 진단 |
@@ -58,6 +61,7 @@ QoS이며, 조향·상태 통합의 depth `10`도 rclcpp/rclpy default QoS를 �
 실제 RMW별 endpoint 호환성은 다음 명령으로 확인하십시오.
 
 ```bash
+ros2 topic info -v /planning/command
 ros2 topic info -v /vehicle/command
 ros2 topic info -v /drive/status
 ros2 topic info -v /brake/status
@@ -65,16 +69,21 @@ ros2 topic info -v /steering/status
 ros2 topic info -v /vehicle/state
 ```
 
-`/vehicle/command` production publisher와 발행률은 현재 저장소에서 확인되지
-않습니다. 벤치·시각화용 시험 publisher는 존재하지만 실차 제어기의 기준 구현이
-아닙니다. 실차 발행률은 STM_A의 500 ms와 조향의 200 ms freshness 한계보다
-충분히 빨라야 하며, 구체 값은 TBD입니다.
+`/vehicle/command`의 발행자는 `command_governor` 하나입니다. 거버너는
+`/planning/command`를 수신 즉시 정합성 게이트(stamp 0·음수, 나이 ±200 ms,
+finite)를 거쳐 재-stamp 후 재발행하며, 자체 타이머와 keep-alive가 없으므로 발행률은
+입력을 그대로 따릅니다. 따라서 상류(실차 시험은
+`vehicle_test_scenario_runner`, HIL은 `hil_command_generator`, 모두 20 Hz)가
+STM_A의 500 ms와 조향의 200 ms freshness 한계보다 충분히 빠르게 발행해야
+합니다. 5 Hz는 조향 200 ms의 경계라 간헐 timeout이 납니다.
+`/planning/command`의 production Planning publisher는 아직 구현되지 않았습니다.
+실차 시험·HIL·production publisher 중 하나만 실행합니다.
 
 ### 4.2 조향 보조 topic
 
 | Topic | Publisher | Type | Rate | 설명 |
 |---|---|---|---:|---|
-| `/steering/angle` | 조향 노드 | `std_msgs/msg/Float32` | position valid일 때 최대 50 Hz | 실제 바퀴각, degree |
+| `/steering/angle` | 조향 노드 | `std_msgs/msg/Float32` | position valid일 때 최대 50 Hz | 중앙 등가 실측 조향각, degree·좌회전 양수 |
 | `/steering/enable_commanded` | 조향 노드 | `std_msgs/msg/Bool` | 50 Hz | KEYA에 명령한 enable 상태 |
 | `/steering/enabled` | 조향 노드 | `std_msgs/msg/Bool` | 50 Hz | feedback enable; 현재 하드웨어에서는 validity 미지원 |
 | `/steering/test/estop` | 벤치 노드 | `std_msgs/msg/UInt8` | 벤치 기본 20 Hz | `test_input_injection_enabled=true`에서만 구독 |
@@ -106,7 +115,7 @@ ros2 topic info -v /vehicle/state
 |---:|---|---|---|
 | 0 | SOF1 | `uint8` | `0xAA` |
 | 1 | SOF2 | `uint8` | `0x55` |
-| 2 | message type | `uint8` | `0x01` 또는 `0x02` |
+| 2 | message type | `uint8` | `0x01`, `0x02` 또는 `0x03` |
 | 3 | payload length | `uint8` | payload byte 수 |
 | 4 | sequence | `uint8` | 송신 때마다 증가 |
 | 5.. | payload | bytes | message별 layout |
@@ -136,10 +145,47 @@ CRC가 유효하면 payload는 반영합니다.
 | 7 | speed MSB | `int16` 일부 | `0.01 m/s` | 범위 clamp 후 전송 |
 | 8 | CRC-8 | `uint8` | - | byte 2..7 |
 
-STM_B timeout은 `VEHICLE_FRAME_VALID_FROM_A`를 false로 만들어 LCD에
-`COMM FAULT`를 표시하지만, 현재 `BRAKE_REQUEST` 계산에는 직접 사용되지 않습니다.
+STM_B timeout은 `VEHICLE_FRAME_VALID_FROM_A`를 false로 만들어 LCD의 `A-B LOST`
+badge와 `STM A COMM LOST` 배너를 표시하지만, 현재 `BRAKE_REQUEST` 계산에는 직접
+사용되지 않습니다.
 
-### 5.3 Safety Status Frame
+### 5.3 Drive Detail Frame
+
+- 송신: STM_A
+- 수신: STM_B
+- message type: `0x03`
+- 주기: 100 ms (`DRIVE_DETAIL_TX_PERIOD_MS`)
+- 수신 timeout: 300 ms (`DRIVE_DETAIL_COMM_TIMEOUT_MS`)
+- frame length: 22 bytes
+- payload length: 16 bytes
+- 용도: ROS 없이 STM_A가 이미 보유한 EZkontrol·command 상태를 STM_B LCD에 전달
+
+| Byte | Field | Type | Unit | 설명 |
+|---:|---|---|---|---|
+| 0..4 | 공통 header | - | - | SOF, type, length, type별 sequence |
+| 5 bit 0 | Part I valid | `uint1` | - | bus voltage·bus/phase current 유효 |
+| 5 bit 1 | Part II valid | `uint1` | - | 온도·fault·RUN feedback 유효 |
+| 5 bit 2 | tractive commanded | `uint1` | - | STM_A가 CAN command를 실었음 |
+| 5 bit 3 | tractive feedback | `uint1` | - | EZkontrol RUN feedback |
+| 5 bit 4 | command received | `uint1` | - | Host command 수신 이력 있음 |
+| 5 bit 5 | command timeout | `uint1` | - | AUTO command timeout |
+| 5 bit 6 | drive stop | `uint1` | - | STM_A 최종 traction stop 요청 |
+| 5 bit 7 | reserved | `uint1` | - | 송신값 0 |
+| 6 | pedal percent | `uint8` | `%` | MANUAL 페달 0..100 |
+| 7..8 | bus voltage | `uint16` | `0.1 V` | little-endian |
+| 9..10 | bus current | `int16` | `0.1 A` | little-endian |
+| 11..12 | phase current | `int16` | `0.1 A` | little-endian |
+| 13..14 | controller temperature | `int16` | `0.1 °C` | little-endian |
+| 15..16 | motor temperature | `int16` | `0.1 °C` | little-endian |
+| 17..20 | motor fault bits | `uint32` | - | little-endian, 하위 24비트 사용 |
+| 21 | CRC-8 | `uint8` | - | byte 2..20 |
+
+`0x03` sequence는 `0x01`과 별도로 증가합니다. detail timeout이나 Part validity
+저하는 LCD의 해당 값을 `--`로 만들 뿐 `VEHICLE_FRAME_VALID_FROM_A`나 brake 판단을
+바꾸지 않습니다. 따라서 새 STM_B와 구형 STM_A, 구형 STM_B와 새 STM_A 조합에서도
+기존 mode·gear·speed·safety frame은 계속 동작합니다.
+
+### 5.4 Safety Status Frame
 
 - 송신: STM_B
 - 수신: STM_A
@@ -166,6 +212,7 @@ traction stop을 요청합니다.
 - `firmware/STM_A/Core/Src/usart.c`
 - `firmware/STM_B/Core/Src/app_freertos.c`
 - `firmware/STM_B/Core/Src/usart.c`
+- `firmware/common/board_uart_protocol.{h,c}`
 
 ## 6. EZkontrol CAN
 
@@ -199,7 +246,7 @@ STM_A Control task가 handshake 이후 nominal 50 ms마다 송신합니다.
 
 | Byte | Field | Encoding | 설명 |
 |---:|---|---|---|
-| 0..1 | phase-current target | `(A + 3200) / 0.1`, little-endian | AUTO 한계 300 A, MANUAL 한계 175 A |
+| 0..1 | phase-current target | `(A + 3200) / 0.1`, little-endian | AUTO·MANUAL 한계 300 A |
 | 2..3 | motor RPM target/limit | `rpm + 32000`, little-endian | 전진 +4500, 후진 -1500 rpm clamp |
 | 4 bit 0 | RUNNING | `1=RUN`, `0=HALTED` | 정지 조건에서 0 |
 | 4 bit 1 | control mode | `1=speed`, `0=torque` | AUTO speed, MANUAL torque |
@@ -253,6 +300,10 @@ sudo ip link set can0 type can bitrate 250000
 sudo ip link set can0 up
 ```
 
+`restart-ms`는 주지 않습니다. HIL bench의 USB-CAN은 gs_usb(candleLight 계열)이고
+이 드라이버는 bus-off 자동 복구를 지원하지 않아 링크 설정 자체가 거부됩니다.
+bus-off에서는 `down` 후 `up`으로 수동 복구합니다.
+
 기본 node ID `1`일 때 ID는 다음과 같습니다.
 
 | 방향 | ID 식 | 기본 ID | 형식 | 설명 |
@@ -272,6 +323,22 @@ sudo ip link set can0 up
 | Motor speed query | `40 03 21 01 00 00 00 00` |
 | Motor current query | `40 00 21 01 00 00 00 00` |
 | Fault query | `40 12 21 01 00 00 00 00` |
+| Bus voltage query | `40 0D 21 02 00 00 00 00` |
+| Driver temperature query | `40 0F 21 01 00 00 00 00` |
+
+제조사 `KEYA KY170DJD01005-08G-V1 User Manual V1.1` 인쇄면 12~13쪽의
+query response와 heartbeat 인코딩은 다음과 같습니다. multi-byte 값은 high
+byte가 먼저 옵니다. 아래 byte 위치는 8-byte CAN payload의 0-based index입니다.
+
+| 응답 | payload layout | 값 위치·폭 | 의미 |
+|---|---|---|---|
+| Encoder position query | `60 04 21 02 DATA_H(h) DATA_H(l) DATA_L(h) DATA_L(l)` | byte 4~7, 4 byte | position count (`10000 count/rev`) |
+| Motor speed query | `60 03 21 01 DATA_H(h) DATA_H(l) DATA_L(h) DATA_L(l)` | byte 4~7, 4 byte | motor speed `[rpm]` |
+| Motor current query | `60 00 21 01 00 00 00 DATA` | byte 7, 1 byte | working current `[A]` |
+| Fault query | `60 12 21 01 DATA_H DATA_L 00 00` | byte 4~5, 2 byte | failure code |
+| Bus voltage query | `60 0D 21 02 00 00 00 DATA` | byte 7, 1 byte | supply voltage `[V]` |
+| Driver temperature query | `60 0F 21 01 00 00 DATA 00` | byte 6, 1 byte | driver temperature `[°C]` |
+| Heartbeat | `ELE_H ELE_L SPEED_H SPEED_L CURRENT_H CURRENT_L ERR_H ERR_L` | position byte 0~1, speed 2~3, current 4~5, fault 6~7 | position `360 count/rev`, speed `[rpm]`, current `[A]`, failure code. 현재 driver는 heartbeat position을 사용하지 않음 |
 
 control tick 20 ms마다 position을 조회하며 ACTIVE에서는 rate-limit된 position
 command도 매 tick 전송합니다. fault는 100 ms, speed·current는 200 ms,
@@ -279,10 +346,14 @@ bus voltage·driver temperature는 500 ms 간격으로 번갈아 조회합니다
 
 - CAN timeout: heartbeat 또는 feedback frame이 500 ms 동안 없을 때
 - position feedback timeout: 유효 position response가 500 ms 동안 없을 때
-- KEYA 내부 watchdog 설정값: 현재 actuator 코드에서 설정하거나 확인하지 않음
+- KEYA 매뉴얼은 speed·torque command 간격이 1000 ms를 넘으면 CAN disconnect
+  error가 발생하고 재시작 시 Enable을 다시 보내야 한다고 규정. 현재 통합 경로의
+  position command에도 같은 watchdog과 출력 차단이 적용되는지는 미확인
 - 제어 mode: 현재 통합 경로는 position command만 사용
-- encoder scaling: `10000 count/rev`, calibration은
-  `software/src/lateral_ctrl/config/steering_motor_calibration.yaml`
+- motor-axis diagnostic scaling: `10000 count/rev`
+- 조향 calibration은 raw KEYA count를 중앙 등가각으로 직접 환산하며
+  `software/src/lateral_ctrl/config/steering_motor_calibration.yaml`이 소유
+- 명령 범위: `-3279..3279 count`(nominal 약 `-27.83..25.92 deg`), feedback은 클램프하지 않음
 
 구현 위치:
 
@@ -309,6 +380,7 @@ bus voltage·driver temperature는 500 ms 간격으로 번갈아 조회합니다
 | 조향 CAN timeout | 500 ms | `can_timeout_ms` | `steering_actuator.yaml` |
 | 조향 position timeout | 500 ms | `feedback_timeout_ms` | `steering_actuator.yaml` |
 | 조향 mode timeout | 1500 ms | `mode_timeout_ms` | `steering_actuator.yaml` |
+| 거버너 입력 나이 게이트 | 200 ms | `input_timeout_ms` | `command_governor.yaml` |
 | `/vehicle/state` publish | 50 ms | `publish_rate_hz=20.0` | vehicle state publisher |
 
 경계 비교는 구현마다 다릅니다. STM Host와 UART timeout은 `>=`, EZkontrol valid는
@@ -322,12 +394,14 @@ bus voltage·driver temperature는 500 ms 간격으로 번갈아 조회합니다
 - STM_B: `firmware/STM_B/Core/Src/app_freertos.c`
 - STM_B PWM: `firmware/STM_B/Core/Src/tim.c`
 - 조향: `software/src/lateral_ctrl/src/`
+- 명령 거버너: `software/src/command_governor/src/`
 - 상태 통합: `software/src/vehicle_state_publisher/`
 - 메시지 원본: 별도 workspace repository `kaiev26_msgs/msg/`
 
 ## 10. 확인 필요 항목
 
-- Production `/vehicle/command` publisher, 발행률과 명령 생성 책임
+- Production `/planning/command` publisher (Planning)와 발행률.
+  `/vehicle/command` 발행자는 `command_governor`로 확정됨
 - STM_A→STM_B UART timeout을 브레이크 판단에 포함할지 여부
 - EZkontrol Part I/II 손실을 traction stop 조건으로 포함할지 여부
 - EZkontrol status 실제 송신 주기

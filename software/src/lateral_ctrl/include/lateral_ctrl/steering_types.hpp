@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <stdexcept>
 
 namespace lateral_ctrl
 {
@@ -68,14 +69,6 @@ inline SteeringDisableReason selectDisableReason(
   return SteeringDisableReason::NONE;
 }
 
-inline SteeringDisableReason selectDisableReason(
-  bool mode_received, DriveMode mode, const SafetyInputs & safety, bool motor_fault,
-  bool can_timeout, bool feedback_valid)
-{
-  return selectDisableReason(
-    mode_received, false, mode, safety, motor_fault, can_timeout, feedback_valid, false);
-}
-
 inline SteeringState stateForDisableReason(SteeringDisableReason reason)
 {
   if (reason == SteeringDisableReason::NONE ||
@@ -106,20 +99,11 @@ inline bool pendingCommandIsEligible(
 inline double rateLimit(
   double previous, double target, double max_rate_deg_s, double dt_sec)
 {
-  if (!std::isfinite(previous) || !std::isfinite(target) || !std::isfinite(dt_sec) ||
-    dt_sec <= 0.0)
-  {
-    return std::isfinite(previous) ? previous : 0.0;
+  if (!std::isfinite(previous) || !std::isfinite(target) || !std::isfinite(max_rate_deg_s)) {
+    throw std::invalid_argument("steering rate-limit inputs must be finite");
   }
+  if (!std::isfinite(dt_sec) || dt_sec <= 0.0) return previous;
   const double max_step = std::max(0.0, max_rate_deg_s) * dt_sec;
   return previous + std::clamp(target - previous, -max_step, max_step);
-}
-
-inline void resetMotionTargetForRecovery(
-  double actual, double & target, double & commanded, bool & target_valid)
-{
-  target = actual;
-  commanded = actual;
-  target_valid = false;
 }
 }  // namespace lateral_ctrl

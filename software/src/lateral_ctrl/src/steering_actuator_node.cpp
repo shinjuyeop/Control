@@ -13,12 +13,14 @@ namespace lateral_ctrl
 SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
 : Node("steering_actuator_node", options),
   converter_(
-    declare_parameter("calibration_a", 0.0002),
-    declare_parameter("calibration_b", 0.2159),
-    declare_parameter("calibration_c", 0.1612),
-    declare_parameter("counts_per_rev", 10000.0),
-    declare_parameter("direction_sign", -1.0),
-    declare_parameter("wheel_limit_deg", 30.0)),
+    declare_parameter<double>("count_scale"),
+    declare_parameter<double>("equivalent_k1_deg"),
+    declare_parameter<double>("equivalent_k2_deg"),
+    declare_parameter<double>("equivalent_k3_deg"),
+    declare_parameter<double>("equivalent_k4_deg"),
+    declare_parameter<double>("equivalent_k5_deg"),
+    declare_parameter<std::int64_t>("command_count_limit"),
+    declare_parameter<double>("counts_per_rev")),
   tracking_controller_(
     declare_parameter("tracking_control_enabled", false),
     declare_parameter("tracking_kp", 0.0),
@@ -38,6 +40,20 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
   tracking_error_fault_deg_ = declare_parameter("tracking_error_fault_deg", 3.0);
   tracking_error_fault_duration_ms_ =
     declare_parameter("tracking_error_fault_duration_ms", 500);
+  if (control_period_ms_ <= 0 || can_timeout_ms_ <= 0 || feedback_timeout_ms_ <= 0 ||
+    mode_timeout_ms_ <= 0 || steer_command_timeout_ms_ <= 0)
+  {
+    throw std::invalid_argument("steering periods and timeouts must be positive");
+  }
+  if (!std::isfinite(max_steering_rate_deg_s_) || max_steering_rate_deg_s_ <= 0.0) {
+    throw std::invalid_argument("max_steering_rate_deg_s must be finite and positive");
+  }
+  if (!std::isfinite(tracking_error_warning_deg_) || tracking_error_warning_deg_ < 0.0 ||
+    !std::isfinite(tracking_error_fault_deg_) || tracking_error_fault_deg_ < 0.0 ||
+    tracking_error_fault_duration_ms_ < 0)
+  {
+    throw std::invalid_argument("steering tracking error limits must be finite and nonnegative");
+  }
   hardware_can_enabled_ = declare_parameter("hardware_can_enabled", false);
   actuator_output_enabled_ = declare_parameter("actuator_output_enabled", false);
   test_input_injection_enabled_ = declare_parameter("test_input_injection_enabled", false);
@@ -139,11 +155,10 @@ void SteeringActuatorNode::onCommand(const kaiev26_msgs::msg::ActuatorCommand::S
       SteeringDisableReason::STEER_COMMAND_TIMEOUT);
     return;
   }
-  // canonical 계약 단위 변환: rad·좌회전 양수 → 내부 deg·좌회전 음수.
-  // 이 변환은 명령 수신 경계에서만 수행한다.
-  constexpr double kCanonicalRadToDeg = -180.0 / 3.14159265358979323846;
+  // 내부와 외부 모두 중앙 등가 조향각·좌회전 양수다. 여기서는 단위만 바꾼다.
+  constexpr double kCanonicalRadToDeg = 180.0 / 3.14159265358979323846;
   pending_target_wheel_angle_deg_ =
-    converter_.clampWheelDeg(input->steering_target_rad * kCanonicalRadToDeg);
+    converter_.clampEquivalentDeg(input->steering_target_rad * kCanonicalRadToDeg);
   pending_command_valid_ = true;
   last_steer_command_time_ = std::chrono::steady_clock::now();
   pending_command_generation_ = ++steer_command_generation_;
@@ -253,8 +268,7 @@ bool SteeringActuatorNode::tryEnterActiveFromPendingCommand(
     discardAllSteeringCommands();
     return false;
   }
-  const int32_t actual_count =
-    converter_.motorDegToCount(converter_.wheelToMotorDeg(actual_wheel_angle_deg_));
+  const int32_t actual_count = can_driver_->motorState().motor_position_count;
   if (!can_driver_->sendPositionCount(actual_count)) {
     discardAllSteeringCommands();
     return false;
@@ -332,8 +346,7 @@ void SteeringActuatorNode::controlTick()
   }
   mode_timeout_ = mode_received_ && mode_age_ms > mode_timeout_ms_;
   if (motor.position_valid) {
-    actual_wheel_angle_deg_ =
-      converter_.motorToWheelDeg(converter_.countToMotorDeg(motor.motor_position_count));
+    actual_wheel_angle_deg_ = converter_.countToEquivalentDeg(motor.motor_position_count);
   }
   feedback_timeout_ = !motor.position_valid || position_age_ms > feedback_timeout_ms_;
   const bool feedback_valid = !feedback_timeout_ && !can_timeout_;
@@ -371,19 +384,17 @@ void SteeringActuatorNode::controlTick()
   if (state_ == SteeringState::ACTIVE && movement_target_valid_ && !entered_active_this_tick) {
     commanded_wheel_angle_deg_ = rateLimit(
       commanded_wheel_angle_deg_, target_wheel_angle_deg_, max_steering_rate_deg_s_, dt);
-    corrected_wheel_angle_deg_ = converter_.clampWheelDeg(
+    corrected_wheel_angle_deg_ = converter_.clampEquivalentDeg(
       tracking_controller_.update(
         commanded_wheel_angle_deg_, actual_wheel_angle_deg_, dt));
     if (enabled_commanded_) {
       can_driver_->sendPositionCount(
-        converter_.motorDegToCount(converter_.wheelToMotorDeg(corrected_wheel_angle_deg_)));
+        converter_.equivalentDegToCount(corrected_wheel_angle_deg_));
     }
   } else {
     tracking_controller_.reset();
     if (outputArmed() && feedback_valid && can_driver_->isOpen()) {
-      const int32_t actual_count =
-        converter_.motorDegToCount(converter_.wheelToMotorDeg(actual_wheel_angle_deg_));
-      can_driver_->sendPositionCount(actual_count);
+      can_driver_->sendPositionCount(motor.motor_position_count);
     }
   }
   if (state_ != SteeringState::ACTIVE) enabled_commanded_ = false;
@@ -442,9 +453,7 @@ void SteeringActuatorNode::publishState(
       std::chrono::duration_cast<std::chrono::milliseconds>(
         steady_now - tracking_fault_since_).count() >= tracking_error_fault_duration_ms_;
   }
-  // canonical 계약 단위 변환: 내부 deg·좌회전 음수 → rad·좌회전 양수.
-  // 이 변환은 status 발행 경계에서만 수행한다.
-  constexpr double kDegToCanonicalRad = -3.14159265358979323846 / 180.0;
+  constexpr double kDegToCanonicalRad = 3.14159265358979323846 / 180.0;
   status.target_wheel_angle_rad =
     static_cast<float>(target_wheel_angle_deg_ * kDegToCanonicalRad);
   status.commanded_wheel_angle_rad =

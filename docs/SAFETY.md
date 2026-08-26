@@ -187,9 +187,16 @@ sequence gap은 진단 count만 증가시키므로 frame을 무효화하지 않�
 - vehicle frame 주기: 20 ms
 - timeout: 200 ms
 - 즉시 동작: `VEHICLE_FRAME_VALID_FROM_A=false`, UART RX restart 시도,
-  LCD `COMM FAULT`
+  LCD `A-B LOST` badge와 `STM A COMM LOST` 배너
 - 현재 brake 동작: timeout 자체는 `BRAKE_REQUEST`에 포함되지 않음
 - mode 값: 마지막 `MODE_FROM_A` 값이 유지됨
+- 100 ms drive detail은 별도 300 ms timeout을 사용하며 LCD 진단값만 `--`로
+  바꿉니다. vehicle frame validity와 brake 판단에는 사용하지 않습니다.
+
+현재 실차 하네스의 ST7796S SDO/MISO는 안정적인 readback 근거가 없어 health gate로
+사용하지 않습니다. SPI HAL 실패나 DMA timeout은 backlight-off, panel re-init, 전체
+redraw 순으로 복구합니다. 이 복구는 표시 가용성 대책이며 전원·접지·SPI 배선의
+노이즈 원인을 제거하거나 안전 동작을 증명하지 않습니다.
 
 따라서 STM_A→STM_B 통신이 끊겼을 때 브레이크가 자동 engage된다고 가정하면
 안 됩니다. 이 동작은 확인 필요 항목입니다.

@@ -27,6 +27,14 @@ static GPIO_PinState bl_state;
 static uint32_t delays[8];
 static size_t delay_count;
 static bool fail_spi;
+static bool fail_dma;
+static bool suppress_dma_complete;
+static uint8_t power_mode;
+static uint32_t tick_ms;
+static uint32_t abort_count;
+
+void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *spi);
+void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *spi);
 
 void HAL_GPIO_WritePin(void *port, uint16_t pin, GPIO_PinState state)
 {
@@ -45,6 +53,16 @@ void HAL_Delay(uint32_t delay_ms)
 {
   assert(delay_count < (sizeof(delays) / sizeof(delays[0])));
   delays[delay_count++] = delay_ms;
+}
+
+void osDelay(uint32_t delay_ms)
+{
+  tick_ms += delay_ms;
+}
+
+uint32_t HAL_GetTick(void)
+{
+  return tick_ms;
 }
 
 HAL_StatusTypeDef HAL_SPI_Transmit(SPI_HandleTypeDef *spi,
@@ -70,6 +88,45 @@ HAL_StatusTypeDef HAL_SPI_Transmit(SPI_HandleTypeDef *spi,
   return HAL_OK;
 }
 
+HAL_StatusTypeDef HAL_SPI_Transmit_DMA(SPI_HandleTypeDef *spi,
+                                       uint8_t *data,
+                                       uint16_t length)
+{
+  if (fail_dma)
+  {
+    return HAL_ERROR;
+  }
+  HAL_StatusTypeDef status = HAL_SPI_Transmit(spi, data, length, 100U);
+  if ((status == HAL_OK) && !suppress_dma_complete)
+  {
+    HAL_SPI_TxCpltCallback(spi);
+  }
+  return status;
+}
+
+HAL_StatusTypeDef HAL_SPI_TransmitReceive(SPI_HandleTypeDef *spi,
+                                          uint8_t *tx_data,
+                                          uint8_t *rx_data,
+                                          uint16_t length,
+                                          uint32_t timeout_ms)
+{
+  HAL_StatusTypeDef status =
+      HAL_SPI_Transmit(spi, tx_data, length, timeout_ms);
+  if ((status == HAL_OK) && (length >= 2U))
+  {
+    rx_data[0] = 0U;
+    rx_data[1] = power_mode;
+  }
+  return status;
+}
+
+HAL_StatusTypeDef HAL_SPI_Abort(SPI_HandleTypeDef *spi)
+{
+  assert(spi == &hspi2);
+  abort_count++;
+  return HAL_OK;
+}
+
 static void ResetCapture(void)
 {
   event_count = 0U;
@@ -78,6 +135,11 @@ static void ResetCapture(void)
   bl_state = GPIO_PIN_RESET;
   delay_count = 0U;
   fail_spi = false;
+  fail_dma = false;
+  suppress_dma_complete = false;
+  power_mode = 0x9CU;
+  tick_ms = 0U;
+  abort_count = 0U;
   memset(events, 0, sizeof(events));
   memset(delays, 0, sizeof(delays));
 }
@@ -96,6 +158,8 @@ static void TestLandscapeInitialization(void)
 
   ResetCapture();
   assert(LCD_Init(&lcd));
+  assert(bl_state == GPIO_PIN_RESET);
+  LCD_SetBacklight(true);
   assert(bl_state == GPIO_PIN_SET);
   assert(delay_count == 4U);
   assert(delays[0] == 100U);
@@ -125,7 +189,7 @@ static void TestLandscapeInitialization(void)
 static void TestLandscapeAddressing(void)
 {
   ResetCapture();
-  LCD_FillRect(479U, 319U, 10U, 10U, LCD_COLOR_RED);
+  assert(LCD_FillRect(479U, 319U, 10U, 10U, LCD_COLOR_RED));
 
   assert(event_count == 6U);
   assert(transmitted_bytes == 13U);
@@ -142,12 +206,57 @@ static void TestLandscapeAddressing(void)
   assert(events[5].data[1] == 0x00U);
 
   ResetCapture();
-  LCD_FillScreen(LCD_COLOR_BLACK);
+  assert(LCD_FillScreen(LCD_COLOR_BLACK));
+  assert(event_count == 85U);
   assert(transmitted_bytes == (480U * 320U * 2U) + 11U);
 
   ResetCapture();
-  LCD_DrawChar(470U, 310U, 'A', LCD_COLOR_WHITE, LCD_COLOR_BLACK);
+  assert(!LCD_DrawChar(470U, 310U, 'A', LCD_COLOR_WHITE, LCD_COLOR_BLACK));
   assert(event_count == 0U);
+}
+
+static void TestPowerModeAndDmaFailure(void)
+{
+  uint8_t mode = 0U;
+
+  ResetCapture();
+  assert(LCD_ReadPowerMode(&mode));
+  assert(mode == 0x9CU);
+  assert(LCD_IsHealthy());
+
+  power_mode = 0x08U;
+  assert(!LCD_IsHealthy());
+
+  ResetCapture();
+  fail_dma = true;
+  assert(!LCD_FillRect(0U, 0U, 2U, 2U, LCD_COLOR_RED));
+  assert(abort_count == 1U);
+
+  ResetCapture();
+  suppress_dma_complete = true;
+  assert(!LCD_FillRect(0U, 0U, 2U, 2U, LCD_COLOR_RED));
+  assert(abort_count == 1U);
+  assert(tick_ms >= 100U);
+}
+
+static void TestComposedBand(void)
+{
+  ResetCapture();
+  assert(LCD_BeginComposeBand(10U, 2U));
+  assert(LCD_FillScreen(LCD_COLOR_WHITE));
+  assert(LCD_FillRect(0U, 10U, 2U, 1U, LCD_COLOR_RED));
+  assert(event_count == 0U);
+  assert(LCD_EndComposeBand());
+
+  assert(event_count == 6U);
+  assert(transmitted_bytes == (480U * 2U * 2U) + 11U);
+  assert(memcmp(events[3].data,
+                (uint8_t[]){0x00U, 0x0AU, 0x00U, 0x0BU},
+                4U) == 0);
+  assert(memcmp(events[5].data,
+                (uint8_t[]){0xF8U, 0x00U, 0xF8U, 0x00U,
+                            0xFFU, 0xFFU, 0xFFU, 0xFFU},
+                8U) == 0);
 }
 
 static void TestGeometryValidation(void)
@@ -179,6 +288,8 @@ int main(void)
 {
   TestLandscapeInitialization();
   TestLandscapeAddressing();
+  TestComposedBand();
+  TestPowerModeAndDmaFailure();
   TestGeometryValidation();
   puts("lcd_host_test: PASS");
   return 0;

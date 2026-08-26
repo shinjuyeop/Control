@@ -17,16 +17,31 @@ TeamKAI-DL 차량의 KEYA 조향 액추에이터를 제어하는 ROS 2 Humble �
 - CAN 인터페이스, 250 kbit/s 설정, 모터 node ID와 기계적 중앙을 확인합니다.
 - 동일한 KEYA 모터를 제어하는 다른 노드를 종료합니다.
 
-출력을 차단하고 ROS 인터페이스만 확인하려면 다음처럼 실행합니다.
+## 출력 모드 3가지
+
+`hardware_can_enabled`와 `actuator_output_enabled`는 중복이 아니라 아래 세 가지
+상태를 만듭니다. 조향이 움직이지 않을 때 가장 먼저 확인할 표입니다.
+
+| `hardware_can_enabled` | `actuator_output_enabled` | 동작 | 용도 |
+| --- | --- | --- | --- |
+| `false` | 무관 | CAN 소켓을 열지 않음 | CAN 어댑터가 없는 PC, CI |
+| `true` | `false` | 읽기 전용 관측 — 피드백만 수신, 명령 송신 없음 | 벤치·실차 진단 |
+| `true` | `true` | 구동 | **launch 기본값** |
+
+노드는 시작할 때 현재 모드를 로그로 알립니다. 구동 중이면
+`HARDWARE OUTPUT ARMED ...`, 꺼져 있으면 무엇을 켜야 하는지 함께 출력합니다.
+
+읽기 전용 관측으로 실행하려면 다음처럼 합니다.
 
 ```bash
 ros2 launch lateral_ctrl steering_actuator.launch.py \
-  hardware_can_enabled:=false \
   actuator_output_enabled:=false
 ```
 
-`ros2 run lateral_ctrl steering_actuator_node`로 직접 실행할 때 두 출력 파라미터의
-기본값은 `false`입니다. 두 값은 노드 생성 시 한 번만 읽으며 런타임 arm/disarm
+CAN 소켓조차 열지 않으려면 `hardware_can_enabled:=false`를 함께 줍니다.
+
+`ros2 run lateral_ctrl steering_actuator_node`로 params file 없이 직접 실행할 때만
+두 파라미터의 코드 기본값인 `false`가 적용됩니다. 두 값은 노드 생성 시 한 번만 읽으며 런타임 arm/disarm
 기능은 없습니다. `node_id`는 `0..255`만 허용하며 범위를 벗어나면 KEYA 드라이버를
 생성하지 않고 노드가 종료됩니다.
 
@@ -36,7 +51,7 @@ ros2 launch lateral_ctrl steering_actuator.launch.py \
 
 | 토픽 | 타입 | 발행 주체 | 조향 노드가 사용하는 필드 |
 | --- | --- | --- | --- |
-| `/vehicle/command` | `kaiev26_msgs/msg/ActuatorCommand` | 판단·motion control 노드 | `steering_target_rad`, `brake_engage` |
+| `/vehicle/command` | `kaiev26_msgs/msg/ActuatorCommand` | `command_governor` (판단 계층은 `/planning/command`로 발행) | `steering_target_rad`, `brake_engage` |
 
 `ActuatorCommand`는 `header`, `steering_target_rad`, `speed_target_mps`,
 `brake_engage`만 가집니다. 조향각은 rad, 차량 좌회전 양수입니다. 기어와
@@ -59,7 +74,7 @@ ABI에 넣지 않은 최종 브레이크 명령입니다.
 | 토픽 | 타입 | 내용 |
 | --- | --- | --- |
 | `/steering/status` | `kaiev26_msgs/msg/SteeringActuatorStatus` | 상태, 비활성 원인, timeout, 목표·실제각과 모터 진단 |
-| `/steering/angle` | `std_msgs/msg/Float32` | 실제 바퀴각, degree |
+| `/steering/angle` | `std_msgs/msg/Float32` | 중앙 등가 실측 조향각, degree·좌회전 양수 |
 | `/steering/enable_commanded` | `std_msgs/msg/Bool` | 노드가 KEYA에 명령한 Enable 상태 |
 | `/steering/enabled` | `std_msgs/msg/Bool` | KEYA 피드백으로 확인한 Enable 상태 |
 
@@ -144,11 +159,27 @@ ros2 topic echo /steering/enable_commanded
 candump -L can0
 ```
 
-정상 통합에서는 `/vehicle/command`의 발행자가 하나여야 합니다. AUTO와 유효한
-KEYA feedback만 들어온 직후에는 `WAIT_CMD`이고, 그 이후 새 명령을 받아야
-`ACTIVE`가 됩니다.
+정상 통합에서는 `/vehicle/command`의 발행자가 `command_governor` 하나여야
+합니다. Planning 또는 시험 명령원(실차는 `vehicle_test_scenario_runner`, HIL은
+`hil_command_generator`)은 `/planning/command`로 내고 거버너가 재발행합니다.
+AUTO와 유효한 KEYA feedback만 들어온 직후에는 `WAIT_CMD`이고, 그 이후 새
+명령을 받아야 `ACTIVE`가 됩니다.
 
 ## 순수 조향 벤치
+
+STM_A/B 없이 조향만 단독으로 돌릴 때 씁니다. 벤치 노드가 `/drive/status`를 직접
+발행하므로 HIL bench나 실차 없이도 `ACTIVE`까지 갈 수 있고, 각도 시퀀스를 자동으로
+순회하므로 캘리브레이션처럼 반복 스윕이 필요한 작업에 적합합니다.
+
+> **HIL bench와 동시에 실행하지 마십시오.** HIL 스택의 `command_governor`와
+> 이 노드가 모두 `/vehicle/command`를 발행하므로 명령이 서로 덮어써집니다.
+> 이 노드는 governor를 우회하는 조향 단독 벤치 전용입니다. HIL bench에서
+> 조향을 시험할 때는 `hil_command_generator`(governor 경유)만 사용합니다.
+> 확인은 다음과 같이 합니다.
+>
+> ```bash
+> ros2 topic info -v /vehicle/command   # publisher가 하나인지
+> ```
 
 다음 launch는 actuator 노드와 벤치 명령 노드를 함께 실행합니다.
 
@@ -161,12 +192,12 @@ ros2 launch lateral_ctrl steering_bench_test.launch.py
 | 토픽 | 내용 | 주기 |
 | --- | --- | ---: |
 | `/drive/status` | 시험용 AUTO 상태 | 100 ms |
-| `/vehicle/command` | 절대 바퀴각 `+5/-5 deg`, 속도 0, 브레이크 해제 | 20 ms |
+| `/vehicle/command` | 절대 중앙 등가각 `+5/-5 deg`, 속도 0, 브레이크 해제 | 20 ms |
 | `/steering/test/estop` | 시험 E-stop 해제 | 50 ms |
 
-`steer_sequence_deg`는 차량 좌회전 음수라는 기존 벤치 표기이며, 벤치 노드가
-canonical rad·좌회전 양수로 바꾸어 발행합니다. 명령은 현재각 offset이 아닌 절대
-바퀴각입니다. 바퀴가 중앙에서 벗어난 상태에서는 첫 명령이 큰 이동을 만들 수
+`steer_sequence_deg`는 중앙 등가각 degree·좌회전 양수입니다. 벤치 노드는 단위만
+canonical radian으로 바꾸어 발행합니다. 명령은 현재각 offset이 아닌 절대
+중앙 등가각입니다. 바퀴가 중앙에서 벗어난 상태에서는 첫 명령이 큰 이동을 만들 수
 있습니다.
 
 시험 E-stop은 다음처럼 조작합니다.
@@ -197,9 +228,15 @@ ros2 launch lateral_ctrl steering_bench_test.launch.py \
 | `feedback_timeout_ms` | 500 | position feedback timeout |
 | `mode_timeout_ms` | 1500 | `/drive/status` timeout |
 | `steer_command_timeout_ms` | 200 | `ACTIVE`에서 `/vehicle/command` timeout |
-| `wheel_limit_deg` | 30.0 | 명령 바퀴각 제한. 측정값에는 걸지 않음 |
-| `max_steering_rate_deg_s` | 60.0 | 바퀴각 변화율 제한 |
-| `tracking_control_enabled` | false | 바퀴각 tracking 보정 |
+| `command_count_limit` | 3279 | 명령 가능한 KEYA raw count 절댓값. nominal 중앙 등가각 약 -27.83°..+25.92° |
+| `max_steering_rate_deg_s` | 60.0 | 중앙 등가각 변화율 제한 |
+| `tracking_control_enabled` | false | 중앙 등가각 tracking 보정 |
+
+count-to-angle 계수와 `counts_per_rev`는
+`config/steering_motor_calibration.yaml` 한 파일이 소유합니다. Control, active HIL,
+Gazebo CAN bridge가 같은 값을 사용합니다. 2026-08-21 dual wheel-hub IMU
+측정에서 얻은 full 5차 `k1..k5` nominal-centered shape이며 절대 toe나 IMU 장착
+yaw 보정값은 아닙니다.
 
 벤치 시퀀스의 기본값은 다음과 같습니다.
 

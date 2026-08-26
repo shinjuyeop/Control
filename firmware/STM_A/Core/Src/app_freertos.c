@@ -20,6 +20,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include "board_uart_protocol.h"
 #include "globals.h"
 #include "usart.h"
 #include "adc.h"
@@ -45,7 +46,7 @@ size_t cubemx_transport_read(struct uxrCustomTransport *transport,
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 typedef struct {
-  uint8_t data[16];
+  uint8_t data[BOARD_UART_MAX_FRAME_SIZE];
   uint8_t index;
   uint8_t expected_size;
 } uart_frame_parser_t;
@@ -72,19 +73,14 @@ enum {
 #define AUTO_SPEED_MAX_MPS \
   ((float)RPM_FWD_MAX * 3.14159f * TIRE_DIAM_M / (60.0f * GEAR_RATIO))
 #define AUTO_PHASE_LIMIT_A 300.0f
-#define MANUAL_TORQUE_LIMIT_A 175.0f
+#define MANUAL_TORQUE_LIMIT_A 300.0f
 #define PEDAL_ADC_MIN 560
 #define PEDAL_ADC_MAX 3100
-#define UART_SOF1 0xAAu
-#define UART_SOF2 0x55u
-#define UART_MSG_A_TO_B_VEHICLE_STATUS 0x01u
-#define UART_MSG_B_TO_A_SAFETY_STATUS  0x02u
-#define UART_VEHICLE_PAYLOAD_LEN 3u
-#define UART_SAFETY_PAYLOAD_LEN  1u
 #define UART_RX_DMA_SIZE 64u
 #define UART_RX_RING_SIZE 128u
 #define STM_B_COMM_TIMEOUT_MS 100u
 #define VEHICLE_TX_PERIOD_MS 20u
+#define DRIVE_DETAIL_TX_PERIOD_MS 100u
 #define HOST_COMMAND_TIMEOUT_MS 500u
 #define MOTOR_FEEDBACK_TIMEOUT_MS 200u
 #define AGENT_PING_PERIOD_MS 500u
@@ -247,10 +243,12 @@ static void reset_host_command_state(void);
 static void init_ros_message_buffers(void);
 static uint8_t create_ros_entities(void);
 static void destroy_ros_entities(void);
+static uint32_t age_since(uint32_t now, uint32_t stamp);
+static void capture_drive_detail(uint32_t now,
+                                 BoardUartDriveDetail_t *detail);
 static void publish_drive_status(uint32_t now);
 static void parse_motor_status_part1(const uint8_t data[8], uint32_t now);
 static void parse_motor_status_part2(const uint8_t data[8], uint32_t now);
-static uint8_t uart_crc8(const uint8_t *data, uint8_t length);
 static void usart1_rx_ring_push(uint8_t byte);
 static uint8_t usart1_rx_ring_pop(uint8_t *byte);
 static void reset_safety_parser(uint8_t last_byte);
@@ -368,7 +366,7 @@ void StartControl(void *argument)
       const uint8_t command_received = s_command_received;
       const uint8_t command_timed_out =
           ((command_received == 0u) ||
-           ((uint32_t)(now - s_last_command_tick) >= HOST_COMMAND_TIMEOUT_MS))
+           (age_since(now, s_last_command_tick) >= HOST_COMMAND_TIMEOUT_MS))
               ? 1u : 0u;
       s_command_timeout = command_timed_out;
 
@@ -654,12 +652,16 @@ void StartBTx(void *argument)
 {
   /* USER CODE BEGIN StartBTx */
   extern UART_HandleTypeDef huart1;
-  uint8_t sequence = 0u;
+  uint8_t vehicle_sequence = 0u;
+  uint8_t detail_sequence = 0u;
+  uint32_t last_detail_ms = HAL_GetTick() - DRIVE_DETAIL_TX_PERIOD_MS;
 
   for (;;)
   {
-    uint8_t frame[9];
+    uint8_t frame[BOARD_UART_MAX_FRAME_SIZE];
+    uint8_t payload[BOARD_UART_DRIVE_DETAIL_PAYLOAD_LEN];
     uint8_t status = 0u;
+    size_t frame_size;
     float speed_x100_f = CURRENT_SPEED * 100.0f;
     if (speed_x100_f > 32767.0f) speed_x100_f = 32767.0f;
     if (speed_x100_f < -32768.0f) speed_x100_f = -32768.0f;
@@ -668,17 +670,42 @@ void StartBTx(void *argument)
     status |= (uint8_t)((MODE != 0u) ? (1u << 0) : 0u);
     status |= (uint8_t)((GEAR != 0u) ? (1u << 1) : 0u);
 
-    frame[0] = UART_SOF1;
-    frame[1] = UART_SOF2;
-    frame[2] = UART_MSG_A_TO_B_VEHICLE_STATUS;
-    frame[3] = UART_VEHICLE_PAYLOAD_LEN;
-    frame[4] = sequence++;
-    frame[5] = status;
-    frame[6] = (uint8_t)((uint16_t)speed_x100 & 0xFFu);
-    frame[7] = (uint8_t)(((uint16_t)speed_x100 >> 8) & 0xFFu);
-    frame[8] = uart_crc8(&frame[2], 6u);
+    payload[0] = status;
+    payload[1] = (uint8_t)((uint16_t)speed_x100 & 0xFFu);
+    payload[2] = (uint8_t)(((uint16_t)speed_x100 >> 8) & 0xFFu);
+    frame_size = BoardUart_EncodeFrame(
+        BOARD_UART_MSG_A_TO_B_VEHICLE_STATUS,
+        vehicle_sequence++,
+        payload,
+        BOARD_UART_VEHICLE_PAYLOAD_LEN,
+        frame,
+        sizeof(frame));
+    if (frame_size != 0u)
+    {
+      (void)HAL_UART_Transmit(
+          &huart1, frame, (uint16_t)frame_size, 10u);
+    }
 
-    (void)HAL_UART_Transmit(&huart1, frame, sizeof(frame), 10u);
+    const uint32_t now = HAL_GetTick();
+    if ((uint32_t)(now - last_detail_ms) >= DRIVE_DETAIL_TX_PERIOD_MS)
+    {
+      BoardUartDriveDetail_t detail;
+      capture_drive_detail(now, &detail);
+      BoardUart_EncodeDriveDetailPayload(&detail, payload);
+      frame_size = BoardUart_EncodeFrame(
+          BOARD_UART_MSG_A_TO_B_DRIVE_DETAIL,
+          detail_sequence++,
+          payload,
+          BOARD_UART_DRIVE_DETAIL_PAYLOAD_LEN,
+          frame,
+          sizeof(frame));
+      if (frame_size != 0u)
+      {
+        (void)HAL_UART_Transmit(
+            &huart1, frame, (uint16_t)frame_size, 10u);
+      }
+      last_detail_ms = now;
+    }
     osDelay(VEHICLE_TX_PERIOD_MS);
   }
   /* USER CODE END StartBTx */
@@ -686,19 +713,6 @@ void StartBTx(void *argument)
 
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
-static uint8_t uart_crc8(const uint8_t *data, uint8_t length)
-{
-  uint8_t crc = 0x00u;
-  for (uint8_t i = 0u; i < length; ++i) {
-    crc ^= data[i];
-    for (uint8_t bit = 0u; bit < 8u; ++bit) {
-      crc = (crc & 0x80u) ? (uint8_t)((crc << 1) ^ 0x07u)
-                          : (uint8_t)(crc << 1);
-    }
-  }
-  return crc;
-}
-
 static void usart1_rx_ring_push(uint8_t byte)
 {
   uint16_t next = (uint16_t)(s_usart1_rx_head + 1u);
@@ -740,8 +754,8 @@ static void reset_safety_parser(uint8_t last_byte)
 {
   s_safety_parser.index = 0u;
   s_safety_parser.expected_size = 0u;
-  if (last_byte == UART_SOF1) {
-    s_safety_parser.data[0] = UART_SOF1;
+  if (last_byte == BOARD_UART_SOF1) {
+    s_safety_parser.data[0] = BOARD_UART_SOF1;
     s_safety_parser.index = 1u;
   }
 }
@@ -751,7 +765,7 @@ static void process_safety_rx_byte(uint8_t byte)
   uart_frame_parser_t *parser = &s_safety_parser;
 
   if (parser->index == 0u) {
-    if (byte == UART_SOF1) {
+    if (byte == BOARD_UART_SOF1) {
       parser->data[0] = byte;
       parser->index = 1u;
     }
@@ -759,7 +773,7 @@ static void process_safety_rx_byte(uint8_t byte)
   }
 
   if (parser->index == 1u) {
-    if (byte == UART_SOF2) {
+    if (byte == BOARD_UART_SOF2) {
       parser->data[1] = byte;
       parser->index = 2u;
     } else {
@@ -775,8 +789,8 @@ static void process_safety_rx_byte(uint8_t byte)
   parser->data[parser->index++] = byte;
 
   if (parser->index == 4u) {
-    if ((parser->data[2] != UART_MSG_B_TO_A_SAFETY_STATUS) ||
-        (parser->data[3] != UART_SAFETY_PAYLOAD_LEN)) {
+    if ((parser->data[2] != BOARD_UART_MSG_B_TO_A_SAFETY_STATUS) ||
+        (parser->data[3] != BOARD_UART_SAFETY_PAYLOAD_LEN)) {
       reset_safety_parser(byte);
       return;
     }
@@ -787,8 +801,8 @@ static void process_safety_rx_byte(uint8_t byte)
       (parser->index == parser->expected_size)) {
     uint8_t payload_len = parser->data[3];
     uint8_t received_crc = parser->data[5u + payload_len];
-    uint8_t calculated_crc = uart_crc8(&parser->data[2],
-                                       (uint8_t)(3u + payload_len));
+    uint8_t calculated_crc = BoardUart_Crc8(
+        &parser->data[2], (uint8_t)(3u + payload_len));
 
     if (received_crc != calculated_crc) {
       SAFETY_CRC_ERROR_COUNT++;
@@ -929,6 +943,109 @@ static void destroy_ros_entities(void)
   rcl_reset_error();
 }
 
+/* now는 호출자가 앞서 읽어둔 tick이고, CAN ISR과 uROS 명령 콜백은 그 뒤에도
+ * 더 최신 tick을 기록한다. 그래서 stamp가 now보다 클 수 있고, 부호 없는
+ * 뺄셈은 그때 ~2^32로 언더플로우해 갓 받은 프레임을 timeout으로 만든다.
+ * snapshot보다 새 프레임의 age는 0이다. */
+static uint32_t age_since(uint32_t now, uint32_t stamp)
+{
+  const int32_t delta = (int32_t)(now - stamp);
+  return (delta < 0) ? 0u : (uint32_t)delta;
+}
+
+static int16_t encode_tenths_i16(float value)
+{
+  float scaled = value * 10.0f;
+  if (scaled > 32767.0f) scaled = 32767.0f;
+  if (scaled < -32768.0f) scaled = -32768.0f;
+  return (int16_t)lroundf(scaled);
+}
+
+static uint16_t encode_tenths_u16(float value)
+{
+  float scaled = value * 10.0f;
+  if (scaled > 65535.0f) scaled = 65535.0f;
+  if (scaled < 0.0f) scaled = 0.0f;
+  return (uint16_t)lroundf(scaled);
+}
+
+static void capture_drive_detail(uint32_t now,
+                                 BoardUartDriveDetail_t *detail)
+{
+  uint32_t part1_rx_ms;
+  uint32_t part2_rx_ms;
+  uint8_t part1_received;
+  uint8_t part2_received;
+  uint8_t tractive_commanded;
+  uint8_t controller_running;
+  uint8_t command_received;
+  uint8_t command_timeout;
+  uint8_t drive_stop_request;
+  float bus_voltage_v;
+  float bus_current_a;
+  float phase_current_a;
+  float controller_temperature_c;
+  float motor_temperature_c;
+  uint32_t motor_fault_bits;
+
+  taskENTER_CRITICAL();
+  detail->pedal_percent = PEDAL;
+  part1_rx_ms = s_last_part1_rx_ms;
+  part2_rx_ms = s_last_part2_rx_ms;
+  part1_received = s_part1_received;
+  part2_received = s_part2_received;
+  tractive_commanded = s_tractive_commanded;
+  controller_running = s_controller_running;
+  command_received = s_command_received;
+  command_timeout = s_command_timeout;
+  drive_stop_request = DRIVE_STOP_REQUEST;
+  bus_voltage_v = s_bus_voltage_v;
+  bus_current_a = s_bus_current_a;
+  phase_current_a = s_phase_current_a;
+  controller_temperature_c = s_controller_temperature_c;
+  motor_temperature_c = s_motor_temperature_c;
+  motor_fault_bits = s_motor_fault_bits;
+  taskEXIT_CRITICAL();
+
+  const uint8_t part1_valid =
+      ((part1_received != 0u) &&
+       (age_since(now, part1_rx_ms) < MOTOR_FEEDBACK_TIMEOUT_MS)) ? 1u : 0u;
+  const uint8_t part2_valid =
+      ((part2_received != 0u) &&
+       (age_since(now, part2_rx_ms) < MOTOR_FEEDBACK_TIMEOUT_MS)) ? 1u : 0u;
+
+  detail->flags = 0u;
+  if (part1_valid != 0u) {
+    detail->flags |= BOARD_UART_DETAIL_PART1_VALID;
+  }
+  if (part2_valid != 0u) {
+    detail->flags |= BOARD_UART_DETAIL_PART2_VALID;
+  }
+  if (tractive_commanded != 0u) {
+    detail->flags |= BOARD_UART_DETAIL_TRACTIVE_COMMANDED;
+  }
+  if (controller_running != 0u) {
+    detail->flags |= BOARD_UART_DETAIL_TRACTIVE_FEEDBACK;
+  }
+  if (command_received != 0u) {
+    detail->flags |= BOARD_UART_DETAIL_COMMAND_RECEIVED;
+  }
+  if (command_timeout != 0u) {
+    detail->flags |= BOARD_UART_DETAIL_COMMAND_TIMEOUT;
+  }
+  if (drive_stop_request != 0u) {
+    detail->flags |= BOARD_UART_DETAIL_DRIVE_STOP;
+  }
+
+  detail->bus_voltage_dv = encode_tenths_u16(bus_voltage_v);
+  detail->bus_current_da = encode_tenths_i16(bus_current_a);
+  detail->phase_current_da = encode_tenths_i16(phase_current_a);
+  detail->controller_temperature_dc =
+      encode_tenths_i16(controller_temperature_c);
+  detail->motor_temperature_dc = encode_tenths_i16(motor_temperature_c);
+  detail->motor_fault_bits = motor_fault_bits;
+}
+
 static void publish_drive_status(uint32_t now)
 {
   uint8_t pedal_percent;
@@ -980,8 +1097,8 @@ static void publish_drive_status(uint32_t now)
   tractive_commanded = s_tractive_commanded;
   taskEXIT_CRITICAL();
 
-  const uint32_t part1_age_ms = (uint32_t)(now - part1_rx_ms);
-  const uint32_t part2_age_ms = (uint32_t)(now - part2_rx_ms);
+  const uint32_t part1_age_ms = age_since(now, part1_rx_ms);
+  const uint32_t part2_age_ms = age_since(now, part2_rx_ms);
   const uint8_t part1_valid =
       ((part1_received != 0u) &&
        (part1_age_ms < MOTOR_FEEDBACK_TIMEOUT_MS)) ? 1u : 0u;
@@ -1004,7 +1121,7 @@ static void publish_drive_status(uint32_t now)
   s_status_msg.command_received = (command_received != 0u);
   s_status_msg.command_timeout = (command_timeout != 0u);
   s_status_msg.command_age_ms = (command_received != 0u) ?
-      (float)((uint32_t)(now - command_rx_ms)) : INFINITY;
+      (float)age_since(now, command_rx_ms) : INFINITY;
   s_status_msg.commanded_phase_current_a = commanded_phase_current_a;
   s_status_msg.commanded_motor_rpm = commanded_motor_rpm;
   s_status_msg.bus_voltage_v = bus_voltage_v;

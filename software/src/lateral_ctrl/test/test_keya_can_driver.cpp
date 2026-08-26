@@ -1,4 +1,5 @@
 #include "lateral_ctrl/keya_can_driver.hpp"
+#include "keya_can_frame_decoder.hpp"
 
 #include <gtest/gtest.h>
 
@@ -22,10 +23,16 @@ TEST(KeyaCanDriver, EncodesSignedPositionBigEndian)
 }
 TEST(KeyaCanDriver, ParsesAuthoritativeEncoderQuery)
 {
-  lateral_ctrl::KeyaCanDriver driver("vcan0", 1);
-  driver.parseFrameForTest(
-    0x05800001, {0x60, 0x04, 0x21, 0x02, 0x00, 0x00, 0x27, 0x10});
-  EXPECT_TRUE(driver.motorState().position_valid);
-  EXPECT_EQ(driver.motorState().motor_position_count, 10000);
-  EXPECT_FALSE(driver.motorState().enabled_feedback_valid);
+  lateral_ctrl::KeyaMotorState state;
+  const std::array<uint8_t, 8> payload{
+    0x60, 0x04, 0x21, 0x02, 0x00, 0x00, 0x27, 0x10};
+  const auto received_at =
+    std::chrono::steady_clock::time_point(std::chrono::milliseconds(42));
+
+  EXPECT_TRUE(lateral_ctrl::detail::applyKeyaCanFrame(
+      state, 0x05800001, 0x07000001, 0x05800001, 8, payload.data(), received_at));
+  EXPECT_TRUE(state.position_valid);
+  EXPECT_EQ(state.motor_position_count, 10000);
+  EXPECT_EQ(state.last_position_feedback, received_at);
+  EXPECT_FALSE(state.enabled_feedback_valid);
 }

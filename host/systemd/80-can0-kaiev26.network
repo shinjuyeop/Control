@@ -1,0 +1,26 @@
+# KAIEV26 host CAN 자동 설정.
+#
+# can0 인터페이스가 나타나면(부팅, USB-CAN 재연결 모두) systemd-networkd가
+# bitrate를 설정하고 링크를 올린다. 수동 `sudo ip link set can0 ...` 단계를
+# 대체하며, launch 전에 can0가 준비되지 않아 조향 노드가 CAN 없이 뜨는 실수를
+# 막는다. bench PC와 실차 PC 모두에 설치한다.
+#
+# 설치 (호스트 1회):
+#   sudo install -m 0644 host/systemd/80-can0-kaiev26.network /etc/systemd/network/
+#   sudo systemctl enable --now systemd-networkd
+# 확인:
+#   ip -details link show can0   # state UP, bitrate 250000
+#
+# NetworkManager는 CAN 인터페이스를 관리하지 않으므로 충돌하지 않는다.
+# 값은 runbook 10.1의 검증된 수동 설정(bitrate 250000, 나머지 커널 기본)과
+# 동일하게 유지한다. gs_usb 드라이버가 bus-off 자동 재시작을 지원하지 않으므로
+# RestartSec는 설정하지 않는다.
+
+[Match]
+Name=can0
+
+[CAN]
+BitRate=250000
+
+[Link]
+RequiredForOnline=no

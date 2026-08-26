@@ -15,6 +15,8 @@
 ```mermaid
 flowchart LR
     Planning["Planning / Motion Control<br/>(현재 구현 주체 TBD)"]
+    PlanCmd["/planning/command"]
+    Governor["command_governor<br/>정합성 게이트 · 재발행"]
     Command["/vehicle/command"]
 
     subgraph Consumers["Command Consumers"]
@@ -31,7 +33,9 @@ flowchart LR
     Fusion["vehicle_state_publisher"]
     State["/vehicle/state"]
 
-    Planning --> Command
+    Planning --> PlanCmd
+    PlanCmd --> Governor
+    Governor --> Command
     Command --> STMA
     Command --> STMB
     Command --> Steering
@@ -49,26 +53,17 @@ flowchart LR
 STM_A와 STM_B는 각각 별도의 LPUART1 serial transport와 micro-ROS Agent를
 사용합니다. 두 Agent는 MCU의 ROS 2 endpoint를 Host의 ROS graph에 연결합니다.
 
-> **주의:** 현재 `software/src/control_launch/launch/`에는 통합 launch가 없고,
-> `software/src/longitudinal_ctrl/`에는 실행 노드가 없습니다. Planning 또는
-> motion-control 명령 생성기의 구체 구현은 현재 코드에서 확인되지 않습니다.
+> **주의:** 실차 구동 스택은 `control_launch`의 `vehicle.launch.py`로
+> 실행합니다(Agent 2개 + `command_governor` + 조향 + 상태 통합, 관찰 계열
+> 제외). Production Planning(`/planning/command` 발행자)의 구체 구현은 현재
+> 코드에서 확인되지 않으며 launch에도 포함되지 않습니다. 실차 시험에서는
+> `vehicle_test_scenarios`, HIL에서는 `kaiev26_hil`의 `hil_command_generator`가
+> 그 자리를 대신합니다. `/vehicle/command`는 `command_governor`가 유일하게
+> 발행합니다.
 
 ## 3. 구성요소별 역할
 
-### 3.1 Host / Control PC
-
-- ROS 2 graph와 각 STM의 micro-ROS Agent를 실행합니다.
-- 설계상 상위 Planning 또는 motion-control 계층에서 들어오는
-  `/vehicle/command`를 STM_A, STM_B와 조향 노드에 전달합니다. 현재
-  `Control` 저장소에는 production 명령 생성 노드가 없습니다.
-- `lateral_ctrl/steering_actuator_node`가 KEYA 모터의 SocketCAN 소유자가 되어
-  조향을 제어합니다.
-- `vehicle_state_publisher`가 `/drive/status`, `/brake/status`,
-  `/steering/status`를 합성해 `/vehicle/state`를 20 Hz로 발행합니다.
-- software 전체 실행 구조는 현재 정리 중이며 통합 실행 절차는 아직 확정되지
-  않았습니다.
-
-### 3.2 STM_A
+### 3.1 STM_A
 
 STM_A는 종방향 구동과 차량의 물리 모드·기어·가속 페달 입력을 담당합니다.
 
@@ -85,7 +80,7 @@ STM_A는 종방향 구동과 차량의 물리 모드·기어·가속 페달 입�
 
 구현 기준: `firmware/STM_A/Core/Src/app_freertos.c`
 
-### 3.3 STM_B
+### 3.2 STM_B
 
 STM_B는 물리 E-stop 입력과 브레이크 서보의 직접 구동을 담당합니다.
 
@@ -96,12 +91,31 @@ STM_B는 물리 E-stop 입력과 브레이크 서보의 직접 구동을 담당�
 - TIM2 CH2 PWM으로 브레이크 서보를 움직입니다.
 - 최종 브레이크 요청을 STM_A에 UART로 전달합니다.
 - `/brake/status`로 command 상태와 정지 원인을 발행합니다.
-- STM_A 상태를 LCD dashboard에 표시합니다.
+- STM_A의 mode·gear·speed와 EZkontrol drive detail을 UART로 받아, ROS와 독립적인
+  LCD dashboard에 표시합니다. 현재 write-only 실차 하네스에서는 SPI HAL 실패를
+  기준으로 LCD를 재초기화하며, 부동 SDO/MISO 값은 health gate로 사용하지 않습니다.
 
 브레이크 서보를 직접 구동하는 보드는 STM_B뿐입니다. STM_B의 FDCAN1은 초기화되지만
 현재 application 코드에서 CAN 송수신에 사용되지 않습니다.
 
 구현 기준: `firmware/STM_B/Core/Src/app_freertos.c`
+
+### 3.3 Host / Control PC
+
+- ROS 2 graph와 각 STM의 micro-ROS Agent를 실행합니다.
+- `command_governor`가 상위 Planning 계층의 `/planning/command`를 받아
+  `/vehicle/command`로 재발행합니다. 이 노드가 `/vehicle/command`의 유일한
+  발행자이며, 현재는 패스스루(정합성 게이트만, 형상 없음)입니다. Planning의
+  production 구현은 아직 없고 실차 시험은 `vehicle_test_scenario_runner`, HIL은
+  `hil_command_generator`가 대역입니다. 두 시험 발행자는 동시에 실행하지 않습니다.
+- `lateral_ctrl/steering_actuator_node`가 KEYA 모터의 SocketCAN 소유자가 되어
+  조향을 제어합니다.
+- `vehicle_state_publisher`가 `/drive/status`, `/brake/status`,
+  `/steering/status`를 합성해 `/vehicle/state`를 20 Hz로 발행합니다.
+- 실차 구동 스택은 `control_launch/launch/vehicle.launch.py`로 실행합니다.
+  구동 노드와 `/diagnostics` 요약을 포함하며 관찰 GUI(Foxglove bridge·dashboard)는
+  `visualization`의 launch로 따로 켭니다. 실차 장치에서의 최종 확인은 아직이며
+  HIL bench에서 동형 구조로 검증했습니다.
 
 ### 3.4 조향 제어
 
@@ -124,11 +138,15 @@ STM_B는 물리 E-stop 입력과 브레이크 서보의 직접 구동을 담당�
 ## 4. 명령 데이터 흐름
 
 ```text
-Planning / Motion Control (TBD)
-  └─ /vehicle/command: ActuatorCommand
-      ├─ STM_A: speed_target_mps, brake_engage
-      ├─ STM_B: brake_engage
-      └─ steering_actuator_node: steering_target_rad, brake_engage
+Planning / Motion Control (production TBD)
+  또는 vehicle_test_scenario_runner (실차 시험)
+  또는 hil_command_generator (HIL)
+  └─ /planning/command: ActuatorCommand
+      └─ command_governor (정합성 게이트, 재-stamp; 현재 패스스루)
+          └─ /vehicle/command: ActuatorCommand
+              ├─ STM_A: speed_target_mps, brake_engage
+              ├─ STM_B: brake_engage
+              └─ steering_actuator_node: steering_target_rad, brake_engage
 ```
 
 - STM_A는 AUTO일 때만 Host 속도 명령을 사용합니다. MANUAL의 종방향 목표는
@@ -179,15 +197,25 @@ traction 차단 조건으로 사용하지 않습니다.
 
 ## 7. 실차와 시뮬레이션의 관계
 
-- `can_lab`은 `vcan`에서 구동·조향 CAN 동작을 시험하는 도구입니다.
+- `kaiev26_hil.vcan_sim`은 `vcan`에서 구동·조향 CAN 동작을 시험하는
+  software-only simulator입니다. `ros2 launch kaiev26_hil vcan_sim.launch.py`로
+  실행합니다.
 - `gazebo/pid_gazebo`는 PID와 SILS 실험용 Python 패키지·자원을 포함합니다.
 - 벤치용 `steering_bench_test_node`는 시험 `/vehicle/command`,
-  `/drive/status`, `/steering/test/estop`을 선택적으로 발행합니다.
+  `/drive/status`, `/steering/test/estop`을 선택적으로 발행합니다. STM_A/B 없이
+  조향만 단독 시험할 때 쓰며, **`command_governor`를 우회해 `/vehicle/command`에
+  직접 발행하므로** governor 또는 HIL bench 스택(`hil.launch.py`)과 동시에
+  실행하면 `/vehicle/command` 발행자가 둘이 됩니다. 함께 켜지 않습니다.
 - 이 시험 입력은 실제 STM의 안전 경로를 대체하는 인증된 fail-safe로 간주할 수
   없습니다.
+- HIL bench의 KEYA emulator는 모터축을 선형으로만 모사합니다. 따라서 CAN 경로와
+  안전 로직은 검증되지만 `calibration_a/b/c`와 `direction_sign`의 정확도는
+  검증되지 않으며, 실제 조향 기구에서 따로 확인해야 합니다.
 
-현재 실차와 시뮬레이션을 동일한 통합 launch로 전환하는 구조는 구현되어 있지
-않습니다.
+실차는 `control_launch/vehicle.launch.py`, HIL bench는
+`kaiev26_hil/hil_bench.launch.py`로 실행합니다. 두 launch 모두
+`command_governor` 경유의 동일한 명령 체인을 쓰지만, 하나의 launch로 실차와
+시뮬레이션을 전환하는 구조는 아닙니다.
 
 ## 8. 설계 경계와 책임 분리
 
@@ -200,12 +228,21 @@ traction 차단 조건으로 사용하지 않습니다.
 | STM 간 safety/vehicle 상태 교환 | STM_A·STM_B USART1 |
 | KEYA 조향 제어와 조향 timeout | Host `lateral_ctrl` |
 | 공통 `/vehicle/state` 합성 | Host `vehicle_state_publisher` |
-| Planning / motion-control 명령 생성 | 현재 코드에서 확인되지 않음 |
+| `/vehicle/command` 단일 발행과 명령 정합성 게이트 | Host `command_governor` |
+| 명령 형상 (속도 상한·램프·축간 협조) | Host `command_governor` (예정, 현재 패스스루) |
+| Production Planning / motion-control 명령 생성 (`/planning/command`) | 현재 코드에서 확인되지 않음 |
+| 실차 시험 `/planning/command` 생성 | Host `vehicle_test_scenarios` |
+| HIL `/planning/command` 생성 | Host `kaiev26_hil/hil_command_generator` |
 
 ## 9. 관련 문서
 
+- 실차 운용 절차: [`VEHICLE_RUNBOOK.md`](VEHICLE_RUNBOOK.md)
 - 데이터 계약과 주기: [`INTERFACES.md`](INTERFACES.md)
 - 안전 조건과 복구: [`SAFETY.md`](SAFETY.md)
 - 공통 펌웨어 빌드: [`../firmware/README.md`](../firmware/README.md)
 - STM_A 내부 구조: [`../firmware/STM_A/README.md`](../firmware/STM_A/README.md)
 - STM_B 내부 구조: [`../firmware/STM_B/README.md`](../firmware/STM_B/README.md)
+- STM_TEST HIL emulator: [`../firmware/STM_TEST/README.md`](../firmware/STM_TEST/README.md)
+- 조향 패키지: [`../software/src/lateral_ctrl/README.md`](../software/src/lateral_ctrl/README.md)
+- 실차 시험 시나리오: [`../software/src/vehicle_test_scenarios/README.md`](../software/src/vehicle_test_scenarios/README.md)
+- HIL 운용 절차: [`HIL_RUNBOOK.md`](HIL_RUNBOOK.md)

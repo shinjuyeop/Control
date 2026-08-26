@@ -3,32 +3,41 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+
 using lateral_ctrl::DriveMode;
 using lateral_ctrl::SafetyInputs;
 using lateral_ctrl::SteeringDisableReason;
+
+namespace
+{
+// 노드는 항상 8인자 selectDisableReason을 호출한다. mode_timeout과
+// steer_command_timeout을 따로 보지 않는 경우를 읽기 쉽게 쓰기 위한 test 전용
+// helper이며, production header에는 축약 overload를 두지 않는다.
+SteeringDisableReason reasonWithoutTimeouts(
+  bool mode_received, DriveMode mode, const SafetyInputs & safety, bool motor_fault,
+  bool can_timeout, bool feedback_valid)
+{
+  return lateral_ctrl::selectDisableReason(
+    mode_received, false, mode, safety, motor_fault, can_timeout, feedback_valid, false);
+}
+}  // namespace
 
 TEST(SteeringSafetyLogic, ModeAndFeedbackGatesAuto)
 {
   SafetyInputs safety;
   EXPECT_EQ(
-    lateral_ctrl::selectDisableReason(false, DriveMode::UNKNOWN, safety, false, false, true),
+    reasonWithoutTimeouts(false, DriveMode::UNKNOWN, safety, false, false, true),
     SteeringDisableReason::MODE_NOT_RECEIVED);
   EXPECT_EQ(
-    lateral_ctrl::selectDisableReason(true, DriveMode::MANUAL, safety, false, false, true),
+    reasonWithoutTimeouts(true, DriveMode::MANUAL, safety, false, false, true),
     SteeringDisableReason::MANUAL_MODE);
   EXPECT_EQ(
-    lateral_ctrl::selectDisableReason(true, DriveMode::AUTO, safety, false, false, true),
+    reasonWithoutTimeouts(true, DriveMode::AUTO, safety, false, false, true),
     SteeringDisableReason::NONE);
   EXPECT_EQ(
-    lateral_ctrl::selectDisableReason(true, DriveMode::AUTO, safety, false, false, false),
+    reasonWithoutTimeouts(true, DriveMode::AUTO, safety, false, false, false),
     SteeringDisableReason::FEEDBACK_INVALID);
-}
-TEST(SteeringSafetyLogic, RealAndTestEstopAreMonotonicOr)
-{
-  SafetyInputs safety;
-  safety.real_estop = true;
-  safety.test_estop = false;
-  EXPECT_TRUE(safety.effectiveEstop());
 }
 TEST(SteeringSafetyLogic, RealOrTestEstopActivates)
 {
@@ -44,7 +53,7 @@ TEST(SteeringSafetyLogic, CommandBrakeDisablesAutoSteering)
   SafetyInputs safety;
   safety.command_brake = true;
   EXPECT_EQ(
-    lateral_ctrl::selectDisableReason(
+    reasonWithoutTimeouts(
       true, DriveMode::AUTO, safety, false, false, true),
     SteeringDisableReason::COMMAND_BRAKE);
 }
@@ -58,18 +67,11 @@ TEST(SteeringSafetyLogic, CommandBrakeReleasesOnlyWithFreshStamp)
   EXPECT_TRUE(lateral_ctrl::nextCommandBrakeState(true, true, true));
 }
 
-TEST(SteeringSafetyLogic, TestEstopFalseCannotClearRealEstop)
-{
-  SafetyInputs safety;
-  safety.real_estop = true;
-  safety.test_estop = false;
-  EXPECT_TRUE(safety.effectiveEstop());
-}
 TEST(SteeringSafetyLogic, AutoWithoutInhibitMapsToWaitCommand)
 {
   SafetyInputs safety;
   const auto reason =
-    lateral_ctrl::selectDisableReason(true, DriveMode::AUTO, safety, false, false, true);
+    reasonWithoutTimeouts(true, DriveMode::AUTO, safety, false, false, true);
   EXPECT_EQ(reason, SteeringDisableReason::NONE);
   EXPECT_EQ(
     lateral_ctrl::stateForDisableReason(reason), lateral_ctrl::SteeringState::WAIT_CMD);
@@ -78,28 +80,21 @@ TEST(SteeringSafetyLogic, InvalidModeDisables)
 {
   SafetyInputs safety;
   EXPECT_EQ(
-    lateral_ctrl::selectDisableReason(true, DriveMode::UNKNOWN, safety, false, false, true),
+    reasonWithoutTimeouts(true, DriveMode::UNKNOWN, safety, false, false, true),
     SteeringDisableReason::INVALID_MODE);
-}
-TEST(SteeringSafetyLogic, InvalidFeedbackDisables)
-{
-  SafetyInputs safety;
-  EXPECT_EQ(
-    lateral_ctrl::selectDisableReason(true, DriveMode::AUTO, safety, false, false, false),
-    SteeringDisableReason::FEEDBACK_INVALID);
 }
 TEST(SteeringSafetyLogic, FaultDisables)
 {
   SafetyInputs safety;
   EXPECT_EQ(
-    lateral_ctrl::selectDisableReason(true, DriveMode::AUTO, safety, true, false, true),
+    reasonWithoutTimeouts(true, DriveMode::AUTO, safety, true, false, true),
     SteeringDisableReason::MOTOR_FAULT);
 }
 TEST(SteeringSafetyLogic, CanTimeoutDisables)
 {
   SafetyInputs safety;
   EXPECT_EQ(
-    lateral_ctrl::selectDisableReason(true, DriveMode::AUTO, safety, false, true, true),
+    reasonWithoutTimeouts(true, DriveMode::AUTO, safety, false, true, true),
     SteeringDisableReason::CAN_TIMEOUT);
 }
 TEST(SteeringSafetyLogic, PriorityIsDeterministic)
@@ -108,11 +103,11 @@ TEST(SteeringSafetyLogic, PriorityIsDeterministic)
   safety.real_estop = true;
   safety.command_brake = true;
   EXPECT_EQ(
-    lateral_ctrl::selectDisableReason(true, DriveMode::AUTO, safety, true, true, false),
+    reasonWithoutTimeouts(true, DriveMode::AUTO, safety, true, true, false),
     SteeringDisableReason::ESTOP);
   safety.real_estop = false;
   EXPECT_EQ(
-    lateral_ctrl::selectDisableReason(true, DriveMode::AUTO, safety, true, true, false),
+    reasonWithoutTimeouts(true, DriveMode::AUTO, safety, true, true, false),
     SteeringDisableReason::CAN_TIMEOUT);
 }
 TEST(SteeringSafetyLogic, BenchSequenceAlternatesFiveDegrees)
@@ -125,16 +120,16 @@ TEST(SteeringSafetyLogic, RateLimiterBoundsMovement)
 {
   EXPECT_DOUBLE_EQ(lateral_ctrl::rateLimit(0.0, 10.0, 5.0, 0.1), 0.5);
   EXPECT_DOUBLE_EQ(lateral_ctrl::rateLimit(0.5, -10.0, 5.0, 0.1), 0.0);
-}
-TEST(SteeringSafetyLogic, RecoveryDiscardsOldTarget)
-{
-  double target = 20.0;
-  double commanded = 10.0;
-  bool valid = true;
-  lateral_ctrl::resetMotionTargetForRecovery(2.0, target, commanded, valid);
-  EXPECT_DOUBLE_EQ(target, 2.0);
-  EXPECT_DOUBLE_EQ(commanded, 2.0);
-  EXPECT_FALSE(valid);
+  EXPECT_DOUBLE_EQ(
+    lateral_ctrl::rateLimit(0.5, 10.0, 5.0, -1.0), 0.5);
+  EXPECT_THROW(
+    lateral_ctrl::rateLimit(
+      std::numeric_limits<double>::quiet_NaN(), 10.0, 5.0, 0.1),
+    std::invalid_argument);
+  EXPECT_THROW(
+    lateral_ctrl::rateLimit(
+      0.0, 10.0, std::numeric_limits<double>::quiet_NaN(), 0.1),
+    std::invalid_argument);
 }
 TEST(SteeringSafetyLogic, DisableReasonsMapToStates)
 {

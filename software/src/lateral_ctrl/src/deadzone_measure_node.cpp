@@ -12,7 +12,7 @@
 //   motor_angle_deg는 legacy 프로토콜의 Encoder count value query 응답
 //   (10000 count/turn = 0.036°/count)을 그대로 각도로 옮긴 값이라
 //   heartbeat(360 count/turn)보다 약 28배 촘촘하다. 캘리브레이션 다항식과
-//   direction_sign을 거치지 않은 모터축 원시값이므로, ramp_direction과 각도
+//   중앙 등가각 환산을 거치지 않은 모터축 원시값이므로, ramp_direction과 각도
 //   증감의 부호 관계는 바퀴 각도 기준과 반대로 나타난다.
 //
 // 사용 시나리오

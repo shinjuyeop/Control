@@ -3,6 +3,7 @@
  */
  #pragma once
  #include <stdint.h>
+ #include "board_uart_protocol.h"
  
  /* STM_A Vehicle Status UART 수신 상태 */
  extern volatile float    CURRENT_SPEED_FROM_A;
@@ -13,6 +14,14 @@
  extern volatile uint32_t VEHICLE_RX_COUNT;
  extern volatile uint32_t VEHICLE_CRC_ERROR_COUNT;
  extern volatile uint32_t VEHICLE_SEQUENCE_ERROR_COUNT;
+
+ /* STM_A Drive Detail UART 수신 상태 */
+ extern volatile BoardUartDriveDetail_t DRIVE_DETAIL_FROM_A;
+ extern volatile uint8_t  DRIVE_DETAIL_FRAME_VALID_FROM_A;
+ extern volatile uint32_t LAST_DRIVE_DETAIL_RX_MS;
+ extern volatile uint32_t DRIVE_DETAIL_RX_COUNT;
+ extern volatile uint32_t DRIVE_DETAIL_CRC_ERROR_COUNT;
+ extern volatile uint32_t DRIVE_DETAIL_SEQUENCE_ERROR_COUNT;
  
  /* 안전: EStop 태스크가 명령 브레이크와 물리 E-stop 입력을 통합한다. */
  extern volatile uint8_t COMMAND_BRAKE_REQUEST; /* /vehicle/command.brake_engage */

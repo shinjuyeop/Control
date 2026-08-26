@@ -61,7 +61,7 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_keya_can_driver test/test_keya_can_driver.cpp)
   target_link_libraries(test_keya_can_driver steering_core)
-  target_include_directories(test_keya_can_driver PRIVATE include)
+  target_include_directories(test_keya_can_driver PRIVATE include src)
 
   ament_add_gtest(test_steering_angle_converter test/test_steering_angle_converter.cpp)
   target_link_libraries(test_steering_angle_converter steering_core)

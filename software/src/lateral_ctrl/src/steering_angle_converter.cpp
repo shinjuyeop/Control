@@ -3,57 +3,74 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <stdexcept>
 
 namespace lateral_ctrl
 {
 SteeringAngleConverter::SteeringAngleConverter(
-  double a, double b, double c, double counts_per_rev, double direction_sign,
-  double wheel_limit_deg)
-: a_(a), b_(b), c_(c), counts_per_rev_(counts_per_rev),
-  direction_sign_(std::abs(direction_sign) > 1e-12 ? std::copysign(1.0, direction_sign) : 1.0),
-  wheel_limit_deg_(std::abs(wheel_limit_deg)) {}
-
-double SteeringAngleConverter::clampWheelDeg(double value) const
+  double count_scale, double equivalent_k1_deg, double equivalent_k2_deg,
+  double equivalent_k3_deg, double equivalent_k4_deg, double equivalent_k5_deg,
+  std::int64_t command_count_limit, double counts_per_rev)
+: count_scale_(count_scale), equivalent_k1_deg_(equivalent_k1_deg),
+  equivalent_k2_deg_(equivalent_k2_deg), equivalent_k3_deg_(equivalent_k3_deg),
+  equivalent_k4_deg_(equivalent_k4_deg), equivalent_k5_deg_(equivalent_k5_deg),
+  command_count_limit_(0), counts_per_rev_(counts_per_rev),
+  command_min_angle_deg_(0.0), command_max_angle_deg_(0.0)
 {
-  if (!std::isfinite(value)) return 0.0;
-  return std::clamp(value, -wheel_limit_deg_, wheel_limit_deg_);
-}
-
-double SteeringAngleConverter::wheelToMotorDeg(double wheel_deg) const
-{
-  const double y = clampWheelDeg(wheel_deg);
-  const double magnitude = std::abs(y);
-  double motor = 0.0;
-  if (magnitude > 0.0) {
-    if (std::abs(a_) < 1e-12) {
-      motor = std::max(0.0, (magnitude - c_) / b_);
-    } else {
-      const double discriminant = b_ * b_ - 4.0 * a_ * (c_ - magnitude);
-      motor = std::max(0.0, (-b_ + std::sqrt(std::max(0.0, discriminant))) / (2.0 * a_));
-    }
+  if (!std::isfinite(count_scale_) || count_scale_ <= 0.0 ||
+    !std::isfinite(equivalent_k1_deg_) || !std::isfinite(equivalent_k2_deg_) ||
+    !std::isfinite(equivalent_k3_deg_) || !std::isfinite(equivalent_k4_deg_) ||
+    !std::isfinite(equivalent_k5_deg_) || command_count_limit <= 0 ||
+    command_count_limit > std::numeric_limits<int32_t>::max() ||
+    !std::isfinite(counts_per_rev_) || counts_per_rev_ <= 0.0)
+  {
+    throw std::invalid_argument("invalid steering calibration parameters");
   }
-  return direction_sign_ * std::copysign(motor, y);
+  command_count_limit_ = static_cast<int32_t>(command_count_limit);
+  command_min_angle_deg_ = countToEquivalentDeg(-command_count_limit_);
+  command_max_angle_deg_ = countToEquivalentDeg(command_count_limit_);
+  double previous = countToEquivalentDeg(-command_count_limit_);
+  for (int32_t count = -command_count_limit_ + 1; count <= command_count_limit_; ++count) {
+    const double current = countToEquivalentDeg(count);
+    if (!(current > previous)) {
+      throw std::invalid_argument("steering calibration must increase over the command range");
+    }
+    previous = current;
+  }
 }
 
-double SteeringAngleConverter::motorToWheelDeg(double motor_deg) const
+double SteeringAngleConverter::clampEquivalentDeg(double value) const
 {
-  if (!std::isfinite(motor_deg)) return 0.0;
-  const double normalized = motor_deg / direction_sign_;
-  if (std::abs(normalized) < 1e-12) return 0.0;
-  const double magnitude = std::abs(normalized);
-  // 측정 경로에는 wheel_limit_deg를 걸지 않는다. 그 값은 명령을 제한하는 한계이지
-  // 바퀴가 실제로 놓일 수 있는 위치의 한계가 아니다. 여기에 상한을 씌우면 한계를
-  // 넘은 실제 각도가 한계값으로 보고되어 추종 오차가 실제보다 작게 나온다.
-  return std::copysign(a_ * magnitude * magnitude + b_ * magnitude + c_, normalized);
+  if (!std::isfinite(value)) {
+    throw std::invalid_argument("steering angle command must be finite");
+  }
+  return std::clamp(value, command_min_angle_deg_, command_max_angle_deg_);
 }
 
-int32_t SteeringAngleConverter::motorDegToCount(double motor_deg) const
+double SteeringAngleConverter::countToEquivalentDeg(int32_t count) const
 {
-  if (!std::isfinite(motor_deg) || counts_per_rev_ <= 0.0) return 0;
-  const double value = std::round(motor_deg * counts_per_rev_ / 360.0);
-  return static_cast<int32_t>(std::clamp(
-    value, static_cast<double>(std::numeric_limits<int32_t>::min()),
-    static_cast<double>(std::numeric_limits<int32_t>::max())));
+  const double v = static_cast<double>(count) / count_scale_;
+  return v * (equivalent_k1_deg_ + v *
+    (equivalent_k2_deg_ + v *
+    (equivalent_k3_deg_ + v *
+    (equivalent_k4_deg_ + v * equivalent_k5_deg_))));
+}
+
+int32_t SteeringAngleConverter::equivalentDegToCount(double equivalent_deg) const
+{
+  const double target = clampEquivalentDeg(equivalent_deg);
+  int32_t lower = -command_count_limit_;
+  int32_t upper = command_count_limit_;
+  while (lower < upper) {
+    const int32_t middle = lower + (upper - lower) / 2;
+    if (countToEquivalentDeg(middle) < target) lower = middle + 1;
+    else upper = middle;
+  }
+  const int32_t upper_candidate = lower;
+  const int32_t lower_candidate = std::max(-command_count_limit_, upper_candidate - 1);
+  const double lower_error = std::abs(countToEquivalentDeg(lower_candidate) - target);
+  const double upper_error = std::abs(countToEquivalentDeg(upper_candidate) - target);
+  return lower_error <= upper_error ? lower_candidate : upper_candidate;
 }
 
 double SteeringAngleConverter::countToMotorDeg(int32_t count) const

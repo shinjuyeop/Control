@@ -10,20 +10,45 @@ STM_A는 종방향 모터와 차량 입력을 담당하고, STM_B는 물리 E-st
 firmware/
 ├── STM_A/             # 차량 입력과 EZkontrol 구동 모터 제어
 ├── STM_B/             # 물리 E-stop, 브레이크 서보와 표시 장치
+├── STM_TEST/          # STM_A/B 입출력과 EZ/KEYA CAN을 대신하는 HIL emulator
 ├── micro_ros_agent/   # vendored micro-ROS Agent
-└── tools/             # micro-ROS 라이브러리 재생성 보조 스크립트
+├── tools/             # micro-ROS 라이브러리 재생성 보조 스크립트
+└── udev/              # STM 보드 고정 장치 이름 규칙
 ```
 
 보드 내부 Task와 Peripheral은
-[`STM_A/README.md`](STM_A/README.md)와
-[`STM_B/README.md`](STM_B/README.md)에 정리되어 있습니다.
+[`STM_A/README.md`](STM_A/README.md),
+[`STM_B/README.md`](STM_B/README.md),
+[`STM_TEST/README.md`](STM_TEST/README.md)에 정리되어 있습니다.
+
+STM_A와 STM_B는 실차에 올라가는 펌웨어이고, STM_TEST는 실차 없이 두 보드의
+입출력을 시험하기 위한 bench 전용 펌웨어입니다. 세 보드 모두 같은 CMake preset
+구조를 쓰지만, micro-ROS를 사용하는 것은 STM_A와 STM_B뿐입니다. STM_TEST는
+LPUART1 ASCII protocol로 PC와 직접 통신하므로 Agent가 필요 없습니다.
+
+## 보드와 핀 표기
+
+세 보드 모두 NUCLEO-G474RE(MB1367, STM32G474RETx)를 사용합니다. 각 README의 핀맵은
+MCU 핀 이름과 ST morpho 헤더 번호를 함께 적습니다.
+
+- `CN7`, `CN10`은 각각 2×19 ST morpho 헤더이고 홀수 번호와 짝수 번호가 각각 한
+  열을 이룹니다. 예를 들어 `PA11`은 `CN10-14`입니다.
+- 괄호 안의 `A0`, `D7` 같은 표기는 같은 신호가 나오는 Arduino Uno 헤더
+  실크스크린 이름입니다. 표기가 없는 핀은 morpho 헤더에서만 나옵니다.
+- GND는 `CN7-8`, `CN7-19`, `CN7-20`, `CN7-22`, `CN10-9`, `CN10-20`에 있습니다.
+- 커넥터의 물리적 배치와 solder bridge 옵션은 보드 매뉴얼 UM2505를 기준으로
+  합니다. 저장소에는 해당 매뉴얼 사본이 없습니다.
+
+세 보드를 서로 연결하는 핀 짝은 각 README의 `4.4 배선 상대`에 있습니다.
 
 ## 명령과 안전 경로
 
-상위 Planning 또는 motion-control 계층은
-`kaiev26_msgs/msg/ActuatorCommand`를 `/vehicle/command`로 발행하도록
-설계되어 있습니다. 현재 `Control` 저장소에서는 production 명령 생성 노드가
-확인되지 않습니다.
+상위 Planning 계층은 `kaiev26_msgs/msg/ActuatorCommand`를
+`/planning/command`로 발행하고, Host의 `command_governor`가 이를
+`/vehicle/command`로 재발행합니다. `/vehicle/command`의 발행자는
+`command_governor` 하나입니다. Planning의 production 구현은 아직 없으며
+실차 시험에서는 `vehicle_test_scenario_runner`, HIL에서는
+`hil_command_generator`가 그 자리를 대신합니다.
 
 - STM_A는 `speed_target_mps`와 `brake_engage`를 직접 받습니다.
 - STM_B는 같은 메시지의 `brake_engage`를 독립적으로 받습니다.
@@ -53,7 +78,7 @@ STM_A가 EZkontrol 모터 드라이버와 CAN으로 통신합니다.
 - STM_A는 모터 드라이버의 handshake 요청을 받고 ACK 전송에 성공하기 전까지
   traction 명령을 보내지 않습니다.
 - STM_A는 EZkontrol status Part I과 Part II를 모두 수신합니다.
-- Part I은 RPM, phase current와 DC voltage를 갱신합니다.
+- Part I은 RPM, bus voltage, bus current와 phase current를 갱신합니다.
 - Part II는 RUN 상태, control mode, controller·motor temperature와 fault bits를
   갱신합니다.
 - STM_A는 이 값을 `/drive/status`의 `DriveActuatorStatus`로 발행합니다.
@@ -63,10 +88,9 @@ STM_B는 EZkontrol CAN Part I/II를 수신하지 않습니다. STM_B가 표시�
 
 ## STM 빌드
 
-두 프로젝트의 CMake preset은 GNU Arm Embedded
-`arm-none-eabi` toolchain을 사용합니다. STM_A preset은
-`/opt/st/stm32cubeclt_1.20.0/`의 compiler 경로를 명시하고, STM_B preset은
-`PATH`에서 compiler를 찾습니다.
+세 프로젝트의 CMake preset은 모두 GNU Arm Embedded `arm-none-eabi` toolchain을
+사용합니다. STM_A preset은 `/opt/st/stm32cubeclt_1.20.0/`의 compiler 경로를
+명시하고, STM_B와 STM_TEST preset은 `PATH`에서 compiler를 찾습니다.
 
 아래 명령은 권장 워크스페이스인 `~/KAI_ws` 루트에서 실행합니다.
 
@@ -78,12 +102,19 @@ cmake --build src/Control/firmware/STM_A/build/Release
 
 cmake -S src/Control/firmware/STM_B --preset Release
 cmake --build src/Control/firmware/STM_B/build/Release
+
+cmake -S src/Control/firmware/STM_TEST --preset Release
+cmake --build src/Control/firmware/STM_TEST/build/Release
 ```
 
 현재 CMake target이 직접 생성하는 결과물은 각 build 디렉터리의 `.elf`입니다.
 HEX·BIN이 필요하면 사용하는 flash 도구에 맞게 별도로 변환하십시오. 플래시
-절차는 사용하는 ST-Link 환경에 맞게 수행하고, 대상 보드가 STM_A인지 STM_B인지
-먼저 확인하십시오.
+절차는 사용하는 ST-Link 환경에 맞게 수행하고, 대상 보드가 어느 것인지 먼저
+확인하십시오.
+
+STM_TEST는 host에서 도는 logic test를 함께 제공합니다. 절차는
+[`STM_TEST/README.md`](STM_TEST/README.md#9-빌드)에
+있습니다.
 
 ## micro-ROS Agent 빌드
 
@@ -108,13 +139,21 @@ vendored upstream revision과 로컬 빌드 수정은
 
 ## STM 보드 고정 장치 이름
 
-두 NUCLEO-G474RE의 ST-LINK serial을 기준으로 다음 이름을 사용합니다. `ttyACM0/1`
+NUCLEO-G474RE의 ST-LINK serial을 기준으로 다음 이름을 사용합니다. `ttyACM0/1/2`
 순서는 재부팅이나 USB 재연결 때 바뀔 수 있으므로 보드 식별에 사용하지 않습니다.
 
-| 보드 | ST-LINK serial | 고정 장치 이름 |
-|---|---|---|
-| STM_A | `003D00433234511137333934` | `/dev/stm_a` |
-| STM_B | `003D00433234511137333934` | `/dev/stm_b` |
+이름은 실물 보드를 구분하려고 나눈 것입니다. HIL bench에 있는 보드는 `hil_`
+이름을 쓰고, 나중에 실차에 다는 보드가 `stm_a`와 `stm_b`를 씁니다. bench의
+`hil_a`와 `hil_b`는 실차 보드와 같은 STM_A·STM_B 펌웨어를 올린 복제본이므로
+동작은 동일해야 합니다.
+
+| 보드 | 올린 펌웨어 | ST-LINK serial | 고정 장치 이름 |
+|---|---|---|---|
+| Vehicle STM_A | STM_A | `003E002E3235510B37333439` | `/dev/stm_a` |
+| Vehicle STM_B | STM_B | `004E003B3235510B37333439` | `/dev/stm_b` |
+| HIL bench A | STM_A | `0025002B3234511137333934` | `/dev/hil_a` |
+| HIL bench B | STM_B | `003D00433234511137333934` | `/dev/hil_b` |
+| HIL bench TEST | STM_TEST | `002E00253235510837333439` | `/dev/hil_test` |
 
 규칙 원본은 `firmware/udev/99-kaiev26-stm.rules`입니다. 호스트에 설치한 뒤 규칙을
 다시 읽고 현재 장치에 적용합니다.
@@ -124,18 +163,29 @@ sudo install -m 0644 firmware/udev/99-kaiev26-stm.rules \
   /etc/udev/rules.d/99-kaiev26-stm.rules
 sudo udevadm control --reload-rules
 sudo udevadm trigger --subsystem-match=tty
-readlink -f /dev/stm_a
-readlink -f /dev/stm_b
+readlink -f /dev/hil_a
+readlink -f /dev/hil_b
+readlink -f /dev/hil_test
 ```
 
-2026-08-03 실보드 확인에서 `/dev/stm_a`는 `/stm_a_node`, `/dev/stm_b`는
-`/stm_b_node`를 각각 생성했습니다. 이 확인은 장치 이름뿐 아니라 실제 실행된
-펌웨어 역할까지 대조한 결과입니다.
+2026-08-03 실보드 확인에서 위 STM_A serial은 `/stm_a_node`, STM_B serial은
+`/stm_b_node`를 각각 생성했습니다. 2026-08-06 HIL bench에서 다시 대조해 같은
+결과를 얻었습니다. 이 확인은 장치 이름뿐 아니라 실제 실행된 펌웨어 역할까지
+대조한 결과입니다. 확인 방법은 각 장치에 micro-ROS Agent를 하나씩 붙여 `ros2
+node list`로 올라온 node 이름을 보는 것입니다. Agent 없이 장치를 듣기만 하면
+보드가 보내는 GET_INFO ping에는 session_id가 `0x80`이라 client key가 실리지
+않아 두 보드의 frame이 완전히 같습니다. Agent 연결 뒤 나오는 client key는 세션마다
+새로 뽑히므로 보드 식별에 쓰지 않습니다.
+
+`/dev/hil_test`는 2026-08-06에 STM_TEST 펌웨어를 올리고 `STATUS`와
+`SET MODE AUTO`에 규약대로 응답하는 것까지 확인했습니다.
 
 ## Agent 실행
 
 두 보드를 동시에 연결하려면 서로 다른 serial device에 Agent를 하나씩 실행합니다.
-위 udev 규칙을 설치한 호스트에서는 고정 장치 이름을 사용합니다.
+위 udev 규칙을 설치한 호스트에서는 고정 장치 이름을 사용합니다. 아래는 HIL
+bench 이름 기준이며, 실차 보드에서는 `/dev/stm_a`와 `/dev/stm_b`를 씁니다.
+STM_TEST는 micro-ROS를 쓰지 않으므로 Agent를 붙이지 않습니다.
 
 터미널 1, STM_A:
 
@@ -143,7 +193,7 @@ readlink -f /dev/stm_b
 source /opt/ros/humble/setup.bash
 source ~/KAI_ws/install/setup.bash
 ros2 run micro_ros_agent micro_ros_agent serial \
-  --dev /dev/stm_a -b 115200
+  --dev /dev/hil_a -b 115200
 ```
 
 터미널 2, STM_B:
@@ -152,7 +202,7 @@ ros2 run micro_ros_agent micro_ros_agent serial \
 source /opt/ros/humble/setup.bash
 source ~/KAI_ws/install/setup.bash
 ros2 run micro_ros_agent micro_ros_agent serial \
-  --dev /dev/stm_b -b 115200
+  --dev /dev/hil_b -b 115200
 ```
 
 연결 후에는 node 이름뿐 아니라 타입과 실제 endpoint를 함께 확인합니다.
@@ -170,6 +220,11 @@ ros2 topic echo /brake/status
 `/vehicle/command`를 구독합니다. STM_A는 `/drive/status`, STM_B는
 `/brake/status`를 발행합니다.
 
+STM_TEST bridge와 GUI를 포함해 SSH 접속부터 HIL을 순서대로 실행하는 절차는
+[`../docs/HIL_RUNBOOK.md`](../docs/HIL_RUNBOOK.md)를 따릅니다. 특히 device symlink는
+virtual COM port 식별이며 SWD target 확인을 대신하지 않으므로, runbook의 현장 확인
+전에는 이를 근거로 플래시하지 않습니다.
+
 ## 관련 문서
 
 - 전체 시스템 구조: [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md)
@@ -177,3 +232,5 @@ ros2 topic echo /brake/status
 - 안전 설계: [`../docs/SAFETY.md`](../docs/SAFETY.md)
 - STM_A 상세: [`STM_A/README.md`](STM_A/README.md)
 - STM_B 상세: [`STM_B/README.md`](STM_B/README.md)
+- STM_TEST 상세: [`STM_TEST/README.md`](STM_TEST/README.md)
+- HIL 전체 운용: [`../docs/HIL_RUNBOOK.md`](../docs/HIL_RUNBOOK.md)

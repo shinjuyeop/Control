@@ -1,0 +1,27 @@
+# A02 — AUTO longitudinal moving speed step
+#
+# MANUAL 정지 상태에서 AUTO로 전환한다. AUTO 감지 후 10 s 동안
+# speed_target=0.0 m/s, brake=false를 발행하고 countdown이 끝나는 순간
+# 1.0 m/s 5 s → 2.0 m/s 5 s를 4회 반복한다. 완료 후에는
+# speed_target=0.0 m/s, brake=false·중앙 조향을 계속 유지한다.
+# 어제 실차의 직진 count-derived angle은 약 -2 deg였다. 얼라인먼트 후에는
+# steering_center_deg만 새 직진각으로 고치고 launch 명령에는 옵션을 붙이지 않는다.
+vehicle_test_scenario_runner:
+  ros__parameters:
+    enabled: true
+    wait_for_auto_mode: true
+    auto_start_delay_sec: 10.0  # AUTO 감지 후 speed_target=0, brake=false countdown
+    command_topic: /planning/command
+    drive_status_topic: /drive/status
+    scenario_status_topic: /sysid/scinario
+    scenario_label: A02_speed_step_10_20
+    publish_rate_hz: 20.0
+
+    scenario: speed_step
+    speed_low_kph: 3.6       # 1.0 m/s
+    speed_high_kph: 7.2      # 2.0 m/s
+    speed_step_interval_sec: 5.0
+    scenario_repetitions: 4  # 0→1 초기 step 뒤 1↔2 m/s cycle 4회
+    initial_hold_sec: 0.0    # countdown 후 첫 low phase 5 s가 moving baseline
+    steering_center_deg: -2.0
+    brake_override: false

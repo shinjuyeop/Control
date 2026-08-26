@@ -4,7 +4,7 @@
 <package format="3">
   <name>kaiev26_hil</name>
   <version>0.1.0</version>
-  <description>STM_TEST bridge, HIL command generation, scenarios, GUI, and CAN bench tools.</description>
+  <description>STM_TEST HIL bridge, scenarios, GUI, and vcan SIL tools.</description>
   <maintainer email="shinjp02@gmail.com">shinjuyeop</maintainer>
   <license>TODO: License declaration</license>
 
@@ -15,9 +15,17 @@
   <exec_depend>diagnostic_msgs</exec_depend>
   <exec_depend>rcl_interfaces</exec_depend>
   <exec_depend>kaiev26_msgs</exec_depend>
+  <exec_depend>control_gui_common</exec_depend>
+  <exec_depend>lateral_ctrl</exec_depend>
+  <!-- hil.launch.py가 /vehicle/command 재발행자인 command_governor를 띄운다. -->
+  <exec_depend>command_governor</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
+  <!-- hil_bench.launch.py starts the STM_A/STM_B Agents. -->
+  <exec_depend>micro_ros_agent</exec_depend>
+  <!-- hil_bench.launch.py state:=true가 띄운다. -->
+  <exec_depend>vehicle_state_publisher</exec_depend>
   <exec_depend>python3-serial</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>python3-pyqt5</exec_depend>
