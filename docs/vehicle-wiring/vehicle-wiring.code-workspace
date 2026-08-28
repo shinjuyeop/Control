@@ -1,0 +1,28 @@
+{
+  "folders": [
+    {
+      "name": "vehicle-wiring",
+      "path": "."
+    }
+  ],
+  "settings": {
+    "hediet.vscode-drawio.offline": true,
+    "hediet.vscode-drawio.customLibraries": [
+      {
+        "entryId": "vehicle-wiring",
+        "libName": "Development Boards",
+        "directory": "${workspaceFolder}/libraries/development-boards"
+      },
+      {
+        "entryId": "vehicle-wiring",
+        "libName": "Connectors",
+        "directory": "${workspaceFolder}/libraries/connectors"
+      },
+      {
+        "entryId": "vehicle-wiring",
+        "libName": "End Components",
+        "directory": "${workspaceFolder}/libraries/end-components"
+      }
+    ]
+  }
+}
