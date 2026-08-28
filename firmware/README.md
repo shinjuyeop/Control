@@ -150,10 +150,11 @@ NUCLEO-G474RE의 ST-LINK serial을 기준으로 다음 이름을 사용합니다
 | 보드 | 올린 펌웨어 | ST-LINK serial | 고정 장치 이름 |
 |---|---|---|---|
 | Vehicle STM_A | STM_A | `003D00433234511137333934` | `/dev/stm_a` |
-| Vehicle STM_B | STM_B | `004E003B3235510B37333439` | `/dev/stm_b` |
+| Vehicle STM_B | STM_B | `002E00253235510837333439` | `/dev/stm_b` |
+| Retired STM_B | 사용 금지 (MCU 손상) | `004E003B3235510B37333439` | 미등록 |
 | HIL bench A | STM_A | `0025002B3234511137333934` | `/dev/hil_a` |
 | HIL bench B | STM_B | ` 고장 ` | `/dev/hil_b` |
-| HIL bench TEST | STM_TEST | `002E00253235510837333439` | `/dev/hil_test` |
+| HIL bench TEST | STM_TEST | 미할당 | `/dev/hil_test` 미생성 |
 
 규칙 원본은 `firmware/udev/99-kaiev26-stm.rules`입니다. 호스트에 설치한 뒤 규칙을
 다시 읽고 현재 장치에 적용합니다.
@@ -163,22 +164,30 @@ sudo install -m 0644 firmware/udev/99-kaiev26-stm.rules \
   /etc/udev/rules.d/99-kaiev26-stm.rules
 sudo udevadm control --reload-rules
 sudo udevadm trigger --subsystem-match=tty
+readlink -f /dev/stm_a /dev/stm_b
 readlink -f /dev/hil_a
-readlink -f /dev/hil_b
-readlink -f /dev/hil_test
 ```
 
-2026-08-03 실보드 확인에서 위 STM_A serial은 `/stm_a_node`, STM_B serial은
-`/stm_b_node`를 각각 생성했습니다. 2026-08-06 HIL bench에서 다시 대조해 같은
-결과를 얻었습니다. 이 확인은 장치 이름뿐 아니라 실제 실행된 펌웨어 역할까지
-대조한 결과입니다. 확인 방법은 각 장치에 micro-ROS Agent를 하나씩 붙여 `ros2
-node list`로 올라온 node 이름을 보는 것입니다. Agent 없이 장치를 듣기만 하면
+2026-08-03 실보드 확인에서 STM_A `003D00433234511137333934`는 `/stm_a_node`,
+당시 STM_B `004E003B3235510B37333439`는 `/stm_b_node`를 각각 생성했습니다.
+2026-08-06 HIL bench에서 다시 대조해 같은 결과를 얻었습니다. 이 확인은 장치
+이름뿐 아니라 실제 실행된 펌웨어 역할까지 대조한 결과입니다. 확인 방법은 각
+장치에 micro-ROS Agent를 하나씩 붙여 `ros2 node list`로 올라온 node 이름을 보는
+것입니다. Agent 없이 장치를 듣기만 하면
 보드가 보내는 GET_INFO ping에는 session_id가 `0x80`이라 client key가 실리지
 않아 두 보드의 frame이 완전히 같습니다. Agent 연결 뒤 나오는 client key는 세션마다
 새로 뽑히므로 보드 식별에 쓰지 않습니다.
 
-`/dev/hil_test`는 2026-08-06에 STM_TEST 펌웨어를 올리고 `STATUS`와
-`SET MODE AUTO`에 규약대로 응답하는 것까지 확인했습니다.
+기존 HIL_TEST 보드 `002E00253235510837333439`는 2026-08-06에 STM_TEST의
+`STATUS`와 `SET MODE AUTO` 응답까지 확인했지만, 2026-08-27 차량 STM_B 교체
+보드로 전용했습니다. 현재 `/dev/hil_test`는 대체 보드가 배정될 때까지 생성되지
+않으며 HIL 전체 실행은 불가능합니다.
+
+2026-08-27 교체 보드 `002E00253235510837333439`에는 원본 `STM_B.elf`를
+verified flash하고 reset한 뒤, 3.28 V·Device ID `0x469`와 flash readback의
+`stm_b_node`, `/vehicle/command`, `/brake/status` 문자열을 확인했습니다. 이 결과는
+전송 이미지의 STM_B 역할을 증명하지만 micro-ROS Agent 연결이나 실차 액추에이터
+동작까지 검증한 것은 아닙니다.
 
 ## Agent 실행
 

@@ -129,11 +129,16 @@ readlink -f /dev/hil_test
 | 이름 | 역할 | 현재 기록된 ST-LINK VCP serial |
 |---|---|---|
 | `/dev/hil_a` | STM_A firmware | `0025002B3234511137333934` |
-| `/dev/hil_b` | STM_B firmware | `003D00433234511137333934` |
-| `/dev/hil_test` | STM_TEST firmware | `002E00253235510837333439` |
+| `/dev/hil_b` | STM_B firmware | 미할당 |
+| `/dev/hil_test` | STM_TEST firmware | 미할당 |
 
 이 매핑은 ST-LINK virtual COM port 매핑이다. SWD probe가 실제로 어느 MCU에
 연결되는지는 별개이므로 이 표만 보고 플래시하지 않는다.
+
+> **현재 HIL 중단:** 기존 HIL_TEST SN `002E00253235510837333439`는
+> 2026-08-27 차량 STM_B 교체 보드로 전용됐다. 새 STM_TEST 보드를 배정하고 udev
+> 규칙에 `/dev/hil_test`를 복구하기 전에는 이 runbook의 HIL 전체 실행을 시작하지
+> 않는다.
 
 ## 3. SSH와 X11 연결
 

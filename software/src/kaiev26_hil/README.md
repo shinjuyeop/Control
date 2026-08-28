@@ -204,6 +204,10 @@ STM_TEST 보드는 `firmware/udev/99-kaiev26-stm.rules`가 `/dev/hil_test`라는
 있다. 규칙을 설치하지 않은 호스트에서는 `ls -l /dev/serial/by-id/`로 path를 찾아
 그 값을 대신 넣는다. `ttyACM` 번호는 USB 재연결 때 바뀌므로 쓰지 않는다.
 
+현재는 기존 STM_TEST 보드가 차량 STM_B 교체용으로 전용돼 `/dev/hil_test`가
+미할당 상태다. 대체 STM_TEST 보드와 udev 규칙을 복구하기 전에는 아래 HIL launch를
+실행하지 않는다.
+
 HIL bridge, command generator와 GUI:
 
 ```bash
