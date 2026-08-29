@@ -5,8 +5,11 @@
 # STM_A: NUCLEO-G474RE ST-LINK virtual COM port, STM_A firmware
 ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="003D00433234511137333934", SYMLINK+="stm_a"
 
-# STM_B: NUCLEO-G474RE ST-LINK virtual COM port, STM_B firmware
-ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="004E003B3235510B37333439", SYMLINK+="stm_b"
+# RETIRED STM_B: MCU damaged/overheating, 2026-08-27. Do not power or reuse.
+# ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="004E003B3235510B37333439", SYMLINK+="stm_b"
+
+# STM_B: replacement NUCLEO-G474RE ST-LINK virtual COM port, STM_B firmware
+ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="002E00253235510837333439", SYMLINK+="stm_b"
 
 # KAIEV26 HIL bench boards
 
@@ -17,5 +20,5 @@ ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="048
 # UN-ASSIGNED
 # ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="003D00433234511137333934", SYMLINK+="hil_b"
 
-# HIL_TEST: NUCLEO-G474RE ST-LINK virtual COM port, STM_TEST firmware
-ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="002E00253235510837333439", SYMLINK+="hil_test"
+# HIL_TEST: UNASSIGNED; former board 002E00253235510837333439 is now vehicle STM_B
+# ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="REPLACE_WITH_NEW_HIL_TEST_SN", SYMLINK+="hil_test"

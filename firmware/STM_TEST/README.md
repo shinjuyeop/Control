@@ -29,7 +29,7 @@ brake servo PWM, Host의 KEYA steering CAN 경로를 실제 제어기 없이 시
 | 시스템 clock | HSI 16 MHz → PLL(M=4, N=85, R=2) → 170 MHz, FLASH latency 4 |
 | FLASH | origin `0x08000000`, 512 KB |
 | RAM | origin `0x20000000`, 128 KB |
-| 고정 장치 이름 | HIL bench `/dev/hil_test` |
+| 고정 장치 이름 | HIL bench `/dev/hil_test` (현재 대체 보드 미할당) |
 | CubeMX 프로젝트 | `STM_TEST.ioc` |
 
 STM_A·STM_B와 달리 실차에 올라가지 않는 bench 전용 펌웨어입니다.
@@ -102,7 +102,7 @@ ST-LINK virtual COM port와 연결된 핀이므로 morpho 자리에 다른 신�
 | `PA6` `CN10-13` | STM_B brake servo PWM 출력 | `PB3` `CN10-31` (`TIM2_CH2`) |
 | `PA11`/`PA12` `CN10-14`/`CN10-12` | CAN transceiver → STM_A `FDCAN1` | `PA11`/`PA12` `CN10-14`/`CN10-12` |
 | `PB12`/`PB13` `CN10-16`/`CN10-30` | CAN transceiver → Host USB-CAN adapter | 어댑터 CANH/CANL |
-| `PA2`/`PA3` `CN10-35`/`CN10-37` | ST-LINK virtual COM port → PC (`/dev/hil_test`) | — |
+| `PA2`/`PA3` `CN10-35`/`CN10-37` | ST-LINK virtual COM port → PC (`/dev/hil_test`, 보드 배정 후) | — |
 
 실제 연결 전에 GPIO output 간 충돌 여부, 3.3 V logic compatibility, DAC load, CAN
 termination과 NUCLEO virtual COM routing을 회로도 기준으로 다시 확인해야 합니다.
@@ -350,6 +350,7 @@ STM_TEST는 micro-ROS를 쓰지 않으므로 Agent를 붙이지 않습니다. PC
 terminal로 직접 명령을 보냅니다.
 
 ```bash
+# 대체 STM_TEST 보드를 udev에 배정한 뒤 실행
 screen /dev/hil_test 115200
 ```
 

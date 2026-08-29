@@ -18,6 +18,7 @@ Host brake를 조합해 최종 `BRAKE_REQUEST`를 만들고, 브레이크 서보
 - TIM2 PWM brake servo 직접 구동
 - `/brake/status` 발행
 - LCD에 속도·기어·mode·bus/phase 전류·brake·통신 fault 표시
+- **`/display/status`로 LCD SPI 에러/복구 카운터 발행** -> 예정
 
 ## 3. 보드와 MCU
 
@@ -159,6 +160,7 @@ Agent ping period는 500 ms, ping call timeout은 100 ms입니다. node 이름�
 | Topic | Type | 주기 | 설명 |
 |---|---|---:|---|
 | `/brake/status` | `kaiev26_msgs/msg/BrakeActuatorStatus` | 50 ms 및 reason 변경 시 | commanded brake, reason bits, command age |
+| **`/display/status` | `kaiev26_msgs/msg/DisplayStatus` | 200 ms 및 카운터 변경 시 | `lcd.c`/`display_app.c`의 `LCD_ERROR_COUNT`, `LCD_LAST_ERROR`, `DISPLAY_RECOVERY_COUNT`, `DISPLAY_LAST_RECOVERY_ERROR` 그대로 |** -> 예정
 
 ## 8. 동작 상세
 
@@ -230,7 +232,8 @@ gesture detector는 차량 명령을 차단하거나 추가 안전 조건을 적
 표시는 SPI write 성공만으로 완료합니다. 현재 실차 하네스의 SDO/MISO readback은
 부동값으로 정상 bit를 오인할 수 있어 주기적 `RDDPM` health gate에 사용하지 않습니다.
 실제 SPI HAL 실패나 DMA timeout을 감지해도 같은 LCD 전용 복구를 수행합니다. 복구
-실패 시 1초마다 다시 시도하며 brake 판단에는 관여하지 않습니다.
+실패 시 1초마다 다시 시도하며 brake 판단에는 관여하지 않습니다. 
+**이 실패/복구 카운터는 `/display/status`로 발행됩니다(§7 Publishers). ** -> 예정 
 
 ### 8.4 안전 상태 결정
 
@@ -293,6 +296,12 @@ cmake --build src/Control/firmware/STM_B/build/Release
 결과물은 `src/Control/firmware/STM_B/build/Release/STM_B.elf`입니다. 공통 Agent
 빌드는 [`../README.md`](../README.md)를 참고하십시오.
 
+> **주의:** `kaiev26_msgs`에 새 메시지(예: `DisplayStatus`)를 추가했다면 이 CMake
+> 빌드만으로는 부족합니다. `Middlewares/micro_ros/microros_include/`와
+> `libmicroros.a`는 `micro_ros_stm32cubemx_utils`의 library_generation으로 미리
+> 컴파일된 vendor 산출물이라, 새 메시지 타입을 링크하려면 그 스크립트로 정적
+> 라이브러리를 먼저 재생성해야 합니다.
+
 ## 10. 플래시 및 실행
 
 `STM32_Programmer_CLI`로 probe SN을 지정해 flash합니다. 절차 전체(빌드,
@@ -323,11 +332,16 @@ ros2 node info /stm_b_node
 ros2 topic info -v /vehicle/command
 ros2 topic echo /brake/status
 ```
+ros2 topic echo /display/status -> 추후 추가 (완료 시 위로 올릴 것)
 
 `brake_commanded`, `stop_reason_bits`, `actual_valid=false`와
 `command_age_ms`를 함께 확인하십시오. STM_A UART 단절은 `/brake/status`에 별도
 field가 없으므로 LCD 또는 debugger의 `VEHICLE_FRAME_VALID_FROM_A`로 확인해야
 합니다.
+
+`/display/status`의 `error_count`/`recovery_count`는 누적값이며 재부팅 전까지
+초기화되지 않습니다. `last_error`/`last_recovery_error`는 `kaiev26_msgs/msg/DisplayStatus`에
+정의된 `ERROR_*` 상수(=`lcd.c`의 `LCD_Error_t`)로 해석합니다. -> 추후 추가
 
 ## 12. 알려진 제한사항
 
