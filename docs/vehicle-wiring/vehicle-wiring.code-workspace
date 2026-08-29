@@ -7,6 +7,18 @@
   ],
   "settings": {
     "hediet.vscode-drawio.offline": true,
+    "hediet.vscode-drawio.defaultEdgeStyle": {
+      "edgeStyle": "orthogonalEdgeStyle",
+      "orthogonalLoop": "1",
+      "jettySize": "auto",
+      "rounded": "0",
+      "libavoidRouting": "1",
+      "jumpStyle": "arc",
+      "jumpSize": "8",
+      "endArrow": "none",
+      "startArrow": "none",
+      "html": "1"
+    },
     "hediet.vscode-drawio.customLibraries": [
       {
         "entryId": "vehicle-wiring",
