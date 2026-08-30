@@ -110,6 +110,17 @@ fresh한 header stamp를 가진 명령의 `brake_engage=false`만 기존 command
 조향 노드는 command brake는 해제하되 조향 명령은 거부하고 Disable 상태를
 유지합니다.
 
+## 좌우 바퀴 IMU 조향 계측
+
+좌우 EBIMU와 KEYA 피드백을 함께 기록할 때는 다음 계측 launch를 사용합니다.
+조향 actuator는 `can0`을 읽되 출력은 고정으로 비활성화합니다.
+
+```bash
+ros2 launch lateral_ctrl wheel_steering_measurement.launch.py
+```
+
+이 launch는 dual EBIMU 장치가 준비된 계측 세션 전용입니다.
+
 ## 빌드와 테스트
 
 `kaiev26_msgs`가 같은 ROS 작업공간에 있어야 합니다. 상위 저장소에서 Control과
