@@ -67,6 +67,15 @@ typedef struct
   uint8_t initialized;
 } GearResetGesture_t;
 
+typedef struct
+{
+  uint32_t event_ms;
+  int16_t previous_phase_da;
+  int8_t phase_sign;
+  uint8_t has_previous;
+  uint8_t pending;
+} PhaseDisturbanceMonitor_t;
+
 static void Dashboard_ReadState(DashboardState_t *state)
 {
   taskENTER_CRITICAL();
@@ -804,6 +813,67 @@ static bool GearResetGesture_Update(GearResetGesture_t *gesture,
   return false;
 }
 
+/* 모터 상전류 방향이 반전되거나(FWD<->REV 등) 급변하면 그 di/dt가 커패시티브
+ * 커플링으로 그라운드 레벨을 흔들어 ST7796S 상태가 깨지고 화면이 하얗게 뜬다.
+ * STM_B에는 그라운드를 직접 잴 방법이 없으므로 원인인 상전류를 근거로 삼는다.
+ * STM_A가 보내는 detail 프레임의 phase_current_da(0.1A 단위)에서 부호 반전이나
+ * 큰 프레임간 변화를 감지하면 교란 시각을 기록하고, 과도 구간이 가라앉도록
+ * DISPLAY_PHASE_SETTLE_MS 만큼 기다린 뒤 재초기화 시점에 true를 반환한다.
+ * 교란이 연달아 일어나면 마지막 이벤트 기준으로 대기 시간이 다시 시작된다. */
+static bool PhaseDisturbanceMonitor_Update(PhaseDisturbanceMonitor_t *monitor,
+                                           const DashboardState_t *state,
+                                           uint32_t now)
+{
+  const bool phase_valid =
+      (state->detail_valid != 0U) &&
+      ((state->detail.flags & BOARD_UART_DETAIL_PART1_VALID) != 0U);
+
+  if (!phase_valid)
+  {
+    /* 값이 잠깐 무효가 돼도 이미 예약된 재초기화(pending)는 유지한다. */
+    monitor->has_previous = 0U;
+  }
+  else
+  {
+    const int16_t phase = state->detail.phase_current_da;
+    int8_t sign = monitor->phase_sign;
+    if (phase >= DISPLAY_PHASE_REVERSAL_DA)
+    {
+      sign = 1;
+    }
+    else if (phase <= -DISPLAY_PHASE_REVERSAL_DA)
+    {
+      sign = -1;
+    }
+
+    if (monitor->has_previous != 0U)
+    {
+      const int32_t delta =
+          (int32_t)phase - (int32_t)monitor->previous_phase_da;
+      const int32_t magnitude = (delta < 0) ? -delta : delta;
+      const bool reversed = (sign != 0) && (monitor->phase_sign != 0) &&
+                            (sign != monitor->phase_sign);
+      if (reversed || (magnitude >= DISPLAY_PHASE_SWING_DA))
+      {
+        monitor->event_ms = now;
+        monitor->pending = 1U;
+      }
+    }
+
+    monitor->previous_phase_da = phase;
+    monitor->phase_sign = sign;
+    monitor->has_previous = 1U;
+  }
+
+  if ((monitor->pending != 0U) &&
+      ((uint32_t)(now - monitor->event_ms) >= DISPLAY_PHASE_SETTLE_MS))
+  {
+    monitor->pending = 0U;
+    return true;
+  }
+  return false;
+}
+
 static bool DetailPowerChanged(const DashboardState_t *current,
                                const DashboardState_t *previous)
 {
@@ -895,6 +965,7 @@ void Dashboard_Task(void *argument)
       LCD_ROTATION_LANDSCAPE};
   DashboardState_t displayed_state = {0};
   GearResetGesture_t gear_gesture = {0};
+  PhaseDisturbanceMonitor_t phase_monitor = {0};
   uint32_t last_update_ms = 0U;
   uint16_t refresh_y = 0U;
   uint8_t display_ready = 0U;
@@ -928,7 +999,8 @@ void Dashboard_Task(void *argument)
            LCD_LANDSCAPE_HEIGHT)
               ? LCD_COMPOSE_BAND_MAX_ROWS
               : (uint16_t)(LCD_LANDSCAPE_HEIGHT - refresh_y);
-      if (GearResetGesture_Update(&gear_gesture, &current, now))
+      if (PhaseDisturbanceMonitor_Update(&phase_monitor, &current, now) ||
+          GearResetGesture_Update(&gear_gesture, &current, now))
       {
         if (!Dashboard_Recover(&lcd, &displayed_state))
         {
