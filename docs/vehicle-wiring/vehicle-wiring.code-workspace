@@ -34,6 +34,11 @@
         "entryId": "vehicle-wiring",
         "libName": "End Components",
         "directory": "${workspaceFolder}/libraries/end-components"
+      },
+      {
+        "entryId": "vehicle-wiring",
+        "libName": "Interface Modules",
+        "directory": "${workspaceFolder}/libraries/interface-modules"
       }
     ]
   }
