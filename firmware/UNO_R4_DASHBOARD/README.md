@@ -21,12 +21,14 @@ snapshot에서 바뀐 문자와 badge만 갱신합니다.
 | Accepted IDs | `0x321` STATUS, `0x322` POWER, `0x323` THERMAL, `0x324` FAULT |
 | Protocol | version 1, little-endian, shared `uint8` alive |
 | Snapshot | 4개 ID와 version/alive가 모두 일치해야 완성 |
-| CAN LOST | valid dashboard frame이 300 ms 없음 |
+| CAN LOST | 새 alive의 완전한 4-frame snapshot이 300 ms 없음 |
+| CAN recovery | LOST 중 1초마다 `CAN.end()`/`CAN.begin()` 재시도 |
 | Serial Monitor | 115200 baud |
 
 `loop()`은 `CAN.available()`을 확인한 뒤 준비된 frame만 `CAN.read()`하므로 CAN 수신을
 기다리며 blocking하지 않습니다. ID, DLC 또는 version이 다른 frame은 무시합니다.
-완성 snapshot은 200 ms마다 출력하여 Serial 출력이 CAN 수신을 방해하지 않게 합니다.
+같은 alive가 반복되면 duplicate로 세고 link health를 갱신하지 않습니다. 완성 snapshot은
+200 ms마다 출력하여 Serial 출력이 CAN 수신을 방해하지 않게 합니다.
 정확한 byte layout과 source type/unit은
 [`../STM_B_V2/README.md`](../STM_B_V2/README.md#can-protocol-v1)가 canonical contract입니다.
 
@@ -78,8 +80,8 @@ arduino-cli compile --fqbn arduino:renesas_uno:minima UNO_R4_DASHBOARD
 Arduino compile은 sketch/API 호환성 증거이며 실제 MCP2551/CAN bus 수신 증거는
 아닙니다.
 
-2026-09-01 Arduino UNO R4 Boards core `1.6.0` clean compile 결과는 Flash 64,288
-byte(24%), global RAM 8,900 byte(27%)였습니다.
+2026-09-02 Arduino UNO R4 Boards core `1.6.0` recovery compile 결과는 Flash 64,656
+byte(24%), global RAM 8,920 byte(27%)였습니다.
 
 ## Bench smoke test
 
@@ -93,7 +95,7 @@ byte(24%), global RAM 8,900 byte(27%)였습니다.
    확인합니다.
 
 ```text
-DASH v1 alive=42 complete=101 ignored=0
+DASH v1 alive=42 complete=101 ignored=0 duplicate=0 reinit=0
   LINK vehicle=OK detail=OK part1=VALID part2=VALID
   MOTION mode=MANUAL gear=FWD speed=0.00 m/s display=0.0 km/h
   SAFETY estop=NO brake=NO
@@ -102,13 +104,15 @@ DASH v1 alive=42 complete=101 ignored=0
   THERMAL controller=34.2 C motor=42.1 C fault=0x000000
 ```
 
-8. CAN 연결을 300 ms 넘게 끊어 `CAN LOST`가 한 번 출력되는지 확인합니다.
-9. 다시 연결하여 `CAN RECOVERED`와 새 snapshot 출력이 재개되는지 확인합니다.
+8. CAN 연결을 300 ms 넘게 끊어 `CAN LOST`와 LCD의 `DASH CAN LOST`를 확인합니다.
+9. 1초 뒤 `CAN controller reinitialized`가 출력되고 `reinit`이 증가하는지 확인합니다.
+10. 다시 연결하여 새 alive의 완전 snapshot 뒤 `CAN RECOVERED`와 UI 갱신이
+    재개되는지 확인합니다.
 
-snapshot이 완성되지 않거나 `ignored`가 증가하면 bitrate, ID/DLC/version, termination,
-CANH/CANL polarity, 공통 GND와 transceiver 전원을 먼저 확인합니다. LINK의
-`vehicle/detail LOST`는 dashboard CAN 단절이 아니라 STM_A→STM_B UART source가 stale인
-상태입니다.
+snapshot이 완성되지 않거나 `ignored`/`duplicate`/`reinit`이 안정 상태에서 증가하면
+bitrate, ID/DLC/version, termination, CANH/CANL polarity, 공통 GND와 transceiver
+전원을 먼저 확인합니다. LINK의 `vehicle/detail LOST`는 dashboard CAN 단절이 아니라
+STM_A→STM_B UART source가 stale인 상태입니다.
 
 ## MSP4030/ST7796S LCD dashboard
 
@@ -152,7 +156,9 @@ panel 표시 증거는 아닙니다. STM_A가 연결되지 않은 bench에서는
 - HV BUS, SPEED, MOTOR, CTRL, FAULT 값: `--`
 - bottom bar: `STM A COMM LOST`, `VALUES STALE`
 
-Dashboard CAN까지 끊기면 bottom bar는 `DASH CAN LOST`, `VALUES STALE`로 바뀝니다.
+Dashboard CAN까지 끊기거나 alive가 진행하지 않으면 bottom bar는 `DASH CAN LOST`,
+`VALUES STALE`로 바뀝니다. LOST 상태에서 controller 재초기화가 성공해도 fresh complete
+snapshot이 들어오기 전에는 stale 화면을 유지합니다.
 [`dashboard_ui.cpp`](dashboard_ui.cpp)가 기존 STM_B `display_app.c`의 좌표, badge 색상,
 표시 우선순위와 5x7 font rendering을 담당합니다.
 

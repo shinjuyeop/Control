@@ -18,6 +18,9 @@ volatile uint32_t DASHBOARD_CAN_TX_FIFO_FULL_COUNT = 0U;
 volatile uint32_t DASHBOARD_CAN_START_ERROR_COUNT = 0U;
 volatile uint32_t DASHBOARD_CAN_LAST_HAL_STATUS = HAL_OK;
 volatile uint32_t DASHBOARD_CAN_SNAPSHOT_COUNT = 0U;
+volatile uint32_t DASHBOARD_CAN_BUS_OFF_COUNT = 0U;
+volatile uint32_t DASHBOARD_CAN_RECOVERY_COUNT = 0U;
+volatile uint32_t DASHBOARD_CAN_RECOVERY_ERROR_COUNT = 0U;
 volatile uint8_t DASHBOARD_CAN_ALIVE = 0U;
 
 static int16_t speed_to_centi_mps(float speed_mps)
@@ -134,6 +137,32 @@ static uint32_t pack_frame(uint8_t frame_index,
   }
 }
 
+static bool recover_fdcan(void)
+{
+  HAL_StatusTypeDef status = HAL_OK;
+  if (hfdcan1.State == HAL_FDCAN_STATE_BUSY)
+  {
+    status = HAL_FDCAN_Stop(&hfdcan1);
+  }
+  else if (hfdcan1.State != HAL_FDCAN_STATE_READY)
+  {
+    status = HAL_ERROR;
+  }
+
+  if (status == HAL_OK)
+  {
+    status = HAL_FDCAN_Start(&hfdcan1);
+  }
+  DASHBOARD_CAN_LAST_HAL_STATUS = (uint32_t)status;
+  if (status == HAL_OK)
+  {
+    DASHBOARD_CAN_RECOVERY_COUNT++;
+    return true;
+  }
+  DASHBOARD_CAN_RECOVERY_ERROR_COUNT++;
+  return false;
+}
+
 void DashboardCan_Task(void *argument)
 {
   FDCAN_TxHeaderTypeDef header = {
@@ -149,7 +178,10 @@ void DashboardCan_Task(void *argument)
   DashboardCanSnapshot_t snapshot = {0};
   TickType_t last_wake = xTaskGetTickCount();
   bool fdcan_started = false;
+  bool bus_off_latched = false;
   uint8_t slot = 0U;
+  uint32_t last_health_ms = HAL_GetTick();
+  uint32_t last_recovery_attempt_ms = HAL_GetTick();
   (void)argument;
 
   HAL_StatusTypeDef status = HAL_FDCAN_Start(&hfdcan1);
@@ -165,6 +197,43 @@ void DashboardCan_Task(void *argument)
 
   for (;;)
   {
+    const uint32_t now = HAL_GetTick();
+    if (fdcan_started &&
+        ((uint32_t)(now - last_health_ms) >=
+         DASHBOARD_CAN_HEALTH_PERIOD_MS))
+    {
+      FDCAN_ProtocolStatusTypeDef protocol_status;
+      last_health_ms = now;
+      if (HAL_FDCAN_GetProtocolStatus(
+              &hfdcan1, &protocol_status) != HAL_OK)
+      {
+        DASHBOARD_CAN_RECOVERY_ERROR_COUNT++;
+      }
+      else if (protocol_status.BusOff != 0U)
+      {
+        if (!bus_off_latched)
+        {
+          DASHBOARD_CAN_BUS_OFF_COUNT++;
+          bus_off_latched = true;
+        }
+        fdcan_started = false;
+        last_recovery_attempt_ms = now;
+      }
+      else
+      {
+        bus_off_latched = false;
+      }
+    }
+
+    if (!fdcan_started &&
+        ((uint32_t)(now - last_recovery_attempt_ms) >=
+         DASHBOARD_CAN_RECOVERY_BACKOFF_MS))
+    {
+      last_recovery_attempt_ms = now;
+      fdcan_started = recover_fdcan();
+      last_health_ms = now;
+    }
+
     if (slot == 0U)
     {
       const uint8_t alive = DASHBOARD_CAN_ALIVE++;

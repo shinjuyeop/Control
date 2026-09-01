@@ -20,6 +20,7 @@ static constexpr uint8_t FRAME_COMPLETE =
     FRAME_STATUS | FRAME_POWER | FRAME_THERMAL | FRAME_FAULT;
 
 static constexpr uint32_t CAN_LOST_TIMEOUT_MS = 300U;
+static constexpr uint32_t CAN_REINIT_PERIOD_MS = 1000U;
 static constexpr uint32_t SERIAL_PRINT_PERIOD_MS = 200U;
 
 struct SnapshotAssembly
@@ -33,11 +34,17 @@ struct SnapshotAssembly
 static SnapshotAssembly assembly = {};
 static DashboardValues latest_values = {};
 static uint32_t complete_snapshot_count = 0U;
+static uint32_t duplicate_snapshot_count = 0U;
 static uint32_t ignored_frame_count = 0U;
-static uint32_t last_dashboard_frame_ms = 0U;
+static uint32_t can_reinit_count = 0U;
+static uint32_t last_complete_snapshot_ms = 0U;
+static uint32_t last_can_reinit_ms = 0U;
 static uint32_t last_serial_print_ms = 0U;
+static uint8_t last_completed_alive = 0U;
+static bool has_completed_alive = false;
 static bool printed_snapshot = false;
 static bool can_lost = false;
+static bool can_controller_ready = false;
 
 static uint16_t get_u16_le(const uint8_t *source)
 {
@@ -127,7 +134,11 @@ static void print_snapshot(const DashboardValues &values, uint8_t alive)
   Serial.print(F(" complete="));
   Serial.print(complete_snapshot_count);
   Serial.print(F(" ignored="));
-  Serial.println(ignored_frame_count);
+  Serial.print(ignored_frame_count);
+  Serial.print(F(" duplicate="));
+  Serial.print(duplicate_snapshot_count);
+  Serial.print(F(" reinit="));
+  Serial.println(can_reinit_count);
 
   Serial.print(F("  LINK vehicle="));
   Serial.print(vehicle_valid ? F("OK") : F("LOST"));
@@ -283,27 +294,67 @@ static void accept_dashboard_frame(const CanMsg &message)
     assembly.received_frames |= FRAME_FAULT;
   }
 
-  const uint32_t now = millis();
-  last_dashboard_frame_ms = now;
-  if (can_lost)
-  {
-    Serial.println(F("CAN RECOVERED"));
-    can_lost = false;
-  }
-
   if (assembly.received_frames == FRAME_COMPLETE)
   {
-    complete_snapshot_count++;
-    latest_values = assembly.values;
-    DashboardUi::update(latest_values, false);
-    if (!printed_snapshot ||
-        ((uint32_t)(now - last_serial_print_ms) >= SERIAL_PRINT_PERIOD_MS))
+    const uint32_t now = millis();
+    if (!has_completed_alive || (assembly.alive != last_completed_alive))
     {
-      print_snapshot(assembly.values, assembly.alive);
-      last_serial_print_ms = now;
-      printed_snapshot = true;
+      has_completed_alive = true;
+      last_completed_alive = assembly.alive;
+      last_complete_snapshot_ms = now;
+      complete_snapshot_count++;
+      latest_values = assembly.values;
+      if (can_lost)
+      {
+        Serial.println(F("CAN RECOVERED"));
+        can_lost = false;
+      }
+      DashboardUi::update(latest_values, false);
+      if (!printed_snapshot ||
+          ((uint32_t)(now - last_serial_print_ms) >= SERIAL_PRINT_PERIOD_MS))
+      {
+        print_snapshot(assembly.values, assembly.alive);
+        last_serial_print_ms = now;
+        printed_snapshot = true;
+      }
+    }
+    else
+    {
+      duplicate_snapshot_count++;
     }
     assembly.active = false;
+  }
+}
+
+static void drain_can_receive_buffer()
+{
+  while (CAN.available() > 0U)
+  {
+    (void)CAN.read();
+  }
+}
+
+static void try_reinitialize_can()
+{
+  if (can_controller_ready)
+  {
+    drain_can_receive_buffer();
+  }
+  CAN.end();
+  can_controller_ready = false;
+
+  assembly.active = false;
+  if (CAN.begin(CanBitRate::BR_250k))
+  {
+    can_controller_ready = true;
+    has_completed_alive = false;
+    can_reinit_count++;
+    drain_can_receive_buffer();
+    Serial.println(F("CAN controller reinitialized; waiting for fresh alive"));
+  }
+  else
+  {
+    Serial.println(F("CAN controller reinitialize failed"));
   }
 }
 
@@ -312,38 +363,42 @@ void setup()
   Serial.begin(115200);
 
   St7796Lcd::begin();
-  const bool can_ready = CAN.begin(CanBitRate::BR_250k);
+  can_controller_ready = CAN.begin(CanBitRate::BR_250k);
   DashboardUi::begin(latest_values, true);
   Serial.println(F("LCD dashboard UI rendered"));
 
-  if (!can_ready)
+  if (!can_controller_ready)
   {
     Serial.println(F("CAN.begin(BR_250k) failed"));
-    for (;;)
-    {
-      delay(1000);
-    }
   }
 
-  last_dashboard_frame_ms = millis();
+  last_complete_snapshot_ms = millis();
+  last_can_reinit_ms = last_complete_snapshot_ms;
   Serial.println(F("UNO R4 dashboard CAN protocol v1 receiver ready"));
   Serial.println(F("Waiting for standard IDs 0x321-0x324, DLC=8"));
 }
 
 void loop()
 {
-  while (CAN.available() > 0U)
+  while (can_controller_ready && (CAN.available() > 0U))
   {
     accept_dashboard_frame(CAN.read());
   }
 
   const uint32_t now = millis();
   if (!can_lost &&
-      ((uint32_t)(now - last_dashboard_frame_ms) >= CAN_LOST_TIMEOUT_MS))
+      ((uint32_t)(now - last_complete_snapshot_ms) >= CAN_LOST_TIMEOUT_MS))
   {
-    Serial.println(F("CAN LOST: no valid dashboard frame for 300 ms"));
+    Serial.println(F("CAN LOST: no fresh complete snapshot for 300 ms"));
     can_lost = true;
     assembly.active = false;
     DashboardUi::update(latest_values, true);
+  }
+
+  if (can_lost &&
+      ((uint32_t)(now - last_can_reinit_ms) >= CAN_REINIT_PERIOD_MS))
+  {
+    last_can_reinit_ms = now;
+    try_reinitialize_can();
   }
 }

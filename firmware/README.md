@@ -9,10 +9,10 @@ STM_A는 종방향 모터와 차량 입력을 담당하고, STM_B는 물리 E-st
 ```text
 firmware/
 ├── STM_A/             # 차량 입력과 EZkontrol 구동 모터 제어
-├── STM_B/             # 물리 E-stop, 브레이크 서보와 표시 장치
-├── STM_B_V2/          # STM_B 보존형 CAN dashboard smoke sender
+├── STM_B/             # 기존 직접-SPI LCD STM_B 기준/rollback
+├── STM_B_V2/          # CAN dashboard를 사용하는 STM_B production candidate
 ├── STM_TEST/          # STM_A/B 입출력과 EZ/KEYA CAN을 대신하는 HIL emulator
-├── UNO_R4_DASHBOARD/  # UNO R4 Minima CAN smoke receiver
+├── UNO_R4_DASHBOARD/  # UNO R4 Minima CAN receiver와 MSP4030 UI
 ├── micro_ros_agent/   # vendored micro-ROS Agent
 ├── tools/             # micro-ROS 라이브러리 재생성 보조 스크립트
 └── udev/              # STM 보드 고정 장치 이름 규칙
@@ -25,12 +25,14 @@ firmware/
 [`UNO_R4_DASHBOARD/README.md`](UNO_R4_DASHBOARD/README.md),
 [`STM_TEST/README.md`](STM_TEST/README.md)에 정리되어 있습니다.
 
-STM_A와 STM_B는 실차에 올라가는 펌웨어이고, STM_TEST는 실차 없이 두 보드의
-입출력을 시험하기 위한 bench 전용 펌웨어입니다. STM_B_V2와 UNO_R4_DASHBOARD는
-STM_B의 LCD 연결을 CAN으로 분리하기 위한 smoke-test project입니다. STM_B_V2는
-STM_B와 같은 CMake/micro-ROS 구조를 사용하고, UNO_R4_DASHBOARD는 Arduino Renesas
-UNO core로 빌드합니다. STM_TEST는 LPUART1 ASCII protocol로 PC와 직접 통신하므로
-Agent가 필요 없습니다.
+STM_A와 기존 STM_B는 실차 기준 펌웨어이고, STM_TEST는 실차 없이 두 보드의 입출력을
+시험하기 위한 bench 전용 펌웨어입니다. STM_B_V2는 STM_B의 safety/UART/micro-ROS
+경로를 보존하면서 직접 SPI LCD만 CAN dashboard로 분리한 production candidate이며,
+UNO_R4_DASHBOARD가 CAN snapshot을 받아 MSP4030 UI를 렌더합니다. STM_B_V2는 STM_B와
+같은 CMake/micro-ROS 구조를 사용하고, UNO_R4_DASHBOARD는 Arduino Renesas UNO core로
+빌드합니다. STM_TEST는 LPUART1 ASCII protocol로 PC와 직접 통신하므로 Agent가 필요
+없습니다. V2 safety 검증과 정식 승격이 끝날 때까지 기존 STM_B는 rollback 기준으로
+보존합니다.
 
 ## 보드와 핀 표기
 
