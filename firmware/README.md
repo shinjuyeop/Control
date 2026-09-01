@@ -10,7 +10,9 @@ STM_A는 종방향 모터와 차량 입력을 담당하고, STM_B는 물리 E-st
 firmware/
 ├── STM_A/             # 차량 입력과 EZkontrol 구동 모터 제어
 ├── STM_B/             # 물리 E-stop, 브레이크 서보와 표시 장치
+├── STM_B_V2/          # STM_B 보존형 CAN dashboard smoke sender
 ├── STM_TEST/          # STM_A/B 입출력과 EZ/KEYA CAN을 대신하는 HIL emulator
+├── UNO_R4_DASHBOARD/  # UNO R4 Minima CAN smoke receiver
 ├── micro_ros_agent/   # vendored micro-ROS Agent
 ├── tools/             # micro-ROS 라이브러리 재생성 보조 스크립트
 └── udev/              # STM 보드 고정 장치 이름 규칙
@@ -19,12 +21,16 @@ firmware/
 보드 내부 Task와 Peripheral은
 [`STM_A/README.md`](STM_A/README.md),
 [`STM_B/README.md`](STM_B/README.md),
+[`STM_B_V2/README.md`](STM_B_V2/README.md),
+[`UNO_R4_DASHBOARD/README.md`](UNO_R4_DASHBOARD/README.md),
 [`STM_TEST/README.md`](STM_TEST/README.md)에 정리되어 있습니다.
 
 STM_A와 STM_B는 실차에 올라가는 펌웨어이고, STM_TEST는 실차 없이 두 보드의
-입출력을 시험하기 위한 bench 전용 펌웨어입니다. 세 보드 모두 같은 CMake preset
-구조를 쓰지만, micro-ROS를 사용하는 것은 STM_A와 STM_B뿐입니다. STM_TEST는
-LPUART1 ASCII protocol로 PC와 직접 통신하므로 Agent가 필요 없습니다.
+입출력을 시험하기 위한 bench 전용 펌웨어입니다. STM_B_V2와 UNO_R4_DASHBOARD는
+STM_B의 LCD 연결을 CAN으로 분리하기 위한 smoke-test project입니다. STM_B_V2는
+STM_B와 같은 CMake/micro-ROS 구조를 사용하고, UNO_R4_DASHBOARD는 Arduino Renesas
+UNO core로 빌드합니다. STM_TEST는 LPUART1 ASCII protocol로 PC와 직접 통신하므로
+Agent가 필요 없습니다.
 
 ## 보드와 핀 표기
 
@@ -88,9 +94,9 @@ STM_B는 EZkontrol CAN Part I/II를 수신하지 않습니다. STM_B가 표시�
 
 ## STM 빌드
 
-세 프로젝트의 CMake preset은 모두 GNU Arm Embedded `arm-none-eabi` toolchain을
+네 STM 프로젝트의 CMake preset은 모두 GNU Arm Embedded `arm-none-eabi` toolchain을
 사용합니다. STM_A preset은 `/opt/st/stm32cubeclt_1.20.0/`의 compiler 경로를
-명시하고, STM_B와 STM_TEST preset은 `PATH`에서 compiler를 찾습니다.
+명시하고, STM_B, STM_B_V2와 STM_TEST preset은 `PATH`에서 compiler를 찾습니다.
 
 아래 명령은 권장 워크스페이스인 `~/KAI_ws` 루트에서 실행합니다.
 
@@ -102,6 +108,9 @@ cmake --build src/Control/firmware/STM_A/build/Release
 
 cmake -S src/Control/firmware/STM_B --preset Release
 cmake --build src/Control/firmware/STM_B/build/Release
+
+cmake -S src/Control/firmware/STM_B_V2 --preset Release
+cmake --build src/Control/firmware/STM_B_V2/build/Release
 
 cmake -S src/Control/firmware/STM_TEST --preset Release
 cmake --build src/Control/firmware/STM_TEST/build/Release
@@ -118,7 +127,8 @@ STM_TEST는 host에서 도는 logic test를 함께 제공합니다. 절차는
 
 ## micro-ROS Agent 빌드
 
-`firmware/STM_A`와 `firmware/STM_B`에는 `COLCON_IGNORE`가 있으므로, 다음 명령은
+`firmware/STM_A`, `firmware/STM_B`와 `firmware/STM_B_V2`에는 `COLCON_IGNORE`가
+있으므로, 다음 명령은
 vendored Agent와 `micro_ros_msgs`만 ROS 패키지로 빌드합니다.
 
 아래 명령은 권장 워크스페이스인 `~/KAI_ws` 루트에서 실행합니다.
