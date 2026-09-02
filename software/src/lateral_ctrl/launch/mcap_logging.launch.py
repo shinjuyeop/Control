@@ -6,7 +6,7 @@
 #   ros2 launch lateral_ctrl mcap_logging.launch.py
 #   ros2 launch lateral_ctrl mcap_logging.launch.py session_name:=deadzone_sweep
 #
-#   출력: ~/Storage/ROS2_Workspace_offload/gazebo_sitl/vehicle_sysid/
+#   출력: ~/KAI_ws/records/
 #         <campaign_name>/<session_name>_<YYYYmmdd_HHMMSS>/rosbag/
 #   종료: Ctrl+C (rosbag2가 SIGINT를 받아 mcap을 정상 마감함)
 #   CSV 변환: ros2 run lateral_ctrl mcap_to_csv.py <bag 디렉토리>
@@ -20,12 +20,13 @@ from launch.substitutions import LaunchConfiguration
 
 
 ARTIFACT_ROOT = os.path.expanduser("~/Storage/ROS2_Workspace_offload")
-DEFAULT_OUTPUT_BASE_DIR = os.path.join(
-    ARTIFACT_ROOT, "gazebo_sitl", "vehicle_sysid"
-)
+DEFAULT_OUTPUT_BASE_DIR = os.path.expanduser("~/KAI_ws/records")
 
 SYSID_TOPICS = (
     "/planning/command",
+    "/planning/route_context",
+    "/planning/target_path",
+    "/planning/target_speed",
     "/vehicle/command",
     "/sysid/scinario",
     "/steering/status",
@@ -40,8 +41,8 @@ SYSID_TOPICS = (
     "/gnss/fix_velocity",
     "/gnss/status",
     "/gnss/status_verbose",
-    "/localization/kinematic_state",
-    "/localization/kinematic_state_gnss",
+    "/localization/odometry",
+    "/localization/odometry_gnss",
     "/left/imu/data",
     "/right/imu/data",
     "/tf",
@@ -108,7 +109,7 @@ def _make_record_process(context):
         LogInfo(
             msg=(
                 f"vehicle sysid run: {run_dir} "
-                f"(external storage available: {available_gib:.1f} GiB)"
+                f"(storage available: {available_gib:.1f} GiB)"
             )
         ),
         ExecuteProcess(
@@ -133,9 +134,9 @@ def generate_launch_description():
             description='bag 디렉토리 이름 접두어 (예: deadzone_sweep, bench)'),
         DeclareLaunchArgument(
             'output_base_dir', default_value=DEFAULT_OUTPUT_BASE_DIR,
-            description='ROS 외장 artifact root 아래 sysid 출력 경로'),
+            description='MCAP 출력 경로'),
         DeclareLaunchArgument(
-            'require_external_storage', default_value='true',
+            'require_external_storage', default_value='false',
             description=(
                 'true면 외장 artifact root와 별도 mount를 강제한다. '
                 '실차 제어컴의 고정 local records launch만 false를 사용한다.')),

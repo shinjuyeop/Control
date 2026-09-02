@@ -1,8 +1,9 @@
-"""실차 구동 스택 통합 launch.
+"""
+실차 구동 스택 통합 launch.
 
-구동에 필요한 것만 띄운다: STM_A/B micro-ROS Agent, command_governor,
-steering_actuator, vehicle_state_publisher, 그리고 상태 3종을 /diagnostics로
-요약하는 diagnostics_publisher(headless라 구동 스택 소속). 관찰
+구동에 필요한 것만 띄운다: 차량·INS 기준 정적 TF, STM_A/B micro-ROS Agent,
+command_governor, steering_actuator, vehicle_state_publisher, 그리고 상태 3종을
+/diagnostics로 요약하는 diagnostics_publisher(headless라 구동 스택 소속). 관찰
 GUI(foxglove_bridge, vehicle_dashboard)는 의도적으로 제외한다 — 모니터링은
 `ros2 launch visualization foxglove_bridge.launch.py`를 따로 띄운다.
 
@@ -53,6 +54,25 @@ def _agent(name, port, baud):
     )
 
 
+def _static_transform(name, parent, child, x, y, z):
+    return Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name=name,
+        output="screen",
+        arguments=[
+            "--x", str(x),
+            "--y", str(y),
+            "--z", str(z),
+            "--roll", "0",
+            "--pitch", "0",
+            "--yaw", "0",
+            "--frame-id", parent,
+            "--child-frame-id", child,
+        ],
+    )
+
+
 def generate_launch_description():
     governor_config = os.path.join(
         get_package_share_directory("command_governor"),
@@ -78,6 +98,22 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "can_interface", default_value="can0",
             description="KEYA SocketCAN 인터페이스.",
+        ),
+        # kaiev26_description/urdf/kaiev26.urdf.xacro의 실측 고정 변환.
+        _static_transform(
+            "base_footprint_to_base_link_tf",
+            "base_footprint", "base_link",
+            0.0, 0.0, 0.2408,
+        ),
+        _static_transform(
+            "base_link_to_gps_tf",
+            "base_link", "gps",
+            0.4261, 0.0, 1.2551,
+        ),
+        _static_transform(
+            "base_link_to_ebimu_body_tf",
+            "base_link", "ebimu_body_link",
+            0.4478, 0.0029, 1.0080,
         ),
         _agent("stm_a_agent", LaunchConfiguration("stm_a_port"), baud),
         _agent("stm_b_agent", LaunchConfiguration("stm_b_port"), baud),
