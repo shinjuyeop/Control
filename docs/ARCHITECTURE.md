@@ -91,14 +91,16 @@ STM_B는 물리 E-stop 입력과 브레이크 서보의 직접 구동을 담당�
 - TIM2 CH2 PWM으로 브레이크 서보를 움직입니다.
 - 최종 브레이크 요청을 STM_A에 UART로 전달합니다.
 - `/brake/status`로 command 상태와 정지 원인을 발행합니다.
-- STM_A의 mode·gear·speed와 EZkontrol drive detail을 UART로 받아, ROS와 독립적인
-  LCD dashboard에 표시합니다. 현재 write-only 실차 하네스에서는 SPI HAL 실패를
-  기준으로 LCD를 재초기화하며, 부동 SDO/MISO 값은 health gate로 사용하지 않습니다.
+- STM_A의 mode·gear·speed와 EZkontrol drive detail을 UART로 받아 250 kbit/s
+  Classical CAN dashboard snapshot으로 Arduino UNO R4에 전송합니다. Arduino가
+  MSP4030/ST7796S LCD를 렌더링하며 표시 경로는 ROS와 독립적입니다.
 
-브레이크 서보를 직접 구동하는 보드는 STM_B뿐입니다. STM_B의 FDCAN1은 초기화되지만
-현재 application 코드에서 CAN 송수신에 사용되지 않습니다.
+브레이크 서보를 직접 구동하는 보드는 STM_B뿐입니다. STM_B의 FDCAN1은 dashboard
+송신과 bus-off 복구에만 사용하며, Dashboard CAN/Arduino 장애는 E-stop, 브레이크 PWM,
+STM_A safety UART와 micro-ROS 상태를 변경하지 않습니다.
 
-구현 기준: `firmware/STM_B/Core/Src/app_freertos.c`
+구현 기준: `firmware/STM_B/Core/Src/app_freertos.c`,
+`firmware/STM_B/Core/Src/dashboard_can.c`
 
 ### 3.3 Host / Control PC
 

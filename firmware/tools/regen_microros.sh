@@ -1,5 +1,6 @@
 #!/bin/bash
-# STM_A와 STM_B의 micro-ROS 정적 라이브러리를 kaiev26_msgs 포함으로 재생성한다.
+# STM_A와 STM_B의 micro-ROS 정적 라이브러리를
+# kaiev26_msgs 포함으로 재생성한다.
 #
 # 필요 조건: docker, 네트워크. STM 보드는 필요 없다.
 # 실행 위치: Control 저장소 루트에서 `bash firmware/tools/regen_microros.sh`
