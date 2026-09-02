@@ -1,0 +1,33 @@
+/* globals.h — STM_B 전역변수 선언
+ * 위치: STM_B/Core/Inc/globals.h  (신규 생성)
+ */
+ #pragma once
+ #include <stdint.h>
+ #include "board_uart_protocol.h"
+ 
+ /* STM_A Vehicle Status UART 수신 상태 */
+ extern volatile float    CURRENT_SPEED_FROM_A;
+ extern volatile uint8_t  GEAR_FROM_A;
+ extern volatile uint8_t  MODE_FROM_A;
+ extern volatile uint8_t  VEHICLE_FRAME_VALID_FROM_A;
+ extern volatile uint32_t LAST_VEHICLE_RX_MS;
+ extern volatile uint32_t VEHICLE_RX_COUNT;
+ extern volatile uint32_t VEHICLE_CRC_ERROR_COUNT;
+ extern volatile uint32_t VEHICLE_SEQUENCE_ERROR_COUNT;
+
+ /* STM_A Drive Detail UART 수신 상태 */
+ extern volatile BoardUartDriveDetail_t DRIVE_DETAIL_FROM_A;
+ extern volatile uint8_t  DRIVE_DETAIL_FRAME_VALID_FROM_A;
+ extern volatile uint32_t LAST_DRIVE_DETAIL_RX_MS;
+ extern volatile uint32_t DRIVE_DETAIL_RX_COUNT;
+ extern volatile uint32_t DRIVE_DETAIL_CRC_ERROR_COUNT;
+ extern volatile uint32_t DRIVE_DETAIL_SEQUENCE_ERROR_COUNT;
+ 
+ /* 안전: EStop 태스크가 명령 브레이크와 물리 E-stop 입력을 통합한다. */
+ extern volatile uint8_t COMMAND_BRAKE_REQUEST; /* /vehicle/command.brake_engage */
+ extern volatile uint8_t ESTOP_DASHBOARD;       /* PC0, active-low */
+ extern volatile uint8_t ESTOP_SIDE;            /* PC1, active-low */
+ extern volatile uint8_t ESTOP_RF;              /* PB4, active-low */
+ extern volatile uint8_t ESTOP_STATUS;          /* 물리 E-stop 통합 */
+ extern volatile uint8_t BRAKE_REQUEST;         /* 브레이크 적용 요청 */
+ extern volatile uint8_t BRAKE_COMMAND_APPLIED; /* 적용 방향 PWM 명령 상태 */
