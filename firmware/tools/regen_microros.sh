@@ -1,13 +1,13 @@
 #!/bin/bash
-# STM_A, STM_B와 STM_B_V2의 micro-ROS 정적 라이브러리를
+# STM_A와 STM_B의 micro-ROS 정적 라이브러리를
 # kaiev26_msgs 포함으로 재생성한다.
 #
 # 필요 조건: docker, 네트워크. STM 보드는 필요 없다.
 # 실행 위치: Control 저장소 루트에서 `bash firmware/tools/regen_microros.sh`
 #
 # 결과물: firmware/STM_A/Middlewares/micro_ros/{libmicroros.a, microros_include/,
-# available_ros2_types, built_packages} 및 STM_B/STM_B_V2 동일 경로. 세 보드는
-# 같은 STM32G474(cortex-m4, fpv4-sp-d16, hard float)라서 산출물을 공유한다.
+# available_ros2_types, built_packages} 및 STM_B 동일 경로. 두 보드는 같은
+# STM32G474(cortex-m4, fpv4-sp-d16, hard float)라서 산출물을 공유한다.
 #
 # 재실행이 필요한 경우는 펌웨어가 사용하는 kaiev26_msgs 타입이 바뀔 때뿐이다.
 # 그때는 상위 저장소의 kaiev26_msgs 서브모듈을 새 커밋으로 올린 뒤 이 스크립트를
@@ -84,8 +84,8 @@ OUT="$WORK/project/micro_ros_stm32cubemx_utils/microros_static_library/libmicror
 test -f "$OUT/libmicroros.a"
 test -d "$OUT/microros_include/kaiev26_msgs"
 
-echo "[4/5] 세 보드의 Middlewares/micro_ros에 산출물을 반영한다"
-for BOARD in STM_A STM_B STM_B_V2; do
+echo "[4/5] 두 보드의 Middlewares/micro_ros에 산출물을 반영한다"
+for BOARD in STM_A STM_B; do
   DEST="$REPO_ROOT/firmware/$BOARD/Middlewares/micro_ros"
   rm -rf "$DEST/microros_include"
   cp -R "$OUT/microros_include" "$DEST/microros_include"

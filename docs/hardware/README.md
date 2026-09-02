@@ -2,6 +2,17 @@
 
 이 디렉터리에는 차량의 구동 및 조향 시스템에 사용되는 하드웨어의 제조사 매뉴얼과 통신 프로토콜 문서를 보관합니다.
 
+## Display Controller
+
+### Sitronix ST7796S Datasheet V1.0
+
+- 파일: [ST7796S-Sitronix (display).pdf](<./ST7796S-Sitronix (display).pdf>)
+- 320RGB × 480 dot, 262K color TFT controller/driver의 제조사 데이터시트
+- 3-line/4-line SPI timing과 interface selection, display command 및 register 정의 포함
+- 현재 QDtech MSP4030 모듈의 ST7796S command, pixel format, 방향 설정과 SPI timing 확인에 사용
+- 이 문서는 raw ST7796S IC 기준이므로 MSP4030 모듈의 5 V 입력, level shifter,
+  backlight와 header pinout 근거로 사용하지 않음
+
 ## Drive Motor Controller
 
 ### GoldenMotor EZkontrol User Manual

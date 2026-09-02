@@ -35,8 +35,9 @@ KEYA 조향 CAN의 데이터 계약과 주기·timeout을 정리하는 기준 �
 | 조향 노드 | Host·상태 통합 | ROS 2 | `/steering/status` | `SteeringActuatorStatus` | 20 ms | 상태 통합에서 별도 timeout 없음 | 조향 상태·진단 |
 | 상태 통합 | ROS 2 consumers | ROS 2 | `/vehicle/state` | `VehicleState` | 50 ms | 없음 | 세 status의 마지막 값 합성 |
 | STM_A | STM_B | USART1 | type `0x01` | mode, gear, speed | 20 ms | STM_B에서 200 ms | vehicle status |
-| STM_A | STM_B | USART1 | type `0x03` | 구동 bus·온도·fault·command 상태 | 100 ms | STM_B에서 300 ms | LCD drive detail |
+| STM_A | STM_B | USART1 | type `0x03` | 구동 bus·온도·fault·command 상태 | 100 ms | STM_B에서 300 ms | dashboard drive detail |
 | STM_B | STM_A | USART1 | type `0x02` | final brake request | 20 ms | STM_A에서 100 ms | safety status |
+| STM_B | UNO R4 | Classical CAN | `0x321`~`0x324` | status·power·thermal·fault snapshot | 50 ms | UNO에서 300 ms | 표시 전용 |
 | STM_A | EZkontrol | FDCAN1 | `0x0C01EFD0` | handshake ACK 또는 command | 50 ms command | 명시적 TX timeout 없음 | AUTO speed / MANUAL torque |
 | EZkontrol | STM_A | FDCAN1 | `0x1801D0EF`, `0x1802D0EF` | Part I/II status | 외부 장치 설정 | 200 ms validity | 진단 validity에만 사용 |
 | 조향 노드 | KEYA | SocketCAN | `0x06000001` | enable/disable/position/query | position 20 ms | 500 ms | node ID 기본값 1 |
@@ -145,7 +146,7 @@ CRC가 유효하면 payload는 반영합니다.
 | 7 | speed MSB | `int16` 일부 | `0.01 m/s` | 범위 clamp 후 전송 |
 | 8 | CRC-8 | `uint8` | - | byte 2..7 |
 
-STM_B timeout은 `VEHICLE_FRAME_VALID_FROM_A`를 false로 만들어 LCD의 `A-B LOST`
+STM_B timeout은 `VEHICLE_FRAME_VALID_FROM_A`를 false로 만들어 Arduino LCD의 `A-B LOST`
 badge와 `STM A COMM LOST` 배너를 표시하지만, 현재 `BRAKE_REQUEST` 계산에는 직접
 사용되지 않습니다.
 
@@ -158,7 +159,7 @@ badge와 `STM A COMM LOST` 배너를 표시하지만, 현재 `BRAKE_REQUEST` 계
 - 수신 timeout: 300 ms (`DRIVE_DETAIL_COMM_TIMEOUT_MS`)
 - frame length: 22 bytes
 - payload length: 16 bytes
-- 용도: ROS 없이 STM_A가 이미 보유한 EZkontrol·command 상태를 STM_B LCD에 전달
+- 용도: ROS 없이 STM_A가 이미 보유한 EZkontrol·command 상태를 STM_B dashboard로 전달
 
 | Byte | Field | Type | Unit | 설명 |
 |---:|---|---|---|---|
@@ -181,7 +182,7 @@ badge와 `STM A COMM LOST` 배너를 표시하지만, 현재 `BRAKE_REQUEST` 계
 | 21 | CRC-8 | `uint8` | - | byte 2..20 |
 
 `0x03` sequence는 `0x01`과 별도로 증가합니다. detail timeout이나 Part validity
-저하는 LCD의 해당 값을 `--`로 만들 뿐 `VEHICLE_FRAME_VALID_FROM_A`나 brake 판단을
+저하는 dashboard의 해당 값을 `--`로 만들 뿐 `VEHICLE_FRAME_VALID_FROM_A`나 brake 판단을
 바꾸지 않습니다. 따라서 새 STM_B와 구형 STM_A, 구형 STM_B와 새 STM_A 조합에서도
 기존 mode·gear·speed·safety frame은 계속 동작합니다.
 
@@ -246,7 +247,7 @@ STM_A Control task가 handshake 이후 nominal 50 ms마다 송신합니다.
 
 | Byte | Field | Encoding | 설명 |
 |---:|---|---|---|
-| 0..1 | phase-current target | `(A + 3200) / 0.1`, little-endian | AUTO·MANUAL 한계 300 A |
+| 0..1 | phase-current target | `(A + 3200) / 0.1`, little-endian | AUTO·MANUAL 한계 480 A |
 | 2..3 | motor RPM target/limit | `rpm + 32000`, little-endian | 전진 +4500, 후진 -1500 rpm clamp |
 | 4 bit 0 | RUNNING | `1=RUN`, `0=HALTED` | 정지 조건에서 0 |
 | 4 bit 1 | control mode | `1=speed`, `0=torque` | AUTO speed, MANUAL torque |
@@ -285,7 +286,20 @@ Part I과 Part II는 마지막 수신 후 200 ms 미만일 때 각각 valid입�
 - `firmware/STM_A/Core/Src/fdcan.c`
 - `firmware/STM_A/Core/Src/app_freertos.c`
 
-## 7. Steering Motor CAN
+## 7. STM_B → UNO R4 Dashboard CAN
+
+STM_B는 250 kbit/s Classical CAN standard frame 네 개로 표시 snapshot을 전송합니다.
+각 frame은 protocol version과 같은 `alive` 값을 포함하며, UNO는 `0x321` STATUS,
+`0x322` POWER, `0x323` THERMAL, `0x324` FAULT가 모두 모였을 때만 새 snapshot을
+적용합니다. snapshot 주기는 50 ms이고 fresh complete snapshot이 300 ms 없으면
+UNO가 `CAN LOST`를 표시합니다.
+
+Dashboard CAN과 Arduino는 표시 전용입니다. CAN enqueue 실패, bus-off, Arduino reset과
+LCD fault는 STM_B의 E-stop, brake PWM, STM_A safety UART와 micro-ROS 판단에 입력되지
+않습니다. byte layout, scale, signed type과 recovery 절차의 canonical contract는
+[`../firmware/STM_B/README.md`](../firmware/STM_B/README.md#85-dashboard-snapshot과-wire-단위)입니다.
+
+## 8. Steering Motor CAN
 
 > 이 절의 software 관련 내용은 현재 브랜치 구현을 기준으로 한 스냅샷입니다.
 > software 구조와 통합 실행 방식은 아직 정리 중이며 이후 변경될 수 있습니다.
@@ -361,7 +375,7 @@ bus voltage·driver temperature는 500 ms 간격으로 번갈아 조회합니다
 - `software/src/lateral_ctrl/src/steering_actuator_node.cpp`
 - `software/src/lateral_ctrl/config/steering_actuator.yaml`
 
-## 8. Timeout and Freshness
+## 9. Timeout and Freshness
 
 | 항목 | 값 | 근거 상수/설정 | 구현 위치 |
 |---|---:|---|---|
@@ -373,6 +387,9 @@ bus voltage·driver temperature는 500 ms 간격으로 번갈아 조회합니다
 | STM_A→STM_B UART timeout | 200 ms | `VEHICLE_COMM_TIMEOUT_MS` | STM_B `app_freertos.c` |
 | Drive status | 50 ms | `DRIVE_STATUS_PERIOD_MS` | STM_A `app_freertos.c` |
 | Brake status | 50 ms + 변경 시 | `BRAKE_STATUS_PERIOD_MS` | STM_B `app_freertos.c` |
+| Dashboard CAN snapshot | 50 ms | `DASHBOARD_CAN_SLOT_PERIOD_MS × DASHBOARD_CAN_SLOTS_PER_SNAPSHOT` | STM_B `dashboard_can.c` |
+| Arduino Dashboard CAN lost | 300 ms | `CAN_LOST_TIMEOUT_MS` | `UNO_R4_DASHBOARD.ino` |
+| Dashboard CAN recovery backoff | 1000 ms | `DASHBOARD_CAN_RECOVERY_BACKOFF_MS`, `CAN_REINIT_PERIOD_MS` | STM_B `dashboard_can.c`, UNO firmware |
 | EZkontrol status validity | 200 ms | `MOTOR_FEEDBACK_TIMEOUT_MS` | STM_A `app_freertos.c` |
 | STM Agent ping | 500 ms, call timeout 100 ms | `AGENT_PING_*` | 두 STM `app_freertos.c` |
 | 조향 control/status | 20 ms | `control_period_ms` | `steering_actuator.yaml` |
@@ -386,19 +403,21 @@ bus voltage·driver temperature는 500 ms 간격으로 번갈아 조회합니다
 경계 비교는 구현마다 다릅니다. STM Host와 UART timeout은 `>=`, EZkontrol valid는
 `age < 200 ms`, 조향 timeout은 `age > 설정값`을 사용합니다.
 
-## 9. 관련 구현 파일
+## 10. 관련 구현 파일
 
 - STM_A: `firmware/STM_A/Core/Src/app_freertos.c`
 - STM_A CAN: `firmware/STM_A/Core/Src/fdcan.c`
 - STM_A serial: `firmware/STM_A/Core/Src/usart.c`
 - STM_B: `firmware/STM_B/Core/Src/app_freertos.c`
 - STM_B PWM: `firmware/STM_B/Core/Src/tim.c`
+- STM_B dashboard CAN: `firmware/STM_B/Core/Src/dashboard_can.c`, `dashboard_can_protocol.c`
+- Arduino dashboard: `firmware/UNO_R4_DASHBOARD/`
 - 조향: `software/src/lateral_ctrl/src/`
 - 명령 거버너: `software/src/command_governor/src/`
 - 상태 통합: `software/src/vehicle_state_publisher/`
 - 메시지 원본: 별도 workspace repository `kaiev26_msgs/msg/`
 
-## 10. 확인 필요 항목
+## 11. 확인 필요 항목
 
 - Production `/planning/command` publisher (Planning)와 발행률.
   `/vehicle/command` 발행자는 `command_governor`로 확정됨

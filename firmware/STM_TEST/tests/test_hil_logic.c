@@ -8,9 +8,9 @@
 static void test_pedal_conversion(void)
 {
   assert(HilLogic_PedalPercentToDac(0.0f) == 560u);
-  assert(HilLogic_PedalPercentToDac(100.0f) == 3100u);
+  assert(HilLogic_PedalPercentToDac(100.0f) == 3000u);
   assert(HilLogic_PedalPercentToDac(-1.0f) == 560u);
-  assert(HilLogic_PedalPercentToDac(101.0f) == 3100u);
+  assert(HilLogic_PedalPercentToDac(101.0f) == 3000u);
 }
 
 static void test_brake_classification(void)
@@ -86,9 +86,9 @@ static void test_ez_command_decode(void)
   assert(fabsf(HilLogic_EZPlantTargetRpm(&command)) < 0.001f);
 
   /* Torque control scales the RPM limit by the commanded phase current. */
-  encode_ez_command(data, 4500, 175.0f, true, false);
+  encode_ez_command(data, 4500, 240.0f, true, false);
   command = HilLogic_EZDecodeCommand(data);
-  assert(fabsf(command.phase_current_a - 175.0f) < 0.05f);
+  assert(fabsf(command.phase_current_a - 240.0f) < 0.05f);
   assert(fabsf(HilLogic_EZPlantTargetRpm(&command) - 2250.0f) < 1.0f);
 
   /* Zero pedal is zero current, so the RPM limit alone must not drive. */
@@ -97,7 +97,7 @@ static void test_ez_command_decode(void)
   assert(fabsf(HilLogic_EZPlantTargetRpm(&command)) < 1.0f);
 
   /* Reverse uses a negative RPM limit with positive-magnitude current. */
-  encode_ez_command(data, -1500, 175.0f, true, false);
+  encode_ez_command(data, -1500, 240.0f, true, false);
   command = HilLogic_EZDecodeCommand(data);
   assert(HilLogic_EZPlantTargetRpm(&command) < -700.0f);
 }

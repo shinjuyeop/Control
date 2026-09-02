@@ -58,7 +58,8 @@ Control/
 | 구성요소 | 현재 역할 |
 |---|---|
 | `firmware/STM_A` | `/vehicle/command`의 속도·브레이크 명령, 물리 입력, EZkontrol CAN, `/drive/status` |
-| `firmware/STM_B` | `/vehicle/command`의 브레이크 명령, 물리 E-stop, 브레이크 PWM, `/brake/status` |
+| `firmware/STM_B` | `/vehicle/command`의 브레이크 명령, 물리 E-stop, 브레이크 PWM, `/brake/status`, CAN dashboard 송신 |
+| `firmware/UNO_R4_DASHBOARD` | STM_B dashboard CAN 수신과 MSP4030/ST7796S UI 렌더링 |
 | `firmware/STM_TEST` | mode·gear·E-stop·pedal 주입, brake PWM 관측, EZ/KEYA CAN emulator와 Plant |
 | `firmware/micro_ros_agent` | vendored micro-ROS Agent. 각 STM의 serial transport를 ROS 2 graph에 연결 |
 
