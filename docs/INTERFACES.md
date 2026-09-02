@@ -247,7 +247,7 @@ STM_A Control task가 handshake 이후 nominal 50 ms마다 송신합니다.
 
 | Byte | Field | Encoding | 설명 |
 |---:|---|---|---|
-| 0..1 | phase-current target | `(A + 3200) / 0.1`, little-endian | AUTO·MANUAL 한계 300 A |
+| 0..1 | phase-current target | `(A + 3200) / 0.1`, little-endian | AUTO·MANUAL 한계 480 A |
 | 2..3 | motor RPM target/limit | `rpm + 32000`, little-endian | 전진 +4500, 후진 -1500 rpm clamp |
 | 4 bit 0 | RUNNING | `1=RUN`, `0=HALTED` | 정지 조건에서 0 |
 | 4 bit 1 | control mode | `1=speed`, `0=torque` | AUTO speed, MANUAL torque |

@@ -47,7 +47,7 @@ STM_A는 STM32G474 기반의 차량 입력·종방향 구동 보드입니다. �
 
 | MCU 핀 | 보드 커넥터 | 신호 이름 | 방향 | 전기적 설정 | 의미 |
 |---|---|---|---|---|---|
-| `PA0` | `CN7-28` (A0) | 가속 페달 (`ADC1_IN1`) | 입력 (analog) | 12-bit, single-ended, software trigger | raw `560`=0%, raw `3100`=100% |
+| `PA0` | `CN7-28` (A0) | 가속 페달 (`ADC1_IN1`) | 입력 (analog) | 12-bit, single-ended, software trigger | raw `560`=0%, raw `3000`=100% |
 | `PA8` | `CN10-23` (D7) | `SW_MODE` | 입력 (digital) | internal pull-up | LOW=AUTO(`1`), HIGH=MANUAL(`0`) |
 | `PA9` | `CN10-21` (D8) | `SW_GEAR` | 입력 (digital) | internal pull-up | LOW=REVERSE(`1`), HIGH=FORWARD(`0`) |
 
@@ -158,8 +158,8 @@ command를 50 ms nominal 주기로 보냅니다.
 - status Part II: `0x1802D0EF`
 - 전진 motor RPM 한계: `4500`
 - 후진 motor RPM 한계: `-1500`
-- AUTO phase-current 한계: `300 A`
-- MANUAL torque-current 한계: `300 A`
+- AUTO phase-current 한계: `480 A`
+- MANUAL torque-current 한계: `480 A`
 
 byte layout, 물리 단위와 handshake frame은
 [`../../docs/INTERFACES.md`](../../docs/INTERFACES.md#6-ezkontrol-can)를
@@ -185,7 +185,7 @@ frame은 SOF `AA 55`, type, payload length, sequence, payload, CRC-8로 구성�
 가속 페달 (`PA0`):
 
 - ADC raw 8회 평균
-- raw clamp: `560`~`3100`
+- raw clamp: `560`~`3000`
 - 선형 변환: `0`~`100%`
 - 계산 결과 2% 미만은 0%
 

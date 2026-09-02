@@ -72,10 +72,10 @@ enum {
 #define RPM_REV_MAX   1500
 #define AUTO_SPEED_MAX_MPS \
   ((float)RPM_FWD_MAX * 3.14159f * TIRE_DIAM_M / (60.0f * GEAR_RATIO))
-#define AUTO_PHASE_LIMIT_A 300.0f
-#define MANUAL_TORQUE_LIMIT_A 300.0f
+#define AUTO_PHASE_LIMIT_A 480.0f
+#define MANUAL_TORQUE_LIMIT_A 480.0f
 #define PEDAL_ADC_MIN 560
-#define PEDAL_ADC_MAX 3100
+#define PEDAL_ADC_MAX 3000
 #define UART_RX_DMA_SIZE 64u
 #define UART_RX_RING_SIZE 128u
 #define STM_B_COMM_TIMEOUT_MS 100u
@@ -396,7 +396,7 @@ void StartControl(void *argument)
       }
       else
       {
-        /* 수동주행: 페달 0~100%를 설정 최대 상전류(350A)의 절반까지 매핑한다. */
+        /* 수동주행: 페달 0~100%를 상전류 0~480 A로 선형 매핑한다. */
         float torque_current = ((float)PEDAL / 100.0f) * MANUAL_TORQUE_LIMIT_A;
         int16_t rpm_limit = RPM_FWD_MAX;
         if (GEAR == 1u)
