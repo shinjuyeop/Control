@@ -19,7 +19,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "board_uart_protocol.h"
-#include "display_app.h"
+#include "dashboard_can.h"
 #include "globals.h"
 #include "usart.h"
 #include "tim.h"
@@ -492,7 +492,7 @@ void StartuROS(void *argument)
 void StartDisplay(void *argument)
 {
   /* USER CODE BEGIN StartDisplay */
-  Dashboard_Task(argument);
+  DashboardCan_Task(argument);
   /* USER CODE END StartDisplay */
 }
 

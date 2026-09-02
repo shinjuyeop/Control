@@ -1,6 +1,6 @@
 # UNO_R4_DASHBOARD
 
-Arduino UNO R4 Minima의 내부 CAN controller로 STM_B_V2 dashboard protocol v1을 받아
+Arduino UNO R4 Minima의 내부 CAN controller로 STM_B dashboard protocol v1을 받아
 Serial Monitor에 출력하는 firmware입니다. MCP2515는 사용하지 않습니다. RTOS 없이
 Arduino `setup()`/`loop()` 구조와 `Arduino_CAN` API를 사용합니다.
 
@@ -30,7 +30,7 @@ snapshot에서 바뀐 문자와 badge만 갱신합니다.
 같은 alive가 반복되면 duplicate로 세고 link health를 갱신하지 않습니다. 완성 snapshot은
 200 ms마다 출력하여 Serial 출력이 CAN 수신을 방해하지 않게 합니다.
 정확한 byte layout과 source type/unit은
-[`../STM_B_V2/README.md`](../STM_B_V2/README.md#can-protocol-v1)가 canonical contract입니다.
+[`../STM_B/README.md`](../STM_B/README.md#85-dashboard-snapshot과-wire-단위)가 canonical contract입니다.
 
 ## UNO R4 Minima ↔ MCP2551 배선
 
@@ -52,7 +52,7 @@ MCP2551 VDD 가까이에 100 nF decoupling capacitor를 둡니다. D4/D5를 CANH
 
 - SN65HVD230 `CANH` ↔ MCP2551 `CANH`
 - SN65HVD230 `CANL` ↔ MCP2551 `CANL`
-- STM_B_V2 GND ↔ UNO R4/MCP2551 GND
+- STM_B GND ↔ UNO R4/MCP2551 GND
 - CANH/CANL은 twisted pair 사용
 - cable 양 끝에만 CANH-CANL 120 ohm termination
 - 두 node만 있는 bench라면 각 transceiver 끝에 120 ohm 하나씩 사용
@@ -85,12 +85,12 @@ byte(24%), global RAM 8,920 byte(27%)였습니다.
 
 ## Bench smoke test
 
-1. 모든 전원을 끄고 STM_B_V2/SN65HVD230과 UNO R4/MCP2551을 위 표대로 배선합니다.
+1. 모든 전원을 끄고 STM_B/SN65HVD230과 UNO R4/MCP2551을 위 표대로 배선합니다.
 2. CANH-CANL, 공통 GND, 양 끝 120 ohm termination을 확인합니다.
 3. 전원 OFF에서 CANH-CANL 저항이 약 60 ohm인지 확인합니다.
 4. 이 sketch를 UNO R4 Minima에 업로드합니다.
 5. Serial Monitor를 115200 baud로 엽니다.
-6. STM_B_V2와 두 transceiver를 켭니다.
+6. STM_B와 두 transceiver를 켭니다.
 7. 다음 형태로 모든 dashboard 값이 출력되고 `complete`가 증가하며 `ignored=0`인지
    확인합니다.
 
@@ -164,6 +164,7 @@ snapshot이 들어오기 전에는 stale 화면을 유지합니다.
 
 ## References
 
+- [Sitronix ST7796S Datasheet V1.0](<../../docs/hardware/ST7796S-Sitronix (display).pdf>)
 - [Arduino UNO R4 Minima documentation](https://docs.arduino.cc/hardware/uno-r4-minima)
 - [Arduino Renesas Minima CAN pin mapping](https://github.com/arduino/ArduinoCore-renesas/blob/main/variants/MINIMA/pins_arduino.h)
 - [Arduino_CAN non-blocking receive example](https://github.com/arduino/ArduinoCore-renesas/blob/main/libraries/Arduino_CAN/examples/CANRead/CANRead.ino)

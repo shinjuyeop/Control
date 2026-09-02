@@ -69,9 +69,9 @@ list(FILTER MICROROS_EXTRA_SOURCES EXCLUDE REGEX "it_transport\\.c$")
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${MICROROS_EXTRA_SOURCES}
     ../common/board_uart_protocol.c
-    Core/Src/display_app.c
+    Core/Src/dashboard_can.c
+    Core/Src/dashboard_can_protocol.c
     Core/Src/globals.c
-    Core/Src/lcd.c
 )
 
 # Add include paths

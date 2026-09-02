@@ -9,8 +9,7 @@ STM_A는 종방향 모터와 차량 입력을 담당하고, STM_B는 물리 E-st
 ```text
 firmware/
 ├── STM_A/             # 차량 입력과 EZkontrol 구동 모터 제어
-├── STM_B/             # 기존 직접-SPI LCD STM_B 기준/rollback
-├── STM_B_V2/          # CAN dashboard를 사용하는 STM_B production candidate
+├── STM_B/             # E-stop·brake와 CAN dashboard를 담당하는 production STM_B
 ├── STM_TEST/          # STM_A/B 입출력과 EZ/KEYA CAN을 대신하는 HIL emulator
 ├── UNO_R4_DASHBOARD/  # UNO R4 Minima CAN receiver와 MSP4030 UI
 ├── micro_ros_agent/   # vendored micro-ROS Agent
@@ -21,18 +20,17 @@ firmware/
 보드 내부 Task와 Peripheral은
 [`STM_A/README.md`](STM_A/README.md),
 [`STM_B/README.md`](STM_B/README.md),
-[`STM_B_V2/README.md`](STM_B_V2/README.md),
 [`UNO_R4_DASHBOARD/README.md`](UNO_R4_DASHBOARD/README.md),
 [`STM_TEST/README.md`](STM_TEST/README.md)에 정리되어 있습니다.
 
-STM_A와 기존 STM_B는 실차 기준 펌웨어이고, STM_TEST는 실차 없이 두 보드의 입출력을
-시험하기 위한 bench 전용 펌웨어입니다. STM_B_V2는 STM_B의 safety/UART/micro-ROS
-경로를 보존하면서 직접 SPI LCD만 CAN dashboard로 분리한 production candidate이며,
-UNO_R4_DASHBOARD가 CAN snapshot을 받아 MSP4030 UI를 렌더합니다. STM_B_V2는 STM_B와
-같은 CMake/micro-ROS 구조를 사용하고, UNO_R4_DASHBOARD는 Arduino Renesas UNO core로
-빌드합니다. STM_TEST는 LPUART1 ASCII protocol로 PC와 직접 통신하므로 Agent가 필요
-없습니다. V2 safety 검증과 정식 승격이 끝날 때까지 기존 STM_B는 rollback 기준으로
-보존합니다.
+STM_A와 STM_B는 실차 기준 펌웨어이고, STM_TEST는 실차 없이 두 보드의 입출력을
+시험하기 위한 bench 전용 펌웨어입니다. STM_B는 safety/UART/micro-ROS 경로와
+별개인 저우선순위 CAN dashboard task로 표시 snapshot을 송신하고,
+UNO_R4_DASHBOARD가 이를 받아 MSP4030 UI를 렌더합니다. UNO_R4_DASHBOARD는 Arduino
+Renesas UNO core로 빌드합니다. STM_TEST는 LPUART1 ASCII protocol로 PC와 직접
+통신하므로 Agent가 필요 없습니다. 이전 직접-SPI LCD STM_B는
+[`../archive/firmware/STM_B_DIRECT_LCD`](../archive/firmware/STM_B_DIRECT_LCD)에
+보관합니다.
 
 ## 보드와 핀 표기
 
@@ -96,9 +94,9 @@ STM_B는 EZkontrol CAN Part I/II를 수신하지 않습니다. STM_B가 표시�
 
 ## STM 빌드
 
-네 STM 프로젝트의 CMake preset은 모두 GNU Arm Embedded `arm-none-eabi` toolchain을
+세 STM 프로젝트의 CMake preset은 모두 GNU Arm Embedded `arm-none-eabi` toolchain을
 사용합니다. STM_A preset은 `/opt/st/stm32cubeclt_1.20.0/`의 compiler 경로를
-명시하고, STM_B, STM_B_V2와 STM_TEST preset은 `PATH`에서 compiler를 찾습니다.
+명시하고, STM_B와 STM_TEST preset은 `PATH`에서 compiler를 찾습니다.
 
 아래 명령은 권장 워크스페이스인 `~/KAI_ws` 루트에서 실행합니다.
 
@@ -110,9 +108,6 @@ cmake --build src/Control/firmware/STM_A/build/Release
 
 cmake -S src/Control/firmware/STM_B --preset Release
 cmake --build src/Control/firmware/STM_B/build/Release
-
-cmake -S src/Control/firmware/STM_B_V2 --preset Release
-cmake --build src/Control/firmware/STM_B_V2/build/Release
 
 cmake -S src/Control/firmware/STM_TEST --preset Release
 cmake --build src/Control/firmware/STM_TEST/build/Release
@@ -129,8 +124,7 @@ STM_TEST는 host에서 도는 logic test를 함께 제공합니다. 절차는
 
 ## micro-ROS Agent 빌드
 
-`firmware/STM_A`, `firmware/STM_B`와 `firmware/STM_B_V2`에는 `COLCON_IGNORE`가
-있으므로, 다음 명령은
+`firmware/STM_A`와 `firmware/STM_B`에는 `COLCON_IGNORE`가 있으므로, 다음 명령은
 vendored Agent와 `micro_ros_msgs`만 ROS 패키지로 빌드합니다.
 
 아래 명령은 권장 워크스페이스인 `~/KAI_ws` 루트에서 실행합니다.
@@ -195,11 +189,12 @@ readlink -f /dev/hil_a
 보드로 전용했습니다. 현재 `/dev/hil_test`는 대체 보드가 배정될 때까지 생성되지
 않으며 HIL 전체 실행은 불가능합니다.
 
-2026-08-27 교체 보드 `002E00253235510837333439`에는 원본 `STM_B.elf`를
+2026-08-27 교체 보드 `002E00253235510837333439`에는 당시 direct-LCD `STM_B.elf`를
 verified flash하고 reset한 뒤, 3.28 V·Device ID `0x469`와 flash readback의
 `stm_b_node`, `/vehicle/command`, `/brake/status` 문자열을 확인했습니다. 이 결과는
 전송 이미지의 STM_B 역할을 증명하지만 micro-ROS Agent 연결이나 실차 액추에이터
-동작까지 검증한 것은 아닙니다.
+동작까지 검증한 것은 아닙니다. 해당 source는 현재
+`archive/firmware/STM_B_DIRECT_LCD`에 보관합니다.
 
 ## Agent 실행
 

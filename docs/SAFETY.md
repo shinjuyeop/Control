@@ -37,7 +37,7 @@
 | Host `brake_engage` | STM_A, STM_B, 조향 노드 | AUTO traction·brake 및 조향 Disable |
 | Host command age | STM_A, 조향 노드 | AUTO traction 500 ms, ACTIVE 조향 200 ms |
 | STM_B→STM_A safety UART | STM_A | 100 ms timeout이면 traction stop |
-| STM_A→STM_B vehicle UART | STM_B | 200 ms timeout이면 frame invalid와 LCD fault |
+| STM_A→STM_B vehicle UART | STM_B | 200 ms timeout이면 frame invalid와 dashboard 표시 fault |
 | EZkontrol handshake | STM_A | ACK 성공 전 traction command 금지 |
 | EZkontrol Part I/II age | STM_A | 200 ms 이후 status valid false |
 | KEYA CAN·position age | 조향 노드 | 각 500 ms 이후 Disable |
@@ -187,16 +187,16 @@ sequence gap은 진단 count만 증가시키므로 frame을 무효화하지 않�
 - vehicle frame 주기: 20 ms
 - timeout: 200 ms
 - 즉시 동작: `VEHICLE_FRAME_VALID_FROM_A=false`, UART RX restart 시도,
-  LCD `A-B LOST` badge와 `STM A COMM LOST` 배너
+  Arduino LCD `A-B LOST` badge와 `STM A COMM LOST` 배너를 위한 CAN validity flag 전송
 - 현재 brake 동작: timeout 자체는 `BRAKE_REQUEST`에 포함되지 않음
 - mode 값: 마지막 `MODE_FROM_A` 값이 유지됨
-- 100 ms drive detail은 별도 300 ms timeout을 사용하며 LCD 진단값만 `--`로
+- 100 ms drive detail은 별도 300 ms timeout을 사용하며 dashboard 진단값만 `--`로
   바꿉니다. vehicle frame validity와 brake 판단에는 사용하지 않습니다.
 
-현재 실차 하네스의 ST7796S SDO/MISO는 안정적인 readback 근거가 없어 health gate로
-사용하지 않습니다. SPI HAL 실패나 DMA timeout은 backlight-off, panel re-init, 전체
-redraw 순으로 복구합니다. 이 복구는 표시 가용성 대책이며 전원·접지·SPI 배선의
-노이즈 원인을 제거하거나 안전 동작을 증명하지 않습니다.
+STM_B는 dashboard CAN 상태를 100 ms마다 감시하고 bus-off에서 1초 backoff 후
+FDCAN을 재시작합니다. Arduino는 fresh complete snapshot이 300 ms 없으면 `CAN LOST`를
+표시하고 1초마다 controller를 재초기화합니다. 두 복구 경로는 표시 가용성만 위한
+것이며 E-stop, brake PWM, STM_A safety UART와 micro-ROS 판단에는 사용하지 않습니다.
 
 따라서 STM_A→STM_B 통신이 끊겼을 때 브레이크가 자동 engage된다고 가정하면
 안 됩니다. 이 동작은 확인 필요 항목입니다.
@@ -264,7 +264,8 @@ fresh 명령으로 AUTO traction·조향이 재활성화될 수 있습니다.
 | STM_A Host command 중단 | STM_A | 미수신 또는 ≥500 ms | AUTO HALTED, speed=0 | 새 valid command | STM_A `app_freertos.c` |
 | 조향 command 중단 | 조향 | ACTIVE age >200 ms | KEYA Disable, `WAIT_CMD` | 새 command | `steering_actuator_node.cpp` |
 | STM_B→STM_A UART 중단 | STM_A | invalid 또는 ≥100 ms | traction HALTED | 새 CRC-valid frame | STM_A `app_freertos.c` |
-| STM_A→STM_B UART 중단 | STM_B | ≥200 ms | frame invalid, LCD fault | 새 CRC-valid frame | STM_B `app_freertos.c` |
+| STM_A→STM_B UART 중단 | STM_B | ≥200 ms | frame invalid, dashboard 표시 fault | 새 CRC-valid frame | STM_B `app_freertos.c` |
+| Dashboard CAN/Arduino 중단 | STM_B·Arduino | bus-off 또는 fresh snapshot ≥300 ms | 표시 `CAN LOST`/stale, safety 영향 없음 | FDCAN 재시작 + 새 complete snapshot | STM_B `dashboard_can.c`, UNO firmware |
 | EZkontrol status 중단 | STM_A | Part별 age ≥200 ms | status valid=false | 해당 Part 새 frame | STM_A `app_freertos.c` |
 | KEYA CAN 중단 | 조향 | age >500 ms | KEYA Disable | feedback 회복 + fault 감지 뒤 받은 fresh pending command | 조향 node/driver |
 | MANUAL→AUTO | 세 제어 경로 | mode 0→1 | STM_A와 조향은 MANUAL 중 수신한 fresh command를 사용할 수 있음 | 조건 충족 | STM_A·STM_B·조향 |
