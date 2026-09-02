@@ -14,7 +14,7 @@ setup(
     zip_safe=True,
     maintainer="kangmin",
     maintainer_email="kai.driverless@gmail.com",
-    description="서브시스템 status 3종을 합성해 /vehicle/state를 발행",
+    description="서브시스템 status를 합성해 차량 상태와 wheel twist를 발행",
     license="TODO",
     tests_require=["pytest"],
     entry_points={

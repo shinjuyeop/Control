@@ -91,7 +91,7 @@ HALTED로 정지한다.
 ## 빌드·시험·실행
 
 ```bash
-cd ~/KAI_ws
+cd "${KAIEV26_WS:?set KAIEV26_WS to the ROS 2 workspace root}"
 colcon build --packages-select command_governor
 colcon test --packages-select command_governor && colcon test-result --verbose
 source install/setup.bash

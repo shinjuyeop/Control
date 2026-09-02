@@ -276,10 +276,10 @@ Foxglove에서 `/hil/status`, `/vehicle/state`, `/drive/status`, `/brake/status`
 ## Build and test
 
 ```bash
-cd ~/KAI_ws
+cd "${KAIEV26_WS:?set KAIEV26_WS to the ROS 2 workspace root}"
 source /opt/ros/humble/setup.zsh
 colcon build --symlink-install --packages-up-to kaiev26_hil
-source ~/KAI_ws/install/setup.zsh
+source install/setup.zsh
 colcon test --packages-select control_gui_common kaiev26_hil
 colcon test-result --verbose
 ```

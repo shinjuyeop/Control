@@ -6,7 +6,7 @@
 #   ros2 launch lateral_ctrl mcap_logging.launch.py
 #   ros2 launch lateral_ctrl mcap_logging.launch.py session_name:=deadzone_sweep
 #
-#   출력: ~/KAI_ws/records/
+#   출력: ~/kaiev26_records/
 #         <campaign_name>/<session_name>_<YYYYmmdd_HHMMSS>/rosbag/
 #   종료: Ctrl+C (rosbag2가 SIGINT를 받아 mcap을 정상 마감함)
 #   CSV 변환: ros2 run lateral_ctrl mcap_to_csv.py <bag 디렉토리>
@@ -20,7 +20,7 @@ from launch.substitutions import LaunchConfiguration
 
 
 ARTIFACT_ROOT = os.path.expanduser("~/Storage/ROS2_Workspace_offload")
-DEFAULT_OUTPUT_BASE_DIR = os.path.expanduser("~/KAI_ws/records")
+DEFAULT_OUTPUT_BASE_DIR = os.path.expanduser("~/kaiev26_records")
 
 SYSID_TOPICS = (
     "/planning/command",
@@ -34,6 +34,7 @@ SYSID_TOPICS = (
     "/drive/status",
     "/brake/status",
     "/vehicle/state",
+    "/vehicle/wheel_twist",
     "/imu/data",
     "/imu/data_raw",
     "/ebimu/status",

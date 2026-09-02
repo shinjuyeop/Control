@@ -17,7 +17,7 @@ ros2 topic info -v /steering/status
 ros2 topic info -v /imu/data
 ros2 topic info -v /gnss/fix
 
-# 실차 제어컴 기본 경로는 ~/KAI_ws/records다.
+# 실차 제어컴 기본 경로는 workspace 이름과 무관한 ~/kaiev26_records다.
 ros2 launch lateral_ctrl mcap_logging.launch.py \
   campaign_name:=toe_after_alignment \
   session_name:=manual_straight_01
@@ -45,13 +45,13 @@ ros2 launch lateral_ctrl mcap_logging.launch.py \
 |---|---|---|
 | `campaign_name` | `commissioning` | 같은 calibration·firmware parameter set을 공유하는 campaign 이름 |
 | `session_name` | `session` | run 이름 (`manual_straight_01`, `auto_steer_1mps_01` 등) |
-| `output_base_dir` | `~/KAI_ws/records` | 실차 제어컴의 local 기록 경로. 다른 host에서는 명시적으로 덮어쓴다 |
+| `output_base_dir` | `~/kaiev26_records` | 실차 제어컴의 local 기록 경로. 다른 host에서는 명시적으로 덮어쓴다 |
 | `require_external_storage` | `false` | `true`면 출력이 외장 artifact root 아래 별도 mount인지 확인한다 |
 
 ### 출력 구조
 
 ```
-~/KAI_ws/records/
+~/kaiev26_records/
 └── toe_after_alignment/                   ← <campaign_name>
     └── manual_straight_01_20260819_140000/
         └── rosbag/

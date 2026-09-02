@@ -74,7 +74,7 @@ diagnostics_publisher`. 구독하는 status가 없으면 STALE로 표시되므�
 
 ```bash
 source /opt/ros/humble/setup.bash
-cd ~/KAI_ws
+cd "${KAIEV26_WS:?set KAIEV26_WS to the ROS 2 workspace root}"
 colcon build \
   --base-paths src/kaiev26_msgs src/Control/software/src \
   --packages-select kaiev26_msgs control_gui_common visualization

@@ -58,7 +58,7 @@ fresh한 `ActuatorCommand`를 계속 발행한다.
 ## 실행
 
 ```bash
-cd ~/KAI_ws
+cd "${KAIEV26_WS:?set KAIEV26_WS to the ROS 2 workspace root}"
 export ROS_DOMAIN_ID=0
 source /opt/ros/humble/setup.zsh
 colcon build --packages-up-to vehicle_test_scenarios --symlink-install
@@ -140,6 +140,6 @@ ros2 launch vehicle_test_scenarios auto_lateral_steering_sine.launch.py
 세 YAML의 `steering_center_deg: -2.0`은 2026-08-24 실차 데이터에서 얻은 얼라인먼트
 변경 전 직진 추정값이다. 얼라인먼트를 바꿨다면 실행 전에 source YAML의 이 값만 새
 직진각으로 수정하고 다시 빌드한다. 각 run은 실차 제어컴의
-`~/KAI_ws/records/260825_auto_sysid/` 아래 별도 MCAP으로 저장된다. logger는
+`~/kaiev26_records/260825_auto_sysid/` 아래 별도 MCAP으로 저장된다. logger는
 `/planning/command`와 `/vehicle/command`를 모두 기록한다.
 `/sysid/scinario`에는 각 YAML의 고정 `std_msgs/msg/String` label이 20 Hz로 기록된다.

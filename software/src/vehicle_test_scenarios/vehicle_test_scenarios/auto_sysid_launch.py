@@ -58,7 +58,6 @@ def auto_sysid_launch_description(
                 launch_arguments={
                     "campaign_name": CAMPAIGN_NAME,
                     "session_name": session_name,
-                    "output_base_dir": os.path.expanduser("~/KAI_ws/records"),
                     "require_external_storage": "false",
                 }.items(),
             ),
