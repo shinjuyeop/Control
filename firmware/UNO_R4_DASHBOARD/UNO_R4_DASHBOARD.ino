@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 #include "dashboard_ui.h"
+#include "manual_tft_ui.h"
 #include "st7796_lcd.h"
 
 static constexpr uint8_t DASHBOARD_PROTOCOL_VERSION = 1U;
@@ -118,6 +119,21 @@ static const __FlashStringHelper *yes_no(bool value)
   return value ? F("YES") : F("NO");
 }
 
+static const __FlashStringHelper *gnss_state_text(uint8_t state)
+{
+  switch (state)
+  {
+    case GNSS_NO_FIX:
+      return F("NO_FIX");
+    case GNSS_FIX:
+      return F("FIX");
+    case GNSS_RTK_FIXED:
+      return F("RTK_FIXED");
+    default:
+      return F("UNAVAILABLE");
+  }
+}
+
 static void print_snapshot(const DashboardValues &values, uint8_t alive)
 {
   const bool vehicle_valid =
@@ -148,6 +164,9 @@ static void print_snapshot(const DashboardValues &values, uint8_t alive)
   Serial.print(part1_valid ? F("VALID") : F("INVALID"));
   Serial.print(F(" part2="));
   Serial.println(part2_valid ? F("VALID") : F("INVALID"));
+
+  Serial.print(F("  GNSS state="));
+  Serial.println(gnss_state_text(values.gnss_state));
 
   Serial.print(F("  MOTION mode="));
   if (!vehicle_valid)
@@ -271,6 +290,9 @@ static void accept_dashboard_frame(const CanMsg &message)
     assembly.values.status_flags = message.data[2];
     assembly.values.drive_flags = message.data[3];
     assembly.values.pedal_percent = message.data[4];
+    assembly.values.gnss_state =
+        (message.data[5] <= GNSS_RTK_FIXED) ? message.data[5]
+                                            : GNSS_UNAVAILABLE;
     assembly.values.speed_centi_mps = get_i16_le(&message.data[6]);
     assembly.received_frames |= FRAME_STATUS;
   }
@@ -363,6 +385,8 @@ void setup()
   Serial.begin(115200);
 
   St7796Lcd::begin();
+  St7796Lcd::setBacklight(true);
+  ManualTftUi::playStartup();
   can_controller_ready = CAN.begin(CanBitRate::BR_250k);
   DashboardUi::begin(latest_values, true);
   Serial.println(F("LCD dashboard UI rendered"));

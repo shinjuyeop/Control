@@ -30,6 +30,7 @@
 #include <rclc/executor.h>
 #include <kaiev26_msgs/msg/actuator_command.h>
 #include <kaiev26_msgs/msg/brake_actuator_status.h>
+#include <sensor_msgs/msg/nav_sat_fix.h>
 #include "rmw_microros/rmw_microros.h"
 
 bool cubemx_transport_open(struct uxrCustomTransport *transport);
@@ -91,6 +92,8 @@ typedef enum {
 /* micro-ROS 구독 메시지의 string 필드에는 정적 버퍼가 필요하다 */
 static kaiev26_msgs__msg__ActuatorCommand s_cmd_msg;
 static char s_cmd_frame_id[16];
+static sensor_msgs__msg__NavSatFix s_gnss_msg;
+static char s_gnss_frame_id[16];
 static kaiev26_msgs__msg__BrakeActuatorStatus s_status_msg;
 static char s_status_frame_id[4];
 static volatile uint32_t s_last_command_tick = 0u;
@@ -101,11 +104,13 @@ static rcl_allocator_t s_ros_allocator;
 static rclc_support_t s_ros_support;
 static rcl_node_t s_ros_node;
 static rcl_subscription_t s_ros_sub_cmd;
+static rcl_subscription_t s_ros_sub_gnss;
 static rcl_publisher_t s_ros_pub_brake_status;
 static rclc_executor_t s_ros_executor;
 static uint8_t s_ros_support_initialized = 0u;
 static uint8_t s_ros_node_initialized = 0u;
 static uint8_t s_ros_sub_cmd_initialized = 0u;
+static uint8_t s_ros_sub_gnss_initialized = 0u;
 static uint8_t s_ros_publisher_initialized = 0u;
 static uint8_t s_ros_executor_initialized = 0u;
 
@@ -119,6 +124,13 @@ static void cb_cmd(const void *m)
   s_last_command_tick = now;
   s_command_received = 1u;
   taskEXIT_CRITICAL();
+}
+
+static void cb_gnss(const void *m)
+{
+  const sensor_msgs__msg__NavSatFix *fix =
+      (const sensor_msgs__msg__NavSatFix *)m;
+  DashboardCan_ObserveGnssFix(fix->status.status);
 }
 
 static uint8_t s_usart1_rx_dma[UART_RX_DMA_SIZE];
@@ -582,11 +594,14 @@ void StartATx(void *argument)
 static void init_ros_message_buffers(void)
 {
   memset(&s_cmd_msg, 0, sizeof(s_cmd_msg));
+  memset(&s_gnss_msg, 0, sizeof(s_gnss_msg));
   memset(&s_status_msg, 0, sizeof(s_status_msg));
 
   /* 수신 string은 reconnect 횟수와 무관하게 수명이 고정된 버퍼를 사용한다. */
   s_cmd_msg.header.frame_id.data = s_cmd_frame_id;
   s_cmd_msg.header.frame_id.capacity = sizeof(s_cmd_frame_id);
+  s_gnss_msg.header.frame_id.data = s_gnss_frame_id;
+  s_gnss_msg.header.frame_id.capacity = sizeof(s_gnss_frame_id);
   s_status_msg.header.frame_id.data = s_status_frame_id;
   s_status_msg.header.frame_id.capacity = sizeof(s_status_frame_id);
 }
@@ -597,10 +612,12 @@ static uint8_t create_ros_entities(void)
   memset(&s_ros_support, 0, sizeof(s_ros_support));
   s_ros_node = rcl_get_zero_initialized_node();
   s_ros_sub_cmd = rcl_get_zero_initialized_subscription();
+  s_ros_sub_gnss = rcl_get_zero_initialized_subscription();
   s_ros_pub_brake_status = rcl_get_zero_initialized_publisher();
   s_ros_executor = rclc_executor_get_zero_initialized_executor();
 
   s_cmd_msg.header.frame_id.size = 0u;
+  s_gnss_msg.header.frame_id.size = 0u;
   s_status_msg.header.frame_id.size = 0u;
 
   if (rclc_support_init(
@@ -623,6 +640,14 @@ static uint8_t create_ros_entities(void)
   }
   s_ros_sub_cmd_initialized = 1u;
 
+  if (rclc_subscription_init_best_effort(
+          &s_ros_sub_gnss, &s_ros_node,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, NavSatFix),
+          "/gnss/fix") != RCL_RET_OK) {
+    return 0u;
+  }
+  s_ros_sub_gnss_initialized = 1u;
+
   if (rclc_publisher_init_default(
           &s_ros_pub_brake_status, &s_ros_node,
           ROSIDL_GET_MSG_TYPE_SUPPORT(
@@ -633,7 +658,7 @@ static uint8_t create_ros_entities(void)
   s_ros_publisher_initialized = 1u;
 
   if (rclc_executor_init(
-          &s_ros_executor, &s_ros_support.context, 1,
+          &s_ros_executor, &s_ros_support.context, 2,
           &s_ros_allocator) != RCL_RET_OK) {
     return 0u;
   }
@@ -641,6 +666,11 @@ static uint8_t create_ros_entities(void)
 
   if (rclc_executor_add_subscription(
           &s_ros_executor, &s_ros_sub_cmd, &s_cmd_msg, &cb_cmd,
+          ON_NEW_DATA) != RCL_RET_OK) {
+    return 0u;
+  }
+  if (rclc_executor_add_subscription(
+          &s_ros_executor, &s_ros_sub_gnss, &s_gnss_msg, &cb_gnss,
           ON_NEW_DATA) != RCL_RET_OK) {
     return 0u;
   }
@@ -667,6 +697,12 @@ static void destroy_ros_entities(void)
         rcl_publisher_fini(&s_ros_pub_brake_status, &s_ros_node);
     (void)fini_result;
     s_ros_publisher_initialized = 0u;
+  }
+  if (s_ros_sub_gnss_initialized != 0u) {
+    const rcl_ret_t fini_result =
+        rcl_subscription_fini(&s_ros_sub_gnss, &s_ros_node);
+    (void)fini_result;
+    s_ros_sub_gnss_initialized = 0u;
   }
   if (s_ros_sub_cmd_initialized != 0u) {
     const rcl_ret_t fini_result =

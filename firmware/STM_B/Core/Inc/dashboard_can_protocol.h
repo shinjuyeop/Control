@@ -31,12 +31,18 @@ extern "C" {
 #define DASHBOARD_DRIVE_COMMAND_TIMEOUT   (1U << 2)
 #define DASHBOARD_DRIVE_STOP              (1U << 3)
 
+#define DASHBOARD_GNSS_UNAVAILABLE 0U
+#define DASHBOARD_GNSS_NO_FIX      1U
+#define DASHBOARD_GNSS_FIX         2U
+#define DASHBOARD_GNSS_RTK_FIXED   3U
+
 typedef struct
 {
   uint8_t alive;
   uint8_t status_flags;
   uint8_t drive_flags;
   uint8_t pedal_percent;
+  uint8_t gnss_state;
   int16_t speed_centi_mps;
   uint16_t bus_voltage_decivolt;
   int16_t bus_current_deciamp;

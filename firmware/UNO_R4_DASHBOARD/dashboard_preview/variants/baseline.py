@@ -73,16 +73,35 @@ class BaselineVariant:
         self._baseline_rect(draw, 334, 236, 128, 20, card)
         self._baseline_text(draw, 334, 238, fault, 2, fault_color, card)
 
-        bottom_left, bottom_right, bottom_color, bottom_text = (
-            self._baseline_bottom(sample)
-        )
+        (
+            bottom_left,
+            bottom_middle,
+            bottom_right,
+            bottom_color,
+            bottom_text,
+            gnss_color,
+            gnss_text_color,
+            show_status_row,
+        ) = self._baseline_bottom(sample)
         self._baseline_rect(draw, 8, 274, 464, 38, bottom_color)
-        self._baseline_text(
-            draw, 18, 286, bottom_left, 2, bottom_text, bottom_color
-        )
-        self._baseline_text(
-            draw, 270, 286, bottom_right, 2, bottom_text, bottom_color
-        )
+        if show_status_row:
+            self._baseline_rect(draw, 330, 274, 142, 38, gnss_color)
+            self._baseline_text(
+                draw, 18, 286, bottom_left, 2, bottom_text, bottom_color
+            )
+            self._baseline_text(
+                draw, 178, 286, bottom_middle, 2, bottom_text, bottom_color
+            )
+            self._baseline_text(
+                draw, 342, 286, bottom_right, 2, gnss_text_color, gnss_color
+            )
+        else:
+            self._baseline_text(
+                draw, 18, 286, bottom_left, 2, bottom_text, bottom_color
+            )
+            self._baseline_text(
+                draw, 270, 286, bottom_middle, 2, bottom_text, bottom_color
+            )
 
     @staticmethod
     def _baseline_rect(
@@ -223,26 +242,39 @@ class BaselineVariant:
         return motor, controller, "OK".rjust(8), BaselineColor.GREEN
 
     @staticmethod
+    def _baseline_gnss(
+        values: DashboardValues,
+    ) -> tuple[str, tuple[int, int, int], tuple[int, int, int]]:
+        if values.gnss_state == GNSS_RTK_FIXED:
+            return "RTK FIXED", BaselineColor.GREEN, BaselineColor.BLACK
+        if values.gnss_state == GNSS_FIX:
+            return "GNSS FIX", BaselineColor.LIGHT_GRAY, BaselineColor.BLACK
+        if values.gnss_state == GNSS_NO_FIX:
+            return "GNSS NOFIX", BaselineColor.RED, BaselineColor.WHITE
+        return "GNSS --", BaselineColor.DARK_GRAY, BaselineColor.WHITE
+
+    @staticmethod
     def _baseline_bottom(
         sample: ScenarioSample,
-    ) -> tuple[str, str, tuple[int, int, int], tuple[int, int, int]]:
+    ) -> tuple:
         values = sample.values
         mode_auto = values.status(STATUS_MODE_AUTO)
         color = BaselineColor.BLUE if mode_auto else BaselineColor.ORANGE
+        show_status_row = False
         if sample.dashboard_can_lost:
-            left, right, color = (
+            left, middle, color = (
                 "DASH CAN LOST",
                 "VALUES STALE",
                 BaselineColor.RED,
             )
         elif values.status(STATUS_ESTOP_ACTIVE):
-            left, right, color = (
+            left, middle, color = (
                 "E-STOP ACTIVE",
                 "BRAKE ENGAGED",
                 BaselineColor.RED,
             )
         elif not values.vehicle_valid:
-            left, right, color = (
+            left, middle, color = (
                 "STM A COMM LOST",
                 "VALUES STALE",
                 BaselineColor.RED,
@@ -251,58 +283,78 @@ class BaselineVariant:
             values.motor_fault_bits & 0x00FFFFFF
         ):
             left = "MOTOR FAULT"
-            right = f"0X{values.motor_fault_bits & 0x00FFFFFF:06X}"
+            middle = f"0X{values.motor_fault_bits & 0x00FFFFFF:06X}"
             color = BaselineColor.RED
         elif values.detail_valid and values.drive(DRIVE_STOP):
-            left, right, color = (
+            left, middle, color = (
                 "DRIVE STOP",
                 "TRACTIVE OFF",
                 BaselineColor.RED,
             )
         elif values.status(STATUS_BRAKE_ACTIVE):
-            left, right, color = (
+            left, middle, color = (
                 "BRAKE ENGAGED",
                 "TRACTIVE STOP",
                 BaselineColor.RED,
             )
         elif mode_auto:
+            show_status_row = True
             if not values.detail_valid:
-                left, right = "AUTO CMD --", "TRACTIVE --"
+                left, middle = "CMD --", "TRACT --"
             elif values.drive(DRIVE_COMMAND_TIMEOUT):
-                left = "AUTO CMD TIMEOUT"
-                right = "TRACTIVE RUN" if values.drive(
+                left = "CMD TIMEOUT"
+                middle = "TRACT RUN" if values.drive(
                     DRIVE_TRACTIVE_FEEDBACK
-                ) else "TRACTIVE STOP"
+                ) else "TRACT STOP"
             elif values.drive(DRIVE_COMMAND_RECEIVED):
-                left = "AUTO CMD OK"
-                right = "TRACTIVE RUN" if values.drive(
+                left = "CMD OK"
+                middle = "TRACT RUN" if values.drive(
                     DRIVE_TRACTIVE_FEEDBACK
-                ) else "TRACTIVE STOP"
+                ) else "TRACT STOP"
             else:
-                left = "AUTO CMD WAIT"
-                right = "TRACTIVE RUN" if values.drive(
+                left = "CMD WAIT"
+                middle = "TRACT RUN" if values.drive(
                     DRIVE_TRACTIVE_FEEDBACK
-                ) else "TRACTIVE STOP"
+                ) else "TRACT STOP"
         else:
+            show_status_row = True
             left = (
                 f"PEDAL {values.pedal_percent}%"
                 if values.detail_valid
                 else "PEDAL --"
             )
             if not values.detail_valid:
-                right = "TRACTIVE --"
+                middle = "TRACT --"
             else:
-                right = "TRACTIVE RUN" if values.drive(
+                middle = "TRACT RUN" if values.drive(
                     DRIVE_TRACTIVE_FEEDBACK
-                ) else "TRACTIVE STOP"
+                ) else "TRACT STOP"
         text_color = (
             BaselineColor.BLACK
             if color == BaselineColor.ORANGE
             else BaselineColor.WHITE
         )
+        if show_status_row:
+            gnss, gnss_color, gnss_text_color = BaselineVariant._baseline_gnss(
+                values
+            )
+            return (
+                left.ljust(11)[:11],
+                middle.ljust(10)[:10],
+                gnss.ljust(10)[:10],
+                color,
+                text_color,
+                gnss_color,
+                gnss_text_color,
+                True,
+            )
         return (
             left.ljust(20)[:20],
-            right.ljust(16)[:16],
+            middle.ljust(16)[:16],
+            "",
             color,
             text_color,
+            color,
+            text_color,
+            False,
         )

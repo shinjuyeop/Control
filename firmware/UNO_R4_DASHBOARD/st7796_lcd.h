@@ -26,6 +26,14 @@ void fillRect(uint16_t x,
               uint16_t height,
               uint16_t color);
 void fillScreen(uint16_t color);
+void drawRleImage(const uint8_t *data, size_t length);
+void beginPixelStream();
+void beginPixelStream(uint16_t x0,
+                      uint16_t y0,
+                      uint16_t x1,
+                      uint16_t y1);
+void writePixelRow(const uint16_t *pixels, size_t count);
+void endPixelStream();
 void drawRect(uint16_t x,
               uint16_t y,
               uint16_t width,

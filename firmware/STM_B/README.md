@@ -21,7 +21,7 @@ micro-ROS 동작을 변경하지 않습니다. 이전 직접-SPI LCD 구현은
 - MANUAL/AUTO 정책에 따른 최종 `BRAKE_REQUEST` 계산
 - TIM2 brake servo PWM 및 engage/release ramp
 - STM_A USART1 vehicle/detail frame 수신과 safety frame 송신
-- LPUART1 micro-ROS `/vehicle/command` 구독과 `/brake/status` 발행
+- LPUART1 micro-ROS `/vehicle/command`, `/gnss/fix` 구독과 `/brake/status` 발행
 - 기존 STM_B LCD가 사용한 값의 atomic snapshot 생성
 - 250 kbps Classical CAN dashboard protocol v1 송신
 - FDCAN automatic retransmission, bus-off 감시와 1초 backoff 재시작
@@ -138,6 +138,7 @@ bounded됩니다.
 | Topic | Type | 사용 필드 |
 |---|---|---|
 | `/vehicle/command` | `kaiev26_msgs/msg/ActuatorCommand` | AUTO의 `brake_engage` |
+| `/gnss/fix` | `sensor_msgs/msg/NavSatFix` | `status.status`; 500 ms freshness |
 
 ### Publishers
 
@@ -149,7 +150,7 @@ bounded됩니다.
 
 | ID | 이름 | 주 내용 |
 |---:|---|---|
-| `0x321` | STATUS | validity, mode, gear, E-stop, brake, pedal, speed |
+| `0x321` | STATUS | validity, mode, gear, E-stop, brake, pedal, GNSS, speed |
 | `0x322` | POWER | bus voltage, bus current, phase current |
 | `0x323` | THERMAL | controller와 motor temperature |
 | `0x324` | FAULT | motor fault low 24 bits |
@@ -204,6 +205,7 @@ validity가 false인 값을 `--`로 표시하도록 flag를 CAN에 함께 보냅
 | controller/motor temperature | `*_temperature_dc` | signed `int16`, 0.1 degC |
 | motor fault | `motor_fault_bits` | low 24-bit bitmap |
 | E-stop/brake | `ESTOP_STATUS`, `BRAKE_REQUEST` | status bits |
+| GNSS | `/gnss/fix.status.status` | `uint8` dashboard GNSS state |
 
 한 snapshot의 네 frame은 같은 alive를 사용합니다. 0/10/20/30 ms slot에서 frame을
 하나씩 enqueue하고 40 ms slot은 비워 다음 snapshot은 50 ms마다 시작합니다.
@@ -217,8 +219,14 @@ validity가 false인 값을 `--`로 표시하도록 flag를 CAN에 함께 보냅
 | 2 | bitfield | bit0 vehicle valid, 1 detail valid, 2 Part I, 3 Part II, 4 AUTO, 5 REV, 6 E-stop, 7 brake |
 | 3 | bitfield | bit0 tractive feedback, 1 command received, 2 command timeout, 3 drive stop |
 | 4 | `uint8` | pedal percent |
-| 5 | reserved | zero |
+| 5 | `uint8` | GNSS: 0 unavailable/stale, 1 no fix, 2 valid fix, 3 RTK fixed |
 | 6-7 | `int16` LE | speed, 0.01 m/s |
+
+STM_B는 `/gnss/fix`를 best-effort로 구독하고 수신 시각을 monotonic tick으로
+기록합니다. 새 메시지가 500 ms 안에 들어온 경우 `NavSatFix.status=2`만
+`RTK fixed`, `status>=0`은 일반 `fix`, 음수는 `no fix`로 변환합니다. 500 ms가
+지나거나 한 번도 수신하지 못했으면 `unavailable`을 전송합니다. GNSS 상태는 표시용이며
+구동·제동·E-stop 판단에는 사용하지 않습니다.
 
 #### `0x322` POWER
 
@@ -289,8 +297,8 @@ cmake --build src/Control/firmware/STM_B/build/Release --clean-first
 ```
 
 결과물은 `src/Control/firmware/STM_B/build/Release/STM_B.elf`입니다.
-2026-09-02 recovery build 결과는 Flash 95,016 byte(18.12%), RAM 95,216
-byte(72.64%)였습니다. `_gettimeofday` linker warning은 현재 사용하지 않는 syscall에 대한
+2026-09-04 GNSS dashboard build 결과는 Flash 99,664 byte(19.01%), RAM 96,040
+byte(73.27%)였습니다. `_gettimeofday` linker warning은 현재 사용하지 않는 syscall에 대한
 기존 non-fatal warning입니다.
 
 Protocol packing test:

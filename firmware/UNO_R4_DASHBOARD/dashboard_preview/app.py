@@ -82,6 +82,7 @@ class PreviewApp:
         self.command_timeout_var = tk.BooleanVar(value=False)
         self.drive_stop_var = tk.BooleanVar(value=False)
         self.can_lost_var = tk.BooleanVar(value=False)
+        self.gnss_var = tk.StringVar(value=GNSS_STATE_NAMES[GNSS_RTK_FIXED])
 
     def _build_ui(self) -> None:
         tk = self.tk
@@ -246,6 +247,13 @@ class PreviewApp:
             ttk.Checkbutton(tab, text=label, variable=variable).pack(
                 anchor="w", pady=4
             )
+        ttk.Label(tab, text="GNSS state").pack(anchor="w", pady=(10, 2))
+        ttk.Combobox(
+            tab,
+            textvariable=self.gnss_var,
+            values=tuple(GNSS_STATE_VALUES),
+            state="readonly",
+        ).pack(fill="x")
 
     def _build_faults_tab(self, notebook) -> None:
         tk = self.tk
@@ -409,6 +417,7 @@ class PreviewApp:
             status_flags=status_flags,
             drive_flags=drive_flags,
             pedal_percent=self.pedal_var.get(),
+            gnss_state=GNSS_STATE_VALUES[self.gnss_var.get()],
             speed_centi_mps=_speed_centi_mps(self.speed_var.get()),
             bus_voltage_decivolt=round(self.voltage_var.get() * 10.0),
             bus_current_deciamp=round(self.bus_current_var.get() * 10.0),
@@ -443,6 +452,9 @@ class PreviewApp:
         self.command_timeout_var.set(values.drive(DRIVE_COMMAND_TIMEOUT))
         self.drive_stop_var.set(values.drive(DRIVE_STOP))
         self.can_lost_var.set(self.sample.dashboard_can_lost)
+        self.gnss_var.set(
+            GNSS_STATE_NAMES.get(values.gnss_state, "UNAVAILABLE")
+        )
         self.fault_list.selection_clear(0, "end")
         for index in range(len(FAULT_NAMES)):
             if values.motor_fault_bits & (1 << index):

@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "st7796_lcd.h"
+#include "manual_tft_ui.h"
 
 namespace
 {
@@ -16,12 +17,21 @@ static constexpr uint16_t UI_AUTO = St7796Lcd::COLOR_BLUE;
 static constexpr uint16_t UI_MANUAL = St7796Lcd::COLOR_ORANGE;
 static constexpr uint16_t UI_OK = St7796Lcd::COLOR_GREEN;
 static constexpr uint16_t UI_FAULT = St7796Lcd::COLOR_RED;
+static constexpr uint16_t UI_WARN = 0xFFE0U;
+static constexpr uint16_t UI_REGEN = 0x7E9FU;
+static constexpr uint16_t MANUAL_BG = 0xF79EU;
+static constexpr uint16_t MANUAL_TRACK = 0xDEDBU;
+static constexpr uint16_t MANUAL_MUTED = 0x7BEFU;
+static constexpr uint16_t MANUAL_STATUS_BG = 0xF79EU;
 
 static constexpr size_t HV_VALUE_CHARS = 14U;
 static constexpr size_t SPEED_CHARS = 5U;
 static constexpr size_t METRIC_CHARS = 8U;
 static constexpr size_t BOTTOM_LEFT_CHARS = 20U;
 static constexpr size_t BOTTOM_RIGHT_CHARS = 16U;
+static constexpr size_t BOTTOM_STATUS_LEFT_CHARS = 11U;
+static constexpr size_t BOTTOM_STATUS_MIDDLE_CHARS = 10U;
+static constexpr size_t BOTTOM_GNSS_CHARS = 10U;
 
 struct BadgeView
 {
@@ -34,8 +44,14 @@ struct BottomView
 {
   char left[BOTTOM_LEFT_CHARS + 1U];
   char right[BOTTOM_RIGHT_CHARS + 1U];
+  char status_left[BOTTOM_STATUS_LEFT_CHARS + 1U];
+  char status_middle[BOTTOM_STATUS_MIDDLE_CHARS + 1U];
+  char gnss[BOTTOM_GNSS_CHARS + 1U];
   uint16_t color;
   uint16_t text_color;
+  uint16_t gnss_color;
+  uint16_t gnss_text_color;
+  bool show_status_row;
 };
 
 struct UiView
@@ -56,6 +72,7 @@ static const uint16_t badge_x[] = {8U, 120U, 208U, 328U};
 static const uint16_t badge_width[] = {104U, 80U, 112U, 144U};
 static UiView displayed_view = {};
 static bool initialized = false;
+static bool displayed_manual_page = false;
 
 bool flagIsSet(uint8_t value, uint8_t flag)
 {
@@ -303,18 +320,51 @@ void buildMetrics(const DashboardValues &values,
   padLeft(fault, METRIC_CHARS, raw_fault);
 }
 
+void buildGnss(const DashboardValues &values,
+               char text[BOTTOM_GNSS_CHARS + 1U],
+               uint16_t *background,
+               uint16_t *foreground)
+{
+  const char *raw_text = "GNSS --";
+  *background = UI_BORDER;
+  *foreground = St7796Lcd::COLOR_WHITE;
+
+  switch (values.gnss_state)
+  {
+    case GNSS_NO_FIX:
+      raw_text = "GNSS NOFIX";
+      *background = UI_FAULT;
+      break;
+    case GNSS_FIX:
+      raw_text = "GNSS FIX";
+      *background = UI_CARD;
+      *foreground = UI_TEXT;
+      break;
+    case GNSS_RTK_FIXED:
+      raw_text = "RTK FIXED";
+      *background = UI_OK;
+      *foreground = UI_TEXT;
+      break;
+    default:
+      break;
+  }
+  padRight(text, BOTTOM_GNSS_CHARS, raw_text);
+}
+
 void buildBottom(const DashboardValues &values,
                  bool dashboard_can_lost,
                  BottomView *view)
 {
   char left_text[24];
   char right_text[24];
+  char middle_text[24];
   const bool vehicle_valid =
       flagIsSet(values.status_flags, STATUS_VEHICLE_VALID);
   const bool detail_valid =
       flagIsSet(values.status_flags, STATUS_DETAIL_VALID);
   const bool mode_auto = flagIsSet(values.status_flags, STATUS_MODE_AUTO);
   uint16_t color = mode_auto ? UI_AUTO : UI_MANUAL;
+  view->show_status_row = false;
 
   if (dashboard_can_lost)
   {
@@ -359,23 +409,25 @@ void buildBottom(const DashboardValues &values,
   }
   else if (mode_auto)
   {
+    view->show_status_row = true;
     (void)snprintf(
         left_text,
         sizeof(left_text),
-        !detail_valid ? "AUTO CMD --" :
+        !detail_valid ? "CMD --" :
         flagIsSet(values.drive_flags, DRIVE_COMMAND_TIMEOUT)
-            ? "AUTO CMD TIMEOUT" :
+            ? "CMD TIMEOUT" :
         flagIsSet(values.drive_flags, DRIVE_COMMAND_RECEIVED)
-            ? "AUTO CMD OK" : "AUTO CMD WAIT");
+            ? "CMD OK" : "CMD WAIT");
     (void)snprintf(
-        right_text,
-        sizeof(right_text),
-        !detail_valid ? "TRACTIVE --" :
+        middle_text,
+        sizeof(middle_text),
+        !detail_valid ? "TRACT --" :
         flagIsSet(values.drive_flags, DRIVE_TRACTIVE_FEEDBACK)
-            ? "TRACTIVE RUN" : "TRACTIVE STOP");
+            ? "TRACT RUN" : "TRACT STOP");
   }
   else
   {
+    view->show_status_row = true;
     if (detail_valid)
     {
       (void)snprintf(left_text,
@@ -388,18 +440,30 @@ void buildBottom(const DashboardValues &values,
       (void)snprintf(left_text, sizeof(left_text), "PEDAL --");
     }
     (void)snprintf(
-        right_text,
-        sizeof(right_text),
-        !detail_valid ? "TRACTIVE --" :
+        middle_text,
+        sizeof(middle_text),
+        !detail_valid ? "TRACT --" :
         flagIsSet(values.drive_flags, DRIVE_TRACTIVE_FEEDBACK)
-            ? "TRACTIVE RUN" : "TRACTIVE STOP");
+            ? "TRACT RUN" : "TRACT STOP");
   }
 
   view->color = color;
   view->text_color =
       (color == UI_MANUAL) ? UI_TEXT : St7796Lcd::COLOR_WHITE;
-  padRight(view->left, BOTTOM_LEFT_CHARS, left_text);
-  padRight(view->right, BOTTOM_RIGHT_CHARS, right_text);
+  if (view->show_status_row)
+  {
+    padRight(view->status_left, BOTTOM_STATUS_LEFT_CHARS, left_text);
+    padRight(view->status_middle, BOTTOM_STATUS_MIDDLE_CHARS, middle_text);
+    buildGnss(values,
+              view->gnss,
+              &view->gnss_color,
+              &view->gnss_text_color);
+  }
+  else
+  {
+    padRight(view->left, BOTTOM_LEFT_CHARS, left_text);
+    padRight(view->right, BOTTOM_RIGHT_CHARS, right_text);
+  }
 }
 
 void buildView(const DashboardValues &values,
@@ -478,6 +542,47 @@ void drawStaticLayout()
   St7796Lcd::drawStringScaled(334U, 212U, "FAULT", 2U, UI_TEXT, UI_CARD);
 }
 
+void drawBottom(const BottomView &view)
+{
+  St7796Lcd::fillRect(8U, 274U, 464U, 38U, view.color);
+  if (view.show_status_row)
+  {
+    St7796Lcd::fillRect(330U, 274U, 142U, 38U, view.gnss_color);
+    St7796Lcd::drawStringScaled(18U,
+                               286U,
+                               view.status_left,
+                               2U,
+                               view.text_color,
+                               view.color);
+    St7796Lcd::drawStringScaled(178U,
+                               286U,
+                               view.status_middle,
+                               2U,
+                               view.text_color,
+                               view.color);
+    St7796Lcd::drawStringScaled(342U,
+                               286U,
+                               view.gnss,
+                               2U,
+                               view.gnss_text_color,
+                               view.gnss_color);
+    return;
+  }
+
+  St7796Lcd::drawStringScaled(18U,
+                             286U,
+                             view.left,
+                             2U,
+                             view.text_color,
+                             view.color);
+  St7796Lcd::drawStringScaled(270U,
+                             286U,
+                             view.right,
+                             2U,
+                             view.text_color,
+                             view.color);
+}
+
 void drawFullView(const UiView &view)
 {
   drawStaticLayout();
@@ -507,19 +612,7 @@ void drawFullView(const UiView &view)
   St7796Lcd::drawStringScaled(
       334U, 238U, view.fault, 2U, view.fault_color, UI_CARD);
 
-  St7796Lcd::fillRect(8U, 274U, 464U, 38U, view.bottom.color);
-  St7796Lcd::drawStringScaled(18U,
-                             286U,
-                             view.bottom.left,
-                             2U,
-                             view.bottom.text_color,
-                             view.bottom.color);
-  St7796Lcd::drawStringScaled(270U,
-                             286U,
-                             view.bottom.right,
-                             2U,
-                             view.bottom.text_color,
-                             view.bottom.color);
+  drawBottom(view.bottom);
 }
 
 void drawViewChanges(const UiView &current, const UiView &previous)
@@ -570,21 +663,39 @@ void drawViewChanges(const UiView &current, const UiView &previous)
                     current.fault_color != previous.fault_color);
 
   if ((current.bottom.color != previous.bottom.color) ||
-      (current.bottom.text_color != previous.bottom.text_color))
+      (current.bottom.text_color != previous.bottom.text_color) ||
+      (current.bottom.show_status_row != previous.bottom.show_status_row) ||
+      (current.bottom.gnss_color != previous.bottom.gnss_color) ||
+      (current.bottom.gnss_text_color != previous.bottom.gnss_text_color))
   {
-    St7796Lcd::fillRect(8U, 274U, 464U, 38U, current.bottom.color);
-    St7796Lcd::drawStringScaled(18U,
-                               286U,
-                               current.bottom.left,
-                               2U,
-                               current.bottom.text_color,
-                               current.bottom.color);
-    St7796Lcd::drawStringScaled(270U,
-                               286U,
-                               current.bottom.right,
-                               2U,
-                               current.bottom.text_color,
-                               current.bottom.color);
+    drawBottom(current.bottom);
+  }
+  else if (current.bottom.show_status_row)
+  {
+    drawFixedTextDiff(18U, 286U,
+                      current.bottom.status_left,
+                      previous.bottom.status_left,
+                      BOTTOM_STATUS_LEFT_CHARS,
+                      2U,
+                      current.bottom.text_color,
+                      current.bottom.color,
+                      false);
+    drawFixedTextDiff(178U, 286U,
+                      current.bottom.status_middle,
+                      previous.bottom.status_middle,
+                      BOTTOM_STATUS_MIDDLE_CHARS,
+                      2U,
+                      current.bottom.text_color,
+                      current.bottom.color,
+                      false);
+    drawFixedTextDiff(342U, 286U,
+                      current.bottom.gnss,
+                      previous.bottom.gnss,
+                      BOTTOM_GNSS_CHARS,
+                      2U,
+                      current.bottom.gnss_text_color,
+                      current.bottom.gnss_color,
+                      false);
   }
   else
   {
@@ -614,11 +725,21 @@ namespace DashboardUi
 
 void begin(const DashboardValues &values, bool dashboard_can_lost)
 {
-  UiView view = {};
-  buildView(values, dashboard_can_lost, &view);
+  const bool manual_page =
+      !flagIsSet(values.status_flags, STATUS_MODE_AUTO);
   St7796Lcd::setBacklight(false);
-  drawFullView(view);
-  displayed_view = view;
+  if (manual_page)
+  {
+    ManualTftUi::begin(values, dashboard_can_lost);
+  }
+  else
+  {
+    UiView view = {};
+    buildView(values, dashboard_can_lost, &view);
+    drawFullView(view);
+    displayed_view = view;
+  }
+  displayed_manual_page = manual_page;
   initialized = true;
   St7796Lcd::setBacklight(true);
 }
@@ -630,10 +751,25 @@ void update(const DashboardValues &values, bool dashboard_can_lost)
     begin(values, dashboard_can_lost);
     return;
   }
-  UiView current = {};
-  buildView(values, dashboard_can_lost, &current);
-  drawViewChanges(current, displayed_view);
-  displayed_view = current;
+
+  const bool manual_page =
+      !flagIsSet(values.status_flags, STATUS_MODE_AUTO);
+  if (manual_page != displayed_manual_page)
+  {
+    begin(values, dashboard_can_lost);
+    return;
+  }
+  if (manual_page)
+  {
+    ManualTftUi::update(values, dashboard_can_lost);
+  }
+  else
+  {
+    UiView current = {};
+    buildView(values, dashboard_can_lost, &current);
+    drawViewChanges(current, displayed_view);
+    displayed_view = current;
+  }
 }
 
 }  // namespace DashboardUi

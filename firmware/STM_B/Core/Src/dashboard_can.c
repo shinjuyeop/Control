@@ -23,12 +23,39 @@ volatile uint32_t DASHBOARD_CAN_RECOVERY_COUNT = 0U;
 volatile uint32_t DASHBOARD_CAN_RECOVERY_ERROR_COUNT = 0U;
 volatile uint8_t DASHBOARD_CAN_ALIVE = 0U;
 
+static volatile int8_t s_gnss_navsat_status = -1;
+static volatile uint32_t s_gnss_last_rx_ms = 0U;
+static volatile uint8_t s_gnss_received = 0U;
+
 static int16_t speed_to_centi_mps(float speed_mps)
 {
   const long scaled = lroundf(speed_mps * 100.0f);
   if (scaled > INT16_MAX) return INT16_MAX;
   if (scaled < INT16_MIN) return INT16_MIN;
   return (int16_t)scaled;
+}
+
+static uint8_t gnss_state_from_status(int8_t navsat_status)
+{
+  if (navsat_status == 2)
+  {
+    return DASHBOARD_GNSS_RTK_FIXED;
+  }
+  if (navsat_status >= 0)
+  {
+    return DASHBOARD_GNSS_FIX;
+  }
+  return DASHBOARD_GNSS_NO_FIX;
+}
+
+void DashboardCan_ObserveGnssFix(int8_t navsat_status)
+{
+  const uint32_t now = HAL_GetTick();
+  taskENTER_CRITICAL();
+  s_gnss_navsat_status = navsat_status;
+  s_gnss_last_rx_ms = now;
+  s_gnss_received = 1U;
+  taskEXIT_CRITICAL();
 }
 
 static void capture_snapshot(DashboardCanSnapshot_t *snapshot, uint8_t alive)
@@ -41,6 +68,10 @@ static void capture_snapshot(DashboardCanSnapshot_t *snapshot, uint8_t alive)
   uint8_t gear;
   uint8_t estop;
   uint8_t brake;
+  int8_t gnss_navsat_status;
+  uint32_t gnss_last_rx_ms;
+  uint8_t gnss_received;
+  const uint32_t now = HAL_GetTick();
 
   taskENTER_CRITICAL();
   speed_mps = CURRENT_SPEED_FROM_A;
@@ -51,12 +82,16 @@ static void capture_snapshot(DashboardCanSnapshot_t *snapshot, uint8_t alive)
   gear = GEAR_FROM_A;
   estop = ESTOP_STATUS;
   brake = BRAKE_REQUEST;
+  gnss_navsat_status = s_gnss_navsat_status;
+  gnss_last_rx_ms = s_gnss_last_rx_ms;
+  gnss_received = s_gnss_received;
   taskEXIT_CRITICAL();
 
   snapshot->alive = alive;
   snapshot->status_flags = 0U;
   snapshot->drive_flags = 0U;
   snapshot->pedal_percent = detail.pedal_percent;
+  snapshot->gnss_state = DASHBOARD_GNSS_UNAVAILABLE;
   snapshot->speed_centi_mps = speed_to_centi_mps(speed_mps);
   snapshot->bus_voltage_decivolt = detail.bus_voltage_dv;
   snapshot->bus_current_deciamp = detail.bus_current_da;
@@ -65,6 +100,12 @@ static void capture_snapshot(DashboardCanSnapshot_t *snapshot, uint8_t alive)
       detail.controller_temperature_dc;
   snapshot->motor_temperature_decic = detail.motor_temperature_dc;
   snapshot->motor_fault_bits = detail.motor_fault_bits;
+
+  if ((gnss_received != 0U) &&
+      ((uint32_t)(now - gnss_last_rx_ms) < DASHBOARD_CAN_GNSS_TIMEOUT_MS))
+  {
+    snapshot->gnss_state = gnss_state_from_status(gnss_navsat_status);
+  }
 
   if (vehicle_valid != 0U)
   {

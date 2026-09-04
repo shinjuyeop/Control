@@ -698,8 +698,8 @@ class ModePageVariants:
         tractive = values.drive(DRIVE_TRACTIVE_FEEDBACK)
         brake = values.status(STATUS_BRAKE_ACTIVE)
         estop = values.status(STATUS_ESTOP_ACTIVE)
-        drive_stop = values.drive(DRIVE_STOP)
         fault = bool(values.motor_fault_bits)
+        gnss_value, gnss_color = self._gnss_short(values)
         status_cells = (
             (62, 137, "LINK", link_value, link_color),
             (
@@ -711,8 +711,7 @@ class ModePageVariants:
              Color.FAULT if brake else REPLICA_MUTED),
             (277, 347, "E-STOP", "ON" if estop else "OFF",
              Color.FAULT if estop else REPLICA_MUTED),
-            (347, 407, "STOP", "ON" if drive_stop else "OFF",
-             Color.FAULT if drive_stop else REPLICA_MUTED),
+            (347, 407, "GNSS", gnss_value, gnss_color),
             (407, 471, "FAULT", "ON" if fault else "OK",
              Color.FAULT if fault else REPLICA_BLACK),
         )
@@ -770,6 +769,12 @@ class ModePageVariants:
         draw.line((151, 8, 151, 224), fill=MODE_RULE, width=2)
         draw.line((329, 8, 329, 224), fill=MODE_RULE, width=2)
         draw.line((8, 224, 471, 224), fill=MODE_RULE, width=2)
+
+        gnss_text, gnss_color = self._gnss_status(values)
+        draw.text(
+            (240, 27), gnss_text, font=self.fonts.bold(8),
+            fill=gnss_color, anchor="mm",
+        )
 
         draw.text(
             (22, 27), "HV / BUS / CTRL", font=self.fonts.bold(8),

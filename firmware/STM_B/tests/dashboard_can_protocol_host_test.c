@@ -6,11 +6,12 @@
 
 int main(void)
 {
-  const DashboardCanSnapshot_t snapshot = {
+  DashboardCanSnapshot_t snapshot = {
       .alive = 0xA5U,
       .status_flags = 0xFFU,
       .drive_flags = 0x0FU,
       .pedal_percent = 42U,
+      .gnss_state = DASHBOARD_GNSS_RTK_FIXED,
       .speed_centi_mps = -123,
       .bus_voltage_decivolt = 724U,
       .bus_current_deciamp = -183,
@@ -23,8 +24,17 @@ int main(void)
   DashboardCanProtocol_PackStatus(&snapshot, payload);
   assert(memcmp(payload,
                 (const uint8_t[]){1U, 0xA5U, 0xFFU, 0x0FU,
-                                  42U, 0U, 0x85U, 0xFFU},
+                                  42U, DASHBOARD_GNSS_RTK_FIXED,
+                                  0x85U, 0xFFU},
                 DASHBOARD_CAN_DLC) == 0);
+  for (uint8_t state = DASHBOARD_GNSS_UNAVAILABLE;
+       state <= DASHBOARD_GNSS_RTK_FIXED;
+       ++state)
+  {
+    snapshot.gnss_state = state;
+    DashboardCanProtocol_PackStatus(&snapshot, payload);
+    assert(payload[5] == state);
+  }
 
   DashboardCanProtocol_PackPower(&snapshot, payload);
   assert(memcmp(payload,

@@ -24,6 +24,7 @@ void DashboardCanProtocol_PackStatus(
   payload[2] = snapshot->status_flags;
   payload[3] = snapshot->drive_flags;
   payload[4] = snapshot->pedal_percent;
+  payload[5] = snapshot->gnss_state;
   put_u16_le(&payload[6], (uint16_t)snapshot->speed_centi_mps);
 }
 

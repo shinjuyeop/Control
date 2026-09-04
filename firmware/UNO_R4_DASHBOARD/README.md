@@ -25,11 +25,23 @@ Python 3, Tkinter와 Pillow가 필요합니다.
   4열 PED/HV/MOTOR/CTRL gauge와 한 줄 상태 표시
 - `AUTO_GT3`: HV/bus/controller, speed/host command, phase/motor를 나눈 AUTO 전용 grid
 
-`MANUAL_TFT`와 `AUTO_GT3`는 mode page 한 쌍입니다. 드롭다운에서 각 page를 직접 열어
+`MANUAL_TFT`와 `AUTO_GT3`는 preview의 mode page 한 쌍입니다. 드롭다운에서 각 page를 직접 열어
 볼 수 있고, 둘 중 하나를 사용하던 중 CAN의 MANUAL/AUTO mode가 바뀌면 해당 page로
 자동 전환합니다. 현재 CAN에 없는 steering 상태와 LV battery SOC는 빈 placeholder로
 만들지 않습니다. GUI 기본 variant도 이 mode page 쌍입니다. BASELINE과 나머지 안은
 드롭다운에서 비교할 수 있습니다.
+
+GNSS 상태는 `MANUAL_TFT` 하단 `GNSS` 셀과 `AUTO_GT3` 상단 중앙에 표시합니다.
+`RTK FIXED`, 일반 `GNSS FIX`, `NO FIX`, 미수신/500 ms stale을 서로 구분합니다.
+실제 Arduino firmware는 MANUAL에서 `MANUAL_TFT`의 곡선형 BUS/PHASE track,
+우측 4열 gauge와 하단 상태줄을 사용하고, AUTO에서는 기존 진단 grid를 유지합니다.
+[`manual_tft_assets.h`](manual_tft_assets.h)는 preview renderer가 만든 정적 raster,
+곡선 antialias/progress mask, Blender Pro glyph와 1.4초 startup keyframe입니다. 직접
+편집하지 않고 다음 명령으로 다시 생성합니다.
+
+```bash
+python3 -m dashboard_preview.generate_firmware_assets
+```
 
 GUI를 열면 검은 화면에서 KAI symbol의 흰 outline이 약한 haze와 함께 나타나는 1.4초
 startup sequence가 한 번 재생됩니다. `Replay startup`으로 다시 볼 수 있으며 symbol은
@@ -57,7 +69,7 @@ python3 dashboard_preview.py
 ```
 
 오른쪽 panel에서 scenario, 10/20 Hz telemetry cadence, MANUAL/AUTO, FWD/REV,
-validity, E-stop/brake와 motor fault 24종을 바꿀 수 있습니다. 실제 LCD 해상도의 PNG만
+validity, E-stop/brake, GNSS 네 상태와 motor fault 24종을 바꿀 수 있습니다. 실제 LCD 해상도의 PNG만
 저장하려면 GUI의 `Save 480x320 PNG`를 사용하거나 다음처럼 실행합니다.
 
 ```bash
@@ -82,6 +94,7 @@ STM/UNO firmware 상태를 변경하지 않습니다.
 | Accepted IDs | `0x321` STATUS, `0x322` POWER, `0x323` THERMAL, `0x324` FAULT |
 | Protocol | version 1, little-endian, shared `uint8` alive |
 | Snapshot | 4개 ID와 version/alive가 모두 일치해야 완성 |
+| GNSS | STATUS byte 5: 0 unavailable, 1 no fix, 2 fix, 3 RTK fixed |
 | CAN LOST | 새 alive의 완전한 4-frame snapshot이 300 ms 없음 |
 | CAN recovery | LOST 중 1초마다 `CAN.end()`/`CAN.begin()` 재시도 |
 | Serial Monitor | 115200 baud |
@@ -141,8 +154,8 @@ arduino-cli compile --fqbn arduino:renesas_uno:minima UNO_R4_DASHBOARD
 Arduino compile은 sketch/API 호환성 증거이며 실제 MCP2551/CAN bus 수신 증거는
 아닙니다.
 
-2026-09-02 Arduino UNO R4 Boards core `1.6.0` recovery compile 결과는 Flash 64,656
-byte(24%), global RAM 8,920 byte(27%)였습니다.
+2026-09-04 Arduino UNO R4 Boards core `1.6.0` preview-asset MANUAL TFT compile
+결과는 Flash 217,032 byte(82%), global RAM 10,344 byte(31%)였습니다.
 
 ## Bench smoke test
 
@@ -158,6 +171,7 @@ byte(24%), global RAM 8,920 byte(27%)였습니다.
 ```text
 DASH v1 alive=42 complete=101 ignored=0 duplicate=0 reinit=0
   LINK vehicle=OK detail=OK part1=VALID part2=VALID
+  GNSS state=RTK_FIXED
   MOTION mode=MANUAL gear=FWD speed=0.00 m/s display=0.0 km/h
   SAFETY estop=NO brake=NO
   DRIVE pedal=0% tractive=STOP command=WAIT drive_stop=YES
@@ -198,16 +212,18 @@ STM_A→STM_B UART source가 stale인 상태입니다.
 
 [`st7796_lcd.cpp`](st7796_lcd.cpp)는 기존 STM_B와 같은 MSP4030 vendor command와
 landscape `MADCTL=0x28`, RGB565를 사용합니다. Arduino SPI는 mode 3, MSB first,
-1 MHz로 설정했습니다. 초기화 순서는 다음과 같습니다.
+12 MHz로 설정했습니다. ST7796S의 4-SPI write cycle 최소값 66 ns(약 15.15 MHz
+상한)보다 낮고, UNO와 LCD 사이의 짧은 로컬 harness를 전제로 합니다. 초기화 순서는
+다음과 같습니다.
 
 1. backlight OFF
 2. reset LOW 100 ms, HIGH 50 ms
 3. MSP4030 vendor sequence
 4. `NORON`, `SLPOUT`, 120 ms, `DISPON`, 20 ms
 5. CAN controller 시작
-6. 기존 STM_B와 같은 static layout과 현재 state를 전체 렌더
+6. 현재 mode의 static layout과 state를 전체 렌더
 7. backlight ON
-8. 완성된 CAN snapshot마다 변경된 문자와 badge만 갱신
+8. 완성된 CAN snapshot마다 변경된 속도·track·gauge·상태 영역만 갱신
 
 Arduino SPI API는 panel readback을 사용하지 않으므로 Serial의
 `LCD dashboard UI rendered`는 command와 pixel 전송 함수가 끝났다는 뜻이지 실제
@@ -220,6 +236,10 @@ panel 표시 증거는 아닙니다. STM_A가 연결되지 않은 bench에서는
 Dashboard CAN까지 끊기거나 alive가 진행하지 않으면 bottom bar는 `DASH CAN LOST`,
 `VALUES STALE`로 바뀝니다. LOST 상태에서 controller 재초기화가 성공해도 fresh complete
 snapshot이 들어오기 전에는 stale 화면을 유지합니다.
+정상 bottom bar는 MANUAL에서 `PEDAL | TRACT | GNSS`, AUTO에서
+`CMD | TRACT | GNSS` 세 칸으로 표시합니다. GNSS 칸은 `RTK FIXED`, `GNSS FIX`,
+`GNSS NOFIX`, `GNSS --` 중 하나이며, 앞의 전체 경고가 활성화되면 경고 문구가
+bottom bar를 우선 점유합니다.
 [`dashboard_ui.cpp`](dashboard_ui.cpp)가 기존 STM_B `display_app.c`의 좌표, badge 색상,
 표시 우선순위와 5x7 font rendering을 담당합니다.
 

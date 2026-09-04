@@ -10,7 +10,7 @@ static constexpr uint8_t LCD_DC_PIN = D9;
 static constexpr uint8_t LCD_RST_PIN = D8;
 static constexpr uint8_t LCD_BL_PIN = D7;
 
-static constexpr uint32_t LCD_SPI_HZ = 1000000U;
+static constexpr uint32_t LCD_SPI_HZ = 12000000U;
 static constexpr uint8_t LCD_CMD_SLPOUT = 0x11U;
 static constexpr uint8_t LCD_CMD_NORON = 0x13U;
 static constexpr uint8_t LCD_CMD_DISPON = 0x29U;
@@ -115,6 +115,7 @@ static const FontGlyph font5x7[] = {
 };
 
 static uint8_t glyph_buffer[GLYPH_BUFFER_BYTES];
+static uint8_t pixel_stream_buffer[PIXEL_CHUNK_BYTES];
 
 static const SPISettings lcd_spi_settings(
     LCD_SPI_HZ, MSBFIRST, SPI_MODE3);
@@ -264,6 +265,72 @@ void fillRect(uint16_t x,
 void fillScreen(uint16_t color)
 {
   fillRect(0U, 0U, WIDTH, HEIGHT, color);
+}
+
+void beginPixelStream()
+{
+  beginPixelStream(0U, 0U, WIDTH - 1U, HEIGHT - 1U);
+}
+
+void beginPixelStream(uint16_t x0,
+                      uint16_t y0,
+                      uint16_t x1,
+                      uint16_t y1)
+{
+  setAddressWindow(x0, y0, x1, y1);
+  SPI.beginTransaction(lcd_spi_settings);
+  digitalWrite(LCD_DC_PIN, HIGH);
+  digitalWrite(LCD_CS_PIN, LOW);
+}
+
+void writePixelRow(const uint16_t *pixels, size_t count)
+{
+  while (count != 0U)
+  {
+    const size_t pixel_count =
+        (count > (PIXEL_CHUNK_BYTES / 2U))
+            ? (PIXEL_CHUNK_BYTES / 2U) : count;
+    for (size_t index = 0U; index < pixel_count; ++index)
+    {
+      pixel_stream_buffer[index * 2U] = (uint8_t)(pixels[index] >> 8);
+      pixel_stream_buffer[index * 2U + 1U] =
+          (uint8_t)(pixels[index] & 0xFFU);
+    }
+    SPI.transfer(pixel_stream_buffer, pixel_count * 2U);
+    pixels += pixel_count;
+    count -= pixel_count;
+  }
+}
+
+void endPixelStream()
+{
+  digitalWrite(LCD_CS_PIN, HIGH);
+  SPI.endTransaction();
+}
+
+void drawRleImage(const uint8_t *data, size_t length)
+{
+  beginPixelStream();
+  for (size_t offset = 0U; offset + 2U < length; offset += 3U)
+  {
+    size_t remaining = data[offset];
+    const uint16_t color =
+        ((uint16_t)data[offset + 1U] << 8) | data[offset + 2U];
+    while (remaining != 0U)
+    {
+      const size_t pixel_count =
+          (remaining > (PIXEL_CHUNK_BYTES / 2U))
+              ? (PIXEL_CHUNK_BYTES / 2U) : remaining;
+      for (size_t index = 0U; index < pixel_count; ++index)
+      {
+        pixel_stream_buffer[index * 2U] = (uint8_t)(color >> 8);
+        pixel_stream_buffer[index * 2U + 1U] = (uint8_t)(color & 0xFFU);
+      }
+      SPI.transfer(pixel_stream_buffer, pixel_count * 2U);
+      remaining -= pixel_count;
+    }
+  }
+  endPixelStream();
 }
 
 void drawRect(uint16_t x,

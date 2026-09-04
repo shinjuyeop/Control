@@ -17,11 +17,17 @@ static constexpr uint8_t DRIVE_COMMAND_RECEIVED = 1U << 1;
 static constexpr uint8_t DRIVE_COMMAND_TIMEOUT = 1U << 2;
 static constexpr uint8_t DRIVE_STOP = 1U << 3;
 
+static constexpr uint8_t GNSS_UNAVAILABLE = 0U;
+static constexpr uint8_t GNSS_NO_FIX = 1U;
+static constexpr uint8_t GNSS_FIX = 2U;
+static constexpr uint8_t GNSS_RTK_FIXED = 3U;
+
 struct DashboardValues
 {
   uint8_t status_flags;
   uint8_t drive_flags;
   uint8_t pedal_percent;
+  uint8_t gnss_state;
   int16_t speed_centi_mps;
   uint16_t bus_voltage_decivolt;
   int16_t bus_current_deciamp;

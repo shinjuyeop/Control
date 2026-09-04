@@ -212,6 +212,26 @@ class RendererCore:
             "tractive": tractive,
         }
 
+    @staticmethod
+    def _gnss_status(values: DashboardValues) -> tuple[str, str]:
+        if values.gnss_state == GNSS_RTK_FIXED:
+            return "RTK FIXED", Color.OK
+        if values.gnss_state == GNSS_FIX:
+            return "GNSS FIX", Color.WARN
+        if values.gnss_state == GNSS_NO_FIX:
+            return "GNSS NO FIX", Color.FAULT
+        return "GNSS --", Color.MUTED
+
+    @staticmethod
+    def _gnss_short(values: DashboardValues) -> tuple[str, str]:
+        if values.gnss_state == GNSS_RTK_FIXED:
+            return "FIXED", Color.OK
+        if values.gnss_state == GNSS_FIX:
+            return "FIX", Color.WARN
+        if values.gnss_state == GNSS_NO_FIX:
+            return "NOFIX", Color.FAULT
+        return "--", Color.MUTED
+
     def _inline_tag(
         self,
         draw: ImageDraw.ImageDraw,

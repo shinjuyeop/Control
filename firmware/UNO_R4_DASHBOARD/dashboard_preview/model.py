@@ -34,6 +34,23 @@ DRIVE_COMMAND_TIMEOUT = 1 << 2
 
 DRIVE_STOP = 1 << 3
 
+GNSS_UNAVAILABLE = 0
+
+GNSS_NO_FIX = 1
+
+GNSS_FIX = 2
+
+GNSS_RTK_FIXED = 3
+
+GNSS_STATE_NAMES = {
+    GNSS_UNAVAILABLE: "UNAVAILABLE",
+    GNSS_NO_FIX: "NO FIX",
+    GNSS_FIX: "FIX",
+    GNSS_RTK_FIXED: "RTK FIXED",
+}
+
+GNSS_STATE_VALUES = {name: state for state, name in GNSS_STATE_NAMES.items()}
+
 PHASE_RATED_A = 480.0
 
 BUS_CONTINUOUS_A = 150.0
@@ -84,6 +101,7 @@ class DashboardValues:
     status_flags: int = 0
     drive_flags: int = 0
     pedal_percent: int = 0
+    gnss_state: int = GNSS_UNAVAILABLE
     speed_centi_mps: int = 0
     bus_voltage_decivolt: int = 0
     bus_current_deciamp: int = 0
@@ -155,6 +173,7 @@ def _base_values() -> DashboardValues:
         ),
         drive_flags=DRIVE_TRACTIVE_FEEDBACK,
         pedal_percent=24,
+        gnss_state=GNSS_RTK_FIXED,
         speed_centi_mps=694,
         bus_voltage_decivolt=550,
         bus_current_deciamp=620,
