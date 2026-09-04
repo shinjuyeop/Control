@@ -161,6 +161,11 @@ command를 50 ms nominal 주기로 보냅니다.
 - AUTO phase-current 한계: `480 A`
 - MANUAL torque-current 한계: `480 A`
 
+Part I의 motor RPM 원본은 `/drive/status.motor_rpm`에 그대로 발행합니다. 차량 속도는
+움직이던 중 정확히 `0 rpm`인 Part I 샘플을 직전 nonzero RPM으로 최대 2회 hold한
+값에서 계산하며, 세 번째 연속 `0 rpm`부터 정지로 반영합니다. 따라서 일반 nonzero
+RPM에는 LPF나 고정 지연이 추가되지 않습니다.
+
 byte layout, 물리 단위와 handshake frame은
 [`../../docs/INTERFACES.md`](../../docs/INTERFACES.md#6-ezkontrol-can)를
 기준으로 합니다.

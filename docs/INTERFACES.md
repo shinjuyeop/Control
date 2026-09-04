@@ -263,8 +263,11 @@ STM_A Control task가 handshake 이후 nominal 50 ms마다 송신합니다.
 | 4..5 | phase current | unsigned × `0.1 A - 3200 A` |
 | 6..7 | motor RPM | unsigned `- 32000 rpm` |
 
-Part I motor RPM은 타이어 지름 `0.47 m`, 감속비 `4.60`을 사용해
-`CURRENT_SPEED`로 변환됩니다.
+Part I motor RPM 원본은 `/drive/status.motor_rpm`에 그대로 남깁니다. `CURRENT_SPEED`와
+`/drive/status.speed_mps`는 움직이던 중 정확히 `0 rpm`인 Part I 샘플을 직전
+nonzero RPM으로 최대 2회 hold한 뒤, 타이어 지름 `0.47 m`, 감속비 `4.60`을 사용해
+변환합니다. 세 번째 연속 `0 rpm`부터는 실제 정지로 반영합니다. 이 횟수는
+`/drive/status` 발행 횟수가 아니라 Part I CAN frame 기준입니다.
 
 ### 6.5 Status Part II
 

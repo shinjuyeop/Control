@@ -83,6 +83,7 @@ enum {
 #define DRIVE_DETAIL_TX_PERIOD_MS 100u
 #define HOST_COMMAND_TIMEOUT_MS 500u
 #define MOTOR_FEEDBACK_TIMEOUT_MS 200u
+#define MOTOR_RPM_ZERO_HOLD_SAMPLES 2u
 #define AGENT_PING_PERIOD_MS 500u
 #define AGENT_PING_TIMEOUT_MS 100u
 /* 20ms(50Hz). 벤치에서 페달 밟는 속도와 EZkontrol 응답을 놓치지 않을 만큼 촘촘하다.
@@ -143,7 +144,10 @@ static uint8_t s_life = 0;
 /* 데드밴드 클램핑 전 raw ADC 값. StartInputs가 쓰고 StartuROS가 발행한다.
  * 캘리브레이션(PEDAL_ADC_MIN/MAX)이 바뀌어도 과거 로그를 다시 계산할 수 있게 남긴다. */
 static volatile int32_t s_pedal_adc_raw = 0;
-static volatile float s_motor_rpm = 0.0f;
+static volatile float s_motor_rpm_raw = 0.0f;
+static int32_t s_last_nonzero_motor_rpm = 0;
+static uint8_t s_motor_rpm_zero_streak = 0u;
+static uint8_t s_motor_rpm_hold_armed = 0u;
 static volatile uint8_t s_command_received = 0u;
 static volatile uint8_t s_command_timeout = 1u;
 static volatile uint8_t s_command_brake_engage = 1u;
@@ -244,6 +248,8 @@ static void init_ros_message_buffers(void);
 static uint8_t create_ros_entities(void);
 static void destroy_ros_entities(void);
 static uint32_t age_since(uint32_t now, uint32_t stamp);
+static void reset_motor_rpm_despiker(void);
+static int32_t despike_motor_rpm(int32_t motor_rpm_raw);
 static void capture_drive_detail(uint32_t now,
                                  BoardUartDriveDetail_t *detail);
 static void publish_drive_status(uint32_t now);
@@ -953,6 +959,32 @@ static uint32_t age_since(uint32_t now, uint32_t stamp)
   return (delta < 0) ? 0u : (uint32_t)delta;
 }
 
+static void reset_motor_rpm_despiker(void)
+{
+  s_last_nonzero_motor_rpm = 0;
+  s_motor_rpm_zero_streak = 0u;
+  s_motor_rpm_hold_armed = 0u;
+}
+
+static int32_t despike_motor_rpm(int32_t motor_rpm_raw)
+{
+  if (motor_rpm_raw != 0) {
+    s_last_nonzero_motor_rpm = motor_rpm_raw;
+    s_motor_rpm_zero_streak = 0u;
+    s_motor_rpm_hold_armed = 1u;
+    return motor_rpm_raw;
+  }
+
+  if ((s_motor_rpm_hold_armed != 0u) &&
+      (s_motor_rpm_zero_streak < MOTOR_RPM_ZERO_HOLD_SAMPLES)) {
+    s_motor_rpm_zero_streak++;
+    return s_last_nonzero_motor_rpm;
+  }
+
+  reset_motor_rpm_despiker();
+  return 0;
+}
+
 static int16_t encode_tenths_i16(float value)
 {
   float scaled = value * 10.0f;
@@ -1077,7 +1109,7 @@ static void publish_drive_status(uint32_t now)
   pedal_adc_raw = s_pedal_adc_raw;
   commanded_phase_current_a = s_commanded_phase_current_a;
   commanded_motor_rpm = s_commanded_motor_rpm;
-  motor_rpm = s_motor_rpm;
+  motor_rpm = s_motor_rpm_raw;
   speed_mps = CURRENT_SPEED;
   bus_voltage_v = s_bus_voltage_v;
   bus_current_a = s_bus_current_a;
@@ -1240,13 +1272,20 @@ static void parse_motor_status_part1(const uint8_t data[8], uint32_t now)
       (uint16_t)((uint16_t)data[4] | ((uint16_t)data[5] << 8));
   const uint16_t raw_rpm =
       (uint16_t)((uint16_t)data[6] | ((uint16_t)data[7] << 8));
-  const int32_t motor_rpm = (int32_t)raw_rpm - 32000;
-  const float wheel_rpm = (float)motor_rpm / GEAR_RATIO;
+  const int32_t motor_rpm_raw = (int32_t)raw_rpm - 32000;
+
+  /* 새 CAN stream에서는 이전 stream의 RPM을 hold하지 않는다. */
+  if ((s_part1_received == 0u) ||
+      (age_since(now, s_last_part1_rx_ms) >= MOTOR_FEEDBACK_TIMEOUT_MS)) {
+    reset_motor_rpm_despiker();
+  }
+  const int32_t motor_rpm_despiked = despike_motor_rpm(motor_rpm_raw);
+  const float wheel_rpm = (float)motor_rpm_despiked / GEAR_RATIO;
 
   s_bus_voltage_v = (float)raw_voltage * 0.1f;
   s_bus_current_a = (float)raw_bus_current * 0.1f - 3200.0f;
   s_phase_current_a = (float)raw_phase_current * 0.1f - 3200.0f;
-  s_motor_rpm = (float)motor_rpm;
+  s_motor_rpm_raw = (float)motor_rpm_raw;
   CURRENT_SPEED = wheel_rpm * (3.14159f * TIRE_DIAM_M) / 60.0f;
   s_last_part1_rx_ms = now;
   s_part1_received = 1u;
@@ -1300,6 +1339,7 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan,
         if (rx_data[i] != 0x55u) { is_handshake_request = 0u; break; }
       }
       if (is_handshake_request != 0u) {
+        reset_motor_rpm_despiker();
         s_motor_handshake_done = 0u;
         if (send_motor_handshake_ack() == HAL_OK) {
           s_motor_handshake_done = 1u;
