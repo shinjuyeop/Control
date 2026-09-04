@@ -8,6 +8,67 @@ Arduino `setup()`/`loop()` 구조와 `Arduino_CAN` API를 사용합니다.
 색상, validity 표현을 Arduino SPI로 이식했습니다. 첫 화면을 전체 렌더한 뒤에는 CAN
 snapshot에서 바뀐 문자와 badge만 갱신합니다.
 
+## Local UI preview
+
+[`dashboard_preview.py`](dashboard_preview.py)는 CAN/UNO/LCD hardware 없이 동일한
+dashboard 값을 480x320 화면으로 확인하는 개발용 GUI입니다. 현재 펌웨어의 좌표,
+RGB565 색과 5x7 font를 옮긴 BASELINE과 다음 8개 시안을 같은 상태로 비교합니다.
+Python 3, Tkinter와 Pillow가 필요합니다.
+
+- `GT3_VITALS`: 수치 진단을 위한 dark three-column grid
+- `CUP_LIGHT`: battery / road / motor를 나눈 light cockpit grid
+- `DUAL_DIAL`: bus-current와 phase-current 부하의 직접 비교
+- `TAPE_GAUGES`: 좌우 눈금 tape에서 bus와 phase 위치를 직접 비교
+- `HISTORY_SCOPE`: 최근 5초 current/temperature 궤적을 oscilloscope로 표시
+- `LOAD_ENVELOPE`: bus-current와 phase-current 운전점 및 최근 trail
+- `MANUAL_TFT`: 계기판 reference를 옮긴 2중 BUS/PHASE arc, 곡선형 F/R, speed,
+  4열 PED/HV/MOTOR/CTRL gauge와 한 줄 상태 표시
+- `AUTO_GT3`: HV/bus/controller, speed/host command, phase/motor를 나눈 AUTO 전용 grid
+
+`MANUAL_TFT`와 `AUTO_GT3`는 mode page 한 쌍입니다. 드롭다운에서 각 page를 직접 열어
+볼 수 있고, 둘 중 하나를 사용하던 중 CAN의 MANUAL/AUTO mode가 바뀌면 해당 page로
+자동 전환합니다. 현재 CAN에 없는 steering 상태와 LV battery SOC는 빈 placeholder로
+만들지 않습니다. GUI 기본 variant도 이 mode page 쌍입니다. BASELINE과 나머지 안은
+드롭다운에서 비교할 수 있습니다.
+
+GUI를 열면 검은 화면에서 KAI symbol의 흰 outline이 약한 haze와 함께 나타나는 1.4초
+startup sequence가 한 번 재생됩니다. `Replay startup`으로 다시 볼 수 있으며 symbol은
+이동하거나 채워지지 않고 TEAM K.A.I. 문구도 표시하지 않습니다. 수동 화면은 설치된
+Blender Pro Medium/Bold/Heavy를 label/value/gear·speed 역할에 나눠 사용하고, 폰트가
+없는 환경에서는 기존 condensed font로 fallback합니다.
+
+수동 화면의 BUS/PHASE track은 수직 구간, 대각선 구간, 수평 구간과 두 전이곡선을
+고정 antialias mask로 한 번만 만들고 그 안에서 진행 길이만 갱신합니다. 따라서 값이
+변해도 곡선 외곽 픽셀이 프레임마다 다시 만들어지지 않습니다.
+
+미리보기 구현은 시안 추가가 한 파일을 계속 키우지 않도록 다음처럼 분리했습니다.
+
+- `dashboard_preview.py`: 기존 실행 명령을 보존하는 8줄 진입점
+- `dashboard_preview/model.py`: CAN 값, scenario, history와 gauge dynamics
+- `dashboard_preview/palette.py`: 공통 색상과 font
+- `dashboard_preview/core.py`: semantic state 합성과 공통 drawing primitive
+- `dashboard_preview/registry.py`: GUI/CLI에 노출할 variant 순서와 renderer 이름
+- `dashboard_preview/variants/`: 기존 계기류와 semantic 시안군
+- `dashboard_preview/app.py`: Tk GUI와 snapshot CLI
+
+```bash
+cd firmware/UNO_R4_DASHBOARD
+python3 dashboard_preview.py
+```
+
+오른쪽 panel에서 scenario, 10/20 Hz telemetry cadence, MANUAL/AUTO, FWD/REV,
+validity, E-stop/brake와 motor fault 24종을 바꿀 수 있습니다. 실제 LCD 해상도의 PNG만
+저장하려면 GUI의 `Save 480x320 PNG`를 사용하거나 다음처럼 실행합니다.
+
+```bash
+python3 dashboard_preview.py \
+  --variant manual_tft --scenario load --time 6 --snapshot /tmp/dashboard.png
+```
+
+Python GUI의 current/temperature threshold와 animation은 표시 시안일 뿐 CAN contract나
+차량 safety limit이 아닙니다. 이 도구는 SocketCAN이나 serial device를 열지 않으며
+STM/UNO firmware 상태를 변경하지 않습니다.
+
 ## CAN contract
 
 | 항목 | 값 |
