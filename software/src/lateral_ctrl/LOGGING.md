@@ -17,7 +17,7 @@ ros2 topic info -v /steering/status
 ros2 topic info -v /imu/data
 ros2 topic info -v /gnss/fix
 
-# 실차 제어컴 기본 경로는 /home/kai/KAI_ws/record다.
+# 실차 제어컴 기본 경로는 /home/kai/KAI_ws/records다.
 ros2 launch lateral_ctrl mcap_logging.launch.py
 
 # 개발 랩탑에서 외장 SSD를 쓸 때는 경로와 mount 강제를 함께 명시한다.
@@ -39,13 +39,13 @@ ros2 launch lateral_ctrl mcap_logging.launch.py \
 
 | 인자 | 기본값 | 설명 |
 |---|---|---|
-| `output_base_dir` | `/home/kai/KAI_ws/record` | 실차 제어컴의 local 기록 경로. 다른 host에서는 명시적으로 덮어쓴다 |
+| `output_base_dir` | `/home/kai/KAI_ws/records` | 실차 제어컴의 local 기록 경로. 다른 host에서는 명시적으로 덮어쓴다 |
 | `require_external_storage` | `false` | `true`면 출력이 외장 artifact root 아래 별도 mount인지 확인한다 |
 
 ### 출력 구조
 
 ```
-/home/kai/KAI_ws/record/
+/home/kai/KAI_ws/records/
 └── rosbag2_2026_09_05-14_00_00/
     ├── rosbag2_2026_09_05-14_00_00_0.mcap
     ├── metadata.yaml
@@ -61,7 +61,7 @@ ros2 launch lateral_ctrl mcap_logging.launch.py \
 source install/setup.bash  # gazebo_sitl workspace root에서 실행
 
 # 전체 토픽 변환 → <bag>/csv/에 토픽당 1파일
-BAG_DIR=/home/kai/KAI_ws/record/rosbag2_2026_09_05-14_00_00
+BAG_DIR=/home/kai/KAI_ws/records/rosbag2_2026_09_05-14_00_00
 ros2 run lateral_ctrl mcap_to_csv.py "$BAG_DIR"
 
 # 특정 토픽만 / 출력 위치 지정

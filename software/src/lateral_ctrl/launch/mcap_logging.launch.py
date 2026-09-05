@@ -4,7 +4,7 @@
 #
 #   ros2 launch lateral_ctrl mcap_logging.launch.py
 #
-#   출력: /home/kai/KAI_ws/record/
+#   출력: /home/kai/KAI_ws/records/
 #         rosbag2_YYYY_MM_DD-HH_MM_SS/
 #   종료: Ctrl+C (rosbag2가 SIGINT를 받아 mcap을 정상 마감함)
 #   CSV 변환: ros2 run lateral_ctrl mcap_to_csv.py <bag 디렉토리>
@@ -17,7 +17,7 @@ from launch.substitutions import LaunchConfiguration
 
 
 ARTIFACT_ROOT = os.path.expanduser("~/Storage/ROS2_Workspace_offload")
-DEFAULT_OUTPUT_BASE_DIR = os.path.expanduser("/home/kai/KAI_ws/record")
+DEFAULT_OUTPUT_BASE_DIR = os.path.expanduser("/home/kai/KAI_ws/records")
 
 SYSID_TOPICS = (
     "/planning/command",

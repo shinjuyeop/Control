@@ -17,6 +17,9 @@ from zoneinfo import ZoneInfo
 import yaml
 
 
+DEFAULT_RECORDS_ROOT = Path('/home/kai/KAI_ws/records')
+
+
 RECORD_TOPICS = (
     '/planning/command', '/vehicle/command', '/sysid/scinario',
     '/drive/status', '/steering/status', '/steering/angle', '/brake/status',
@@ -112,7 +115,7 @@ COMPONENTS = (
 
 
 class ProcessManager:
-    def __init__(self, node, records_root=Path('/home/kai/records')):
+    def __init__(self, node, records_root=DEFAULT_RECORDS_ROOT):
         self.node = node
         self.record_topics_required = node.required_topics + ('/planning/command', '/vehicle/command')
         self.records_root = Path(records_root)
@@ -141,7 +144,7 @@ class ProcessManager:
                  if namespace == self.node.get_namespace()}
         with self.node.lock:
             received = dict(self.node.received)
-        now = time.monotonic()
+        now = self.node.clock()
         rows = []
         for component in COMPONENTS:
             sample = received.get(component.topic)

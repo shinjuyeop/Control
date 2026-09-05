@@ -15,6 +15,7 @@ import tty
 
 import rclpy
 from rclpy.executors import SingleThreadedExecutor
+from rclpy.parameter import Parameter
 from rclpy.signals import SignalHandlerOptions
 from rich.console import Console, Group
 from rich.live import Live
@@ -22,7 +23,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from .sysid_processes import ProcessManager
+from .sysid_processes import DEFAULT_RECORDS_ROOT, ProcessManager
 from .sysid_profiles import RunSettings
 from .sysid_runtime import SysidNode
 
@@ -55,7 +56,8 @@ def gate_text(row, topic_rows):
                 style='green' if go else 'bold red')
 
 
-def dashboard(snapshot, selection, speed_text=None, message='', height=40):
+def dashboard(snapshot, selection, speed_text=None, message='', height=40,
+              records_root=DEFAULT_RECORDS_ROOT):
     actual = '—' if snapshot['speed'] is None else f"{snapshot['speed']:.1f}"
     rpm = '—' if snapshot['rpm'] is None else f"{snapshot['rpm']:.0f}"
     current = '—' if snapshot['current'] is None else f"{snapshot['current']:.0f}"
@@ -110,7 +112,7 @@ def dashboard(snapshot, selection, speed_text=None, message='', height=40):
         settings.append('\n' + message, style='yellow')
     if snapshot['terminal_state'] in {'ABORTED', 'ERROR'} and snapshot['finish_reason']:
         settings.append('\n중단 원인: ' + snapshot['finish_reason'], style='bold red')
-    recording = ('● REC  ' if snapshot['recording'] else '') + (snapshot['run_dir'] or '/home/kai/records')
+    recording = ('● REC  ' if snapshot['recording'] else '') + (snapshot['run_dir'] or str(records_root))
     if height < 36:
         pairs = Table.grid(expand=True)
         pairs.add_column(ratio=1)
@@ -147,7 +149,7 @@ def dashboard(snapshot, selection, speed_text=None, message='', height=40):
     )
 
 
-def main():
+def main(*, use_sim_time=False, records_root=DEFAULT_RECORDS_ROOT):
     console = Console()
     if not sys.stdin.isatty():
         console.print('터미널에서 python3 auto_sysid.py로 실행하세요.')
@@ -172,12 +174,16 @@ def main():
     try:
         # Keep ROS alive until the final stop command and recorder flush are complete.
         rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
-        node = SysidNode()
+        node = SysidNode(parameter_overrides=[
+            Parameter('use_sim_time', value=use_sim_time),
+        ])
+        if use_sim_time:
+            node.clock = lambda: node.get_clock().now().nanoseconds / 1e9
         executor = SingleThreadedExecutor()
         executor.add_node(node)
         spin_thread = threading.Thread(target=executor.spin, name='sysid-ros')
         spin_thread.start()
-        manager = ProcessManager(node)
+        manager = ProcessManager(node, records_root=records_root)
         manager.start()
         selection = RunSettings()
         speed_text = None
@@ -185,7 +191,8 @@ def main():
         with keyboard(), Live(console=console, screen=True, auto_refresh=False) as live:
             while not quitting.is_set():
                 live.update(dashboard(node.snapshot(), selection, speed_text, message,
-                                      height=console.size.height), refresh=True)
+                                      height=console.size.height,
+                                      records_root=records_root), refresh=True)
                 readable, _, _ = select.select([sys.stdin], [], [], 0.2)
                 if not readable:
                     continue

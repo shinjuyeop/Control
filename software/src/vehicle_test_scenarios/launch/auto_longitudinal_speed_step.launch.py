@@ -15,6 +15,5 @@ from vehicle_test_scenarios.auto_sysid_launch import auto_sysid_launch_descripti
 def generate_launch_description():
     return auto_sysid_launch_description(
         config_filename="auto_longitudinal_speed_step.yaml",
-        session_name="A02_speed_step_10_20",
         scenario_summary="10 s zero baseline, then 0->1 and 1<->2 m/s steps",
     )

@@ -11,12 +11,8 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 
 
-CAMPAIGN_NAME = "260825_auto_sysid"
-
-
 def auto_sysid_launch_description(
     config_filename: str,
-    session_name: str,
     scenario_summary: str,
 ) -> LaunchDescription:
     scenario_share = get_package_share_directory("vehicle_test_scenarios")
@@ -55,11 +51,6 @@ def auto_sysid_launch_description(
             ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(logging_launch),
-                launch_arguments={
-                    "campaign_name": CAMPAIGN_NAME,
-                    "session_name": session_name,
-                    "require_external_storage": "false",
-                }.items(),
             ),
         ]
     )
