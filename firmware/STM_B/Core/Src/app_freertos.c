@@ -59,8 +59,35 @@ typedef enum {
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define BRAKE_ENGAGED_PULSE_US  1249u /* 기존 45도 위치, 실차 캘리브레이션 후 조정 필요 */
-#define BRAKE_RELEASED_PULSE_US 1443u /* 기존 80도 위치, 실차 캘리브레이션 후 조정 필요 */
+/* Happymodel Super400 400g 서보 데이터시트 PWM 안전범위 (하드웨어 절대 한계) */
+#define BRAKE_SERVO_PWM_MIN_US  800u
+#define BRAKE_SERVO_PWM_MAX_US  2200u
+
+/* 실차 캘리브레이션 직선: (45도,1249us) / (80도,1443us) 두 점에서 역산.
+ * 기울기 194/35 us/deg, 절편(0도) 1000us로 두 점 모두 정확히 재현됨.
+ * 실측 캘리브레이션 점이 바뀌면 이 두 값만 갱신하면 된다. */
+#define BRAKE_SERVO_US_PER_DEG        (194.0f / 35.0f)
+#define BRAKE_SERVO_ZERO_DEG_PULSE_US 1000.0f
+
+/* 각도(도) -> pulse(us) 자동 변환. 각도만 바꾸면 pulse는 자동 계산된다. */
+#define BRAKE_SERVO_DEG_TO_PULSE_US(deg_) \
+  ((uint16_t)(BRAKE_SERVO_ZERO_DEG_PULSE_US + (BRAKE_SERVO_US_PER_DEG) * (deg_) + 0.5f))
+
+/* ---- 여기 두 각도만 바꾸면 engage/release pulse가 자동으로 재계산된다 ---- */
+#define BRAKE_ENGAGED_ANGLE_DEG   45.0f
+#define BRAKE_RELEASED_ANGLE_DEG  80.0f
+
+#define BRAKE_ENGAGED_PULSE_US   BRAKE_SERVO_DEG_TO_PULSE_US(BRAKE_ENGAGED_ANGLE_DEG)
+#define BRAKE_RELEASED_PULSE_US  BRAKE_SERVO_DEG_TO_PULSE_US(BRAKE_RELEASED_ANGLE_DEG)
+
+/* 서보 데이터시트 PWM 절대범위(800~2200us)를 벗어나면 컴파일 자체가 실패하도록 강제 */
+_Static_assert(BRAKE_ENGAGED_PULSE_US >= BRAKE_SERVO_PWM_MIN_US &&
+  BRAKE_ENGAGED_PULSE_US <= BRAKE_SERVO_PWM_MAX_US,
+  "BRAKE_ENGAGED_ANGLE_DEG가 서보 PWM 안전범위(800~2200us)를 벗어남");
+_Static_assert(BRAKE_RELEASED_PULSE_US >= BRAKE_SERVO_PWM_MIN_US &&
+  BRAKE_RELEASED_PULSE_US <= BRAKE_SERVO_PWM_MAX_US,
+  "BRAKE_RELEASED_ANGLE_DEG가 서보 PWM 안전범위(800~2200us)를 벗어남");
+
 #define BRAKE_PULSE_TRAVEL_US \
   (BRAKE_RELEASED_PULSE_US - BRAKE_ENGAGED_PULSE_US)
 #define BRAKE_RAMP_UPDATE_COUNT 35u
