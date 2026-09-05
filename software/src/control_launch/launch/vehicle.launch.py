@@ -39,8 +39,9 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import Command, FindExecutable, LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def _agent(name, port, baud):
@@ -54,22 +55,27 @@ def _agent(name, port, baud):
     )
 
 
-def _static_transform(name, parent, child, x, y, z):
+def _robot_state_publisher():
+    vehicle_xacro = os.path.join(
+        get_package_share_directory("kaiev26_description"),
+        "urdf", "kaiev26.urdf.xacro",
+    )
     return Node(
-        package="tf2_ros",
-        executable="static_transform_publisher",
-        name=name,
+        package="robot_state_publisher",
+        executable="robot_state_publisher",
+        name="vehicle_robot_state_publisher",
         output="screen",
-        arguments=[
-            "--x", str(x),
-            "--y", str(y),
-            "--z", str(z),
-            "--roll", "0",
-            "--pitch", "0",
-            "--yaw", "0",
-            "--frame-id", parent,
-            "--child-frame-id", child,
-        ],
+        parameters=[{
+            "robot_description": ParameterValue(
+                Command([
+                    FindExecutable(name="xacro"),
+                    " ", vehicle_xacro,
+                    " lidar_output_mode:=none",
+                    " debug_driver_camera_enabled:=false",
+                ]),
+                value_type=str,
+            ),
+        }],
     )
 
 
@@ -99,22 +105,8 @@ def generate_launch_description():
             "can_interface", default_value="can0",
             description="KEYA SocketCAN 인터페이스.",
         ),
-        # kaiev26_description/urdf/kaiev26.urdf.xacro의 실측 고정 변환.
-        _static_transform(
-            "base_footprint_to_base_link_tf",
-            "base_footprint", "base_link",
-            0.0, 0.0, 0.2408,
-        ),
-        _static_transform(
-            "base_link_to_gps_tf",
-            "base_link", "gps",
-            0.4261, 0.0, 1.2551,
-        ),
-        _static_transform(
-            "base_link_to_ebimu_body_tf",
-            "base_link", "ebimu_body_link",
-            0.4478, 0.0029, 1.0080,
-        ),
+        # kaiev26_description의 차량·INS·LiDAR·카메라 고정 TF 전체를 발행한다.
+        _robot_state_publisher(),
         _agent("stm_a_agent", LaunchConfiguration("stm_a_port"), baud),
         _agent("stm_b_agent", LaunchConfiguration("stm_b_port"), baud),
         # /vehicle/command의 유일한 발행자. stateless라 respawn으로 복구한다.
