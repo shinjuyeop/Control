@@ -32,7 +32,6 @@ TOPICS = {
     '/imu/data_raw': Imu,
     '/tf_static': TFMessage,
 }
-OPTIONAL_TOPICS = {'/imu/data_raw'}
 BUSY_STATES = {'RECORD_START', 'WAIT_AUTO', 'COUNTDOWN', 'CRUISE', 'RUNNING', 'DECEL', 'TAIL', 'CLOSING'}
 STATE_LABELS = {
     'IDLE': '시험 선택', 'RECORD_START': 'MCAP 연결 중', 'WAIT_AUTO': 'AUTO 전환 대기',
@@ -44,7 +43,10 @@ STATE_LABELS = {
 
 
 class SysidNode(Node):
-    required_topics = tuple(topic for topic in TOPICS if topic not in OPTIONAL_TOPICS)
+    required_topics = (
+        '/drive/status', '/steering/status', '/brake/status', '/vehicle/state',
+        '/gnss/fix', '/gnss/fix_velocity', '/tf_static',
+    )
 
     def __init__(self, *, clock=time.monotonic, **kwargs):
         super().__init__('auto_sysid', **kwargs)
@@ -177,14 +179,15 @@ class SysidNode(Node):
             '프로세스 관리자', self.manager_ok,
             '정상' if self.manager_ok else '프로세스 관리자 종료',
         )]
-        for topic in self.required_topics:
+        for topic in TOPICS:
             sample = self.received.get(topic)
+            required = topic in self.required_topics
             if sample is None:
-                rows.append((topic, False, f'{topic} 미수신'))
+                rows.append((topic, not required, f'{topic} 미수신'))
             elif topic != '/tf_static' and now - sample[0] > 1.0:
-                rows.append((topic, False, f'{topic} 수신 중단'))
+                rows.append((topic, not required, f'{topic} 수신 중단'))
             elif self.sensor_errors.get(topic):
-                rows.append((topic, False, f'{topic}: {self.sensor_errors[topic]}'))
+                rows.append((topic, not required, f'{topic}: {self.sensor_errors[topic]}'))
             else:
                 rows.append((topic, True, '정상'))
         drive = self.received.get('/drive/status')
@@ -373,23 +376,14 @@ class SysidNode(Node):
                 times = self.arrivals[topic]
                 rate = ((len(times) - 1) / (times[-1] - times[0])
                         if len(times) > 1 and times[-1] > times[0] else 0)
-                optional = topic in OPTIONAL_TOPICS
-                if sample is None and optional:
-                    symbol, text = '🟡', '선택 기록 · 미수신'
-                elif sample is None:
-                    symbol, text = '❌', '미수신'
-                elif error and optional:
-                    symbol, text = '🟡', '선택 기록 · ' + error
+                if sample is None:
+                    symbol, text = '—', '없음'
+                elif topic != '/tf_static' and age > 1:
+                    symbol, text = '—', f'{age:.1f}초 수신 중단'
                 elif error:
-                    symbol, text = '❌', error
+                    symbol, text = '—', error
                 elif topic == '/tf_static':
                     symbol, text = '✅', '정적 TF 수신'
-                elif age > 1 and optional:
-                    symbol, text = '🟡', f'선택 기록 · {age:.1f}초 수신 중단'
-                elif age > 1:
-                    symbol, text = '❌', f'{age:.1f}초 수신 중단'
-                elif age > 0.3:
-                    symbol, text = '🟡', f'{rate:.1f} Hz · {age:.2f}초 전'
                 else:
                     symbol, text = '✅', f'{rate:.1f} Hz'
                 rows.append((topic, symbol, text))

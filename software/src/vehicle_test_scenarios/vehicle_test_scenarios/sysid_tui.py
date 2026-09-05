@@ -44,7 +44,9 @@ def keyboard():
 def gate_text(row, topic_rows):
     name, go, detail = row
     if name in topic_rows:
-        detail = topic_rows[name][1]
+        icon, detail = topic_rows[name]
+        if go and icon == '—':
+            return Text(f'○ {detail} · 실행 가능', style='dim')
     elif detail.startswith(name + ': '):
         detail = detail[len(name) + 2:]
     elif detail.startswith(name + ' '):
@@ -71,11 +73,9 @@ def dashboard(snapshot, selection, speed_text=None, message='', height=40):
     display_gates.extend(
         ('실행 조건', False, issue)
         for issue in snapshot['issues'] if issue not in shown_problems)
-    gate_names = {name for name, _, _ in snapshot['gates']}
     topic_rows = {name: (icon, detail) for name, icon, detail in snapshot['rows']}
-    optional_rows = [row for row in snapshot['rows'] if row[0] not in gate_names]
     gates = Table(expand=True, box=None)
-    gates.add_column('필수 조건', ratio=3)
+    gates.add_column('토픽 / 실행 조건', ratio=3)
     gates.add_column('판정', ratio=2)
     for row in display_gates:
         gates.add_row(row[0], gate_text(row, topic_rows))
@@ -91,7 +91,7 @@ def dashboard(snapshot, selection, speed_text=None, message='', height=40):
     columns.add_row(
         Panel(gates, title='RUN GO' if all_go else 'RUN NO-GO',
               border_style='green' if all_go else 'red'),
-        Panel(drivers, title='자동 실행'),
+        Panel(drivers, title='외부 드라이버'),
     )
     choices = '   '.join(
         ('▶ ' if i == selection.scenario else '') + f'[{i}] 시나리오 {i}' for i in range(1, 5))
@@ -108,8 +108,6 @@ def dashboard(snapshot, selection, speed_text=None, message='', height=40):
     if snapshot['terminal_state'] in {'ABORTED', 'ERROR'} and snapshot['finish_reason']:
         settings.append('\n중단 원인: ' + snapshot['finish_reason'], style='bold red')
     recording = ('● REC  ' if snapshot['recording'] else '') + (snapshot['run_dir'] or '/home/kai/records')
-    optional = '   '.join(f'{icon} {name} · {detail}' for name, icon, detail in optional_rows)
-    record_status = recording + ('\n선택 기록: ' + optional if optional else '')
     if height < 36:
         pairs = Table.grid(expand=True)
         pairs.add_column(ratio=1)
@@ -126,7 +124,7 @@ def dashboard(snapshot, selection, speed_text=None, message='', height=40):
                 display_gates[:midpoint], display_gates[midpoint:]):
             pairs.add_row(compact(left), compact(right))
         driver_summary = ' · '.join(
-            name + (' ✓' if state in ('실행 중', '기존 프로세스 사용') else ' 대기')
+            name + (' ✓' if state == '감지됨' else ' 대기')
             for name, state in snapshot['drivers'])
         return Group(
             Panel(title, border_style='cyan'),
@@ -134,14 +132,14 @@ def dashboard(snapshot, selection, speed_text=None, message='', height=40):
             Panel(pairs, title='RUN GO' if all_go else 'RUN NO-GO',
                   border_style='green' if all_go else 'red'),
             Text(driver_summary, overflow='ellipsis', no_wrap=True),
-            Text(record_status, overflow='ellipsis', no_wrap=True),
+            Text(recording, overflow='ellipsis', no_wrap=True),
             Text('\n'.join(snapshot['logs'][-2:]), overflow='ellipsis', no_wrap=True),
         )
     return Group(
         Panel(title, border_style='cyan'),
         Panel(settings, title='시험 선택'),
         columns,
-        Panel(Text(record_status), title='MCAP'),
+        Panel(Text(recording), title='MCAP'),
         Panel(Text('\n'.join(snapshot['logs'])), title='실행 로그'),
     )
 
@@ -234,7 +232,7 @@ def main():
     finally:
         signal.signal(signal.SIGINT, signal.SIG_IGN)
         try:
-            console.print('기록과 직접 시작한 드라이버를 정리합니다…')
+            console.print('기록을 저장하고 종료합니다…')
         except OSError:
             pass
         if node and node.output_active and rclpy.ok():

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 import rclpy
+from ament_index_python.packages import get_package_prefix, get_package_share_directory
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile
@@ -206,8 +207,6 @@ def test_missing_or_lost_imu_does_not_block_or_stop_run(controlled):
     node._tick()
     assert node.state == 'RUNNING'
     assert not node.output.brake_engage
-    imu_row = next(row for row in node.snapshot()['rows'] if row[0] == '/imu/data_raw')
-    assert imu_row[1] == '🟡'
 
 
 @pytest.mark.parametrize('extra_planning', [True, False])
@@ -244,10 +243,8 @@ def test_unrelated_command_publisher_prevents_run_and_command_output(controlled,
         other.destroy_node()
 
 
-def test_real_governor_and_mcap_record_mode_and_input(tmp_path, monkeypatch):
+def test_real_governor_and_mcap_record_mode_and_input(tmp_path):
     # Existing ROS transports are used; the test supplies telemetry instead of hardware.
-    monkeypatch.setattr(sysid_processes, 'COMPONENTS', tuple(
-        c for c in sysid_processes.COMPONENTS if c.key == '명령 중계'))
     rclpy.init()
     node = SysidNode()
     source = Node('sysid_test_telemetry')
@@ -282,7 +279,15 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path, monkeypatch):
                 return
         raise AssertionError((node.state, node.issues(), list(node.logs)[-8:]))
 
+    governor = None
     try:
+        governor = sysid_processes.OwnedProcess('test governor', [
+            str(Path(get_package_prefix('command_governor')) /
+                'lib/command_governor/command_governor_node'),
+            '--ros-args', '--params-file',
+            str(Path(get_package_share_directory('command_governor')) /
+                'config/command_governor.yaml'),
+        ], node.log)
         manager.start()
         spin_until(lambda: not node.issues())
         assert not received
@@ -318,9 +323,11 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path, monkeypatch):
         node.request_stop()
         executor.spin_once(timeout_sec=0.1)
         manager.close()
+        if governor is not None:
+            governor.stop()
         executor.shutdown()
         source.destroy_node()
         node.destroy_node()
         rclpy.shutdown()
-        for child in manager.children.values():
-            assert not sysid_processes.group_members(child.pgid)
+        if governor is not None:
+            assert not sysid_processes.group_members(governor.pgid)

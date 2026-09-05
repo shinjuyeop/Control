@@ -1,23 +1,19 @@
-"""Owned driver processes and the standard rosbag2 MCAP recorder."""
+"""Observe external ROS drivers and manage the rosbag2 MCAP recorder."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-import importlib.util
 import json
 import os
 from pathlib import Path
 import signal
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 from zoneinfo import ZoneInfo
 
-from ament_index_python.packages import get_package_prefix, get_package_share_directory
 import yaml
 
 
@@ -98,23 +94,20 @@ class OwnedProcess:
 @dataclass(frozen=True)
 class Component:
     key: str
-    package: str
-    executable: str
     node: str
     topic: str = ''
-    device: str = ''
 
 
 COMPONENTS = (
-    Component('차량 TF', 'robot_state_publisher', 'robot_state_publisher', 'vehicle_robot_state_publisher'),
-    Component('STM A', 'micro_ros_agent', 'micro_ros_agent', 'stm_a_node', '/drive/status', '/dev/stm_a'),
-    Component('STM B', 'micro_ros_agent', 'micro_ros_agent', 'stm_b_node', '/brake/status', '/dev/stm_b'),
-    Component('명령 중계', 'command_governor', 'command_governor_node', 'command_governor', '/vehicle/command'),
-    Component('조향', 'lateral_ctrl', 'steering_actuator_node', 'steering_actuator_node', '/steering/status', 'can0'),
-    Component('차량 상태', 'vehicle_state_publisher', 'vehicle_state_publisher_node', 'vehicle_state_publisher', '/vehicle/state'),
-    Component('차량 진단', 'visualization', 'diagnostics_publisher', 'diagnostics_publisher'),
-    Component('GNSS', 'um980_driver', 'um980_driver_node', 'um980_driver', '/gnss/fix', '/dev/gps'),
-    Component('IMU', 'ebimu_driver', 'ebimu_node', 'ebimu_driver', '/imu/data_raw', '/dev/imu'),
+    Component('차량 TF', 'vehicle_robot_state_publisher'),
+    Component('STM A', 'stm_a_node', '/drive/status'),
+    Component('STM B', 'stm_b_node', '/brake/status'),
+    Component('명령 중계', 'command_governor', '/vehicle/command'),
+    Component('조향', 'steering_actuator_node', '/steering/status'),
+    Component('차량 상태', 'vehicle_state_publisher', '/vehicle/state'),
+    Component('차량 진단', 'diagnostics_publisher'),
+    Component('GNSS', 'um980_driver', '/gnss/fix'),
+    Component('IMU', 'ebimu_driver', '/imu/data_raw'),
 )
 
 
@@ -123,10 +116,6 @@ class ProcessManager:
         self.node = node
         self.record_topics_required = node.required_topics + ('/planning/command', '/vehicle/command')
         self.records_root = Path(records_root)
-        self.temporary = tempfile.TemporaryDirectory(prefix='auto_sysid_')
-        self.temp_root = Path(self.temporary.name)
-        self.children = {}
-        self.retry_after = {}
         self.messages = {}
         self.recorder = None
         self.run_dir = None
@@ -147,81 +136,6 @@ class ProcessManager:
             self.messages[key] = message
             self.node.log(f'{key}: {message}')
 
-    def _params(self, key, node_name, values):
-        path = self.temp_root / f'{key}.yaml'
-        path.write_text(yaml.safe_dump({node_name: {'ros__parameters': values}}))
-        return str(path)
-
-    def _command(self, component):
-        prefix = Path(get_package_prefix(component.package))
-        executable = prefix / 'lib' / component.package / component.executable
-        if not executable.is_file():
-            raise FileNotFoundError(str(executable))
-        if component.package == 'micro_ros_agent':
-            return [str(executable), 'serial', '--dev', component.device, '-b', '115200']
-        args = [str(executable), '--ros-args', '-r', f'__node:={component.node}']
-        share = Path(get_package_share_directory(component.package))
-        values = {}
-        if component.key == '차량 TF':
-            import xacro
-            description = Path(get_package_share_directory('kaiev26_description'))
-            xml = xacro.process_file(
-                str(description / 'urdf/kaiev26.urdf.xacro'),
-                mappings={'lidar_output_mode': 'none', 'debug_driver_camera_enabled': 'false'},
-            ).toxml()
-            values = {'robot_description': xml}
-        elif component.key == '명령 중계':
-            args += ['--params-file', str(share / 'config/command_governor.yaml')]
-        elif component.key == '조향':
-            spec = importlib.util.spec_from_file_location(
-                'sysid_steering_launch', share / 'launch/steering_actuator.launch.py')
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            values = module.load_steering_motor_calibration(
-                str(share / 'config/steering_motor_calibration.yaml'))
-            values.update({'can_interface': 'can0', 'hardware_can_enabled': True,
-                           'actuator_output_enabled': True, 'tracking_control_enabled': False,
-                           'test_input_injection_enabled': False, 'use_sim_time': False})
-            args += ['--params-file', str(share / 'config/steering_actuator.yaml')]
-        elif component.key == 'GNSS':
-            args += ['--params-file', str(share / 'config/um980_20hz.yaml')]
-            values = {'configure_on_start': True, 'save_config': False, 'mode': 'survey_20hz',
-                      'ntrip_enabled': True,
-                      'ntrip_private_yaml': str(share / 'config/ntrip_private.yaml')}
-        elif component.key == 'IMU':
-            values = {'port': '/dev/imu', 'baudrate': 460800, 'output_mode': 'binary',
-                      'output_interval_ms': 2, 'orientation_source': 'quaternion',
-                      'enable_gyro': True, 'enable_accel': True, 'enable_magnetometer': False,
-                      'enable_temperature': False, 'enable_timestamp': True,
-                      'frame_id': 'ebimu_imu_link', 'publish_data_raw': True,
-                      'publish_internal_static_tf': False}
-        if values:
-            args += ['--params-file', self._params(component.package, component.node, values)]
-        return args
-
-    @staticmethod
-    def _external_agent(device):
-        for path in Path('/proc').glob('[0-9]*/cmdline'):
-            try:
-                args = path.read_bytes().decode(errors='replace').split('\0')
-                if any(Path(arg).name == 'micro_ros_agent' for arg in args[:2]):
-                    if '--dev' in args and args[args.index('--dev') + 1] == device:
-                        return True
-            except (OSError, IndexError):
-                continue
-        return False
-
-    @staticmethod
-    def _device_available(component):
-        if not component.device:
-            return True
-        if component.device == 'can0':
-            try:
-                return bool(int(Path('/sys/class/net/can0/flags').read_text().strip(), 16) & 1)
-            except OSError:
-                return False
-        return Path(component.device).exists()
-
     def _drivers(self):
         names = {name for name, namespace in self.node.get_node_names_and_namespaces()
                  if namespace == self.node.get_namespace()}
@@ -230,13 +144,6 @@ class ProcessManager:
         now = time.monotonic()
         rows = []
         for component in COMPONENTS:
-            child = self.children.get(component.key)
-            if child and child.process.poll() is not None:
-                child.stop()
-                del self.children[component.key]
-                self.retry_after[component.key] = now + 3
-                self._say(component.key, f'프로세스 종료 ({child.process.returncode})')
-                child = None
             sample = received.get(component.topic)
             stream_live = sample is not None and now - sample[0] < 1
             external = (component.node in names or stream_live
@@ -245,24 +152,7 @@ class ProcessManager:
             if component.key == '차량 TF':
                 with self.node.lock:
                     external |= {'gps', 'ebimu_imu_link'}.issubset(self.node.static_frames)
-            if child:
-                state = '실행 중'
-            elif external or (component.package == 'micro_ros_agent' and self._external_agent(component.device)):
-                state = '기존 프로세스 사용'
-            elif self.node.busy:
-                state = '시험 종료 후 시작'
-            elif not self._device_available(component):
-                state = component.device + ' 연결 대기'
-            elif now < self.retry_after.get(component.key, 0):
-                state = '재시작 대기'
-            else:
-                try:
-                    self.children[component.key] = OwnedProcess(
-                        component.key, self._command(component), self.node.log)
-                    state = '시작'
-                except Exception as error:
-                    state = str(error)
-                    self.retry_after[component.key] = now + 3
+            state = '감지됨' if external else '외부 실행 대기'
             rows.append((component.key, state))
             self._say(component.key, state)
         with self.node.lock:
@@ -389,21 +279,9 @@ class ProcessManager:
             except Exception as error:
                 self.cleanup_errors.append(str(error))
                 self.node.log(f'MCAP 종료 오류: {error}')
-            if self.children:
-                with ThreadPoolExecutor(max_workers=len(self.children)) as pool:
-                    results = [pool.submit(child.stop) for child in self.children.values()]
-                    for result in results:
-                        try:
-                            result.result()
-                        except Exception as error:
-                            self.cleanup_errors.append(str(error))
-                            self.node.log(str(error))
-            self.temporary.cleanup()
 
     def close(self):
         self.stop_event.set()
         if self.thread.ident is not None:
             self.thread.join()
-        else:
-            self.temporary.cleanup()
         return list(self.cleanup_errors)
