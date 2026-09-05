@@ -2,6 +2,7 @@
 
 from contextlib import contextmanager
 import fcntl
+from itertools import zip_longest
 import os
 from pathlib import Path
 import select
@@ -40,6 +41,18 @@ def keyboard():
             pass
 
 
+def gate_text(row, topic_rows):
+    name, go, detail = row
+    if name in topic_rows:
+        detail = topic_rows[name][1]
+    elif detail.startswith(name + ': '):
+        detail = detail[len(name) + 2:]
+    elif detail.startswith(name + ' '):
+        detail = detail[len(name) + 1:]
+    return Text(f"{'🟢 GO' if go else '🔴 NO-GO'}  {detail}",
+                style='green' if go else 'bold red')
+
+
 def dashboard(snapshot, selection, speed_text=None, message='', height=40):
     actual = '—' if snapshot['speed'] is None else f"{snapshot['speed']:.1f}"
     rpm = '—' if snapshot['rpm'] is None else f"{snapshot['rpm']:.0f}"
@@ -53,11 +66,20 @@ def dashboard(snapshot, selection, speed_text=None, message='', height=40):
         f"조향 실제 {steering}°   목표 {snapshot['output'].steering_deg:.2f}° (앞바퀴 등가각)",
         style='bold',
     )
-    sensors = Table(expand=True, box=None)
-    sensors.add_column('필수 데이터', ratio=3)
-    sensors.add_column('수신', ratio=2)
-    for topic, icon, detail in snapshot['rows']:
-        sensors.add_row(topic, Text(f'{icon} {detail}'))
+    display_gates = list(snapshot['gates'])
+    shown_problems = {detail for _, go, detail in display_gates if not go}
+    display_gates.extend(
+        ('실행 조건', False, issue)
+        for issue in snapshot['issues'] if issue not in shown_problems)
+    gate_names = {name for name, _, _ in snapshot['gates']}
+    topic_rows = {name: (icon, detail) for name, icon, detail in snapshot['rows']}
+    optional_rows = [row for row in snapshot['rows'] if row[0] not in gate_names]
+    gates = Table(expand=True, box=None)
+    gates.add_column('필수 조건', ratio=3)
+    gates.add_column('판정', ratio=2)
+    for row in display_gates:
+        gates.add_row(row[0], gate_text(row, topic_rows))
+    all_go = all(go for _, go, _ in display_gates)
     drivers = Table(expand=True, box=None)
     drivers.add_column('드라이버')
     drivers.add_column('상태')
@@ -66,7 +88,11 @@ def dashboard(snapshot, selection, speed_text=None, message='', height=40):
     columns = Table.grid(expand=True)
     columns.add_column(ratio=3)
     columns.add_column(ratio=2)
-    columns.add_row(Panel(sensors, title='실시간 수신'), Panel(drivers, title='자동 실행'))
+    columns.add_row(
+        Panel(gates, title='RUN GO' if all_go else 'RUN NO-GO',
+              border_style='green' if all_go else 'red'),
+        Panel(drivers, title='자동 실행'),
+    )
     choices = '   '.join(
         ('▶ ' if i == selection.scenario else '') + f'[{i}] 시나리오 {i}' for i in range(1, 5))
     settings = Text(
@@ -79,32 +105,43 @@ def dashboard(snapshot, selection, speed_text=None, message='', height=40):
         settings.append('\n최고 목표속도 입력: ' + speed_text + '▌  (Enter 적용 / Esc 취소)', style='bold cyan')
     if message:
         settings.append('\n' + message, style='yellow')
-    if snapshot['issues']:
-        settings.append('\nRun 대기: ' + '; '.join(snapshot['issues'][:3]), style='yellow')
+    if snapshot['terminal_state'] in {'ABORTED', 'ERROR'} and snapshot['finish_reason']:
+        settings.append('\n중단 원인: ' + snapshot['finish_reason'], style='bold red')
     recording = ('● REC  ' if snapshot['recording'] else '') + (snapshot['run_dir'] or '/home/kai/records')
+    optional = '   '.join(f'{icon} {name} · {detail}' for name, icon, detail in optional_rows)
+    record_status = recording + ('\n선택 기록: ' + optional if optional else '')
     if height < 36:
         pairs = Table.grid(expand=True)
         pairs.add_column(ratio=1)
         pairs.add_column(ratio=1)
-        for left, right in zip(snapshot['rows'][:4], snapshot['rows'][4:]):
-            pairs.add_row(Text(f'{left[1]} {left[0]} · {left[2]}'),
-                          Text(f'{right[1]} {right[0]} · {right[2]}'))
+        midpoint = (len(display_gates) + 1) // 2
+
+        def compact(row):
+            if row is None:
+                return Text('')
+            status = gate_text(row, topic_rows)
+            return Text.assemble(f'{row[0]}  ', status)
+
+        for left, right in zip_longest(
+                display_gates[:midpoint], display_gates[midpoint:]):
+            pairs.add_row(compact(left), compact(right))
         driver_summary = ' · '.join(
             name + (' ✓' if state in ('실행 중', '기존 프로세스 사용') else ' 대기')
             for name, state in snapshot['drivers'])
         return Group(
             Panel(title, border_style='cyan'),
             Panel(settings, title='시험 선택'),
-            Panel(pairs, title='실시간 수신'),
+            Panel(pairs, title='RUN GO' if all_go else 'RUN NO-GO',
+                  border_style='green' if all_go else 'red'),
             Text(driver_summary, overflow='ellipsis', no_wrap=True),
-            Text(recording, overflow='ellipsis', no_wrap=True),
+            Text(record_status, overflow='ellipsis', no_wrap=True),
             Text('\n'.join(snapshot['logs'][-2:]), overflow='ellipsis', no_wrap=True),
         )
     return Group(
         Panel(title, border_style='cyan'),
         Panel(settings, title='시험 선택'),
         columns,
-        Panel(Text(recording), title='MCAP'),
+        Panel(Text(record_status), title='MCAP'),
         Panel(Text('\n'.join(snapshot['logs'])), title='실행 로그'),
     )
 

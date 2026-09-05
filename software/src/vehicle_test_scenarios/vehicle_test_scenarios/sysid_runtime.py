@@ -168,31 +168,47 @@ class SysidNode(Node):
         with self.lock:
             self.graph_errors = errors
 
-    def issues(self, now=None, *, command_flow=False):
+    def gate_rows(self, now=None, *, command_flow=False):
         now = self.clock() if now is None else now
-        problems = list(self.graph_errors)
-        if not self.manager_ok:
-            problems.append('프로세스 관리자 종료')
+        rows = [(
+            '명령 발행·중계', not self.graph_errors,
+            '정상' if not self.graph_errors else '; '.join(self.graph_errors),
+        ), (
+            '프로세스 관리자', self.manager_ok,
+            '정상' if self.manager_ok else '프로세스 관리자 종료',
+        )]
         for topic in self.required_topics:
             sample = self.received.get(topic)
             if sample is None:
-                problems.append(f'{topic} 미수신')
+                rows.append((topic, False, f'{topic} 미수신'))
             elif topic != '/tf_static' and now - sample[0] > 1.0:
-                problems.append(f'{topic} 수신 중단')
+                rows.append((topic, False, f'{topic} 수신 중단'))
             elif self.sensor_errors.get(topic):
-                problems.append(f'{topic}: {self.sensor_errors[topic]}')
+                rows.append((topic, False, f'{topic}: {self.sensor_errors[topic]}'))
+            else:
+                rows.append((topic, True, '정상'))
         drive = self.received.get('/drive/status')
         brake = self.received.get('/brake/status')
         if drive and drive[1].stop_request:
             host_brake = brake and (
                 brake[1].stop_reason_bits & BrakeActuatorStatus.STOP_REASON_COMMAND_BRAKE)
             if not host_brake:
-                problems.append('차량 구동 정지 요청')
+                rows.append(('구동 정지 요청', False, '차량 구동 정지 요청'))
+            else:
+                rows.append(('구동 정지 요청', True, '브레이크 반영'))
+        else:
+            rows.append(('구동 정지 요청', True, '없음'))
         if command_flow:
             command = self.received.get('/vehicle/command')
             if command is None or now - command[0] > 0.2:
-                problems.append('명령 중계 수신 중단')
-        return problems
+                rows.append(('/vehicle/command', False, '명령 중계 수신 중단'))
+            else:
+                rows.append(('/vehicle/command', True, '실시간 중계 중'))
+        return rows
+
+    def issues(self, now=None, *, command_flow=False):
+        return [detail for _, go, detail in self.gate_rows(
+            now, command_flow=command_flow) if not go]
 
     def request_run(self, settings):
         self.commands.put(('run', settings))
@@ -381,6 +397,7 @@ class SysidNode(Node):
             steering = self.received.get('/steering/status')
             mode = ('미수신' if not drive or now - drive[0] > 1 else
                     'AUTO' if drive[1].mode == DriveActuatorStatus.MODE_AUTO else 'MANUAL')
+            command_flow = self.state in {'CRUISE', 'RUNNING', 'DECEL'}
             return {
                 'state': self.state, 'label': STATE_LABELS[self.state], 'mode': mode,
                 'speed': drive[1].speed_mps * 3.6 if drive else None,
@@ -393,4 +410,7 @@ class SysidNode(Node):
                 'settings': self.settings,
                 'countdown': self.countdown if self.state == 'COUNTDOWN' else None,
                 'elapsed': max(0, now - self.input_started) if self.state == 'RUNNING' else None,
+                'gates': self.gate_rows(now, command_flow=command_flow),
+                'finish_reason': self.finish_reason,
+                'terminal_state': self.terminal_state,
             }
