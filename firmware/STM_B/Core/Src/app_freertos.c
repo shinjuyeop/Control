@@ -59,8 +59,8 @@ typedef enum {
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define BRAKE_ENGAGED_PULSE_US  1194u /* 기존 35도 위치, 실차 캘리브레이션 후 조정 필요 */
-#define BRAKE_RELEASED_PULSE_US 1388u /* 기존 70도 위치, 실차 캘리브레이션 후 조정 필요 */
+#define BRAKE_ENGAGED_PULSE_US  1249u /* 기존 45도 위치, 실차 캘리브레이션 후 조정 필요 */
+#define BRAKE_RELEASED_PULSE_US 1443u /* 기존 80도 위치, 실차 캘리브레이션 후 조정 필요 */
 #define BRAKE_PULSE_TRAVEL_US \
   (BRAKE_RELEASED_PULSE_US - BRAKE_ENGAGED_PULSE_US)
 #define BRAKE_RAMP_UPDATE_COUNT 35u
