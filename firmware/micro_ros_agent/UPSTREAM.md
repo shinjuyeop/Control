@@ -15,3 +15,9 @@ active ROS workspace rather than an unrelated `/usr/local` installation.
 `micro_ros_agent/CMakeLists.txt` selects Fast DDS/Fast CDR from the active ROS
 workspace and gives the executable an `$ORIGIN/..` runtime path so it loads the
 packaged Micro-XRCE-DDS library before a global copy with the same SONAME.
+
+`micro_ros_agent/src/agent/Agent.cpp` applies `ROS_LOCALHOST_ONLY=1` before
+starting the XRCE worker: default DDS participants use loopback UDP and shared
+memory, matching ROS Humble's localhost transports. This covers the STM_A/B
+binary participant creation path and the Agent's ROS graph participants for
+both direct and launch-based execution. Unset or `0` keeps the upstream behavior.

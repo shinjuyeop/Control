@@ -2,7 +2,7 @@
 
 실험할 때마다 `ros2 bag record`를 손으로 치는 대신, 로깅 전용 launch 하나로 실차
 sysid에 필요한 토픽만 mcap으로 녹화하고 분석할 때 토픽당 CSV 1개로 변환하는 구성.
-카메라와 LiDAR까지 잡는 `--all`은 사용하지 않는다.
+압축 카메라 영상과 카메라 정보, Ouster LiDAR·IMU 패킷 및 메타데이터도 함께 녹화한다.
 
 - 녹화: `launch/mcap_logging.launch.py`
 - 변환: `scripts/mcap_to_csv.py` (`ros2 run`으로 실행)
@@ -17,23 +17,19 @@ ros2 topic info -v /steering/status
 ros2 topic info -v /imu/data
 ros2 topic info -v /gnss/fix
 
-# 실차 제어컴 기본 경로는 workspace 이름과 무관한 ~/kaiev26_records다.
-ros2 launch lateral_ctrl mcap_logging.launch.py \
-  campaign_name:=toe_after_alignment \
-  session_name:=manual_straight_01
+# 실차 제어컴 기본 경로는 /home/kai/KAI_ws/record다.
+ros2 launch lateral_ctrl mcap_logging.launch.py
 
 # 개발 랩탑에서 외장 SSD를 쓸 때는 경로와 mount 강제를 함께 명시한다.
 findmnt -T ~/Storage/ROS2_Workspace_offload
 df -h ~/Storage/ROS2_Workspace_offload
 ros2 launch lateral_ctrl mcap_logging.launch.py \
-  campaign_name:=toe_after_alignment \
-  session_name:=manual_straight_01 \
   output_base_dir:=~/Storage/ROS2_Workspace_offload/gazebo_sitl/vehicle_sysid \
   require_external_storage:=true
 ```
 
 - `/vehicle/command`, actuator status, raw IMU/GNSS, ESKF, 좌우 hub IMU, TF와
-  diagnostics만 명시해 녹화한다. 발행되지 않는 선택 토픽은 recorder 경고만 남고,
+  diagnostics와 위 카메라·Ouster 토픽을 명시해 녹화한다. 발행되지 않는 선택 토픽은 recorder 경고만 남고,
   발행을 시작하면 discovery를 통해 구독한다.
 - raw CAN은 같은 host에서 interface별 `candump -L`로 별도 기록한다.
 - 종료는 로깅 터미널에서 **Ctrl+C** — rosbag2가 SIGINT를 받아 mcap을 정상 마감하고
@@ -43,27 +39,18 @@ ros2 launch lateral_ctrl mcap_logging.launch.py \
 
 | 인자 | 기본값 | 설명 |
 |---|---|---|
-| `campaign_name` | `commissioning` | 같은 calibration·firmware parameter set을 공유하는 campaign 이름 |
-| `session_name` | `session` | run 이름 (`manual_straight_01`, `auto_steer_1mps_01` 등) |
-| `output_base_dir` | `~/kaiev26_records` | 실차 제어컴의 local 기록 경로. 다른 host에서는 명시적으로 덮어쓴다 |
+| `output_base_dir` | `/home/kai/KAI_ws/record` | 실차 제어컴의 local 기록 경로. 다른 host에서는 명시적으로 덮어쓴다 |
 | `require_external_storage` | `false` | `true`면 출력이 외장 artifact root 아래 별도 mount인지 확인한다 |
 
 ### 출력 구조
 
 ```
-~/kaiev26_records/
-└── toe_after_alignment/                   ← <campaign_name>
-    └── manual_straight_01_20260819_140000/
-        └── rosbag/
-            ├── rosbag_0.mcap
-            ├── metadata.yaml
-            └── csv/                       ← 변환 후 생김 (2절)
+/home/kai/KAI_ws/record/
+└── rosbag2_2026_09_05-14_00_00/
+    ├── rosbag2_2026_09_05-14_00_00_0.mcap
+    ├── metadata.yaml
+    └── csv/                       ← 변환 후 생김 (2절)
 ```
-
-run 디렉토리에는 필요에 따라 `can/`, `params/`, `notes.md`를 bag의 형제로 둔다.
-notes에는 MANUAL/AUTO, 진행 방향, 타이어 압력, 탑재 질량, 노면, RTK 상태와 운전자
-개입을 기록한다. RTK FIX 판정은 notes 문구가 아니라 `/gnss/status`의 실제 구간을
-사용한다.
 
 ## 2. CSV 변환
 
@@ -74,8 +61,7 @@ notes에는 MANUAL/AUTO, 진행 방향, 타이어 압력, 탑재 질량, 노면,
 source install/setup.bash  # gazebo_sitl workspace root에서 실행
 
 # 전체 토픽 변환 → <bag>/csv/에 토픽당 1파일
-BAG_DIR=~/Storage/ROS2_Workspace_offload/gazebo_sitl/vehicle_sysid/\
-toe_after_alignment/manual_straight_01_20260819_140000/rosbag
+BAG_DIR=/home/kai/KAI_ws/record/rosbag2_2026_09_05-14_00_00
 ros2 run lateral_ctrl mcap_to_csv.py "$BAG_DIR"
 
 # 특정 토픽만 / 출력 위치 지정

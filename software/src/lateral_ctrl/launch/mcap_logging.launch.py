@@ -1,17 +1,14 @@
 # ============================================================================
 # mcap_logging.launch.py
-#   실차 sysid에 필요한 ros2 topic만 mcap으로 녹화하는 로깅 전용 launch.
-#   카메라와 LiDAR를 포함하는 --all은 쓰지 않는다.
+#   실차 sysid, 압축 카메라 영상, Ouster 원시 패킷을 MCAP으로 녹화한다.
 #
 #   ros2 launch lateral_ctrl mcap_logging.launch.py
-#   ros2 launch lateral_ctrl mcap_logging.launch.py session_name:=deadzone_sweep
 #
-#   출력: ~/kaiev26_records/
-#         <campaign_name>/<session_name>_<YYYYmmdd_HHMMSS>/rosbag/
+#   출력: /home/kai/KAI_ws/record/
+#         rosbag2_YYYY_MM_DD-HH_MM_SS/
 #   종료: Ctrl+C (rosbag2가 SIGINT를 받아 mcap을 정상 마감함)
 #   CSV 변환: ros2 run lateral_ctrl mcap_to_csv.py <bag 디렉토리>
 # ============================================================================
-import datetime
 import os
 
 from launch import LaunchDescription
@@ -20,7 +17,7 @@ from launch.substitutions import LaunchConfiguration
 
 
 ARTIFACT_ROOT = os.path.expanduser("~/Storage/ROS2_Workspace_offload")
-DEFAULT_OUTPUT_BASE_DIR = os.path.expanduser("~/kaiev26_records")
+DEFAULT_OUTPUT_BASE_DIR = os.path.expanduser("/home/kai/KAI_ws/record")
 
 SYSID_TOPICS = (
     "/planning/command",
@@ -44,21 +41,18 @@ SYSID_TOPICS = (
     "/gnss/status_verbose",
     "/localization/odometry",
     "/localization/odometry_gnss",
-    "/left/imu/data",
-    "/right/imu/data",
+    "/perception/camera/left/source/image_raw/compressed",
+    "/perception/camera/left/source/camera_info",
+    "/perception/camera/right/source/image_raw/compressed",
+    "/perception/camera/right/source/camera_info",
+    "/ouster/lidar_packets",
+    "/ouster/imu_packets",
+    "/ouster/metadata",
     "/tf",
     "/tf_static",
     "/diagnostics",
     "/parameter_events",
 )
-
-
-def _path_segment(value, argument_name):
-    if not value or os.path.basename(value) != value or value in {".", ".."}:
-        raise RuntimeError(
-            f"{argument_name} must be one non-empty directory name: {value!r}"
-        )
-    return value
 
 
 def _output_base(value, require_external_storage):
@@ -84,12 +78,6 @@ def _output_base(value, require_external_storage):
 
 
 def _make_record_process(context):
-    campaign = _path_segment(
-        LaunchConfiguration("campaign_name").perform(context), "campaign_name"
-    )
-    session = _path_segment(
-        LaunchConfiguration("session_name").perform(context), "session_name"
-    )
     require_external_storage = (
         LaunchConfiguration("require_external_storage").perform(context).lower()
         in {"true", "1", "yes"}
@@ -98,10 +86,7 @@ def _make_record_process(context):
         LaunchConfiguration("output_base_dir").perform(context),
         require_external_storage,
     )
-    stamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-    run_dir = os.path.join(base_dir, campaign, f"{session}_{stamp}")
-    bag_dir = os.path.join(run_dir, "rosbag")
-    os.makedirs(run_dir, exist_ok=False)
+    os.makedirs(base_dir, exist_ok=True)
 
     filesystem = os.statvfs(base_dir)
     available_gib = filesystem.f_bavail * filesystem.f_frsize / (1024 ** 3)
@@ -109,7 +94,7 @@ def _make_record_process(context):
     return [
         LogInfo(
             msg=(
-                f"vehicle sysid run: {run_dir} "
+                f"MCAP output directory: {base_dir} "
                 f"(storage available: {available_gib:.1f} GiB)"
             )
         ),
@@ -117,9 +102,9 @@ def _make_record_process(context):
             cmd=[
                 "ros2", "bag", "record",
                 "--storage", "mcap",
-                "--output", bag_dir,
                 *SYSID_TOPICS,
             ],
+            cwd=base_dir,
             output="screen",
         ),
     ]
@@ -127,12 +112,6 @@ def _make_record_process(context):
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument(
-            "campaign_name", default_value="commissioning",
-            description="시험 campaign 디렉토리 이름"),
-        DeclareLaunchArgument(
-            'session_name', default_value='session',
-            description='bag 디렉토리 이름 접두어 (예: deadzone_sweep, bench)'),
         DeclareLaunchArgument(
             'output_base_dir', default_value=DEFAULT_OUTPUT_BASE_DIR,
             description='MCAP 출력 경로'),

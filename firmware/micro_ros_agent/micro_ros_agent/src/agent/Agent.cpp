@@ -17,6 +17,13 @@
 
 #include <agent/Agent.hpp>
 
+#include <fastdds/dds/domain/DomainParticipantFactory.hpp>
+#include <fastdds/rtps/transport/UDPv4TransportDescriptor.h>
+#include <fastdds/rtps/transport/shared_mem/SharedMemTransportDescriptor.h>
+
+#include <cstdlib>
+#include <cstring>
+#include <iostream>
 #include <utility>
 #include <memory>
 
@@ -32,6 +39,31 @@ bool Agent::create(
         int argc,
         char** argv)
 {
+    const char* localhost_only = std::getenv("ROS_LOCALHOST_ONLY");
+    if (localhost_only != nullptr && std::strcmp(localhost_only, "1") == 0)
+    {
+        auto* factory = eprosima::fastdds::dds::DomainParticipantFactory::get_instance();
+        factory->load_profiles();
+        auto qos = factory->get_default_participant_qos();
+
+        // Configure the shared defaults before the XRCE worker starts. Both
+        // binary XRCE participants and GraphManager inherit these transports.
+        qos.transport().use_builtin_transports = false;
+        qos.transport().user_transports.clear();
+        auto udp = std::make_shared<eprosima::fastdds::rtps::UDPv4TransportDescriptor>();
+        udp->interfaceWhiteList.emplace_back("127.0.0.1");
+        qos.transport().user_transports.push_back(udp);
+        qos.transport().user_transports.push_back(
+            std::make_shared<eprosima::fastdds::rtps::SharedMemTransportDescriptor>());
+
+        if (factory->set_default_participant_qos(qos) !=
+                eprosima::fastrtps::types::ReturnCode_t::RETCODE_OK)
+        {
+            std::cerr << "Failed to configure micro-ROS Agent localhost transports." << std::endl;
+            return false;
+        }
+    }
+
     bool result = xrce_dds_agent_instance_.create(argc, argv);
     if (result)
     {
