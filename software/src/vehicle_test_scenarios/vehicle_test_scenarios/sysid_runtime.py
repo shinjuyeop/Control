@@ -19,6 +19,7 @@ from std_msgs.msg import String
 from tf2_msgs.msg import TFMessage
 
 from .scenario_runner import ScenarioSetpoint
+from .steering_control import SteeringControl
 from .sysid_profiles import COUNTDOWN_SEC, CENTER_DEG, TAIL_SEC, RunSettings, baseline, evaluate, segments
 
 
@@ -80,6 +81,7 @@ class SysidNode(Node):
         self.record_open = False
         self.record_error = ''
         self.command_publisher = self.create_publisher(ActuatorCommand, '/planning/command', 10)
+        self.steering_control = SteeringControl(self)
         self.label_publisher = self.create_publisher(String, '/sysid/scinario', 10)
         self.subscriptions_owned = []
         for topic, message_type in TOPICS.items():
@@ -222,7 +224,7 @@ class SysidNode(Node):
     def _finish(self, reason, now, *, brake=False, terminal='COMPLETE'):
         self.finish_reason = reason
         self.terminal_state = terminal
-        self.output = baseline(brake)
+        self.output = baseline(brake, steering_enabled=self.settings.steering_enabled)
         self.output_active = True
         self.state = 'TAIL' if self.record_open else terminal
         self.phase_started = now
@@ -241,7 +243,7 @@ class SysidNode(Node):
                     continue
                 self.settings = value
                 self.schedule = segments(value)
-                self.output = baseline()
+                self.output = baseline(steering_enabled=value.steering_enabled)
                 self.output_active = True
                 self.auto_seen = False
                 self.countdown = None
@@ -256,7 +258,7 @@ class SysidNode(Node):
                 self.log(f'시나리오 {value.scenario} · 최고 목표속도 {value.max_speed_kph:g} km/h')
             elif action == 'stop':
                 if self.state in ('TAIL', 'CLOSING'):
-                    self.output = baseline(True)
+                    self.output = baseline(True, steering_enabled=self.settings.steering_enabled)
                     self.terminal_state = 'ABORTED'
                     self.finish_reason = '사용자 Stop'
                 else:
@@ -278,7 +280,7 @@ class SysidNode(Node):
                 self.record_error = str(value)
                 self.finish_reason = f'MCAP 오류: {value}'
                 self.terminal_state = 'ERROR'
-                self.output = baseline(True)
+                self.output = baseline(True, steering_enabled=self.settings.steering_enabled)
                 self.output_active = True
                 self.state = 'CLOSING'
                 self.log(self.finish_reason)
@@ -290,6 +292,16 @@ class SysidNode(Node):
         with self.lock:
             now = self.clock()
             self._actions(now)
+            steering_ready = not self.output_active or self.steering_control.ready(
+                self.settings.steering_enabled)
+            if not steering_ready and not self.output.brake_engage:
+                # Freeze preparation until the actuator accepts the motor setting.
+                # If it disappears during motion, use the existing stop path.
+                if self.state in {'CRUISE', 'RUNNING', 'DECEL'}:
+                    self._finish(self.steering_control.error, now, brake=True, terminal='ERROR')
+                elif self.state in {'RECORD_START', 'WAIT_AUTO', 'COUNTDOWN'}:
+                    self.phase_started = now
+                    return
             if self.state in {'RECORD_START', 'WAIT_AUTO', 'COUNTDOWN', 'CRUISE', 'RUNNING', 'DECEL'}:
                 active_input = self.state in {'CRUISE', 'RUNNING', 'DECEL'}
                 problems = self.issues(now, command_flow=active_input)
@@ -354,12 +366,14 @@ class SysidNode(Node):
             if self.state == 'TAIL' and now - self.phase_started >= TAIL_SEC:
                 self.state = 'CLOSING'
                 self.process_actions.put(('close', self.finish_reason))
-            if self.output_active:
+            if self.output_active and (steering_ready or self.output.brake_engage):
                 message = ActuatorCommand()
                 message.header.stamp = self.get_clock().now().to_msg()
                 message.header.frame_id = 'base_link'
                 message.speed_target_mps = self.output.speed_kph / 3.6
-                message.steering_target_rad = math.radians(self.output.steering_deg)
+                message.steering_target_rad = (
+                    0.0 if self.output.steering_deg is None
+                    else math.radians(self.output.steering_deg))
                 message.brake_engage = self.output.brake_engage
                 self.command_publisher.publish(message)
                 self.label_publisher.publish(String(
@@ -399,7 +413,10 @@ class SysidNode(Node):
                 'current': drive[1].phase_current_a if drive else None,
                 'steering': math.degrees(steering[1].actual_wheel_angle_rad) if steering else None,
                 'output': self.output, 'rows': rows, 'drivers': list(self.driver_rows),
-                'issues': self.issues(now), 'logs': list(self.logs)[-7:],
+                'issues': self.issues(now) + (
+                    [self.steering_control.error]
+                    if self.output_active and self.steering_control.error else []),
+                'logs': list(self.logs)[-7:],
                 'run_dir': self.run_dir, 'recording': self.record_open,
                 'settings': self.settings,
                 'countdown': self.countdown if self.state == 'COUNTDOWN' else None,

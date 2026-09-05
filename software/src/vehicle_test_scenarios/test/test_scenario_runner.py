@@ -1,5 +1,6 @@
 import math
 import time
+from unittest.mock import Mock
 
 import pytest
 import rclpy
@@ -20,10 +21,10 @@ def test_default_speed_converts_to_meters_per_second():
     assert kph_to_mps(3.0) == pytest.approx(0.8333333333)
 
 
-def test_straight_uses_constant_speed_and_center():
-    output = scenario_setpoint(ScenarioConfig(), 123.0)
+def test_straight_uses_constant_speed_with_motor_disabled():
+    output = scenario_setpoint(ScenarioConfig(steering_center_deg=-2.0), 123.0)
     assert output.speed_kph == 3.0
-    assert output.steering_deg == 0.0
+    assert output.steering_deg is None
     assert not output.brake_engage
 
 
@@ -89,7 +90,7 @@ def test_finite_scenario_holds_initial_setpoint_after_repetitions():
     assert active.speed_kph == 7.2
     assert not active_complete
     assert finished.speed_kph == 0.0
-    assert finished.steering_deg == config.steering_center_deg
+    assert finished.steering_deg is None
     assert not finished.brake_engage
     assert finished_complete
 
@@ -121,7 +122,7 @@ def test_zero_speed_baseline_does_not_engage_brake():
         ScenarioConfig(steering_center_deg=-2.0)
     )
     assert output.speed_kph == 0.0
-    assert output.steering_deg == -2.0
+    assert output.steering_deg is None
     assert not output.brake_engage
 
 
@@ -133,6 +134,44 @@ def test_brake_test_holds_brake_after_delay():
     assert not before.brake_engage
     assert after.speed_kph == 0.0
     assert after.brake_engage
+    assert before.steering_deg is None
+    assert after.steering_deg is None
+
+
+@pytest.mark.parametrize('scenario', ['straight', 'speed_step', 'speed_ramp', 'brake_test'])
+def test_longitudinal_tests_ignore_center_throughout_the_schedule(scenario):
+    config = ScenarioConfig(
+        scenario=scenario, steering_center_deg=20.0,
+        initial_hold_sec=2.0, scenario_repetitions=1)
+    for elapsed in (0.0, 2.0, 3.0, 7.0, 12.0):
+        output, _ = scheduled_scenario_setpoint(config, elapsed)
+        assert output.steering_deg is None
+
+
+def test_runner_waits_for_motor_setting_before_publishing():
+    rclpy.init()
+    node = VehicleTestScenarioRunner()
+    try:
+        node.set_parameters([
+            Parameter('cruise_speed_kph', value=36.0),
+            Parameter('enabled', value=True),
+        ])
+        node._publisher = Mock()
+        node._steering_control.ready = Mock(return_value=False)
+        node._publish()
+        node._publisher.publish.assert_not_called()
+        node._steering_control.ready.assert_called_with(False)
+        node._steering_control.ready.return_value = True
+        node._publish()
+        message = node._publisher.publish.call_args.args[0]
+        assert message.speed_target_mps == pytest.approx(10.0)
+        assert not message.brake_engage
+        node.set_parameters([Parameter('scenario', value='steering_sweep')])
+        node._publish()
+        node._steering_control.ready.assert_called_with(True)
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
 
 
 def test_runtime_scenario_parameters_update_without_crashing():
@@ -141,13 +180,17 @@ def test_runtime_scenario_parameters_update_without_crashing():
     try:
         results = node.set_parameters([
             Parameter("scenario", value="steering_sweep"),
-            Parameter("cruise_speed_kph", value=4.0),
+            Parameter("cruise_speed_kph", value=36.0),
+            Parameter("speed_high_kph", value=72.0),
+            Parameter("speed_low_kph", value=36.0),
             Parameter("steering_amplitude_deg", value=5.0),
             Parameter("enabled", value=True),
         ])
         assert all(result.successful for result in results)
         assert node._config.scenario == "steering_sweep"
-        assert node._config.cruise_speed_kph == 4.0
+        assert node._config.cruise_speed_kph == 36.0
+        assert node._config.speed_high_kph == 72.0
+        assert node._config.speed_low_kph == 36.0
         assert node._config.steering_amplitude_deg == 5.0
         assert node._enabled
         assert node._started_at is not None
@@ -192,6 +235,7 @@ def test_auto_mode_transition_starts_and_resets_scenario_timeline():
                 self._output.append(message)
 
         node._publisher = CapturePublisher(commands)
+        node._steering_control.ready = Mock(return_value=True)
         node._scenario_status_publisher = CapturePublisher(scenario_statuses)
         node._publish()
         assert commands[-1].speed_target_mps == 0.0
@@ -212,10 +256,8 @@ def test_auto_mode_transition_starts_and_resets_scenario_timeline():
     [
         ("scenario", "unknown"),
         ("cruise_speed_kph", -1.0),
-        ("speed_high_kph", 10.1),
+        ("speed_high_kph", math.inf),
         ("speed_low_kph", 4.0),
-        ("steering_center_deg", 20.0),
-        ("steering_amplitude_deg", 28.1),
         ("steering_step_interval_sec", 0.0),
         ("steering_period_sec", 0.0),
         ("initial_hold_sec", -0.1),
@@ -229,6 +271,17 @@ def test_invalid_runtime_parameters_are_rejected(parameter, value):
     try:
         result = node.set_parameters([Parameter(parameter, value=value)])[0]
         assert not result.successful
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
+def test_center_limit_is_applied_when_switching_to_a_steering_test():
+    rclpy.init()
+    node = VehicleTestScenarioRunner()
+    try:
+        assert node.set_parameters([Parameter('steering_center_deg', value=20.0)])[0].successful
+        assert not node.set_parameters([Parameter('scenario', value='steering_sweep')])[0].successful
     finally:
         node.destroy_node()
         rclpy.shutdown()

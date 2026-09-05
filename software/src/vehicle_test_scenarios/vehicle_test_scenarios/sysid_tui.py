@@ -60,12 +60,15 @@ def dashboard(snapshot, selection, speed_text=None, message='', height=40):
     rpm = '—' if snapshot['rpm'] is None else f"{snapshot['rpm']:.0f}"
     current = '—' if snapshot['current'] is None else f"{snapshot['current']:.0f}"
     steering = '—' if snapshot['steering'] is None else f"{snapshot['steering']:.2f}"
+    steering_target = (
+        '모터 DISABLE 요청' if snapshot['output'].steering_deg is None else
+        f"목표 {snapshot['output'].steering_deg:.2f}° (앞바퀴 등가각)")
     countdown = f" · {snapshot['countdown']}초" if snapshot['countdown'] is not None else ''
     title = Text(
         f"🚗 AUTO SYSID   |   {snapshot['mode']}   |   {snapshot['label']}{countdown}\n"
         f"차속 {actual} km/h   목표 {snapshot['output'].speed_kph:.1f} km/h   "
         f"RPM {rpm}   상전류 {current} A\n"
-        f"조향 실제 {steering}°   목표 {snapshot['output'].steering_deg:.2f}° (앞바퀴 등가각)",
+        f"조향 실제 {steering}°   {steering_target}",
         style='bold',
     )
     display_gates = list(snapshot['gates'])
@@ -97,7 +100,7 @@ def dashboard(snapshot, selection, speed_text=None, message='', height=40):
         ('▶ ' if i == selection.scenario else '') + f'[{i}] 시나리오 {i}' for i in range(1, 5))
     settings = Text(
         choices + '\n'
-        + f'최고 목표속도 {selection.max_speed_kph:g} km/h (상한 15)  ·  '
+        + f'최고 목표속도 {selection.max_speed_kph:g} km/h  ·  '
         + selection.description() + '\n'
         + '1–4 선택   V 최고속도   R Run   S / Space Stop   Q 종료',
     )

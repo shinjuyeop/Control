@@ -56,6 +56,7 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
   }
   hardware_can_enabled_ = declare_parameter("hardware_can_enabled", false);
   actuator_output_enabled_ = declare_parameter("actuator_output_enabled", false);
+  steering_enabled_ = declare_parameter("steering_enabled", true);
   test_input_injection_enabled_ = declare_parameter("test_input_injection_enabled", false);
   const auto can_interface = declare_parameter("can_interface", std::string("can0"));
   const auto node_id = declare_parameter<std::int64_t>("node_id", 1);
@@ -117,6 +118,30 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
       "READ-ONLY: polling the motor and publishing status only. No enable, disable or "
       "position frame is sent. Set actuator_output_enabled=true to permit CAN actuation.");
   }
+  parameter_callback_ = add_on_set_parameters_callback(
+    [this](const std::vector<rclcpp::Parameter> & parameters) {
+      rcl_interfaces::msg::SetParametersResult result;
+      result.successful = true;
+      for (const auto & parameter : parameters) {
+        if (parameter.get_name() != "steering_enabled") continue;
+        if (parameter.get_type() != rclcpp::ParameterType::PARAMETER_BOOL) {
+          result.successful = false;
+          result.reason = "steering_enabled must be a bool";
+          return result;
+        }
+        const bool enabled = parameter.as_bool();
+        if (enabled != steering_enabled_) {
+          // Disable before acknowledging the setting; re-enabling still requires
+          // a new command and all existing AUTO/safety/output-arming conditions.
+          if (!enabled && outputArmed() && can_driver_->isOpen()) {
+            can_driver_->sendDisable();
+          }
+          steering_enabled_ = enabled;
+          enterWaitCommand();
+        }
+      }
+      return result;
+    });
   previous_tick_ = std::chrono::steady_clock::now();
   control_timer_ = create_wall_timer(
     std::chrono::milliseconds(std::max(1, control_period_ms_)),
@@ -145,6 +170,7 @@ void SteeringActuatorNode::onCommand(const kaiev26_msgs::msg::ActuatorCommand::S
   if (brake_activated) {
     requestImmediateDisable(SteeringDisableReason::COMMAND_BRAKE);
   }
+  if (!steering_enabled_) return;
 
   if (!std::isfinite(input->steering_target_rad) ||
     !stamp_fresh)
@@ -368,6 +394,8 @@ void SteeringActuatorNode::controlTick()
     } else {
       transitionTo(stateForDisableReason(disable_reason_));
     }
+  } else if (!steering_enabled_) {
+    enterWaitCommand();
   } else {
     if (state_ != SteeringState::WAIT_CMD && state_ != SteeringState::ACTIVE) {
       disable_reason_ = SteeringDisableReason::NONE;
@@ -393,7 +421,7 @@ void SteeringActuatorNode::controlTick()
     }
   } else {
     tracking_controller_.reset();
-    if (outputArmed() && feedback_valid && can_driver_->isOpen()) {
+    if (steering_enabled_ && outputArmed() && feedback_valid && can_driver_->isOpen()) {
       can_driver_->sendPositionCount(motor.motor_position_count);
     }
   }

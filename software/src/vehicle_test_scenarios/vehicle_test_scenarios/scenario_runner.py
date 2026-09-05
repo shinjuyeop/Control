@@ -13,6 +13,8 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from std_msgs.msg import String
 
+from .steering_control import SteeringControl
+
 
 SCENARIOS = {
     "straight",
@@ -22,7 +24,6 @@ SCENARIOS = {
     "speed_ramp",
     "brake_test",
 }
-MAX_TEST_SPEED_KPH = 10.0
 MAX_STEERING_DEG = 28.0
 STARTUP_ONLY_PARAMETERS = {
     "publish_rate_hz",
@@ -55,7 +56,7 @@ class ScenarioConfig:
 @dataclass(frozen=True)
 class ScenarioSetpoint:
     speed_kph: float
-    steering_deg: float
+    steering_deg: float | None  # None requests motor disable, with no angle target.
     brake_engage: bool = False
 
 
@@ -69,7 +70,7 @@ def scenario_setpoint(
     elapsed_sec = max(0.0, elapsed_sec)
     if config.scenario == "straight":
         return ScenarioSetpoint(
-            config.cruise_speed_kph, config.steering_center_deg
+            config.cruise_speed_kph, None
         )
 
     if config.scenario == "steering_sweep":
@@ -98,7 +99,7 @@ def scenario_setpoint(
         speed_kph = (
             config.speed_low_kph if phase == 0 else config.speed_high_kph
         )
-        return ScenarioSetpoint(speed_kph, config.steering_center_deg)
+        return ScenarioSetpoint(speed_kph, None)
 
     if config.scenario == "speed_ramp":
         phase = (elapsed_sec / config.speed_ramp_duration_sec) % 2.0
@@ -106,14 +107,14 @@ def scenario_setpoint(
         speed_kph = config.speed_low_kph + fraction * (
             config.speed_high_kph - config.speed_low_kph
         )
-        return ScenarioSetpoint(speed_kph, config.steering_center_deg)
+        return ScenarioSetpoint(speed_kph, None)
 
     if config.scenario == "brake_test":
         if elapsed_sec < config.brake_delay_sec:
             return ScenarioSetpoint(
-                config.cruise_speed_kph, config.steering_center_deg
+                config.cruise_speed_kph, None
             )
-        return ScenarioSetpoint(0.0, config.steering_center_deg, True)
+        return ScenarioSetpoint(0.0, None, True)
 
     raise ValueError(f"unknown scenario: {config.scenario}")
 
@@ -132,7 +133,11 @@ def scenario_cycle_duration_sec(config: ScenarioConfig) -> float | None:
 
 def zero_speed_baseline_setpoint(config: ScenarioConfig) -> ScenarioSetpoint:
     """Return a zero-speed target without engaging the brake command."""
-    return ScenarioSetpoint(0.0, config.steering_center_deg)
+    steering = (
+        config.steering_center_deg
+        if config.scenario in ("steering_step", "steering_sweep") else None
+    )
+    return ScenarioSetpoint(0.0, steering)
 
 
 def scheduled_scenario_setpoint(
@@ -169,15 +174,15 @@ def validate_config(config: ScenarioConfig, publish_rate_hz: float) -> None:
 
     for name in ("cruise_speed_kph", "speed_low_kph", "speed_high_kph"):
         value = float(getattr(config, name))
-        if not 0.0 <= value <= MAX_TEST_SPEED_KPH:
-            raise ValueError(f"{name} must be within 0..10 km/h")
+        if value < 0.0:
+            raise ValueError(f"{name} must be non-negative")
     if config.speed_low_kph > config.speed_high_kph:
         raise ValueError("speed_low_kph must not exceed speed_high_kph")
 
     steering_extent = (
         abs(config.steering_center_deg) + config.steering_amplitude_deg
     )
-    if steering_extent > MAX_STEERING_DEG:
+    if config.scenario in ("steering_step", "steering_sweep") and steering_extent > MAX_STEERING_DEG:
         raise ValueError(
             "steering center plus amplitude must stay within +/-28 degrees"
         )
@@ -248,6 +253,7 @@ class VehicleTestScenarioRunner(Node):
         self._publisher = self.create_publisher(
             ActuatorCommand, command_topic, 10
         )
+        self._steering_control = SteeringControl(self)
         scenario_status_topic = str(
             self.get_parameter("scenario_status_topic").value
         )
@@ -366,6 +372,15 @@ class VehicleTestScenarioRunner(Node):
         if not self._enabled:
             return
 
+        steering_enabled = self._config.scenario in ("steering_step", "steering_sweep")
+        if not self._steering_control.ready(steering_enabled):
+            self.get_logger().warning(self._steering_control.error, throttle_duration_sec=2.0)
+            # Service startup must not consume the countdown or test input.
+            if self._started_at is not None:
+                self._started_at = time.monotonic() + self._auto_start_delay_sec
+            if not self._brake_override:
+                return
+
         scenario_status = String()
         scenario_status.data = self._scenario_label
         self._scenario_status_publisher.publish(scenario_status)
@@ -397,7 +412,7 @@ class VehicleTestScenarioRunner(Node):
             self._reported_complete = True
             self.get_logger().warning(
                 "Scenario repetitions complete: holding speed_target=0.0 m/s, "
-                "brake=false at center; switch to MANUAL and Ctrl+C when ready"
+                "brake=false; switch to MANUAL and Ctrl+C when ready"
             )
         brake_engage = self._brake_override or setpoint.brake_engage
 
@@ -408,7 +423,8 @@ class VehicleTestScenarioRunner(Node):
             0.0 if brake_engage else kph_to_mps(setpoint.speed_kph)
         )
         message.steering_target_rad = (
-            0.0 if brake_engage else math.radians(setpoint.steering_deg)
+            0.0 if brake_engage or setpoint.steering_deg is None
+            else math.radians(setpoint.steering_deg)
         )
         message.brake_engage = brake_engage
         self._publisher.publish(message)

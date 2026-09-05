@@ -2,6 +2,7 @@
 
 import time
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 import rclpy
@@ -20,7 +21,7 @@ from vehicle_test_scenarios import sysid_processes
 
 
 @pytest.mark.parametrize('scenario', [1, 2, 3, 4])
-@pytest.mark.parametrize('speed', [5.0, 10.0, 15.0])
+@pytest.mark.parametrize('speed', [5.0, 15.0, 36.0])
 def test_profiles_respect_selected_target_limit_and_finish_at_zero(scenario, speed):
     settings = RunSettings(scenario, speed)
     schedule = segments(settings)
@@ -28,12 +29,16 @@ def test_profiles_respect_selected_target_limit_and_finish_at_zero(scenario, spe
     for index in range(int(settings.duration * 100) + 1):
         output, _ = evaluate(schedule, index / 100)
         assert 0 <= output.speed_kph <= speed
-        assert abs(output.steering_deg - CENTER_DEG) <= 1.0 + 1e-12
+        if settings.steering_enabled:
+            assert abs(output.steering_deg - CENTER_DEG) <= 1.0 + 1e-12
+        else:
+            assert output.steering_deg is None
         assert not output.brake_engage
-    assert evaluate(schedule, settings.duration)[0] == baseline()
+    assert evaluate(schedule, settings.duration)[0] == baseline(
+        steering_enabled=settings.steering_enabled)
 
 
-@pytest.mark.parametrize('speed', [0, -1, 15.01, float('nan'), float('inf')])
+@pytest.mark.parametrize('speed', [0, -1, float('nan'), float('inf')])
 def test_invalid_operator_speed_is_rejected(speed):
     with pytest.raises(ValueError):
         RunSettings(1, speed)
@@ -88,6 +93,7 @@ def controlled():
     rclpy.init()
     clock = [100.0]
     node = SysidNode(clock=lambda: clock[0])
+    node.steering_control.ready = Mock(return_value=True)
     data = telemetry()
     node.graph_errors = []
 
@@ -155,7 +161,7 @@ def test_cruise_requires_actual_speed_and_timeout_ramps_to_zero(controlled):
     tick(2, auto=True, speed=2)
     assert node.output.speed_kph == pytest.approx(5)
     tick(2, auto=True)
-    assert node.output == baseline()
+    assert node.output == baseline(steering_enabled=True)
     assert node.terminal_state == 'ABORTED'
 
 
@@ -180,6 +186,19 @@ def test_stop_and_recording_failure_request_brake(controlled):
     tick(auto=True)
     assert node.state == 'ERROR'
     assert not node.record_open
+
+
+def test_motor_setting_wait_blocks_input_but_not_stop(controlled):
+    node, tick, _ = controlled
+    node.steering_control.ready.return_value = False
+    node.command_publisher = Mock()
+    node.request_run(RunSettings(1, 10))
+    tick(auto=True)
+    node.command_publisher.publish.assert_not_called()
+    node.steering_control.ready.assert_called_with(False)
+    node.request_stop()
+    tick(auto=True)
+    assert node.command_publisher.publish.call_args.args[0].brake_engage
 
 
 def test_lost_telemetry_stops_active_input(controlled):
@@ -247,7 +266,8 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path):
     # Existing ROS transports are used; the test supplies telemetry instead of hardware.
     rclpy.init()
     node = SysidNode()
-    source = Node('sysid_test_telemetry')
+    source = Node('steering_actuator_node')
+    source.declare_parameter('steering_enabled', True)
     executor = SingleThreadedExecutor()
     executor.add_node(node)
     executor.add_node(source)
@@ -293,6 +313,7 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path):
         assert not received
         node.request_run(RunSettings(2, 5))
         spin_until(lambda: node.state == 'WAIT_AUTO')
+        assert not source.get_parameter('steering_enabled').value
         assert all(m.speed_target_mps == 0 for m in received)
         messages['/drive/status'].mode = 1
         spin_until(lambda: node.state == 'COUNTDOWN')

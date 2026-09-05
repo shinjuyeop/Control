@@ -150,13 +150,41 @@ ros2 param set /vehicle_test_scenario_runner brake_override false
 
 아래 블록 중 **시험할 시나리오 하나만** 설정한다. 파라미터 단위는 속도
 `km/h`, 조향 중앙 등가각 `deg`, 시간 `sec`다.
+일정 속도 직진·속도 step/ramp·제동 시험은 조향 모터를 Disable한다.
+이 시험들은 대기·카운트다운·완료 후에도 `steering_center_deg`를 사용하지 않는다.
+조향 sweep/slalom과 별도 조향 step 시험에서만 센터각을 설정한다.
 
 ##### 일정 속도 직진 — 기본 3 km/h
 
 ```bash
 ros2 param set /vehicle_test_scenario_runner cruise_speed_kph 3.0
-ros2 param set /vehicle_test_scenario_runner steering_center_deg 0.0
 ros2 param set /vehicle_test_scenario_runner scenario straight
+```
+
+##### 속도 step — 1↔3 km/h, 2초 간격
+
+```bash
+ros2 param set /vehicle_test_scenario_runner speed_low_kph 1.0
+ros2 param set /vehicle_test_scenario_runner speed_high_kph 3.0
+ros2 param set /vehicle_test_scenario_runner speed_step_interval_sec 2.0
+ros2 param set /vehicle_test_scenario_runner scenario speed_step
+```
+
+##### 속도 ramp — 0→3→0 km/h, 편도 5초
+
+```bash
+ros2 param set /vehicle_test_scenario_runner speed_low_kph 0.0
+ros2 param set /vehicle_test_scenario_runner speed_high_kph 3.0
+ros2 param set /vehicle_test_scenario_runner speed_ramp_duration_sec 5.0
+ros2 param set /vehicle_test_scenario_runner scenario speed_ramp
+```
+
+##### 제동 시험 — 3 km/h 명령 3초 후 brake 유지
+
+```bash
+ros2 param set /vehicle_test_scenario_runner cruise_speed_kph 3.0
+ros2 param set /vehicle_test_scenario_runner brake_delay_sec 3.0
+ros2 param set /vehicle_test_scenario_runner scenario brake_test
 ```
 
 ##### 조향 sweep/slalom — 3 km/h, ±3°, 4초 주기
@@ -170,35 +198,6 @@ ros2 param set /vehicle_test_scenario_runner steering_center_deg 0.0
 ros2 param set /vehicle_test_scenario_runner steering_amplitude_deg 3.0
 ros2 param set /vehicle_test_scenario_runner steering_period_sec 4.0
 ros2 param set /vehicle_test_scenario_runner scenario steering_sweep
-```
-
-##### 속도 step — 1↔3 km/h, 2초 간격
-
-```bash
-ros2 param set /vehicle_test_scenario_runner speed_low_kph 1.0
-ros2 param set /vehicle_test_scenario_runner speed_high_kph 3.0
-ros2 param set /vehicle_test_scenario_runner speed_step_interval_sec 2.0
-ros2 param set /vehicle_test_scenario_runner steering_center_deg 0.0
-ros2 param set /vehicle_test_scenario_runner scenario speed_step
-```
-
-##### 속도 ramp — 0→3→0 km/h, 편도 5초
-
-```bash
-ros2 param set /vehicle_test_scenario_runner speed_low_kph 0.0
-ros2 param set /vehicle_test_scenario_runner speed_high_kph 3.0
-ros2 param set /vehicle_test_scenario_runner speed_ramp_duration_sec 5.0
-ros2 param set /vehicle_test_scenario_runner steering_center_deg 0.0
-ros2 param set /vehicle_test_scenario_runner scenario speed_ramp
-```
-
-##### 제동 시험 — 3 km/h 명령 3초 후 brake 유지
-
-```bash
-ros2 param set /vehicle_test_scenario_runner cruise_speed_kph 3.0
-ros2 param set /vehicle_test_scenario_runner steering_center_deg 0.0
-ros2 param set /vehicle_test_scenario_runner brake_delay_sec 3.0
-ros2 param set /vehicle_test_scenario_runner scenario brake_test
 ```
 
 시나리오 세부 계약과 전체 파라미터는

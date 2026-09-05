@@ -64,6 +64,7 @@ private:
   bool tracking_enabled_{false};
   bool hardware_can_enabled_{false};
   bool actuator_output_enabled_{false};
+  bool steering_enabled_{true};
   bool test_input_injection_enabled_{false};
   double target_wheel_angle_deg_{0.0};
   double pending_target_wheel_angle_deg_{0.0};
@@ -96,5 +97,6 @@ private:
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr enable_commanded_pub_, enabled_pub_;
   rclcpp::Publisher<kaiev26_msgs::msg::SteeringActuatorStatus>::SharedPtr status_pub_;
   rclcpp::TimerBase::SharedPtr control_timer_;
+  rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr parameter_callback_;
 };
 }  // namespace lateral_ctrl
