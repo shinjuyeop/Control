@@ -10,6 +10,13 @@ CENTER_DEG = -0.56
 AMPLITUDE_DEG = 1.0
 COUNTDOWN_SEC = 5.0
 TAIL_SEC = 2.0
+ROUTE_FINISH_DISTANCE_M = 1.0
+ROUTE_STOP_SPEED_MPS = 0.05
+SCENARIO_NAMES = {
+    1: '종방향 스텝', 2: '종방향 램프',
+    3: '횡방향 스텝', 4: '횡방향 주파수 스윕',
+    5: '예선 GNSS-only 추종', 6: '본선 GNSS-only 추종',
+}
 
 
 @dataclass(frozen=True)
@@ -18,14 +25,28 @@ class RunSettings:
     max_speed_kph: float = 5.0
 
     def __post_init__(self):
-        if self.scenario not in (1, 2, 3, 4):
-            raise ValueError('시나리오는 1..4입니다')
+        if self.scenario not in SCENARIO_NAMES:
+            raise ValueError('시나리오는 1..6입니다')
         if not math.isfinite(self.max_speed_kph) or self.max_speed_kph <= 0:
             raise ValueError('최고 목표속도는 0보다 큰 유한한 값이어야 합니다')
 
     @property
     def duration(self):
+        if self.follows_route:
+            return None
         return {1: 20.0, 2: 13.0, 3: 12.0, 4: 17.0}[self.scenario]
+
+    @property
+    def follows_route(self):
+        return self.scenario in (5, 6)
+
+    @property
+    def route_filename(self):
+        return {5: 'kcity_quali_route.yaml', 6: 'kcity_final_route.yaml'}[self.scenario]
+
+    @property
+    def name(self):
+        return SCENARIO_NAMES[self.scenario]
 
     @property
     def needs_cruise(self):
@@ -33,10 +54,12 @@ class RunSettings:
 
     @property
     def steering_enabled(self):
-        return self.scenario in (3, 4)
+        return self.scenario in (3, 4, 5, 6)
 
     def description(self):
         v = self.max_speed_kph
+        if self.follows_route:
+            return f'{self.name} · 최고 목표 {v:g} km/h · 종료점 감속·정지'
         if self.scenario == 1:
             return f'{v/3:.1f} → 0 → {v/3:.1f} → {2*v/3:.1f} → {v:g} → {2*v/3:.1f} → {v/3:.1f} → 0 km/h'
         if self.scenario == 2:
@@ -47,6 +70,13 @@ class RunSettings:
 
     def document(self):
         document = asdict(self)
+        if self.follows_route:
+            document.update({
+                'description': self.description(), 'route_file': self.route_filename,
+                'speed_unit': 'km/h', 'steering_enabled': True,
+                'auto_countdown_sec': COUNTDOWN_SEC, 'publish_rate_hz': 20.0,
+            })
+            return document
         document.update({
             'speed_unit': 'km/h', 'steering_unit': 'central_equivalent_degrees',
             'steering_enabled': self.steering_enabled,
@@ -71,6 +101,8 @@ def baseline(brake=False, *, steering_enabled=False):
 def segments(settings):
     """The same segment definitions drive execution and the saved run settings."""
     v = settings.max_speed_kph
+    if settings.follows_route:
+        return []
     if settings.scenario == 1:
         return [
             {'duration_sec': duration, 'from_kph': fraction * v, 'to_kph': fraction * v}

@@ -11,7 +11,7 @@ def main():
     here = Path(__file__).resolve()
     if len(sys.argv) > 1:
         print('Usage: python3 auto_sysid.py\n'
-              'Rich TUI: 1-4 scenario, V maximum target speed, R Run, S Stop, Q Quit')
+              'Rich TUI: 1-6 scenario, V maximum target speed, R Run, S Stop, Q Quit')
         return 0 if sys.argv[1:] in (['--help'], ['-h']) else 2
     if os.environ.get('AUTO_SYSID_ROS_ENV') != '1':
         setups = []

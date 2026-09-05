@@ -10,17 +10,21 @@ import time
 from geometry_msgs.msg import TwistWithCovarianceStamped
 from kaiev26_msgs.msg import (
     ActuatorCommand, BrakeActuatorStatus, DriveActuatorStatus,
-    SteeringActuatorStatus, VehicleState,
+    SteeringActuatorStatus, VehicleState, RouteContext,
 )
+from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from sensor_msgs.msg import Imu, NavSatFix
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 from tf2_msgs.msg import TFMessage
 
 from .scenario_runner import ScenarioSetpoint
 from .steering_control import SteeringControl
-from .sysid_profiles import COUNTDOWN_SEC, CENTER_DEG, TAIL_SEC, RunSettings, baseline, evaluate, segments
+from .sysid_profiles import (
+    COUNTDOWN_SEC, CENTER_DEG, TAIL_SEC, ROUTE_FINISH_DISTANCE_M, ROUTE_STOP_SPEED_MPS,
+    RunSettings, baseline, evaluate, segments,
+)
 
 
 TOPICS = {
@@ -32,6 +36,11 @@ TOPICS = {
     '/gnss/fix_velocity': TwistWithCovarianceStamped,
     '/imu/data_raw': Imu,
     '/tf_static': TFMessage,
+}
+FOLLOW_TOPICS = {
+    '/sysid/odometry': Odometry,
+    '/sysid/route_context': RouteContext,
+    '/sysid/route_command': ActuatorCommand,
 }
 BUSY_STATES = {'RECORD_START', 'WAIT_AUTO', 'COUNTDOWN', 'CRUISE', 'RUNNING', 'DECEL', 'TAIL', 'CLOSING'}
 STATE_LABELS = {
@@ -58,7 +67,7 @@ class SysidNode(Node):
         self.file_logs = SimpleQueue()
         self.logs = deque(maxlen=200)
         self.received = {}
-        self.arrivals = {topic: deque(maxlen=1000) for topic in TOPICS}
+        self.arrivals = {topic: deque(maxlen=1000) for topic in TOPICS | FOLLOW_TOPICS}
         self.sensor_errors = {}
         self.static_frames = set()
         self.driver_rows = []
@@ -83,8 +92,9 @@ class SysidNode(Node):
         self.command_publisher = self.create_publisher(ActuatorCommand, '/planning/command', 10)
         self.steering_control = SteeringControl(self)
         self.label_publisher = self.create_publisher(String, '/sysid/scinario', 10)
+        self.route_enable_publisher = self.create_publisher(Bool, '/sysid/route_enabled', 10)
         self.subscriptions_owned = []
-        for topic, message_type in TOPICS.items():
+        for topic, message_type in (TOPICS | FOLLOW_TOPICS).items():
             qos = (QoSProfile(depth=10, durability=DurabilityPolicy.TRANSIENT_LOCAL)
                    if topic == '/tf_static' else qos_profile_sensor_data)
             self.subscriptions_owned.append(self.create_subscription(
@@ -142,6 +152,14 @@ class SysidNode(Node):
             vectors = (message.angular_velocity, message.linear_acceleration)
             if not all(math.isfinite(value) for v in vectors for value in (v.x, v.y, v.z)):
                 error = 'IMU 측정값 유효하지 않음'
+        elif topic == '/sysid/route_context':
+            if not message.route_projection_valid:
+                error = '현재 위치와 경로 연결 대기'
+        elif topic == '/sysid/route_command':
+            if not (math.isfinite(message.speed_target_mps)
+                    and message.speed_target_mps >= 0
+                    and math.isfinite(message.steering_target_rad)):
+                error = '유효하지 않은 경로 추종 명령'
         with self.lock:
             now = self.clock()
             self.received[topic] = (now, message)
@@ -172,7 +190,7 @@ class SysidNode(Node):
         with self.lock:
             self.graph_errors = errors
 
-    def gate_rows(self, now=None, *, command_flow=False):
+    def gate_rows(self, now=None, *, command_flow=False, route_input=False):
         now = self.clock() if now is None else now
         rows = [(
             '명령 발행·중계', not self.graph_errors,
@@ -181,12 +199,14 @@ class SysidNode(Node):
             '프로세스 관리자', self.manager_ok,
             '정상' if self.manager_ok else '프로세스 관리자 종료',
         )]
-        for topic in TOPICS:
+        topics = TOPICS | FOLLOW_TOPICS if route_input else TOPICS
+        for topic in topics:
             sample = self.received.get(topic)
-            required = topic in self.required_topics
+            required = topic in self.required_topics or topic in FOLLOW_TOPICS
+            timeout = 0.2 if topic == '/sysid/route_command' else 1.0
             if sample is None:
                 rows.append((topic, not required, f'{topic} 미수신'))
-            elif topic != '/tf_static' and now - sample[0] > 1.0:
+            elif topic != '/tf_static' and now - sample[0] > timeout:
                 rows.append((topic, not required, f'{topic} 수신 중단'))
             elif self.sensor_errors.get(topic):
                 rows.append((topic, not required, f'{topic}: {self.sensor_errors[topic]}'))
@@ -211,9 +231,9 @@ class SysidNode(Node):
                 rows.append(('/vehicle/command', True, '실시간 중계 중'))
         return rows
 
-    def issues(self, now=None, *, command_flow=False):
+    def issues(self, now=None, *, command_flow=False, route_input=False):
         return [detail for _, go, detail in self.gate_rows(
-            now, command_flow=command_flow) if not go]
+            now, command_flow=command_flow, route_input=route_input) if not go]
 
     def request_run(self, settings):
         self.commands.put(('run', settings))
@@ -242,6 +262,10 @@ class SysidNode(Node):
                     self.log('Run 대기: ' + '; '.join(problems))
                     continue
                 self.settings = value
+                for topic in FOLLOW_TOPICS:
+                    self.received.pop(topic, None)
+                    self.sensor_errors.pop(topic, None)
+                    self.arrivals[topic].clear()
                 self.schedule = segments(value)
                 self.output = baseline(steering_enabled=value.steering_enabled)
                 self.output_active = True
@@ -255,7 +279,7 @@ class SysidNode(Node):
                 self.state = 'RECORD_START'
                 self.phase_started = now
                 self.process_actions.put(('record', value))
-                self.log(f'시나리오 {value.scenario} · 최고 목표속도 {value.max_speed_kph:g} km/h')
+                self.log(f'{value.name} · 최고 목표속도 {value.max_speed_kph:g} km/h')
             elif action == 'stop':
                 if self.state in ('TAIL', 'CLOSING'):
                     self.output = baseline(True, steering_enabled=self.settings.steering_enabled)
@@ -287,6 +311,8 @@ class SysidNode(Node):
             elif action == 'manager_failed':
                 self.manager_ok = False
                 self._finish(f'프로세스 관리 오류: {value}', now, brake=True, terminal='ERROR')
+            elif action == 'route_failed':
+                self._finish(f'경로 추종 종료: {value}', now, brake=True, terminal='ERROR')
 
     def _tick(self):
         with self.lock:
@@ -304,7 +330,9 @@ class SysidNode(Node):
                     return
             if self.state in {'RECORD_START', 'WAIT_AUTO', 'COUNTDOWN', 'CRUISE', 'RUNNING', 'DECEL'}:
                 active_input = self.state in {'CRUISE', 'RUNNING', 'DECEL'}
-                problems = self.issues(now, command_flow=active_input)
+                problems = self.issues(
+                    now, command_flow=active_input,
+                    route_input=active_input and self.settings.follows_route)
                 if problems:
                     self._finish('시험 중단: ' + '; '.join(problems), now,
                                  brake=True, terminal='ERROR')
@@ -324,7 +352,8 @@ class SysidNode(Node):
                     self.countdown = left
                     self.log(f'{left}초 후 시작')
                 if now - self.phase_started >= COUNTDOWN_SEC:
-                    problems = self.issues(now, command_flow=True)
+                    problems = self.issues(
+                        now, command_flow=True, route_input=self.settings.follows_route)
                     if problems:
                         self._finish('출발 취소: ' + '; '.join(problems), now,
                                      brake=True, terminal='ERROR')
@@ -356,16 +385,29 @@ class SysidNode(Node):
                 if fraction == 0:
                     self._finish('정속 미도달로 Run 종료', now, terminal='ABORTED')
             if self.state == 'RUNNING':
-                elapsed = now - self.input_started
-                self.output, segment = evaluate(self.schedule, elapsed)
-                if segment != self.segment:
-                    self.segment = segment
-                    self.log(f'입력 구간 {segment}/{len(self.schedule)}')
-                if elapsed >= self.settings.duration:
-                    self._finish('시험 입력 완료 · 목표속도 0 유지', now)
+                if self.settings.follows_route:
+                    command = self.received['/sysid/route_command'][1]
+                    route = self.received['/sysid/route_context'][1]
+                    self.output = ScenarioSetpoint(
+                        command.speed_target_mps * 3.6,
+                        math.degrees(command.steering_target_rad), command.brake_engage)
+                    if (route.distance_to_finish <= ROUTE_FINISH_DISTANCE_M
+                            and command.brake_engage
+                            and abs(self.received['/drive/status'][1].speed_mps) <= ROUTE_STOP_SPEED_MPS):
+                        self._finish('경로 종료점 도착', now, brake=True)
+                else:
+                    elapsed = now - self.input_started
+                    self.output, segment = evaluate(self.schedule, elapsed)
+                    if segment != self.segment:
+                        self.segment = segment
+                        self.log(f'입력 구간 {segment}/{len(self.schedule)}')
+                    if elapsed >= self.settings.duration:
+                        self._finish('시험 입력 완료 · 목표속도 0 유지', now)
             if self.state == 'TAIL' and now - self.phase_started >= TAIL_SEC:
                 self.state = 'CLOSING'
                 self.process_actions.put(('close', self.finish_reason))
+            self.route_enable_publisher.publish(Bool(
+                data=self.settings.follows_route and self.state == 'RUNNING'))
             if self.output_active and (steering_ready or self.output.brake_engage):
                 message = ActuatorCommand()
                 message.header.stamp = self.get_clock().now().to_msg()
@@ -383,7 +425,9 @@ class SysidNode(Node):
         with self.lock:
             now = self.clock()
             rows = []
-            for topic in TOPICS:
+            route_input = self.settings.follows_route and self.busy
+            topics = TOPICS | FOLLOW_TOPICS if route_input else TOPICS
+            for topic in topics:
                 sample = self.received.get(topic)
                 error = self.sensor_errors.get(topic, '')
                 age = now - sample[0] if sample else None
@@ -392,7 +436,7 @@ class SysidNode(Node):
                         if len(times) > 1 and times[-1] > times[0] else 0)
                 if sample is None:
                     symbol, text = '—', '없음'
-                elif topic != '/tf_static' and age > 1:
+                elif topic != '/tf_static' and age > (0.2 if topic == '/sysid/route_command' else 1):
                     symbol, text = '—', f'{age:.1f}초 수신 중단'
                 elif error:
                     symbol, text = '—', error
@@ -421,7 +465,7 @@ class SysidNode(Node):
                 'settings': self.settings,
                 'countdown': self.countdown if self.state == 'COUNTDOWN' else None,
                 'elapsed': max(0, now - self.input_started) if self.state == 'RUNNING' else None,
-                'gates': self.gate_rows(now, command_flow=command_flow),
+                'gates': self.gate_rows(now, command_flow=command_flow, route_input=route_input),
                 'finish_reason': self.finish_reason,
                 'terminal_state': self.terminal_state,
             }

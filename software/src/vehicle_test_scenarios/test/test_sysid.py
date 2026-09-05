@@ -16,7 +16,7 @@ from kaiev26_msgs.msg import ActuatorCommand
 from vehicle_test_scenarios.sysid_profiles import (
     CENTER_DEG, RunSettings, baseline, evaluate, segments,
 )
-from vehicle_test_scenarios.sysid_runtime import SysidNode, TOPICS
+from vehicle_test_scenarios.sysid_runtime import SysidNode, TOPICS, FOLLOW_TOPICS
 from vehicle_test_scenarios import sysid_processes
 
 
@@ -149,6 +149,28 @@ def test_duplicate_run_does_not_restart_recording_or_change_active_settings(cont
     tick(auto=True)
     assert node.settings == RunSettings(1, 10)
     assert node.process_actions.qsize() == 1
+
+
+@pytest.mark.parametrize('scenario', [5, 6])
+def test_route_command_waits_for_countdown_and_stale_input_stops(controlled, scenario):
+    node, tick, clock = controlled
+    begin(node, tick, scenario=scenario)
+    tick(4.9, auto=True)
+    assert node.output.speed_kph == 0
+    clock[0] += 0.1
+    data = {topic: kind() for topic, kind in FOLLOW_TOPICS.items()}
+    data['/sysid/route_context'].route_projection_valid = True
+    data['/sysid/route_context'].distance_to_finish = 100.0
+    data['/sysid/route_command'].speed_target_mps = 1.0
+    data['/sysid/route_command'].steering_target_rad = 0.1
+    for topic, message in data.items():
+        node._receive(topic, message)
+    tick(auto=True)
+    assert node.state == 'RUNNING'
+    assert node.output.speed_kph == pytest.approx(3.6)
+    tick(0.21, auto=True)
+    assert node.output.brake_engage
+    assert node.terminal_state == 'ERROR'
 
 
 def test_cruise_requires_actual_speed_and_timeout_ramps_to_zero(controlled):

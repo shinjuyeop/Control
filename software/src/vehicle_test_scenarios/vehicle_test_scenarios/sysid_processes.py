@@ -26,6 +26,9 @@ RECORD_TOPICS = (
     '/vehicle/state', '/vehicle/wheel_twist',
     '/gnss/fix', '/gnss/fix_velocity', '/gnss/status', '/gnss/status_verbose',
     '/imu/data', '/imu/data_raw', '/ebimu/status', '/tf', '/tf_static', '/diagnostics',
+    '/sysid/odometry', '/sysid/odometry_gnss', '/sysid/route_context',
+    '/sysid/target_path', '/sysid/target_speed', '/sysid/route_command',
+    '/sysid/route_enabled', '/sysid/tf',
 )
 RECORDER_CODE = """
 import sys, json
@@ -121,6 +124,7 @@ class ProcessManager:
         self.records_root = Path(records_root)
         self.messages = {}
         self.recorder = None
+        self.route = None
         self.run_dir = None
         self.run_document = None
         self.run_log = None
@@ -164,6 +168,13 @@ class ProcessManager:
     def _start_recording(self, settings):
         if self.recorder is not None:
             return
+        self.record_topics_required = self.node.required_topics + (
+            '/planning/command', '/vehicle/command')
+        if settings.follows_route:
+            from .sysid_routes import RouteProcesses
+            self.route = RouteProcesses(self.node, settings)
+            self.record_topics_required += (
+                '/sysid/odometry', '/sysid/route_context', '/sysid/route_command')
         stamp = datetime.now(ZoneInfo('Asia/Seoul')).strftime('%Y%m%d_%H%M%S_%f')
         speed = f'{settings.max_speed_kph:g}'.replace('.', 'p')
         self.run_dir = self.records_root / f'{stamp}_scenario_{settings.scenario:02d}_v{speed}'
@@ -195,6 +206,7 @@ class ProcessManager:
 
     def _finish_recording(self, reason):
         if self.recorder is None:
+            self._close_route()
             return
         child, self.recorder = self.recorder, None
         self.recorder_ready = False
@@ -221,6 +233,12 @@ class ProcessManager:
             self.run_log.close()
             self.run_log = None
             self.node.commands.put(('record_closed', str(self.run_dir)))
+            self._close_route()
+
+    def _close_route(self):
+        if self.route is not None:
+            route, self.route = self.route, None
+            route.close()
 
     def _flush_logs(self):
         while not self.node.file_logs.empty():
@@ -260,6 +278,7 @@ class ProcessManager:
                             self._start_recording(value)
                         except Exception as error:
                             self.node.commands.put(('record_failed', str(error)))
+                            self._close_route()
                             if self.run_log:
                                 self.run_log.close()
                                 self.run_log = None
@@ -267,6 +286,11 @@ class ProcessManager:
                     elif action == 'close':
                         self._finish_recording(value)
                 self._record_status()
+                if self.route is not None:
+                    error = self.route.failure()
+                    if error:
+                        self.node.commands.put(('route_failed', error))
+                        self._close_route()
                 self._flush_logs()
                 now = time.monotonic()
                 if now >= next_scan:
@@ -282,6 +306,12 @@ class ProcessManager:
             except Exception as error:
                 self.cleanup_errors.append(str(error))
                 self.node.log(f'MCAP 종료 오류: {error}')
+            finally:
+                try:
+                    self._close_route()
+                except Exception as error:
+                    self.cleanup_errors.append(str(error))
+                    self.node.log(f'경로 추종 종료 오류: {error}')
 
     def close(self):
         self.stop_event.set()

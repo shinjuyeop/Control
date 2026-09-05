@@ -24,7 +24,7 @@ from rich.table import Table
 from rich.text import Text
 
 from .sysid_processes import DEFAULT_RECORDS_ROOT, ProcessManager
-from .sysid_profiles import RunSettings
+from .sysid_profiles import RunSettings, SCENARIO_NAMES
 from .sysid_runtime import SysidNode
 
 
@@ -98,13 +98,14 @@ def dashboard(snapshot, selection, speed_text=None, message='', height=40,
               border_style='green' if all_go else 'red'),
         Panel(drivers, title='외부 드라이버'),
     )
-    choices = '   '.join(
-        ('▶ ' if i == selection.scenario else '') + f'[{i}] 시나리오 {i}' for i in range(1, 5))
+    choices = '\n'.join('   '.join(
+        ('▶ ' if i == selection.scenario else '') + f'[{i}] {SCENARIO_NAMES[i]}'
+        for i in row) for row in ((1, 2, 3, 4), (5, 6)))
     settings = Text(
         choices + '\n'
         + f'최고 목표속도 {selection.max_speed_kph:g} km/h  ·  '
         + selection.description() + '\n'
-        + '1–4 선택   V 최고속도   R Run   S / Space Stop   Q 종료',
+        + '1–6 선택   V 최고속도   R Run   S / Space Stop   Q 종료',
     )
     if speed_text is not None:
         settings.append('\n최고 목표속도 입력: ' + speed_text + '▌  (Enter 적용 / Esc 취소)', style='bold cyan')
@@ -225,7 +226,7 @@ def main(*, use_sim_time=False, records_root=DEFAULT_RECORDS_ROOT):
                 if node.busy:
                     message = '실행·저장이 끝난 뒤 설정을 바꿀 수 있습니다.'
                     continue
-                if char in '1234':
+                if char in '123456':
                     selection = RunSettings(int(char), selection.max_speed_kph)
                     message = ''
                 elif char.lower() == 'v':
