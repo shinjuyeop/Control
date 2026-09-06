@@ -73,7 +73,7 @@ KEYA Disable을 보내고 이전 목표를 폐기하며, `false` 동안 위치·
 
 | 토픽 | 타입 | 발행 주체 | 사용 내용 |
 | --- | --- | --- | --- |
-| `/drive/status` | `kaiev26_msgs/msg/DriveActuatorStatus` | STM_A | `mode`: `0=MANUAL`, `1=AUTO` |
+| `/drive/status` | `kaiev26_msgs/msg/DriveActuatorStatus` | STM_A | `mode`: `0=MANUAL`, `1=AUTO`; `speed_mps`, `part1_valid`: 조향 허용 속력 |
 | `/brake/status` | `kaiev26_msgs/msg/BrakeActuatorStatus` | STM_B | `stop_reason_bits`의 물리 E-stop bit |
 | `/steering/test/estop` | `std_msgs/msg/UInt8` | 벤치 노드 | 시험 입력이 허용된 경우에만 E-stop으로 사용 |
 
@@ -96,7 +96,7 @@ ABI에 넣지 않은 최종 브레이크 명령입니다.
 | ---: | --- | --- | --- |
 | 0 | `INIT` | Disable | 초기화 및 유효 피드백 대기 |
 | 1 | `DISABLED` | Disable | MANUAL, 모드 미수신·timeout 또는 invalid mode |
-| 2 | `WAIT_CMD` | Disable | AUTO와 안전 조건은 정상이지만 새 명령 대기 |
+| 2 | `WAIT_CMD` | Disable | 새 명령 대기, 조향 비활성 설정 또는 속력 조건 미충족 |
 | 3 | `ACTIVE` | Enable | 새 조향 명령 실행 |
 | 4 | `ESTOP` | Disable | STM_B가 보고한 물리 E-stop 또는 허용된 시험 E-stop |
 | 5 | `BRAKE` | Disable | `/vehicle/command.brake_engage=true` |
@@ -108,6 +108,16 @@ ABI에 넣지 않은 최종 브레이크 명령입니다.
 손실, 모터 fault 또는 명령 timeout이 발생하면 노드는 과거 target과 pending
 command를 폐기하고 모터를 Disable합니다. 조건이 복구되어도 과거 목표를 되살리지
 않고, 복구 경계 이후 들어온 새 `/vehicle/command`만 받습니다.
+
+정지 상태의 조향 부하를 줄이기 위해 `/drive/status`의 `part1_valid=true`이고
+유한한 `abs(speed_mps) >= 1/3.6`일 때만 조향을 허용합니다. 전·후진 모두
+1 km/h 이상이어야 하며, 미수신 또는 마지막 수신 후 `drive_status_timeout_ms`
+(기본 500 ms)를 넘겨도 Disable합니다. 저속·무효 피드백 수신 시 즉시 Disable하고
+기존 목표를 폐기합니다. 조건 미충족 동안에는 위치·Enable 명령을 보내지 않으며,
+속력 조건 회복 후 새 조향 명령이 필요합니다. 다른 안전 원인이 없으면
+`WAIT_CMD`와 `disable_reason=NONE`으로 표시하고 속력 조건은 경고 로그로 알립니다.
+`speed_mps`는 STM_A가 구동모터 RPM에서 환산하고 0 RPM dropout을 보정한 값이므로
+실제 정지 순간과 Disable 사이에는 속도 피드백 및 제어 주기 지연이 있습니다.
 
 기본 control tick은 20 ms, 즉 50 Hz입니다. `ACTIVE`에서는 rate limit을 적용한
 position 명령을 매 tick 보냅니다. `/vehicle/command`의 기본 timeout은 200 ms이므로
@@ -185,14 +195,14 @@ candump -L can0
 정상 통합에서는 `/vehicle/command`의 발행자가 `command_governor` 하나여야
 합니다. Planning 또는 시험 명령원(실차는 `vehicle_test_scenario_runner`, HIL은
 `hil_command_generator`)은 `/planning/command`로 내고 거버너가 재발행합니다.
-AUTO와 유효한 KEYA feedback만 들어온 직후에는 `WAIT_CMD`이고, 그 이후 새
-명령을 받아야 `ACTIVE`가 됩니다.
+AUTO, 유효한 KEYA feedback과 구동 속력 조건을 충족한 뒤 새 명령을 받아야
+`ACTIVE`가 됩니다.
 
 ## 순수 조향 벤치
 
-STM_A/B 없이 조향만 단독으로 돌릴 때 씁니다. 벤치 노드가 `/drive/status`를 직접
-발행하므로 HIL bench나 실차 없이도 `ACTIVE`까지 갈 수 있고, 각도 시퀀스를 자동으로
-순회하므로 캘리브레이션처럼 반복 스윕이 필요한 작업에 적합합니다.
+벤치 노드는 `/drive/status`와 각도 시퀀스를 직접 발행합니다. 현재 기본 시험
+status는 유효한 구동 속력을 제공하지 않으므로, 1 km/h 조건에 의해 조향은
+Disable 상태를 유지합니다. 정지 스윕을 위해 속력 조건을 우회하지 않습니다.
 
 > **HIL bench와 동시에 실행하지 마십시오.** HIL 스택의 `command_governor`와
 > 이 노드가 모두 `/vehicle/command`를 발행하므로 명령이 서로 덮어써집니다.
@@ -250,6 +260,7 @@ ros2 launch lateral_ctrl steering_bench_test.launch.py \
 | `can_timeout_ms` | 500 | KEYA CAN 통신 timeout |
 | `feedback_timeout_ms` | 500 | position feedback timeout |
 | `mode_timeout_ms` | 1500 | `/drive/status` timeout |
+| `drive_status_timeout_ms` | 500 | 조향 속력 허용에 사용하는 `/drive/status` 수신 timeout |
 | `steer_command_timeout_ms` | 200 | `ACTIVE`에서 `/vehicle/command` timeout |
 | `command_count_limit` | 3279 | 명령 가능한 KEYA raw count 절댓값. nominal 중앙 등가각 약 -27.83°..+25.92° |
 | `max_steering_rate_deg_s` | 60.0 | 중앙 등가각 변화율 제한 |

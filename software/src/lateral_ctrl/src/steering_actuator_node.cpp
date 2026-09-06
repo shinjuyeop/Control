@@ -34,6 +34,7 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
   can_timeout_ms_ = declare_parameter("can_timeout_ms", 500);
   feedback_timeout_ms_ = declare_parameter("feedback_timeout_ms", 500);
   mode_timeout_ms_ = declare_parameter("mode_timeout_ms", 1500);
+  drive_status_timeout_ms_ = declare_parameter("drive_status_timeout_ms", 500);
   steer_command_timeout_ms_ = declare_parameter("steer_command_timeout_ms", 200);
   max_steering_rate_deg_s_ = declare_parameter("max_steering_rate_deg_s", 60.0);
   tracking_error_warning_deg_ = declare_parameter("tracking_error_warning_deg", 1.0);
@@ -41,7 +42,7 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
   tracking_error_fault_duration_ms_ =
     declare_parameter("tracking_error_fault_duration_ms", 500);
   if (control_period_ms_ <= 0 || can_timeout_ms_ <= 0 || feedback_timeout_ms_ <= 0 ||
-    mode_timeout_ms_ <= 0 || steer_command_timeout_ms_ <= 0)
+    mode_timeout_ms_ <= 0 || drive_status_timeout_ms_ <= 0 || steer_command_timeout_ms_ <= 0)
   {
     throw std::invalid_argument("steering periods and timeouts must be positive");
   }
@@ -213,6 +214,12 @@ void SteeringActuatorNode::onDriveStatus(
 {
   // 물리 모드 스위치 상태는 STM_A의 drive status로 전달된다.
   applyMode(input->mode);
+  drive_speed_permits_steering_ =
+    driveSpeedPermitsSteering(input->speed_mps, input->part1_valid);
+  if (!drive_speed_permits_steering_) {
+    // Drop the old target and disable immediately, before the next CAN control tick.
+    enterWaitCommand();
+  }
 }
 
 void SteeringActuatorNode::onBrakeStatus(
@@ -371,6 +378,8 @@ void SteeringActuatorNode::controlTick()
       age_now - last_steer_command_time_).count();
   }
   mode_timeout_ = mode_received_ && mode_age_ms > mode_timeout_ms_;
+  const bool drive_speed_allowed = drive_speed_permits_steering_ &&
+    mode_age_ms <= drive_status_timeout_ms_;
   if (motor.position_valid) {
     actual_wheel_angle_deg_ = converter_.countToEquivalentDeg(motor.motor_position_count);
   }
@@ -388,13 +397,21 @@ void SteeringActuatorNode::controlTick()
   }
 
   bool entered_active_this_tick = false;
+  if (!drive_speed_allowed) {
+    enterWaitCommand(disable_reason_);
+    if (steering_enabled_ && outputArmed()) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 5000,
+        "Steering disabled: requires valid drive speed >= 1 km/h and fresh /drive/status");
+    }
+  }
   if (disable_reason_ != SteeringDisableReason::NONE) {
     if (disable_reason_ == SteeringDisableReason::STEER_COMMAND_TIMEOUT) {
       enterWaitCommand(disable_reason_);
     } else {
       transitionTo(stateForDisableReason(disable_reason_));
     }
-  } else if (!steering_enabled_) {
+  } else if (!steering_enabled_ || !drive_speed_allowed) {
     enterWaitCommand();
   } else {
     if (state_ != SteeringState::WAIT_CMD && state_ != SteeringState::ACTIVE) {
@@ -421,7 +438,9 @@ void SteeringActuatorNode::controlTick()
     }
   } else {
     tracking_controller_.reset();
-    if (steering_enabled_ && outputArmed() && feedback_valid && can_driver_->isOpen()) {
+    if (steering_enabled_ && drive_speed_allowed && outputArmed() && feedback_valid &&
+      can_driver_->isOpen())
+    {
       can_driver_->sendPositionCount(motor.motor_position_count);
     }
   }

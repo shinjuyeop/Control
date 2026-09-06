@@ -67,6 +67,29 @@ TEST(SteeringSafetyLogic, CommandBrakeReleasesOnlyWithFreshStamp)
   EXPECT_TRUE(lateral_ctrl::nextCommandBrakeState(true, true, true));
 }
 
+TEST(SteeringSafetyLogic, DriveSpeedMustReachOneKmphInEitherDirection)
+{
+  constexpr float threshold = 1.0F / 3.6F;
+  for (const float sign : {1.0F, -1.0F}) {
+    EXPECT_FALSE(lateral_ctrl::driveSpeedPermitsSteering(0.0F, true));
+    EXPECT_FALSE(lateral_ctrl::driveSpeedPermitsSteering(
+        sign * std::nextafter(threshold, 0.0F), true));
+    EXPECT_TRUE(lateral_ctrl::driveSpeedPermitsSteering(sign * threshold, true));
+    EXPECT_TRUE(lateral_ctrl::driveSpeedPermitsSteering(sign * 2.0F, true));
+  }
+}
+
+TEST(SteeringSafetyLogic, InvalidDriveFeedbackNeverPermitsSteering)
+{
+  EXPECT_FALSE(lateral_ctrl::driveSpeedPermitsSteering(2.0F, false));
+  EXPECT_FALSE(lateral_ctrl::driveSpeedPermitsSteering(
+      std::numeric_limits<float>::quiet_NaN(), true));
+  EXPECT_FALSE(lateral_ctrl::driveSpeedPermitsSteering(
+      std::numeric_limits<float>::infinity(), true));
+  EXPECT_FALSE(lateral_ctrl::driveSpeedPermitsSteering(
+      -std::numeric_limits<float>::infinity(), true));
+}
+
 TEST(SteeringSafetyLogic, AutoWithoutInhibitMapsToWaitCommand)
 {
   SafetyInputs safety;

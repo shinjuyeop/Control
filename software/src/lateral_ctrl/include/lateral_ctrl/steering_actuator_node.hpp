@@ -54,6 +54,7 @@ private:
   SafetyInputs safety_;
 
   bool mode_received_{false};
+  bool drive_speed_permits_steering_{false};
   bool movement_target_valid_{false};
   bool pending_command_valid_{false};
   bool enabled_commanded_{false};
@@ -79,6 +80,7 @@ private:
   int can_timeout_ms_{500};
   int feedback_timeout_ms_{500};
   int mode_timeout_ms_{1500};
+  int drive_status_timeout_ms_{500};
   int steer_command_timeout_ms_{200};
   uint64_t tick_count_{0};
   uint64_t steer_command_generation_{0};
