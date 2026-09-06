@@ -118,6 +118,8 @@ def dashboard(snapshot, selection, speed_text=None, message='', height=40,
         settings.append('\n최고 목표속도 입력: ' + speed_text + '▌  (Enter 적용 / Esc 취소)', style='bold cyan')
     if message:
         settings.append('\n' + message, style='yellow')
+    if snapshot['run_warning']:
+        settings.append('\n주의: ' + snapshot['run_warning'], style='bold yellow')
     if snapshot['terminal_state'] in {'ABORTED', 'ERROR'} and snapshot['finish_reason']:
         settings.append('\n중단 원인: ' + snapshot['finish_reason'], style='bold red')
     recording = ('● REC  ' if snapshot['recording'] else '') + (snapshot['run_dir'] or str(records_root))

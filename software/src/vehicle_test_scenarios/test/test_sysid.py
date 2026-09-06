@@ -152,7 +152,8 @@ def test_duplicate_run_does_not_restart_recording_or_change_active_settings(cont
 
 
 @pytest.mark.parametrize('scenario', [5, 6])
-def test_route_command_waits_for_countdown_and_stale_input_stops(controlled, scenario):
+def test_route_start_waits_for_fresh_post_enable_command_and_stale_input_stops(
+        controlled, scenario):
     node, tick, clock = controlled
     begin(node, tick, scenario=scenario)
     tick(4.9, auto=True)
@@ -163,8 +164,16 @@ def test_route_command_waits_for_countdown_and_stale_input_stops(controlled, sce
     data['/sysid/route_context'].distance_to_finish = 100.0
     data['/sysid/route_command'].speed_target_mps = 1.0
     data['/sysid/route_command'].steering_target_rad = 0.1
+    data['/sysid/route_command'].brake_engage = True
     for topic, message in data.items():
         node._receive(topic, message)
+    tick(auto=True)
+    assert node.state == 'ROUTE_ARMING'
+    assert node.output == baseline(steering_enabled=True)
+
+    clock[0] += 0.01
+    data['/sysid/route_command'].brake_engage = False
+    node._receive('/sysid/route_command', data['/sysid/route_command'])
     tick(auto=True)
     assert node.state == 'RUNNING'
     assert node.output.speed_kph == pytest.approx(3.6)
@@ -173,18 +182,23 @@ def test_route_command_waits_for_countdown_and_stale_input_stops(controlled, sce
     assert node.terminal_state == 'ERROR'
 
 
-def test_cruise_requires_actual_speed_and_timeout_ramps_to_zero(controlled):
+@pytest.mark.parametrize('scenario', [3, 4])
+def test_cruise_timeout_warns_and_runs_lateral_input_to_completion(controlled, scenario):
     node, tick, _ = controlled
-    begin(node, tick, scenario=3)
+    begin(node, tick, scenario=scenario)
     tick(5, auto=True, speed=2)
     assert node.state == 'CRUISE'
     tick(15, auto=True, speed=2)
-    assert node.state == 'DECEL'
-    tick(2, auto=True, speed=2)
-    assert node.output.speed_kph == pytest.approx(5)
-    tick(2, auto=True)
+    assert node.state == 'RUNNING'
+    assert '정속 판정 실패' in node.run_warning
+    assert node.output.speed_kph == 10
+    tick(1, auto=True, speed=2)
+    assert node.output.steering_deg != CENTER_DEG
+    tick(node.settings.duration - 1, auto=True, speed=2)
+    assert node.state == 'TAIL'
     assert node.output == baseline(steering_enabled=True)
-    assert node.terminal_state == 'ABORTED'
+    assert node.terminal_state == 'COMPLETE'
+    assert '정속 판정 실패' in node.snapshot()['run_warning']
 
 
 def test_cruise_starts_steering_after_one_second_near_target(controlled):

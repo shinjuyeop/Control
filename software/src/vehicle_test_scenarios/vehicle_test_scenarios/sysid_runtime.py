@@ -43,11 +43,15 @@ FOLLOW_TOPICS = {
     '/sysid/route_command': ActuatorCommand,
 }
 EZKONTROL_STATUS_INVALID_STOP_SEC = 0.5
-BUSY_STATES = {'RECORD_START', 'WAIT_AUTO', 'COUNTDOWN', 'CRUISE', 'RUNNING', 'DECEL', 'TAIL', 'CLOSING'}
+BUSY_STATES = {
+    'RECORD_START', 'WAIT_AUTO', 'COUNTDOWN', 'ROUTE_ARMING',
+    'CRUISE', 'RUNNING', 'TAIL', 'CLOSING',
+}
 STATE_LABELS = {
     'IDLE': '시험 선택', 'RECORD_START': 'MCAP 연결 중', 'WAIT_AUTO': 'AUTO 전환 대기',
-    'COUNTDOWN': '출발 카운트다운', 'CRUISE': '정속 준비', 'RUNNING': '시험 중',
-    'DECEL': '감속 중', 'TAIL': '후행 기록 중', 'CLOSING': 'MCAP 저장 중',
+    'COUNTDOWN': '출발 카운트다운', 'ROUTE_ARMING': '경로 출발 명령 대기',
+    'CRUISE': '정속 준비', 'RUNNING': '시험 중',
+    'TAIL': '후행 기록 중', 'CLOSING': 'MCAP 저장 중',
     'COMPLETE': '시험 입력 완료 · 목표속도 0 유지',
     'ABORTED': '시험 중단', 'ERROR': '확인 필요',
 }
@@ -85,6 +89,7 @@ class SysidNode(Node):
         self.output_active = False
         self.run_dir = ''
         self.finish_reason = ''
+        self.run_warning = ''
         self.terminal_state = 'COMPLETE'
         self.phase_started = 0.0
         self.input_started = 0.0
@@ -295,6 +300,7 @@ class SysidNode(Node):
                 self.segment = 0
                 self.run_dir = ''
                 self.finish_reason = ''
+                self.run_warning = ''
                 self.record_open = True
                 self.record_error = ''
                 self.terminal_state = 'COMPLETE'
@@ -349,13 +355,15 @@ class SysidNode(Node):
             if not steering_ready and not self.output.brake_engage:
                 # Freeze preparation until the actuator accepts the motor setting.
                 # If it disappears during motion, use the existing stop path.
-                if self.state in {'CRUISE', 'RUNNING', 'DECEL'}:
+                if self.state in {'ROUTE_ARMING', 'CRUISE', 'RUNNING'}:
                     self._finish(self.steering_control.error, now, brake=True, terminal='ERROR')
                 elif self.state in {'RECORD_START', 'WAIT_AUTO', 'COUNTDOWN'}:
                     self.phase_started = now
                     return
-            if self.state in {'RECORD_START', 'WAIT_AUTO', 'COUNTDOWN', 'CRUISE', 'RUNNING', 'DECEL'}:
-                active_input = self.state in {'CRUISE', 'RUNNING', 'DECEL'}
+            if self.state in {
+                    'RECORD_START', 'WAIT_AUTO', 'COUNTDOWN', 'ROUTE_ARMING',
+                    'CRUISE', 'RUNNING'}:
+                active_input = self.state in {'ROUTE_ARMING', 'CRUISE', 'RUNNING'}
                 problems = self.issues(
                     now, command_flow=active_input,
                     route_input=active_input and self.settings.follows_route)
@@ -385,10 +393,20 @@ class SysidNode(Node):
                                      brake=True, terminal='ERROR')
                     else:
                         self.phase_started = now
-                        self.input_started = now
                         self.stable_since = None
-                        self.state = 'CRUISE' if self.settings.needs_cruise else 'RUNNING'
-                        self.log('정속 준비' if self.settings.needs_cruise else '시험 입력 시작')
+                        if self.settings.follows_route:
+                            self.state = 'ROUTE_ARMING'
+                            self.log('경로 출발 명령 대기')
+                        else:
+                            self.input_started = now
+                            self.state = 'CRUISE' if self.settings.needs_cruise else 'RUNNING'
+                            self.log('정속 준비' if self.settings.needs_cruise else '시험 입력 시작')
+            if self.state == 'ROUTE_ARMING':
+                received_at, command = self.received['/sysid/route_command']
+                if received_at > self.phase_started and not command.brake_engage:
+                    self.state = 'RUNNING'
+                    self.input_started = now
+                    self.log('시험 입력 시작')
             if self.state == 'CRUISE':
                 speed = self.received['/drive/status'][1].speed_mps * 3.6
                 self.output = ScenarioSetpoint(self.settings.max_speed_kph, CENTER_DEG)
@@ -402,14 +420,12 @@ class SysidNode(Node):
                 else:
                     self.stable_since = None
                 if self.state == 'CRUISE' and now - self.phase_started >= 15:
-                    self.state = 'DECEL'
-                    self.phase_started = now
-                    self.log('정속 준비 시간 초과 · 감속')
-            if self.state == 'DECEL':
-                fraction = max(0, 1 - (now - self.phase_started) / 4)
-                self.output = ScenarioSetpoint(self.settings.max_speed_kph * fraction, CENTER_DEG)
-                if fraction == 0:
-                    self._finish('정속 미도달로 Run 종료', now, terminal='ABORTED')
+                    self.run_warning = (
+                        '정속 판정 실패 · 15초 내 목표속도 ±0.5 km/h를 '
+                        '1초 유지하지 못함 · 조향 입력 계속')
+                    self.state = 'RUNNING'
+                    self.input_started = now
+                    self.log(self.run_warning)
             if self.state == 'RUNNING':
                 if self.settings.follows_route:
                     command = self.received['/sysid/route_command'][1]
@@ -433,7 +449,8 @@ class SysidNode(Node):
                 self.state = 'CLOSING'
                 self.process_actions.put(('close', self.finish_reason))
             self.route_enable_publisher.publish(Bool(
-                data=self.settings.follows_route and self.state == 'RUNNING'))
+                data=self.settings.follows_route
+                and self.state in {'ROUTE_ARMING', 'RUNNING'}))
             if self.output_active and (steering_ready or self.output.brake_engage):
                 message = ActuatorCommand()
                 message.header.stamp = self.get_clock().now().to_msg()
@@ -475,7 +492,7 @@ class SysidNode(Node):
             steering = self.received.get('/steering/status')
             mode = ('미수신' if not drive or now - drive[0] > 1 else
                     'AUTO' if drive[1].mode == DriveActuatorStatus.MODE_AUTO else 'MANUAL')
-            command_flow = self.state in {'CRUISE', 'RUNNING', 'DECEL'}
+            command_flow = self.state in {'ROUTE_ARMING', 'CRUISE', 'RUNNING'}
             return {
                 'state': self.state, 'label': STATE_LABELS[self.state], 'mode': mode,
                 'speed': drive[1].speed_mps * 3.6 if drive else None,
@@ -493,5 +510,6 @@ class SysidNode(Node):
                 'elapsed': max(0, now - self.input_started) if self.state == 'RUNNING' else None,
                 'gates': self.gate_rows(now, command_flow=command_flow, route_input=route_input),
                 'finish_reason': self.finish_reason,
+                'run_warning': self.run_warning,
                 'terminal_state': self.terminal_state,
             }
