@@ -7,6 +7,17 @@ import shlex
 import sys
 
 
+def overlay_environment():
+    # Colcon's DSV hooks do not reorder paths already inherited from the shell.
+    # Rebuild the overlay paths from the selected setup files instead.
+    env = os.environ.copy()
+    for name in ('PYTHONPATH', 'LD_LIBRARY_PATH', 'AMENT_PREFIX_PATH',
+                 'CMAKE_PREFIX_PATH', 'COLCON_PREFIX_PATH',
+                 'COLCON_CURRENT_PREFIX', 'AMENT_CURRENT_PREFIX'):
+        env.pop(name, None)
+    return env
+
+
 def main():
     here = Path(__file__).resolve()
     if len(sys.argv) > 1:
@@ -31,7 +42,7 @@ def main():
         if not setups:
             print('ROS 2 Humble / workspace install을 찾지 못했습니다.', file=sys.stderr)
             return 1
-        env = os.environ.copy()
+        env = overlay_environment()
         env['AUTO_SYSID_ROS_ENV'] = '1'
         command = '\n'.join('source ' + shlex.quote(str(path)) for path in dict.fromkeys(setups))
         command += '\nexec /usr/bin/python3 ' + shlex.quote(str(here))

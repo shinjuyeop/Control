@@ -56,7 +56,7 @@ Q/Ctrl+C 종료 시에는 명령을 발행했던 경우 정지 요청을 먼저 
 
 MCAP과 실행 설정·로그는 다음 위치에 저장된다.
 
-    /home/kai/KAI_ws/records/<YYYYMMDD_HHMMSS_microseconds>_scenario_<번호>_v<최고속도>/
+    <workspace>/records/<YYYYMMDD_HHMMSS_microseconds>_scenario_<번호>_v<최고속도>/
       rosbag/
       scenario.yaml
       console.log
@@ -224,6 +224,6 @@ ros2 launch vehicle_test_scenarios auto_lateral_steering_sine.launch.py
 변경 전 직진 추정값이다. 얼라인먼트를 바꿨다면 실행 전에 source YAML의 이 값만 새
 직진각으로 수정하고 다시 빌드한다. 종방향 YAML에는 센터각 설정이 필요 없다.
 각 run은 실차 제어컴의
-`/home/kai/KAI_ws/records/` 아래 별도 MCAP으로 저장된다. logger는
+실행 중인 workspace의 `records/` 아래 별도 MCAP으로 저장된다. logger는
 `/planning/command`와 `/vehicle/command`를 모두 기록한다.
 `/sysid/scinario`에는 각 YAML의 고정 `std_msgs/msg/String` label이 20 Hz로 기록된다.

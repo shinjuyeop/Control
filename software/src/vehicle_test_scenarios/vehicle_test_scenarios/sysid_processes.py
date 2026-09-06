@@ -17,7 +17,11 @@ from zoneinfo import ZoneInfo
 import yaml
 
 
-DEFAULT_RECORDS_ROOT = Path('/home/kai/KAI_ws/records')
+DEFAULT_RECORDS_ROOT = next((
+    ancestor / 'records'
+    for ancestor in Path(__file__).resolve().parents
+    if (ancestor / 'src/Control/software/src/vehicle_test_scenarios/package.xml').is_file()
+), Path.home() / 'KAI_ws/records')
 
 
 RECORD_TOPICS = (

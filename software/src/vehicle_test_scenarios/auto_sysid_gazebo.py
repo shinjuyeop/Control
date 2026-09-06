@@ -10,14 +10,28 @@ from auto_sysid import overlay_environment
 
 
 if __name__ == '__main__':
+    here = Path(__file__).resolve()
+    ros2_workspace = next((
+        ancestor / 'ros2_ws'
+        for ancestor in reversed(here.parents)
+        if (ancestor / 'ros2_ws/install/local_setup.bash').is_file()
+    ), None)
+    gazebo_workspace = next((
+        ancestor
+        for ancestor in here.parents
+        if (ancestor / 'install/local_setup.bash').is_file()
+    ), None)
+    if ros2_workspace is None or gazebo_workspace is None:
+        raise SystemExit('ros2_ws / Gazebo workspace install을 찾지 못했습니다.')
+
     if os.environ.get('AUTO_SYSID_GAZEBO_ENV') != '1':
         env = overlay_environment()
         env['AUTO_SYSID_GAZEBO_ENV'] = '1'
         command = '\n'.join([
             'source /opt/ros/humble/setup.bash',
-            'source /home/user1/ROS2_Workspace/ros2_ws/install/local_setup.bash',
-            'source /home/user1/ROS2_Workspace/gazebo_sitl/install/local_setup.bash',
-            'exec /usr/bin/python3 ' + shlex.quote(str(Path(__file__).resolve())),
+            'source ' + shlex.quote(str(ros2_workspace / 'install/local_setup.bash')),
+            'source ' + shlex.quote(str(gazebo_workspace / 'install/local_setup.bash')),
+            'exec /usr/bin/python3 ' + shlex.quote(str(here)),
         ])
         os.execvpe('/bin/bash', ['bash', '-c', command], env)
     from vehicle_test_scenarios.sysid_tui import main
@@ -26,7 +40,7 @@ if __name__ == '__main__':
         use_sim_time=True,
         require_ezkontrol_status=False,
         records_root=(
-            Path('/home/user1/ROS2_Workspace/ros2_ws/src/vehicle_sysid_analysis/test_bag')
+            ros2_workspace / 'src/vehicle_sysid_analysis/test_bag'
             / (datetime.now().strftime('%y%m%d') + '_gazebo_sysid')
         ),
     ))
