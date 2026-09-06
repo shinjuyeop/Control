@@ -75,7 +75,7 @@ typedef enum {
   ((uint16_t)(BRAKE_SERVO_ZERO_DEG_PULSE_US + (BRAKE_SERVO_US_PER_DEG) * (deg_) + 0.5f))
 
 /* ---- 여기 두 각도만 바꾸면 engage/release pulse가 자동으로 재계산된다 ---- */
-#define BRAKE_ENGAGED_ANGLE_DEG   75.0f
+#define BRAKE_ENGAGED_ANGLE_DEG   55.0f
 #define BRAKE_RELEASED_ANGLE_DEG  120.0f
 
 #define BRAKE_ENGAGED_PULSE_US   BRAKE_SERVO_DEG_TO_PULSE_US(BRAKE_ENGAGED_ANGLE_DEG)
