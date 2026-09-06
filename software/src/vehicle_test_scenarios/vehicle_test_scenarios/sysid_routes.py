@@ -85,7 +85,7 @@ class RouteProcesses:
         for child in self.children:
             code = child.process.poll()
             if code is not None:
-                return f'{child.name} 종료 (코드 {code})'
+                return f'{child.name} 종료 (코드 {code}): {child.last_output}'
         return ''
 
     def close(self):

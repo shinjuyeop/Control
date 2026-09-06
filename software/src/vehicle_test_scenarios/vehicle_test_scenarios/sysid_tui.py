@@ -17,7 +17,7 @@ import rclpy
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.parameter import Parameter
 from rclpy.signals import SignalHandlerOptions
-from rich.console import Console, Group
+from rich.console import Console
 from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
@@ -26,6 +26,13 @@ from rich.text import Text
 from .sysid_processes import DEFAULT_RECORDS_ROOT, ProcessManager
 from .sysid_profiles import RunSettings, SCENARIO_NAMES
 from .sysid_runtime import SysidNode
+
+
+def vertical_stack(*renderables):
+    layout = Table.grid(expand=True)
+    for renderable in renderables:
+        layout.add_row(renderable)
+    return layout
 
 
 @contextmanager
@@ -132,7 +139,7 @@ def dashboard(snapshot, selection, speed_text=None, message='', height=40,
         driver_summary = ' · '.join(
             name + (' ✓' if state == '감지됨' else ' 대기')
             for name, state in snapshot['drivers'])
-        return Group(
+        return vertical_stack(
             Panel(title, border_style='cyan'),
             Panel(settings, title='시험 선택'),
             Panel(pairs, title='RUN GO' if all_go else 'RUN NO-GO',
@@ -141,7 +148,7 @@ def dashboard(snapshot, selection, speed_text=None, message='', height=40,
             Text(recording, overflow='ellipsis', no_wrap=True),
             Text('\n'.join(snapshot['logs'][-2:]), overflow='ellipsis', no_wrap=True),
         )
-    return Group(
+    return vertical_stack(
         Panel(title, border_style='cyan'),
         Panel(settings, title='시험 선택'),
         columns,
@@ -150,7 +157,8 @@ def dashboard(snapshot, selection, speed_text=None, message='', height=40,
     )
 
 
-def main(*, use_sim_time=False, records_root=DEFAULT_RECORDS_ROOT):
+def main(*, use_sim_time=False, records_root=DEFAULT_RECORDS_ROOT,
+         require_ezkontrol_status=True):
     console = Console()
     if not sys.stdin.isatty():
         console.print('터미널에서 python3 auto_sysid.py로 실행하세요.')
@@ -175,7 +183,7 @@ def main(*, use_sim_time=False, records_root=DEFAULT_RECORDS_ROOT):
     try:
         # Keep ROS alive until the final stop command and recorder flush are complete.
         rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
-        node = SysidNode(parameter_overrides=[
+        node = SysidNode(require_ezkontrol_status=require_ezkontrol_status, parameter_overrides=[
             Parameter('use_sim_time', value=use_sim_time),
         ])
         if use_sim_time:

@@ -210,6 +210,26 @@ def test_stop_and_recording_failure_request_brake(controlled):
     assert not node.record_open
 
 
+def test_route_failure_survives_recorder_cleanup_and_stop(controlled):
+    node, tick, _ = controlled
+    begin(node, tick)
+    node.commands.put(('route_failed', 'route worker import failed'))
+    tick(auto=True)
+    reason = node.finish_reason
+    node.commands.put(('record_failed', 'missing route topics'))
+    node.request_stop()
+    tick(auto=True)
+    node.commands.put(('record_closed', '/record'))
+    tick(auto=True)
+    assert node.finish_reason == reason
+    assert node.terminal_state == 'ERROR'
+    assert node.output.brake_engage
+    assert node.record_error
+    node.request_run(RunSettings())
+    tick()
+    assert node.finish_reason == ''
+
+
 def test_motor_setting_wait_blocks_input_but_not_stop(controlled):
     node, tick, _ = controlled
     node.steering_control.ready.return_value = False
@@ -233,21 +253,62 @@ def test_lost_telemetry_stops_active_input(controlled):
     assert node.terminal_state == 'ERROR'
 
 
-def test_missing_or_lost_imu_does_not_block_or_stop_run(controlled):
+def test_ezkontrol_invalid_status_stops_only_after_500_ms_continuously(controlled):
+    node, tick, _ = controlled
+    begin(node, tick)
+    tick(5, auto=True)
+    drive = node.received['/drive/status'][1]
+
+    drive.part2_valid = False
+    tick(auto=True)
+    tick(0.49, auto=True)
+    assert node.state == 'RUNNING'
+    assert not node.output.brake_engage
+
+    drive.part2_valid = True
+    tick(auto=True)
+    drive.part2_valid = False
+    tick(auto=True)
+    tick(0.49, auto=True)
+    assert node.state == 'RUNNING'
+    tick(0.02, auto=True)
+    assert node.terminal_state == 'ERROR'
+    assert node.output.brake_engage
+    assert 'EZkontrol 상태 미수신 500 ms 지속' in node.finish_reason
+
+
+@pytest.mark.parametrize('missing_topics', [
+    ('/imu/data_raw',),
+    ('/gnss/fix', '/gnss/fix_velocity', '/tf_static'),
+])
+def test_missing_or_lost_optional_sensors_do_not_block_or_stop_run(
+        controlled, missing_topics):
     node, tick, clock = controlled
-    node.received.pop('/imu/data_raw')
-    node.sensor_errors.pop('/imu/data_raw')
+    for topic in missing_topics:
+        node.received.pop(topic)
+        node.sensor_errors.pop(topic)
     node.scan_graph = lambda: None
-    assert not any('/imu/data_raw' in issue for issue in node.issues())
+    assert not node.issues()
     begin(node, tick)
     tick(5, auto=True)
     clock[0] += 1.1
     for topic, (_, message) in list(node.received.items()):
-        if topic != '/imu/data_raw':
+        if topic not in missing_topics:
             node.received[topic] = (clock[0], message)
     node._tick()
     assert node.state == 'RUNNING'
     assert not node.output.brake_engage
+
+
+def test_gnss_inputs_remain_required_for_route_following(controlled):
+    node, _, _ = controlled
+    for topic in ('/gnss/fix', '/gnss/fix_velocity', '/tf_static'):
+        node.received.pop(topic)
+        node.sensor_errors.pop(topic)
+    issues = node.issues(route_input=True)
+    assert any('/gnss/fix 미수신' == issue for issue in issues)
+    assert any('/gnss/fix_velocity 미수신' == issue for issue in issues)
+    assert any('/tf_static 미수신' == issue for issue in issues)
 
 
 @pytest.mark.parametrize('extra_planning', [True, False])
@@ -295,7 +356,12 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path):
     executor.add_node(source)
     messages = telemetry()
     publishers = {}
+    optional_sensor_topics = {
+        '/gnss/fix', '/gnss/fix_velocity', '/imu/data_raw', '/tf_static',
+    }
     for topic, kind in TOPICS.items():
+        if topic in optional_sensor_topics:
+            continue
         qos = (QoSProfile(depth=10, durability=DurabilityPolicy.TRANSIENT_LOCAL)
                if topic == '/tf_static' else 10)
         publishers[topic] = source.create_publisher(kind, topic, qos)
@@ -304,7 +370,6 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path):
                                lambda m: received.append(m), 10)
     manager = sysid_processes.ProcessManager(node, records_root=tmp_path)
     last_publish = [0.0]
-    static_sent = [False]
 
     def spin_until(condition, seconds=15):
         deadline = time.monotonic() + seconds
@@ -312,10 +377,9 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path):
             now = time.monotonic()
             if now - last_publish[0] >= 0.05:
                 for topic, message in messages.items():
-                    if topic != '/tf_static' or not static_sent[0]:
+                    if topic in publishers:
                         publishers[topic].publish(message)
                 last_publish[0] = now
-                static_sent[0] = True
             executor.spin_once(timeout_sec=0.03)
             if condition():
                 return

@@ -42,6 +42,7 @@ FOLLOW_TOPICS = {
     '/sysid/route_context': RouteContext,
     '/sysid/route_command': ActuatorCommand,
 }
+EZKONTROL_STATUS_INVALID_STOP_SEC = 0.5
 BUSY_STATES = {'RECORD_START', 'WAIT_AUTO', 'COUNTDOWN', 'CRUISE', 'RUNNING', 'DECEL', 'TAIL', 'CLOSING'}
 STATE_LABELS = {
     'IDLE': '시험 선택', 'RECORD_START': 'MCAP 연결 중', 'WAIT_AUTO': 'AUTO 전환 대기',
@@ -55,12 +56,15 @@ STATE_LABELS = {
 class SysidNode(Node):
     required_topics = (
         '/drive/status', '/steering/status', '/brake/status', '/vehicle/state',
-        '/gnss/fix', '/gnss/fix_velocity', '/tf_static',
+    )
+    route_required_topics = (
+        '/gnss/fix', '/gnss/fix_velocity', '/tf_static', *FOLLOW_TOPICS,
     )
 
-    def __init__(self, *, clock=time.monotonic, **kwargs):
+    def __init__(self, *, clock=time.monotonic, require_ezkontrol_status=True, **kwargs):
         super().__init__('auto_sysid', **kwargs)
         self.clock = clock
+        self.require_ezkontrol_status = require_ezkontrol_status
         self.lock = threading.RLock()
         self.commands = SimpleQueue()
         self.process_actions = SimpleQueue()
@@ -69,6 +73,7 @@ class SysidNode(Node):
         self.received = {}
         self.arrivals = {topic: deque(maxlen=1000) for topic in TOPICS | FOLLOW_TOPICS}
         self.sensor_errors = {}
+        self.ezkontrol_status_invalid_since = None
         self.static_frames = set()
         self.driver_rows = []
         self.graph_errors = ['ROS 그래프 확인 중']
@@ -108,6 +113,9 @@ class SysidNode(Node):
     def busy(self):
         return self.state in BUSY_STATES
 
+    def required_topics_for(self, route_input=False):
+        return self.required_topics + (self.route_required_topics if route_input else ())
+
     def log(self, message):
         line = datetime.now().astimezone().isoformat(timespec='milliseconds') + ' ' + message
         with self.lock:
@@ -116,12 +124,24 @@ class SysidNode(Node):
 
     def _receive(self, topic, message):
         # Interpret external telemetry at receipt; the controller uses this cached result.
+        now = self.clock()
         error = ''
         if topic == '/drive/status':
+            ezkontrol_status_invalid = not message.part1_valid or not message.part2_valid
+            if self.require_ezkontrol_status and ezkontrol_status_invalid:
+                if self.ezkontrol_status_invalid_since is None:
+                    self.ezkontrol_status_invalid_since = now
+            else:
+                self.ezkontrol_status_invalid_since = None
+            ezkontrol_status_timed_out = (
+                self.ezkontrol_status_invalid_since is not None
+                and now - self.ezkontrol_status_invalid_since
+                >= EZKONTROL_STATUS_INVALID_STOP_SEC
+            )
             if not math.isfinite(message.speed_mps):
                 error = '차속이 유효하지 않음'
-            elif not message.part1_valid or not message.part2_valid:
-                error = 'EZkontrol 상태 미수신'
+            elif ezkontrol_status_timed_out:
+                error = 'EZkontrol 상태 미수신 500 ms 지속'
             elif message.fault_bits_valid and message.fault_bits:
                 error = f'구동 fault 0x{message.fault_bits:x}'
             elif message.gear != DriveActuatorStatus.GEAR_FORWARD:
@@ -161,7 +181,6 @@ class SysidNode(Node):
                     and math.isfinite(message.steering_target_rad)):
                 error = '유효하지 않은 경로 추종 명령'
         with self.lock:
-            now = self.clock()
             self.received[topic] = (now, message)
             if topic in self.arrivals:
                 self.arrivals[topic].append(now)
@@ -200,9 +219,10 @@ class SysidNode(Node):
             '정상' if self.manager_ok else '프로세스 관리자 종료',
         )]
         topics = TOPICS | FOLLOW_TOPICS if route_input else TOPICS
+        required_topics = self.required_topics_for(route_input)
         for topic in topics:
             sample = self.received.get(topic)
-            required = topic in self.required_topics or topic in FOLLOW_TOPICS
+            required = topic in required_topics
             timeout = 0.2 if topic == '/sysid/route_command' else 1.0
             if sample is None:
                 rows.append((topic, not required, f'{topic} 미수신'))
@@ -242,11 +262,12 @@ class SysidNode(Node):
         self.commands.put(('stop', None))
 
     def _finish(self, reason, now, *, brake=False, terminal='COMPLETE'):
-        self.finish_reason = reason
-        self.terminal_state = terminal
+        if self.terminal_state != 'ERROR':
+            self.finish_reason = reason
+            self.terminal_state = terminal
         self.output = baseline(brake, steering_enabled=self.settings.steering_enabled)
         self.output_active = True
-        self.state = 'TAIL' if self.record_open else terminal
+        self.state = 'TAIL' if self.record_open else self.terminal_state
         self.phase_started = now
         self.log(reason)
 
@@ -273,6 +294,7 @@ class SysidNode(Node):
                 self.countdown = None
                 self.segment = 0
                 self.run_dir = ''
+                self.finish_reason = ''
                 self.record_open = True
                 self.record_error = ''
                 self.terminal_state = 'COMPLETE'
@@ -283,8 +305,9 @@ class SysidNode(Node):
             elif action == 'stop':
                 if self.state in ('TAIL', 'CLOSING'):
                     self.output = baseline(True, steering_enabled=self.settings.steering_enabled)
-                    self.terminal_state = 'ABORTED'
-                    self.finish_reason = '사용자 Stop'
+                    if self.terminal_state != 'ERROR':
+                        self.terminal_state = 'ABORTED'
+                        self.finish_reason = '사용자 Stop'
                 else:
                     self._finish('사용자 Stop', now, brake=True, terminal='ABORTED')
             elif action == 'record_started':
@@ -301,13 +324,16 @@ class SysidNode(Node):
                 else:
                     self.log(f'MCAP 저장 완료: {value}')
             elif action == 'record_failed':
-                self.record_error = str(value)
-                self.finish_reason = f'MCAP 오류: {value}'
+                message = f'MCAP 오류: {value}'
+                if not self.record_error:
+                    self.record_error = str(value)
+                if self.terminal_state != 'ERROR':
+                    self.finish_reason = message
                 self.terminal_state = 'ERROR'
                 self.output = baseline(True, steering_enabled=self.settings.steering_enabled)
                 self.output_active = True
                 self.state = 'CLOSING'
-                self.log(self.finish_reason)
+                self.log(message)
             elif action == 'manager_failed':
                 self.manager_ok = False
                 self._finish(f'프로세스 관리 오류: {value}', now, brake=True, terminal='ERROR')

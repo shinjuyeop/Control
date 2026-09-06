@@ -65,6 +65,7 @@ class OwnedProcess:
 
     def __init__(self, name, argv, emit):
         self.name, self.emit = name, emit
+        self.last_output = ''
         self.process = subprocess.Popen(
             argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace',
@@ -76,7 +77,8 @@ class OwnedProcess:
 
     def _read(self):
         for line in self.process.stdout:
-            self.emit(f'{self.name}: {line.rstrip()}')
+            self.last_output = line.rstrip()
+            self.emit(f'{self.name}: {self.last_output}')
         self.process.stdout.close()
 
     def stop(self):
@@ -172,13 +174,11 @@ class ProcessManager:
     def _start_recording(self, settings):
         if self.recorder is not None:
             return
-        self.record_topics_required = self.node.required_topics + (
+        self.record_topics_required = self.node.required_topics_for(settings.follows_route) + (
             '/planning/command', '/vehicle/command')
         if settings.follows_route:
             from .sysid_routes import RouteProcesses
             self.route = RouteProcesses(self.node, settings)
-            self.record_topics_required += (
-                '/sysid/odometry', '/sysid/route_context', '/sysid/route_command')
         stamp = datetime.now(ZoneInfo('Asia/Seoul')).strftime('%Y%m%d_%H%M%S_%f')
         speed = f'{settings.max_speed_kph:g}'.replace('.', 'p')
         self.run_dir = self.records_root / f'{stamp}_scenario_{settings.scenario:02d}_v{speed}'
