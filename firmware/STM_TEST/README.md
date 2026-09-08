@@ -29,7 +29,7 @@ brake servo PWM, Host의 KEYA steering CAN 경로를 실제 제어기 없이 시
 | 시스템 clock | HSI 16 MHz → PLL(M=4, N=85, R=2) → 170 MHz, FLASH latency 4 |
 | FLASH | origin `0x08000000`, 512 KB |
 | RAM | origin `0x20000000`, 128 KB |
-| 고정 장치 이름 | HIL bench `/dev/hil_test` (현재 대체 보드 미할당) |
+| 고정 장치 이름 | HIL bench `/dev/hil_test`, ST-LINK SN `002000203235511537333439` |
 | CubeMX 프로젝트 | `STM_TEST.ioc` |
 
 STM_A·STM_B와 달리 실차에 올라가지 않는 bench 전용 펌웨어입니다.
@@ -199,7 +199,7 @@ speed와 RPM은 STM_A가 보낸 CAN 명령을 따라가므로 `SET SPEED`/`SET R
 STATUS 응답 예시는 다음과 같습니다.
 
 ```text
-STATUS protocol=3 mode=AUTO gear=FWD pedal=25.0 estop_dash=0 estop_side=0 estop_rf=0 speed=5.20 rpm=487 voltage=52.3 current=12.5 motor_temp=40.0 brake_period_us=20000 brake_us=1388 brake=RELEASED pwm_lost=0 steer=1.50 steer_target=2.00 ez_rx=10 ez_tx=20 keya_rx=20 keya_tx=21 ez_can=1 keya_can=1 ez_ok=1 keya_ok=1 ez_fault=0 keya_fault=0 plant=1 ez_target_rpm=1200 ez_running=1 ez_speed_control=1 ez_command_rpm=1200 ez_command_current=23.5 ez_rx_age_ms=12 keya_enabled=1 keya_rx_age_ms=15 ez_busoff=0 ez_errpass=0 ez_warn=0 ez_tec=0 ez_rec=0 keya_busoff=0 keya_errpass=0 keya_warn=0 keya_tec=0 keya_rec=0
+STATUS protocol=3 mode=AUTO gear=FWD pedal=25.0 estop_dash=0 estop_side=0 estop_rf=0 speed=5.20 rpm=487 voltage=52.3 current=12.5 motor_temp=40.0 brake_period_us=20000 brake_us=1665 brake=RELEASED pwm_lost=0 steer=1.50 steer_target=2.00 ez_rx=10 ez_tx=20 keya_rx=20 keya_tx=21 ez_can=1 keya_can=1 ez_ok=1 keya_ok=1 ez_fault=0 keya_fault=0 plant=1 ez_target_rpm=1200 ez_running=1 ez_speed_control=1 ez_command_rpm=1200 ez_command_current=23.5 ez_rx_age_ms=12 keya_enabled=1 keya_rx_age_ms=15 ez_busoff=0 ez_errpass=0 ez_warn=0 ez_tec=0 ez_rec=0 keya_busoff=0 keya_errpass=0 keya_warn=0 keya_tec=0 keya_rec=0
 ```
 
 `ez_ok`/`keya_ok`는 FDCAN 초기화 및 queue 상태이지 상대 controller 연결 판정이
@@ -309,8 +309,8 @@ TIM3은 1 µs/count PWM Input mode입니다. CH1 rising/direct capture가 period
 falling/indirect capture가 pulse width를 제공합니다. 두 채널 모두 `PA6` 하나의
 입력을 공유합니다.
 
-- engaged: 1194 µs ± 50 µs
-- released: 1388 µs ± 50 µs
+- engaged: 1305 µs ± 50 µs (STM_B 55°)
+- released: 1665 µs ± 50 µs (STM_B 120°)
 - 그 외: UNKNOWN
 - 100 ms 동안 유효 capture가 없으면 `pwm_lost=1`, UNKNOWN
 

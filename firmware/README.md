@@ -153,14 +153,15 @@ NUCLEO-G474RE의 ST-LINK serial을 기준으로 다음 이름을 사용합니다
 `hil_a`와 `hil_b`는 실차 보드와 같은 STM_A·STM_B 펌웨어를 올린 복제본이므로
 동작은 동일해야 합니다.
 
-| 보드 | 올린 펌웨어 | ST-LINK serial | 고정 장치 이름 |
+| 보드 | 올린 펌웨어 | ST-LINK/USB serial | 고정 장치 이름 |
 |---|---|---|---|
 | Vehicle STM_A | STM_A | `003D00433234511137333934` | `/dev/stm_a` |
 | Vehicle STM_B | STM_B | `002E00253235510837333439` | `/dev/stm_b` |
 | Retired STM_B | 사용 금지 (MCU 손상) | `004E003B3235510B37333439` | 미등록 |
 | HIL bench A | STM_A | `0025002B3234511137333934` | `/dev/hil_a` |
-| HIL bench B | STM_B | ` 고장 ` | `/dev/hil_b` |
-| HIL bench TEST | STM_TEST | 미할당 | `/dev/hil_test` 미생성 |
+| HIL bench B | STM_B | `003600283235510B37333439` | `/dev/hil_b` |
+| HIL bench TEST | STM_TEST | `002000203235511537333439` | `/dev/hil_test` |
+| HIL dashboard | Arduino UNO R4 | `3114101259323437A93033334B57305C` | `/dev/arduino_hil` |
 
 규칙 원본은 `firmware/udev/99-kaiev26-stm.rules`입니다. 호스트에 설치한 뒤 규칙을
 다시 읽고 현재 장치에 적용합니다.
@@ -186,8 +187,9 @@ readlink -f /dev/hil_a
 
 기존 HIL_TEST 보드 `002E00253235510837333439`는 2026-08-06에 STM_TEST의
 `STATUS`와 `SET MODE AUTO` 응답까지 확인했지만, 2026-08-27 차량 STM_B 교체
-보드로 전용했습니다. 현재 `/dev/hil_test`는 대체 보드가 배정될 때까지 생성되지
-않으며 HIL 전체 실행은 불가능합니다.
+보드로 전용했습니다. 2026-09-08 대체 보드 `002000203235511537333439`를
+`/dev/hil_test`로 배정하고 STM_TEST 플래시 및 bench 연동을 확인했습니다.
+결과와 남은 사항은 [HIL runbook](../docs/HIL_RUNBOOK.md#15-진행-상태와-남은-작업)에 있습니다.
 
 2026-08-27 교체 보드 `002E00253235510837333439`에는 당시 direct-LCD `STM_B.elf`를
 verified flash하고 reset한 뒤, 3.28 V·Device ID `0x469`와 flash readback의

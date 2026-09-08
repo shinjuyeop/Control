@@ -27,6 +27,27 @@ STM_TEST bridge, HIL GUI, KEYA 조향 및 차량 상태 GUI까지 실행·검증
 └── src/kaiev26_msgs/
 ```
 
+## Web HIL 실행
+
+2026-09-09부터 React 기반 Web HIL과 UNO 가상 LCD를 사용할 수 있습니다.
+설치·빌드의 시작점은 [Web Console](../software/src/kaiev26_hil/WEB_CONSOLE.md)입니다.
+준비된 호스트에서 구동·조향·상태 통합·UNO 표시 보고를 함께 실행하는 명령은 다음과 같습니다.
+
+```bash
+cd /home/kai/KAI_ws
+source /opt/ros/humble/setup.zsh
+source install/setup.zsh
+ros2 launch kaiev26_hil hil_web.launch.py \
+  start_bench:=true steering:=true state:=true \
+  dashboard_port:=/dev/arduino_hil \
+  web_python:=/home/kai/KAI_ws/src/Control/software/src/kaiev26_hil/.venv/bin/python
+```
+
+브라우저는 `http://127.0.0.1:8765`로 접속합니다. 기존 `hil.launch.py`,
+`hil_bench.launch.py`, PyQt GUI, 별도 Agent와 중복 실행하지 않습니다.
+Web 전용 실행은 명령 생성기 OFF로 시작하며, 조작권과 ARM을 명시적으로 활성화합니다.
+이하 SSH/X11 절차는 기존 PyQt 운용 경로이며 Web에는 X11이 필요하지 않습니다.
+
 ## 1. 실행 구성
 
 ```text
@@ -58,6 +79,7 @@ STM_TEST serial ──> stm_test_bridge ──> /hil/status
 | `lateral_ctrl` | SocketCAN `can0` KEYA 제어 | 조향을 시험할 때 |
 | `vehicle_state_publisher` | status 3종 → `/vehicle/state` | 조향 status가 있을 때 |
 | `vehicle_dashboard` | 전체 차량 상태 모니터링 GUI | 선택 |
+| `hil_web.launch.py start_bench:=true` | Web + GUI 없는 전체 HIL, 선택적 UNO 가상 LCD | 기존 bench launch의 대안 |
 
 `hil.launch.py`는 micro-ROS Agent, `lateral_ctrl`,
 `vehicle_state_publisher`를 실행하지 않는다. `hil_bench.launch.py`는 Agent 두
@@ -117,28 +139,30 @@ sudo udevadm control --reload-rules
 sudo udevadm trigger --subsystem-match=tty
 ```
 
-다음 세 이름을 사용하며 `ttyACM0/1/2` 번호는 직접 사용하지 않는다.
+다음 고정 이름을 사용하며 `ttyACM0/1/2/3` 번호는 직접 사용하지 않는다.
 
 ```bash
 ls -l /dev/hil_a /dev/hil_b /dev/hil_test
+ls -l /dev/arduino_hil
 readlink -f /dev/hil_a
 readlink -f /dev/hil_b
 readlink -f /dev/hil_test
+readlink -f /dev/arduino_hil
 ```
 
-| 이름 | 역할 | 현재 기록된 ST-LINK VCP serial |
+| 이름 | 역할 | 현재 기록된 ST-LINK/USB serial |
 |---|---|---|
 | `/dev/hil_a` | STM_A firmware | `0025002B3234511137333934` |
-| `/dev/hil_b` | STM_B firmware | 미할당 |
-| `/dev/hil_test` | STM_TEST firmware | 미할당 |
+| `/dev/hil_b` | STM_B firmware | `003600283235510B37333439` |
+| `/dev/hil_test` | STM_TEST firmware | `002000203235511537333439` |
+| `/dev/arduino_hil` | UNO R4 Dashboard USB serial | `3114101259323437A93033334B57305C` |
 
-이 매핑은 ST-LINK virtual COM port 매핑이다. SWD probe가 실제로 어느 MCU에
-연결되는지는 별개이므로 이 표만 보고 플래시하지 않는다.
+STM 세 행은 ST-LINK VCP, Arduino 행은 native USB serial 매핑이다. SWD probe가
+실제로 어느 MCU에 연결되는지는 별개이므로 이 표만 보고 플래시하지 않는다.
 
-> **현재 HIL 중단:** 기존 HIL_TEST SN `002E00253235510837333439`는
-> 2026-08-27 차량 STM_B 교체 보드로 전용됐다. 새 STM_TEST 보드를 배정하고 udev
-> 규칙에 `/dev/hil_test`를 복구하기 전에는 이 runbook의 HIL 전체 실행을 시작하지
-> 않는다.
+기존 HIL_TEST SN `002E00253235510837333439`는 2026-08-27 차량 STM_B 교체
+보드로 전용되었고, 현재 HIL_TEST는 새 SN `002000203235511537333439`로
+배정되어 있습니다.
 
 ## 3. SSH와 X11 연결
 
@@ -908,20 +932,63 @@ python3 -c "import PyQt5; print('PyQt5 OK')"
 
 ### 완료
 
-- `/hil/status.protocol=2`와 EZ command observation field 확인
+- `/hil/status.protocol=3`와 EZ command observation field 확인
 - KEYA CAN2 transceiver 설치, 양방향 통신 및 조향 폐루프 검증(10.3)
+
+### 2026-09-08 재배선 bench 확인
+
+사용자가 모든 실제 액추에이터와 분리된 bench임을 확인한 상태에서 수행했다.
+2.3절의 네 USB serial/고정 이름을 대조하고, STM 세 보드의 SWD Device ID
+`0x469`, 개별 MCU 식별 값과 전압(A 3.29 V, B 3.27 V, TEST 3.30 V)을 확인했다.
+STM_A/B/TEST Release 이미지는 기록 후 verification과 reset을 완료했다.
+UNO R4는 Renesas core 1.6.0으로 빌드(Flash 217,032 bytes)하고 DFU upload를 완료했다.
+
+| 확인 경로 | 관측 결과 |
+|---|---|
+| TEST DAC → A ADC → EZ CAN | pedal 25%에서 ADC 1176, command 120 A, emulator RPM 1118; 전류/RPM은 모사 값 |
+| TEST mode/gear → A | MANUAL/AUTO 전환과 REVERSE 입력 반영; 후진 command -120 A/-1500 RPM |
+| TEST E-stop 3선 → B → A UART | DASH/SIDE/RF 각각 brake=true, stop_request=true, EZ RUN=0; B GPIO PC0/PC1/PB4의 LOW도 각각 확인 |
+| AUTO 속도 폐루프 | target 1.0 m/s → feedback 약 0.995 m/s |
+| Host → KEYA CAN2 → TEST | target 0.1 rad → feedback 약 0.10001 rad, communication_ok=true |
+| AUTO Host brake | brake=true, reason=1, traction RUN=0, steering disable |
+| TEST → A CAN → B UART → Arduino CAN | 주입한 52.3 V/12.5 A/40 °C 수신, vehicle/detail=OK, Part I/II=VALID, ignored=0 |
+| B PWM → TEST PA6 | 주기 약 19,980 µs, engage 약 1303 µs, release 약 1663 µs, pwm_lost=false |
+
+EZ/KEYA firmware의 TEC/REC와 bus-off는 시험 샘플에서 모두 0이었다.
+Host can0의 bus-errors/error-warn/error-pass/bus-off도 0이었다. Host RX dropped는
+누적 107이며 시험 전 기준값이 없어 이번 시험에서 발생한 것으로 단정하지 않는다.
+
+**수정 및 재검증:** STM_B 소스의 55°/120° 출력(1305/1665 µs)에 맞춰
+STM_TEST의 브레이크 판정값을 동기화했다. 허용 오차 ±50 µs와 timeout 100 ms는
+유지했다. 기존 host logic test와 Release 빌드를 통과하고 HIL TEST 재플래시 및
+verification을 완료했다. DASH E-stop ON → OFF → ON 시험에서 실제 수신
+1303 → 1662 → 1303 µs가 `ENGAGED → RELEASED → ENGAGED`로 판정되고,
+세 상태 모두 `pwm_lost=0`임을 확인했다. 기존 `UNKNOWN` 불일치는 해결됐다.
+
+LCD 실제 화면과 CTP 터치 배선/전압은 미검증이다. 현재 Arduino firmware에는
+터치 입력 처리가 없다. 저항계로 종단 60 Ω 및 전원/접지 연속성을 측정하지 않았다.
+시험 후 pedal=0, MANUAL/FWD, DASH E-stop=ON, traction RUN=0, KEYA disable로 두고
+시험용 ROS launch와 모든 자식 프로세스를 종료했다.
+
+### 2026-09-09 Web HIL·UNO 가상 LCD 확인
+
+실제 액추에이터와 분리된 벤치에서 Web 입력의 보드 반영, 속도·조향 폐루프,
+E-stop 3종과 PWM, 브라우저 종료 시 명령 발행 해제를 확인했습니다.
+Web ROS callback 처리 지연을 수정한 뒤 기존 판정 제한 그대로
+`smoke_test`, `estop_test`, `ez_can_timeout`, `keya_can_timeout`이 모두 PASS했습니다.
+UNO 상태 보고 추가판을 업로드하고 실제 USB 보고로 480×320 가상 LCD 표시까지 확인했습니다.
+세부 결과와 한계는 [Web Console 검증 기록](../software/src/kaiev26_hil/WEB_CONSOLE.md#검증)을 따릅니다.
 
 ### 남은 작업
 
-- AUTO speed 폐루프 시험(9.2)
-- MANUAL pedal 폐루프 시험(9.3)
+- 새 LCD 실제 표시 및 터치 모듈 모델/전압/입력 기능 확인
 - 조향 캘리브레이션 실측 검증. KEYA emulator는 선형이라 HIL로는 불가능하며
   실제 조향 기구가 필요하다
 - transceiver 물리 분리 시 FDCAN이 실제 bus-off로 가는지 확인. `can0` down은
   error-passive에서 자동 복구되는 것을 2026-08-14에 실측했으나, bit error가 나는
   이 경우는 미확인이다. bus-off로 확인되면 복구 로직이 필요하다
-- KEYA USB-CAN adapter 재연결 후 `keya_can_timeout` scenario 재실행. 전제조건
-  추가판은 2026-08-19에 adapter USB 경로 사망으로 전제 FAIL이 확인된 상태다
+- 실제 CAN 분리·전원 변화 등 기존 TX DROP 시나리오 밖의 장치 고장 조건 확인.
+  `keya_can_timeout` 전제조건 추가판은 2026-09-09 Web HIL 재시험에서 PASS했다
 
 ### 플래시 전 SWD target 확인
 

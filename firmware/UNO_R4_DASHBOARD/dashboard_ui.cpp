@@ -8,6 +8,9 @@
 
 namespace
 {
+static DashboardValues applied_values = {};
+static bool applied_can_lost = true;
+
 
 static constexpr uint16_t UI_BG = St7796Lcd::COLOR_WHITE;
 static constexpr uint16_t UI_TEXT = St7796Lcd::COLOR_BLACK;
@@ -739,6 +742,8 @@ void begin(const DashboardValues &values, bool dashboard_can_lost)
     drawFullView(view);
     displayed_view = view;
   }
+  applied_values = values;
+  applied_can_lost = dashboard_can_lost;
   displayed_manual_page = manual_page;
   initialized = true;
   St7796Lcd::setBacklight(true);
@@ -770,6 +775,14 @@ void update(const DashboardValues &values, bool dashboard_can_lost)
     drawViewChanges(current, displayed_view);
     displayed_view = current;
   }
+  applied_values = values;
+  applied_can_lost = dashboard_can_lost;
+}
+
+const DashboardValues &displayedValues() { return applied_values; }
+bool canLost() { return applied_can_lost; }
+const char *pageName() {
+  return displayed_manual_page ? "MANUAL_TFT" : "AUTO_BASELINE";
 }
 
 }  // namespace DashboardUi

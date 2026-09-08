@@ -13,6 +13,7 @@ KEYA 조향 CAN의 데이터 계약과 주기·timeout을 정리하는 기준 �
 ## 2. 표기 및 단위 규칙
 
 - ROS 2 공통 단위: 속도 `m/s`, 조향각 `rad`(차량 좌회전 양수)
+- Web HIL 화면: 속도 `km/h`, 조향 `degree`. 입력/표시 경계에서 변환하며 wire 단위는 유지
 - STM 간 속도: signed `int16`, `0.01 m/s/bit`, little-endian
 - EZkontrol CAN: 29-bit extended ID, Classic CAN, DLC 8, little-endian
 - KEYA CAN: 29-bit extended ID, Classic CAN, DLC 8, multi-byte 값
@@ -30,7 +31,7 @@ KEYA 조향 CAN의 데이터 계약과 주기·timeout을 정리하는 기준 �
 | `command_governor` | STM_A | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 500 ms | AUTO 속도·brake |
 | `command_governor` | STM_B | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 적용 안 함 | brake만 저장 |
 | `command_governor` | 조향 노드 | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 200 ms | ACTIVE 조향 freshness |
-| STM_A | Host·조향·상태 통합 | ROS 2 | `/drive/status` | `DriveActuatorStatus` | 50 ms | 조향에서 1500 ms | mode·gear·구동 진단 |
+| STM_A | Host·조향·상태 통합 | ROS 2 | `/drive/status` | `DriveActuatorStatus` | 20 ms | 조향에서 1500 ms | mode·gear·구동 진단 |
 | STM_B | Host·조향·상태 통합 | ROS 2 | `/brake/status` | `BrakeActuatorStatus` | 50 ms 및 원인 변경 시 | 조향에서 별도 timeout 없음 | brake·E-stop 원인 |
 | 조향 노드 | Host·상태 통합 | ROS 2 | `/steering/status` | `SteeringActuatorStatus` | 20 ms | 상태 통합에서 별도 timeout 없음 | 조향 상태·진단 |
 | 상태 통합 | ROS 2 consumers | ROS 2 | `/vehicle/state` | `VehicleState` | 50 ms | 없음 | 세 status의 마지막 값 합성 |
@@ -52,7 +53,7 @@ KEYA 조향 CAN의 데이터 계약과 주기·timeout을 정리하는 기준 �
 |---|---|---|---|---:|---|---|
 | `/planning/command` | Planning (production 미구현), 실차 시험 `vehicle_test_scenario_runner`, HIL `hil_command_generator` 중 하나 | `command_governor` | `kaiev26_msgs/msg/ActuatorCommand` | 시험 명령원 20 Hz | default | Planning 의도 명령 |
 | `/vehicle/command` | `command_governor` (유일 발행자) | STM_A, STM_B, `steering_actuator_node` | `kaiev26_msgs/msg/ActuatorCommand` | 입력 연동; HIL 20 Hz | default | 속도·조향·최종 brake 명령 |
-| `/drive/status` | `/stm_a_node` | 조향 노드, `vehicle_state_publisher` | `kaiev26_msgs/msg/DriveActuatorStatus` | 20 Hz | default | mode·gear·구동 명령 및 EZkontrol 진단 |
+| `/drive/status` | `/stm_a_node` | 조향 노드, `vehicle_state_publisher` | `kaiev26_msgs/msg/DriveActuatorStatus` | 50 Hz | default | mode·gear·구동 명령 및 EZkontrol 진단 |
 | `/brake/status` | `/stm_b_node` | 조향 노드, `vehicle_state_publisher` | `kaiev26_msgs/msg/BrakeActuatorStatus` | 20 Hz + 변경 시 | default | 브레이크 command와 stop reason |
 | `/steering/status` | `/steering_actuator_node` | `vehicle_state_publisher`, 진단 도구 | `kaiev26_msgs/msg/SteeringActuatorStatus` | 50 Hz | Keep Last 10, reliable, volatile | 조향 상태 머신·timeout·모터 진단 |
 | `/vehicle/state` | `/vehicle_state_publisher` | 현재 코드에서 확인되지 않음 | `kaiev26_msgs/msg/VehicleState` | 20 Hz | Keep Last 10, reliable, volatile | 세 status가 모두 수신된 후 합성 |
@@ -302,6 +303,18 @@ LCD fault는 STM_B의 E-stop, brake PWM, STM_A safety UART와 micro-ROS 판단�
 않습니다. byte layout, scale, signed type과 recovery 절차의 canonical contract는
 [`../firmware/STM_B/README.md`](../firmware/STM_B/README.md#85-dashboard-snapshot과-wire-단위)입니다.
 
+### 7.1 UNO USB 표시 상태 보고
+
+Web 가상 LCD는 UNO USB 115200의 `HIL_LCD ON`/`HIL_LCD OFF`로 보고를 켜고 끕니다.
+UNO는 200 ms마다 `HIL_LCD {JSON}` 한 줄에 적용 표시값·페이지·CAN LOST·CAN age·
+snapshot 누적을 보고합니다. 차량 명령이나 터치 입력을 받는 인터페이스는 아닙니다.
+USB가 없어도 CAN/LCD 동작은 독립적입니다. 상세 필드와 순서는
+[UNO README](../firmware/UNO_R4_DASHBOARD/README.md#web-virtual-lcd와-uno-상태-보고)를 따릅니다.
+
+Web의 토픽 Hz/주기는 PC ROS 수신 간격의 최근 5초 평균입니다. 개별 CAN 수신 주기로
+해석하지 않습니다. EZkontrol Part I/II age는 STM_A가 보고한 `part1_age_ms`와
+`part2_age_ms`를 표시합니다. MCU 보고 시점의 CAN age와 PC의 ROS 수신 age는 별도입니다.
+
 ## 8. Steering Motor CAN
 
 > 이 절의 software 관련 내용은 현재 브랜치 구현을 기준으로 한 스냅샷입니다.
@@ -388,7 +401,7 @@ bus voltage·driver temperature는 500 ms 간격으로 번갈아 조회합니다
 | STM_A vehicle TX | 20 ms | `VEHICLE_TX_PERIOD_MS` | STM_A `app_freertos.c` |
 | STM_B→STM_A UART timeout | 100 ms | `STM_B_COMM_TIMEOUT_MS` | STM_A `app_freertos.c` |
 | STM_A→STM_B UART timeout | 200 ms | `VEHICLE_COMM_TIMEOUT_MS` | STM_B `app_freertos.c` |
-| Drive status | 50 ms | `DRIVE_STATUS_PERIOD_MS` | STM_A `app_freertos.c` |
+| Drive status | 20 ms | `DRIVE_STATUS_PERIOD_MS` | STM_A `app_freertos.c` |
 | Brake status | 50 ms + 변경 시 | `BRAKE_STATUS_PERIOD_MS` | STM_B `app_freertos.c` |
 | Dashboard CAN snapshot | 50 ms | `DASHBOARD_CAN_SLOT_PERIOD_MS × DASHBOARD_CAN_SLOTS_PER_SNAPSHOT` | STM_B `dashboard_can.c` |
 | Arduino Dashboard CAN lost | 300 ms | `CAN_LOST_TIMEOUT_MS` | `UNO_R4_DASHBOARD.ino` |
@@ -405,6 +418,16 @@ bus voltage·driver temperature는 500 ms 간격으로 번갈아 조회합니다
 
 경계 비교는 구현마다 다릅니다. STM Host와 UART timeout은 `>=`, EZkontrol valid는
 `age < 200 ms`, 조향 timeout은 `age > 설정값`을 사용합니다.
+
+### 9.1 Web HIL의 표시·조작 연결
+
+| 항목 | 값 | 의미 |
+|---|---:|---|
+| Web 화면 갱신 | 200 ms | WebSocket 상태와 PC 생성 LCD 이미지 |
+| UNO LCD 보고 | 200 ms | USB로 적용 상태만 보고; framebuffer 전송 없음 |
+| Web ROS/UNO 보고 stale 표시 | 1000 ms | 표시용, MCU의 CAN timeout을 변경하지 않음 |
+| Web 조작권 heartbeat | 3000 ms | 조작권 회수와 명령 발행 해제 요청 |
+| Web 전용 generator watchdog | 3000 ms | Web heartbeat 소실 시 `enabled=false`; 기존 launch는 비활성 |
 
 ## 10. 관련 구현 파일
 

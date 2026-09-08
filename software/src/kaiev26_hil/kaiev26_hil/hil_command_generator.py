@@ -8,23 +8,33 @@ This node fills the Planning slot on the bench; the governor remains the only
 from __future__ import annotations
 
 import math
+import time
 
 from kaiev26_msgs.msg import ActuatorCommand
 import rclpy
-from rcl_interfaces.msg import SetParametersResult
+from rcl_interfaces.msg import ParameterDescriptor, SetParametersResult
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from rclpy.parameter import Parameter
+from std_msgs.msg import Empty
 
 
 class HilCommandGenerator(Node):
-    def __init__(self) -> None:
-        super().__init__("hil_command_generator")
+    def __init__(self, *, parameter_overrides=None) -> None:
+        super().__init__("hil_command_generator", parameter_overrides=parameter_overrides)
         self.declare_parameter("enabled", False)
         self.declare_parameter("publish_rate_hz", 20.0)
         self.declare_parameter("speed_target_mps", 0.0)
         self.declare_parameter("steering_target_rad", 0.0)
         self.declare_parameter("brake_engage", False)
         self.declare_parameter("command_topic", "/planning/command")
+        # Opt-in for the Web launch. Legacy bench behavior is unchanged.
+        self.declare_parameter("web_heartbeat_timeout_sec", 0.0,
+                               ParameterDescriptor(read_only=True))
+        self._web_timeout = float(self.get_parameter("web_heartbeat_timeout_sec").value)
+        self._last_web_heartbeat = float("-inf")
+        if self._web_timeout > 0:
+            self.create_subscription(Empty, "/hil/web/heartbeat", self._web_heartbeat, 1)
         self._publisher = self.create_publisher(
             ActuatorCommand, str(self.get_parameter("command_topic").value), 10
         )
@@ -37,10 +47,17 @@ class HilCommandGenerator(Node):
             "/vehicle/command is owned by command_governor."
         )
 
-    @staticmethod
-    def _validate_parameters(parameters):
+    def _web_heartbeat(self, _message):
+        self._last_web_heartbeat = time.monotonic()
+
+    def _validate_parameters(self, parameters):
         result = SetParametersResult(successful=True)
         for parameter in parameters:
+            if parameter.name == "enabled" and parameter.value and self._web_timeout > 0:
+                if time.monotonic() - self._last_web_heartbeat >= self._web_timeout:
+                    result.successful = False
+                    result.reason = "Web operator heartbeat is unavailable"
+                    return result
             if parameter.name in {"speed_target_mps", "steering_target_rad"}:
                 if not math.isfinite(float(parameter.value)):
                     result.successful = False
@@ -54,6 +71,10 @@ class HilCommandGenerator(Node):
 
     def _publish(self) -> None:
         if not bool(self.get_parameter("enabled").value):
+            return
+        if self._web_timeout > 0 and time.monotonic() - self._last_web_heartbeat >= self._web_timeout:
+            self.set_parameters([Parameter("enabled", value=False)])
+            self.get_logger().warning("Web operator heartbeat expired; command source disabled")
             return
         message = ActuatorCommand()
         message.header.stamp = self.get_clock().now().to_msg()

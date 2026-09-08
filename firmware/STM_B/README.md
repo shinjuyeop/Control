@@ -58,7 +58,7 @@ build는 `display_app.c`/`lcd.c`가 아니라 `dashboard_can.c`와
 | `PC0` | `CN7-38` (A5) | `ESTOP_DASH` | input, pull-up, EXTI0 | LOW=active |
 | `PC1` | `CN7-36` (A4) | `ESTOP_SIDE` | input, pull-up, EXTI1 | LOW=active |
 | `PB4` | `CN10-27` (D5) | `ESTOP_RF` | input, pull-up, EXTI4 | LOW=active |
-| `PB3` | `CN10-31` (D3) | brake servo `TIM2_CH2` | PWM output, 50 Hz | 1194 us=engage, 1388 us=release |
+| `PB3` | `CN10-31` (D3) | brake servo `TIM2_CH2` | PWM output, 50 Hz | 1305 us=engage (55°), 1665 us=release (120°) |
 | `PC13` | `CN7-23` | status LED | push-pull output | 상태 표시 |
 
 ### 4.2 통신·주변장치 핀

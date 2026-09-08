@@ -219,6 +219,23 @@ traction 차단 조건으로 사용하지 않습니다.
 `command_governor` 경유의 동일한 명령 체인을 쓰지만, 하나의 launch로 실차와
 시뮬레이션을 전환하는 구조는 아닙니다.
 
+### 7.1 Web HIL과 가상 LCD
+
+`kaiev26_hil/hil_web.launch.py`는 React 화면과 FastAPI/WebSocket bridge를 제공합니다.
+기본 실행은 Web만 띄우며 `start_bench:=true`가 기존 HIL bench를 GUI 없이 포함합니다.
+Web의 벤치·고장 주입·시나리오는 기존 `/hil/*`와 command generator parameter를
+사용합니다. STM_TEST serial의 소유자는 계속 `stm_test_bridge`입니다.
+
+`dashboard_port:=/dev/arduino_hil`을 지정하면 별도 reader가 UNO USB의 적용 표시값·
+페이지·CAN LOST를 받습니다. PC renderer는 UNO의 실제 C++ drawing 코드와 preview 생성
+아셋을 재사용해 480×320 이미지를 만듭니다. ROS 명령값으로 UNO 수신 성공을 추정하지
+않으며, USB 보고 단절과 dashboard CAN LOST를 구분합니다. 실제 패널·SPI·터치는 별도입니다.
+
+Web 전용 launch의 command generator는 DISARMED로 시작하고, 조작 브라우저의 명시적
+ARM 이후 발행합니다. Web 조작권은 한 브라우저에만 주며 heartbeat 단절 시 해제합니다.
+생성기에도 Web heartbeat watchdog을 적용하되, 기존 PyQt launch의 기본 동작은 유지합니다.
+상세 실행·단위 변환·검증 결과는 [Web Console](../software/src/kaiev26_hil/WEB_CONSOLE.md)에 있습니다.
+
 ## 8. 설계 경계와 책임 분리
 
 | 책임 | 기준 구현 |
@@ -235,6 +252,8 @@ traction 차단 조건으로 사용하지 않습니다.
 | Production Planning / motion-control 명령 생성 (`/planning/command`) | 현재 코드에서 확인되지 않음 |
 | 실차 시험 `/planning/command` 생성 | Host `vehicle_test_scenarios` |
 | HIL `/planning/command` 생성 | Host `kaiev26_hil/hil_command_generator` |
+| Web HIL 조작·관측 | React + `kaiev26_hil/hil_web_bridge` |
+| UNO 적용 상태 보고 / 가상 LCD | `hil_display_report.cpp` / `dashboard_display.py` + 공통 C++ renderer |
 
 ## 9. 관련 문서
 

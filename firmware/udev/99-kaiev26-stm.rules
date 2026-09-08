@@ -17,8 +17,10 @@ ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="048
 ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="0025002B3234511137333934", SYMLINK+="hil_a"
 
 # HIL_B: NUCLEO-G474RE ST-LINK virtual COM port, STM_B firmware
-# UN-ASSIGNED
-# ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="003D00433234511137333934", SYMLINK+="hil_b"
+ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="003600283235510B37333439", SYMLINK+="hil_b"
 
-# HIL_TEST: UNASSIGNED; former board 002E00253235510837333439 is now vehicle STM_B
-# ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="REPLACE_WITH_NEW_HIL_TEST_SN", SYMLINK+="hil_test"
+# HIL_TEST: NUCLEO-G474RE ST-LINK virtual COM port, STM_TEST firmware
+ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="002000203235511537333439", SYMLINK+="hil_test"
+
+# HIL dashboard: Arduino UNO R4 Minima USB serial
+ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="2341", ATTRS{idProduct}=="0069", ATTRS{serial}=="3114101259323437A93033334B57305C", SYMLINK+="arduino_hil"

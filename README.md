@@ -42,7 +42,7 @@ Control/
 │       ├── command_governor/        # /planning/command → /vehicle/command 단일 발행자
 │       ├── vehicle_state_publisher/ # status 3종을 /vehicle/state로 통합
 │       ├── control_launch/          # 실차 구동 통합 launch (vehicle.launch.py)
-│       ├── kaiev26_hil/             # STM_TEST HIL, scenario, vcan SIL
+│       ├── kaiev26_hil/             # Web/PyQt HIL, Virtual LCD, scenario, vcan SIL
 │       ├── vehicle_test_scenarios/  # /planning/command 실차 시험 시나리오
 │       ├── control_gui_common/      # HIL/dashboard 공용 Qt runtime helper
 │       ├── visualization/           # read-only GUI, diagnostics, Foxglove bridge
@@ -59,7 +59,7 @@ Control/
 |---|---|
 | `firmware/STM_A` | `/vehicle/command`의 속도·브레이크 명령, 물리 입력, EZkontrol CAN, `/drive/status` |
 | `firmware/STM_B` | `/vehicle/command`의 브레이크 명령, 물리 E-stop, 브레이크 PWM, `/brake/status`, CAN dashboard 송신 |
-| `firmware/UNO_R4_DASHBOARD` | STM_B dashboard CAN 수신과 MSP4030/ST7796S UI 렌더링 |
+| `firmware/UNO_R4_DASHBOARD` | STM_B dashboard CAN 수신, LCD 렌더링, Web 가상 LCD용 USB 적용 상태 보고 |
 | `firmware/STM_TEST` | mode·gear·E-stop·pedal 주입, brake PWM 관측, EZ/KEYA CAN emulator와 Plant |
 | `firmware/micro_ros_agent` | vendored micro-ROS Agent. 각 STM의 serial transport를 ROS 2 graph에 연결 |
 
@@ -71,11 +71,21 @@ Control/
 | `command_governor` | `/planning/command`를 정합성 게이트 후 `/vehicle/command`로 재발행하는 유일한 발행자. 현재 패스스루이며 형상(속도 상한·램프·축간 협조)은 이후 단계 |
 | `vehicle_state_publisher` | 액추에이터 status 3종을 `/vehicle/state`로 통합 |
 | `control_launch` | 실차 구동 스택 통합 `vehicle.launch.py` (Agent 2개 + 거버너 + 조향 + 상태 통합) |
-| `kaiev26_hil` | STM_TEST serial bridge, HIL GUI·scenario, software-only `vcan` simulator |
+| `kaiev26_hil` | STM_TEST bridge, React/PyQt HIL, UNO Virtual LCD, scenario, software-only `vcan` simulator |
 | `vehicle_test_scenarios` | production Planning 대신 `/planning/command`를 발행하는 실차 직진·조향·속도·제동 시험 시나리오 |
 | `control_gui_common` | HIL GUI와 vehicle dashboard가 공유하는 PyQt5/Qt runtime helper |
 | `visualization` | read-only 차량 상태 GUI, `/diagnostics` 요약과 Foxglove bridge launch |
 | `gazebo` | PID 및 SILS 관련 시뮬레이션 자원 |
+
+## Web HIL
+
+브라우저에서 구동·조향·브레이크를 한 **벤치** 화면으로 조작하고, CAN 진단·수신 주기·
+시나리오 결과와 UNO의 **가상 LCD**를 확인할 수 있습니다. 화면의 속도는 km/h,
+조향은 degree이며 ROS의 m/s·rad 계약은 유지합니다. 기존 PyQt GUI도 유지합니다.
+
+Web 의존성 설치, 프론트엔드·공통 LCD renderer 빌드, 전체 벤치 실행은
+[Web Console 운용 문서](software/src/kaiev26_hil/WEB_CONSOLE.md)를 따릅니다.
+기존 HIL launch와 Web 전체 벤치를 중복 실행하지 않습니다.
 
 ## 빠른 빌드
 

@@ -72,6 +72,8 @@ def generate_launch_description():
             description="비어 있지 않으면 scenario runner를 함께 띄운다 (hil.launch.py로 통과).",
         ),
         DeclareLaunchArgument("results_dir", default_value="test_results"),
+        DeclareLaunchArgument("generator_enabled", default_value="true"),
+        DeclareLaunchArgument("web_heartbeat_timeout_sec", default_value="0.0"),
         _agent("stm_a_agent", LaunchConfiguration("stm_a_port"), baud),
         _agent("stm_b_agent", LaunchConfiguration("stm_b_port"), baud),
         IncludeLaunchDescription(
@@ -82,6 +84,8 @@ def generate_launch_description():
                 "gui_refresh_ms": LaunchConfiguration("gui_refresh_ms"),
                 "scenario_file": LaunchConfiguration("scenario_file"),
                 "results_dir": LaunchConfiguration("results_dir"),
+                "generator_enabled": LaunchConfiguration("generator_enabled"),
+                "web_heartbeat_timeout_sec": LaunchConfiguration("web_heartbeat_timeout_sec"),
             }.items(),
         ),
         IncludeLaunchDescription(

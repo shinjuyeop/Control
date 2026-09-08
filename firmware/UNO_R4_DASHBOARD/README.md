@@ -6,7 +6,8 @@ Arduino `setup()`/`loop()` 구조와 `Arduino_CAN` API를 사용합니다.
 
 기존 STM_B의 MSP4030/ST7796S 초기화 sequence와 480x320 dashboard UI의 배치, 문구,
 색상, validity 표현을 Arduino SPI로 이식했습니다. 첫 화면을 전체 렌더한 뒤에는 CAN
-snapshot에서 바뀐 문자와 badge만 갱신합니다.
+snapshot에서 바뀐 문자와 badge만 갱신합니다. 현재 터치 신호는 물리적으로 배선했지만
+터치 컨트롤러를 읽는 firmware 기능은 아직 포함하지 않습니다.
 
 ## Local UI preview
 
@@ -81,6 +82,68 @@ Python GUI의 current/temperature threshold와 animation은 표시 시안일 뿐
 차량 safety limit이 아닙니다. 이 도구는 SocketCAN이나 serial device를 열지 않으며
 STM/UNO firmware 상태를 변경하지 않습니다.
 
+## Web Virtual LCD와 UNO 상태 보고
+
+`dashboard_preview/native`는 실제 `dashboard_ui.cpp`, `manual_tft_ui.cpp`,
+`st7796_lcd.cpp`를 PC용으로 빌드한다. Arduino/SPI 대신 PC 메모리의 RGB565 화면에
+그리는 adapter만 교체하므로, MANUAL의 preview 생성 아셋과 AUTO의 기존 진단 grid를
+모두 실제 C++ 코드로 재사용한다. Python 시안 `AUTO_GT3`를 실제 AUTO 화면으로
+오인해 표시하지 않는다. 기존 Tk preview 기능은 별도로 유지한다.
+
+```bash
+# Control 저장소에서
+cmake -S firmware/UNO_R4_DASHBOARD/dashboard_preview/native \
+  -B firmware/UNO_R4_DASHBOARD/build/host -DCMAKE_BUILD_TYPE=Release
+cmake --build firmware/UNO_R4_DASHBOARD/build/host --parallel 2
+cmake --install firmware/UNO_R4_DASHBOARD/build/host --prefix software/src/kaiev26_hil
+```
+
+USB serial 115200에서 `HIL_LCD ON\n`을 보내면 200 ms마다 한 줄의 상태 보고를
+출력한다. `HIL_LCD OFF\n` 또는 USB 호스트 연결 해제로 보고를 끈다. 이 명령은
+UI·CAN·차량 입력을 변경하지 않는다. 보고 중에는 기존 사람용 CAN snapshot 로그를
+억제해 한 줄이 섞이지 않게 한다. USB가 없어도 기존 CAN/LCD 동작은 독립적이다.
+
+예:
+
+```text
+HIL_LCD {"v":1,"uptime_ms":10000,"seq":42,"can_lost":false,"can_age_ms":12,"page":"MANUAL_TFT","values":[15,3,25,3,120,523,125,1200,320,400,0]}
+```
+
+- `v`: USB 상태 보고 protocol version 1. Dashboard CAN protocol version과 별도다.
+- `uptime_ms`: UNO의 millis. `seq`: 완성된 새 CAN snapshot의 부팅 이후 누적 수.
+- `can_lost`: **LCD drawing에 적용한** dashboard CAN LOST 상태.
+- `can_age_ms`: 마지막 완성 CAN snapshot 이후 경과시간. 미수신은 -1.
+- `page`: 실제 적용 페이지 `MANUAL_TFT` 또는 `AUTO_BASELINE`.
+- `values`: LCD drawing을 완료한 `DashboardValues`의 아래 순서 원시 정수 값.
+
+| Index | Field | 단위 / 의미 |
+|---|---|---|
+| 0 | status_flags | CAN 상태 비트 |
+| 1 | drive_flags | 구동 상태 비트 |
+| 2 | pedal_percent | % |
+| 3 | gnss_state | 0~3 enum |
+| 4 | speed_centi_mps | 0.01 m/s |
+| 5 | bus_voltage_decivolt | 0.1 V |
+| 6 | bus_current_deciamp | 0.1 A |
+| 7 | phase_current_deciamp | 0.1 A |
+| 8 | controller_temperature_decic | 0.1 °C |
+| 9 | motor_temperature_decic | 0.1 °C |
+| 10 | motor_fault_bits | 24-bit fault |
+
+보고값은 `DashboardUi`가 보유한 적용 상태에서 가져온다. CAN이 끊겨도 UNO의 USB
+보고는 계속되며, 실제 표시와 같은 CAN LOST 화면을 PC가 재구성할 수 있다.
+USB 보고가 끊긴 것은 dashboard CAN LOST와 구분한다. PC는 마지막 이미지를 흐리게
+표시하고 현재 상태를 확인할 수 없음을 알린다. 전체 framebuffer는 UNO에 추가하지 않았다.
+320-byte TX 버퍼를 USB 가용 공간만큼 나누어 보내며 USB 전송을 기다리지 않는다.
+
+2026-09-09 상태 보고 추가판 compile: Flash **217,880 B (83%)**, global RAM
+**10,720 B (32%)**. 이는 빌드 결과이며 실제 업로드/패널 검증과 별도다.
+
+같은 날 USB serial `3114101259323437A93033334B57305C`인 UNO R4 Minima에
+이 바이너리를 DFU로 업로드했다. 업로드 후 `HIL_LCD` v1 보고, MANUAL_TFT 페이지,
+CAN 정상 수신과 snapshot 누적 증가를 실제 USB에서 확인했다. PC native renderer와
+Web에서 480×320 이미지 표시까지 확인했으며 실제 LCD 패널 자체의 광학 검증은 수행하지 않았다.
+
 ## CAN contract
 
 | 항목 | 값 |
@@ -88,7 +151,7 @@ STM/UNO firmware 상태를 변경하지 않습니다.
 | Board | Arduino UNO R4 Minima |
 | Controller | Renesas RA4M1 internal CAN |
 | Controller pins | `D4=CANTX0`, `D5=CANRX0` |
-| Transceiver | MCP2551 |
+| Transceiver | TJA1050 |
 | Frame | Classical CAN, standard data frame, DLC 8 |
 | Bitrate | 250 kbps |
 | Accepted IDs | `0x321` STATUS, `0x322` POWER, `0x323` THERMAL, `0x324` FAULT |
@@ -106,27 +169,27 @@ STM/UNO firmware 상태를 변경하지 않습니다.
 정확한 byte layout과 source type/unit은
 [`../STM_B/README.md`](../STM_B/README.md#85-dashboard-snapshot과-wire-단위)가 canonical contract입니다.
 
-## UNO R4 Minima ↔ MCP2551 배선
+## UNO R4 Minima ↔ TJA1050 배선
 
-| UNO R4 Minima | MCP2551 | 설명 |
+| UNO R4 Minima | TJA1050 | 설명 |
 |---|---|---|
 | `D4/CANTX0` | pin 1 `TXD` | controller TX → transceiver input |
 | `D5/CANRX0` | pin 4 `RXD` | transceiver output → controller RX |
-| 5 V | pin 3 `VDD` | transceiver supply |
-| GND | pin 2 `VSS` | logic/bus ground |
-| GND | pin 8 `RS` | high-speed mode |
+| 5 V | pin 3 `VCC` | transceiver supply |
+| GND | pin 2 `GND` | logic/bus ground |
+| GND | pin 8 `S/RS` | high-speed mode |
 | — | pin 5 `VREF` | 사용하지 않음 |
 | CANL | pin 6 `CANL` | differential bus low |
 | CANH | pin 7 `CANH` | differential bus high |
 
-MCP2551 VDD 가까이에 100 nF decoupling capacitor를 둡니다. D4/D5를 CANH/CANL에
+TJA1050 VCC 가까이에 100 nF decoupling capacitor를 둡니다. D4/D5를 CANH/CANL에
 직접 연결하면 안 됩니다.
 
 ## CAN bus 연결
 
-- SN65HVD230 `CANH` ↔ MCP2551 `CANH`
-- SN65HVD230 `CANL` ↔ MCP2551 `CANL`
-- STM_B GND ↔ UNO R4/MCP2551 GND
+- SN65HVD230 `CANH` ↔ TJA1050 `CANH`
+- SN65HVD230 `CANL` ↔ TJA1050 `CANL`
+- STM_B GND ↔ UNO R4/TJA1050 GND
 - CANH/CANL은 twisted pair 사용
 - cable 양 끝에만 CANH-CANL 120 ohm termination
 - 두 node만 있는 bench라면 각 transceiver 끝에 120 ohm 하나씩 사용
@@ -151,7 +214,7 @@ arduino-cli compile --fqbn arduino:renesas_uno:minima UNO_R4_DASHBOARD
 `Arduino_CAN`은 Renesas UNO core에 포함돼 있으므로 별도 MCP2515 library를 설치하지
 않습니다.
 
-Arduino compile은 sketch/API 호환성 증거이며 실제 MCP2551/CAN bus 수신 증거는
+Arduino compile은 sketch/API 호환성 증거이며 실제 TJA1050/CAN bus 수신 증거는
 아닙니다.
 
 2026-09-04 Arduino UNO R4 Boards core `1.6.0` preview-asset MANUAL TFT compile
@@ -159,7 +222,7 @@ Arduino compile은 sketch/API 호환성 증거이며 실제 MCP2551/CAN bus 수�
 
 ## Bench smoke test
 
-1. 모든 전원을 끄고 STM_B/SN65HVD230과 UNO R4/MCP2551을 위 표대로 배선합니다.
+1. 모든 전원을 끄고 STM_B/SN65HVD230과 UNO R4/TJA1050을 위 표대로 배선합니다.
 2. CANH-CANL, 공통 GND, 양 끝 120 ohm termination을 확인합니다.
 3. 전원 OFF에서 CANH-CANL 저항이 약 60 ohm인지 확인합니다.
 4. 이 sketch를 UNO R4 Minima에 업로드합니다.
@@ -206,9 +269,20 @@ STM_A→STM_B UART source가 stale인 상태입니다.
 | `SCK` | `D13/SCK` | SPI clock |
 | `LED` | `D7` | HIGH=backlight on |
 | `SDO(MISO)` | 연결하지 않음 | 이번 write-only driver에서는 readback 미사용 |
+| `SD_CS` | 연결하지 않음 | SD card 미사용 |
 
-`D4/D5`는 CAN TX/RX로 계속 사용합니다. `D12/MISO`, touch와 SD-card pin도 이번
-단계에서는 사용하지 않습니다.
+### CTP touch 배선
+
+| CTP touch header | UNO R4 Minima | 설명 |
+|---|---|---|
+| `CTP_SCL` | `A5/SCL` | I2C clock |
+| `CTP_SDA` | `A4/SDA` | I2C data |
+| `CTP_RST` | `D3` | touch controller reset |
+| `CTP_INT` | `D2` | touch interrupt |
+
+`D4/D5`는 CAN TX/RX로 계속 사용합니다. `D12/MISO`와 `SD_CS`는 연결하지 않습니다.
+CTP touch의 VCC/GND 배선은 현재 전달된 배선 목록에 없으므로 이 문서에는 임의로
+추가하지 않았습니다. 실제 모듈의 전원 요구와 공통 GND 연결을 확인해야 합니다.
 
 [`st7796_lcd.cpp`](st7796_lcd.cpp)는 기존 STM_B와 같은 MSP4030 vendor command와
 landscape `MADCTL=0x28`, RGB565를 사용합니다. Arduino SPI는 mode 3, MSB first,
@@ -249,4 +323,4 @@ bottom bar를 우선 점유합니다.
 - [Arduino UNO R4 Minima documentation](https://docs.arduino.cc/hardware/uno-r4-minima)
 - [Arduino Renesas Minima CAN pin mapping](https://github.com/arduino/ArduinoCore-renesas/blob/main/variants/MINIMA/pins_arduino.h)
 - [Arduino_CAN non-blocking receive example](https://github.com/arduino/ArduinoCore-renesas/blob/main/libraries/Arduino_CAN/examples/CANRead/CANRead.ino)
-- [Microchip MCP2551 datasheet](https://www.microchip.com/content/dam/mchp/documents/APID/ProductDocuments/DataSheets/20001667G.pdf)
+- [NXP TJA1050 datasheet](https://www.nxp.com/docs/en/data-sheet/TJA1050.pdf)

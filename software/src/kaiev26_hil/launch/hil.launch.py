@@ -37,6 +37,8 @@ def generate_launch_description():
             description="비어 있지 않으면 scenario runner를 함께 띄운다.",
         ),
         DeclareLaunchArgument("results_dir", default_value="test_results"),
+        DeclareLaunchArgument("generator_enabled", default_value="true"),
+        DeclareLaunchArgument("web_heartbeat_timeout_sec", default_value="0.0"),
         DeclareLaunchArgument(
             "gui_refresh_ms", default_value="200",
             description="GUI 갱신 주기(ms). 원격 X11 기준값이며 로컬 화면이면 100.",
@@ -49,7 +51,11 @@ def generate_launch_description():
         Node(
             package="kaiev26_hil", executable="hil_command_generator",
             name="hil_command_generator",
-            output="screen", parameters=[config],
+            output="screen", parameters=[config, {
+                "enabled": ParameterValue(LaunchConfiguration("generator_enabled"), value_type=bool),
+                "web_heartbeat_timeout_sec": ParameterValue(
+                    LaunchConfiguration("web_heartbeat_timeout_sec"), value_type=float),
+            }],
         ),
         # /vehicle/command의 유일한 발행자. 자기 패키지의 config를 그대로 쓴다.
         Node(

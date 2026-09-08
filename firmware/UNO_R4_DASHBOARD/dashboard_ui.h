@@ -8,6 +8,10 @@ namespace DashboardUi
 
 void begin(const DashboardValues &values, bool dashboard_can_lost);
 void update(const DashboardValues &values, bool dashboard_can_lost);
+// State whose drawing calls have completed; used by the read-only HIL report.
+const DashboardValues &displayedValues();
+bool canLost();
+const char *pageName();
 
 }  // namespace DashboardUi
 

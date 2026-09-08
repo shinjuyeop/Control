@@ -30,6 +30,14 @@ SSH/X11 접속, host 준비, STM_A/B Agent, STM_TEST GUI, 기능 시험, KEYA �
 명령, CAN ID·payload, Plant 수식과 timing은
 [`../../../firmware/STM_TEST/README.md`](../../../firmware/STM_TEST/README.md)가 기준이다.
 
+## Web HIL Console
+
+React 기반 Web 운용 화면은 [WEB_CONSOLE.md](WEB_CONSOLE.md)를 따른다.
+벤치·고장 주입·시나리오·진단을 제공한다. 구동·조향·브레이크/안전은
+벤치 화면에서 함께 조작하며, 속도는 km/h·조향은 degree로 표시/입력한다.
+차량 dashboard 진단과 ROS 수신 주기·CAN age도 확인할 수 있다.
+기존 PyQt GUI는 유지한다. Web 전용 launch는 명령 생성기를 DISARMED로 시작한다.
+
 ## Nodes
 
 ### stm_test_bridge
@@ -90,13 +98,14 @@ Parameters:
 - `brake_engage`
 - `publish_rate_hz`
 - `command_topic` (기본 `/planning/command`, 생성자에서 한 번만 읽음)
+- `web_heartbeat_timeout_sec` (기본 0, Web 전용 launch는 3초; 시작 시 설정하는 read-only parameter)
 
 실제 Planning publisher와 동시에 실행하면 안 된다. `/vehicle/command`를 직접
 발행하는 기존 `lateral_ctrl/steering_bench_test_node`는 호환성 때문에 유지했지만
 governor를 우회하므로, 신규 HIL 시험은 이 node를 사용한다.
 
 실차 sysid에서는 이 node를 open-loop 시험입력으로만 사용한다. STM_A AUTO frame의
-phase-current 상한은 현재 300 A이므로 EZkontrol 내부 active current limit이 승인된
+phase-current 상한은 현재 소스 기준 480 A이며 배터리 전류가 아니므로 EZkontrol 내부 active current limit이 승인된
 값인지 export로 확인하거나 STM_A 상한을 안전하게 입증된 값으로 낮추기 전에는
 움직이는 실차에서 `enabled=true`로 두지 않는다. 시작할 때
 `ros2 topic info -v /vehicle/command`로 publisher가 하나인지 확인하고, 속도 target은
@@ -124,8 +133,8 @@ communication timeout을 정상 정지수단으로 쓰는 것은 이 경로의 �
 
 ## Safe state
 
-bridge의 Safe State는 firmware의
-[부팅 기본값](../../../firmware/STM_TEST/README.md#81-부팅-기본값)과 같다. bridge는 이 상태를
+bridge의 Safe State는 `HilDesiredState()`의 기본값이다. MCU 부팅 기본값과 달리
+plant가 ON이며, E-stop 입력은 해제된다. bridge는 이 상태를
 desired state에 저장하고 serial 재연결 후 재적용한다. command generator의
 `enabled`는 별도 상태이므로 Safe State 적용 전에 따로 끄는다.
 
@@ -204,9 +213,9 @@ STM_TEST 보드는 `firmware/udev/99-kaiev26-stm.rules`가 `/dev/hil_test`라는
 있다. 규칙을 설치하지 않은 호스트에서는 `ls -l /dev/serial/by-id/`로 path를 찾아
 그 값을 대신 넣는다. `ttyACM` 번호는 USB 재연결 때 바뀌므로 쓰지 않는다.
 
-현재는 기존 STM_TEST 보드가 차량 STM_B 교체용으로 전용돼 `/dev/hil_test`가
-미할당 상태다. 대체 STM_TEST 보드와 udev 규칙을 복구하기 전에는 아래 HIL launch를
-실행하지 않는다.
+2026-09-08 대체 STM_TEST 보드와 `/dev/hil_test` 매핑을 복구하고 bench 연동을
+확인했다. STM_TEST 브레이크 PWM 판정값도 현재 STM_B 출력에 동기화했다.
+검증 결과와 남은 사항은 HIL runbook 15절을 따른다.
 
 HIL bridge, command generator와 GUI:
 
@@ -215,7 +224,8 @@ ros2 launch kaiev26_hil hil.launch.py \
   serial_port:=/dev/hil_test
 ```
 
-이 launch가 실행하는 것은 `stm_test_bridge`, `hil_command_generator`, `hil_gui`다.
+이 launch가 실행하는 것은 `stm_test_bridge`, `hil_command_generator`,
+`command_governor`, `hil_gui`다.
 STM_A/B용 micro-ROS Agent, `lateral_ctrl`, `vehicle_state_publisher`는 포함하지 않는다.
 현재 EZ CAN만 연결된 bench에서는 Agent 두 개와 위 launch까지만 실행하고 KEYA
 `NO RX / NOT CONNECTED`를 정상 상태로 취급한다.

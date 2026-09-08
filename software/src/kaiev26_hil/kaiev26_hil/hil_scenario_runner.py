@@ -24,8 +24,8 @@ from .remote_parameters import RemoteParameterClient
 
 
 class HilScenarioRunner(Node):
-    def __init__(self) -> None:
-        super().__init__("hil_scenario_runner")
+    def __init__(self, *, parameter_overrides=None, service_wait_sec=5.0) -> None:
+        super().__init__("hil_scenario_runner", parameter_overrides=parameter_overrides)
         self.declare_parameter("scenario_file", "")
         self.declare_parameter("results_dir", "test_results")
         scenario_file = str(self.get_parameter("scenario_file").value)
@@ -36,7 +36,7 @@ class HilScenarioRunner(Node):
         self.command_pub = self.create_publisher(String, "/hil/command", 20)
         self.create_subscription(String, "/hil/command_result", self._on_command_result, 20)
         self.command_client = RemoteParameterClient(self, "hil_command_generator")
-        if not self.command_client.wait_for_service(timeout_sec=5.0):
+        if not self.command_client.wait_for_service(timeout_sec=service_wait_sec):
             raise RuntimeError("hil_command_generator parameter service is unavailable")
 
         self.latest = {}
@@ -54,6 +54,9 @@ class HilScenarioRunner(Node):
         self.command_results = []
         self.infrastructure_failures = []
         self.complete = False
+        self.result = None
+        self.parameter_requests = []
+        self.parameter_requested_at = {}
         self.create_timer(0.02, self._tick)
         self.get_logger().info(f"scenario started: {self.definition.name}")
 
@@ -95,6 +98,8 @@ class HilScenarioRunner(Node):
                     "hil_command_generator parameter service is unavailable"
                 )
                 return
+            self.parameter_requests.append(future)
+            self.parameter_requested_at[future] = time.monotonic()
 
             def completed(done):
                 try:
@@ -160,6 +165,10 @@ class HilScenarioRunner(Node):
     def _tick(self) -> None:
         if self.complete:
             return
+        for request in self.parameter_requests:
+            if not request.done() and time.monotonic() - self.parameter_requested_at[request] > 2.0:
+                self.infrastructure_failures.append("production parameter response timed out")
+                request.cancel()
         elapsed = time.monotonic() - self.start_monotonic
         while self.step_index < len(self.definition.steps):
             step = self.definition.steps[self.step_index]
@@ -170,20 +179,20 @@ class HilScenarioRunner(Node):
         self._evaluate_expectations(elapsed)
         if self.step_index == len(self.definition.steps) and all(
             state != "pending" for state in self.expectation_state
-        ):
+        ) and all(request.done() for request in self.parameter_requests):
             self._finish()
 
-    def _finish(self) -> None:
+    def _finish(self, outcome=None) -> None:
         self.complete = True
         passed = (
             all(state == "passed" for state in self.expectation_state)
             and not self.infrastructure_failures
         )
-        result = {
+        result = self.result = {
             "scenario": self.definition.name,
             "started_at": self.start_wall.isoformat(),
             "duration_sec": time.monotonic() - self.start_monotonic,
-            "result": "PASS" if passed else "FAIL",
+            "result": outcome or ("PASS" if passed else "FAIL"),
             "records": self.records,
             "command_results": self.command_results,
             "infrastructure_failures": self.infrastructure_failures,
@@ -191,7 +200,12 @@ class HilScenarioRunner(Node):
         self.results_dir.mkdir(parents=True, exist_ok=True)
         timestamp = self.start_wall.strftime("%Y%m%dT%H%M%SZ")
         output = self.results_dir / f"{self.definition.name}_{timestamp}.json"
-        output.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
+        try:
+            output.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
+        except OSError as exc:
+            self.infrastructure_failures.append(f"result could not be saved: {exc}")
+            result["result"] = "FAIL"
+            passed = False
         log = self.get_logger().info if passed else self.get_logger().error
         log(f"scenario {result['result']}: {output}")
 

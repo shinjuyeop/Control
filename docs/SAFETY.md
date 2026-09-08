@@ -88,8 +88,8 @@ MANUAL과 AUTO 모두에서 적용됩니다.
 
 브레이크 서보 명령:
 
-- engage: `1194 µs`
-- release: `1388 µs`
+- engage: `1305 µs` (55°)
+- release: `1665 µs` (120°)
 - PWM: 50 Hz
 - 부팅 초기 전역 상태와 초기 compare: engage
 - 목표 변경 후 nominal `20 ms × 35 = 700 ms`에 걸쳐 ramp

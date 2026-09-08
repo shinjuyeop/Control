@@ -15,9 +15,9 @@ static void test_pedal_conversion(void)
 
 static void test_brake_classification(void)
 {
-  assert(HilLogic_ClassifyBrakePulse(1194u) == HIL_BRAKE_ENGAGED);
-  assert(HilLogic_ClassifyBrakePulse(1388u) == HIL_BRAKE_RELEASED);
-  assert(HilLogic_ClassifyBrakePulse(1290u) == HIL_BRAKE_UNKNOWN);
+  assert(HilLogic_ClassifyBrakePulse(1305u) == HIL_BRAKE_ENGAGED);
+  assert(HilLogic_ClassifyBrakePulse(1665u) == HIL_BRAKE_RELEASED);
+  assert(HilLogic_ClassifyBrakePulse(1500u) == HIL_BRAKE_UNKNOWN);
 }
 
 static void test_steering_plant(void)

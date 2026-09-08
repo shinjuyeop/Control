@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 #include "dashboard_ui.h"
+#include "hil_display_report.h"
 #include "manual_tft_ui.h"
 #include "st7796_lcd.h"
 
@@ -328,12 +329,12 @@ static void accept_dashboard_frame(const CanMsg &message)
       latest_values = assembly.values;
       if (can_lost)
       {
-        Serial.println(F("CAN RECOVERED"));
+        if (!HilDisplayReport::enabled()) Serial.println(F("CAN RECOVERED"));
         can_lost = false;
       }
       DashboardUi::update(latest_values, false);
-      if (!printed_snapshot ||
-          ((uint32_t)(now - last_serial_print_ms) >= SERIAL_PRINT_PERIOD_MS))
+      if (!HilDisplayReport::enabled() && (!printed_snapshot ||
+          ((uint32_t)(now - last_serial_print_ms) >= SERIAL_PRINT_PERIOD_MS)))
       {
         print_snapshot(assembly.values, assembly.alive);
         last_serial_print_ms = now;
@@ -372,11 +373,11 @@ static void try_reinitialize_can()
     has_completed_alive = false;
     can_reinit_count++;
     drain_can_receive_buffer();
-    Serial.println(F("CAN controller reinitialized; waiting for fresh alive"));
+    if (!HilDisplayReport::enabled()) Serial.println(F("CAN controller reinitialized; waiting for fresh alive"));
   }
   else
   {
-    Serial.println(F("CAN controller reinitialize failed"));
+    if (!HilDisplayReport::enabled()) Serial.println(F("CAN controller reinitialize failed"));
   }
 }
 
@@ -413,7 +414,7 @@ void loop()
   if (!can_lost &&
       ((uint32_t)(now - last_complete_snapshot_ms) >= CAN_LOST_TIMEOUT_MS))
   {
-    Serial.println(F("CAN LOST: no fresh complete snapshot for 300 ms"));
+    if (!HilDisplayReport::enabled()) Serial.println(F("CAN LOST: no fresh complete snapshot for 300 ms"));
     can_lost = true;
     assembly.active = false;
     DashboardUi::update(latest_values, true);
@@ -425,4 +426,6 @@ void loop()
     last_can_reinit_ms = now;
     try_reinitialize_can();
   }
+  HilDisplayReport::poll(now, complete_snapshot_count,
+      complete_snapshot_count ? (int32_t)(now-last_complete_snapshot_ms) : -1);
 }
