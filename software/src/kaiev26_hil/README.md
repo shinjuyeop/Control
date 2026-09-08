@@ -23,7 +23,7 @@ HIL도 실차와 같은 governor 경로를 지난다. `/vehicle/command`의 발�
 - `hil_gui`: STM_TEST 시험 조건 입력과 fault injection
 - `vcan_sim`: vcan 기반 SIL/교육용 plant. 실제 STM_TEST HIL과 별도 경로
 
-SSH/X11 접속, host 준비, STM_A/B Agent, STM_TEST GUI, 기능 시험, KEYA 확장 및
+Web 접속, host 준비, 전체 HIL 실행, 브라우저에서의 기능·시나리오 시험과
 정상 종료를 한 번에 따라 하려면
 [`../../../docs/HIL_RUNBOOK.md`](../../../docs/HIL_RUNBOOK.md)를 사용한다.
 이 문서는 ROS node·topic·service·GUI 계약만 설명한다. 핀 배치, UART

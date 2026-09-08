@@ -26,10 +26,13 @@ UI는 5 Hz, bridge의 STATUS poll은 기존 10 Hz다. 페달은 드래그를 놓
 ## 설치와 빌드
 
 Node.js 20.19 이상 또는 22.12 이상, ROS 2 Humble 환경을 사용한다.
+실행 예제는 이 PC의 zsh `humble` 함수(Humble 환경 로드 + Domain 0 설정)를 사용한다.
+이미 활성화 후 domain을 바꾼 셸과 다른 PC의 설정은
+[HIL runbook 공통 ROS 환경](../../../docs/HIL_RUNBOOK.md#4-공통-ros-환경)을 따른다.
 Web의 Python 의존성은 기존 GUI 환경과 분리해 설치할 수 있다.
 현재 호스트에서는 아래 `.venv`에 설치되어 있다.
 
-```bash
+```zsh
 cd /home/kai/KAI_ws/src/Control/software/src/kaiev26_hil
 uv venv --python /usr/bin/python3 --system-site-packages .venv
 uv pip install --python .venv/bin/python -r requirements-web.txt
@@ -37,11 +40,11 @@ cd web
 npm ci
 npm run build
 
-cd /home/kai/KAI_ws
-source /opt/ros/humble/setup.zsh
+cd ~/KAI_ws
+humble
 unset COLCON_CURRENT_PREFIX
 colcon build --symlink-install --packages-select kaiev26_hil
-source install/setup.zsh
+source ~/KAI_ws/install/setup.zsh
 ```
 
 `uv`를 쓰지 않는 환경에서는 `python3-venv` 설치 후
@@ -54,10 +57,11 @@ source install/setup.zsh
 다음 기본 실행은 Web bridge만 시작한다. Agent, USB serial, CAN 인터페이스를 열지 않는다.
 이미 실행 중인 ROS와 같은 domain이면 수신한 상태를 표시한다.
 
-```bash
-cd /home/kai/KAI_ws
-source /opt/ros/humble/setup.zsh
-source install/setup.zsh
+```zsh
+cd ~/KAI_ws
+humble
+source ~/KAI_ws/install/setup.zsh
+
 ros2 launch kaiev26_hil hil_web.launch.py \
   web_python:=/home/kai/KAI_ws/src/Control/software/src/kaiev26_hil/.venv/bin/python
 ```
@@ -79,7 +83,11 @@ ros2 launch kaiev26_hil hil_web.launch.py \
 실제 액추에이터 연결 여부 및 서보/LV 전원 상태를 확인한 후 실행한다.
 이 명령은 실제 USB 장치를 여는 HIL 실행이다.
 
-```bash
+```zsh
+cd ~/KAI_ws
+humble
+source ~/KAI_ws/install/setup.zsh
+
 ros2 launch kaiev26_hil hil_web.launch.py \
   start_bench:=true \
   web_python:=/home/kai/KAI_ws/src/Control/software/src/kaiev26_hil/.venv/bin/python
@@ -174,16 +182,16 @@ ssh -N -L 8765:127.0.0.1:8765 kai@hil-host
 보고를 전용 USB serial reader가 읽고, 실제 펌웨어 C++ renderer로 PNG를 만든다.
 PC용 renderer를 먼저 빌드한 뒤 colcon으로 설치한다.
 
-```bash
+```zsh
 cd /home/kai/KAI_ws/src/Control
 cmake -S firmware/UNO_R4_DASHBOARD/dashboard_preview/native \
   -B firmware/UNO_R4_DASHBOARD/build/host -DCMAKE_BUILD_TYPE=Release
 cmake --build firmware/UNO_R4_DASHBOARD/build/host --parallel 2
 cmake --install firmware/UNO_R4_DASHBOARD/build/host --prefix software/src/kaiev26_hil
 
-cd /home/kai/KAI_ws
-source /opt/ros/humble/setup.zsh
-source install/setup.zsh
+cd ~/KAI_ws
+humble
+source ~/KAI_ws/install/setup.zsh
 unset COLCON_CURRENT_PREFIX
 colcon build --symlink-install --packages-select kaiev26_hil
 ```
@@ -192,7 +200,11 @@ UNO에는 상태 보고 지원 펌웨어가 필요하다. 업로드는 대상 �
 USB protocol과 빌드 방법은 [UNO README](../../../firmware/UNO_R4_DASHBOARD/README.md)를 따른다.
 `requirements-web.txt`의 Pillow를 PC PNG 인코딩에 사용한다.
 
-```bash
+```zsh
+cd ~/KAI_ws
+humble
+source ~/KAI_ws/install/setup.zsh
+
 ros2 launch kaiev26_hil hil_web.launch.py \
   start_bench:=true steering:=true state:=true \
   dashboard_port:=/dev/arduino_hil \
@@ -213,10 +225,10 @@ RGB/BGR·백라이트·물리 터치까지 증명하지 않는다. 실제 LCD의
 
 ## 검증
 
-```bash
+```zsh
 cd /home/kai/KAI_ws/src/Control
-source /opt/ros/humble/setup.zsh
-source /home/kai/KAI_ws/install/setup.zsh
+humble
+source ~/KAI_ws/install/setup.zsh
 ROS_DOMAIN_ID=191 ROS_LOCALHOST_ONLY=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
   software/src/kaiev26_hil/.venv/bin/python -m pytest software/src/kaiev26_hil/test -q
 ```

@@ -24,13 +24,16 @@ Planning ─ /planning/command → command_governor ─ /vehicle/command → STM
 
 ### ② 구동 스택
 
-새 터미널마다 ROS 환경을 먼저 잡는다.
+새 zsh 터미널마다 아래 형식으로 ROS 환경을 잡는다. 이 PC의 `humble` 함수가
+Humble 환경과 `ROS_DOMAIN_ID=0`을 설정하므로 별도 export는 필요 없다.
+이미 활성화된 셸에서 domain을 변경한 경우에는 `humble`이 이를 되돌리지 않는다.
+그때만 `export ROS_DOMAIN_ID=0`으로 복구한다. 다른 PC의 셋업은
+[HIL runbook 공통 ROS 환경](HIL_RUNBOOK.md#4-공통-ros-환경)을 따른다.
 
-```bash
+```zsh
 cd ~/KAI_ws
-source /opt/ros/humble/setup.zsh
+humble
 source ~/KAI_ws/install/setup.zsh
-export ROS_DOMAIN_ID=0
 
 ros2 launch control_launch vehicle.launch.py
 ```
@@ -45,11 +48,10 @@ can0는 부팅 때 자동으로 준비되어 있다. 이 시점에는 차가 **�
 디버그 대시보드 (화면 필요 — 모니터 직결이면 그대로, 원격이면 `ssh -Y`
 터미널에서):
 
-```bash
+```zsh
 cd ~/KAI_ws
-source /opt/ros/humble/setup.zsh
+humble
 source ~/KAI_ws/install/setup.zsh
-export ROS_DOMAIN_ID=0
 
 ros2 launch visualization vehicle_dashboard.launch.py
 ```
@@ -58,11 +60,10 @@ Foxglove bridge — 팀 단위로 PC당 하나만 띄운다. 이미 떠 있으�
 아래 접속만 한다 (`/diagnostics` 요약은 구동 스택이 이미 발행 중이라
 bridge만 켜면 된다):
 
-```bash
+```zsh
 cd ~/KAI_ws
-source /opt/ros/humble/setup.zsh
+humble
 source ~/KAI_ws/install/setup.zsh
-export ROS_DOMAIN_ID=0
 
 ros2 launch visualization foxglove_bridge.launch.py
 ```
@@ -92,11 +93,10 @@ Planning 없이 실차 동작을 확인할 때는 `vehicle_test_scenarios`의 �
 
 **터미널 1 — scenario runner 실행:**
 
-```bash
+```zsh
 cd ~/KAI_ws
-source /opt/ros/humble/setup.zsh
+humble
 source ~/KAI_ws/install/setup.zsh
-export ROS_DOMAIN_ID=0
 
 ros2 run vehicle_test_scenarios vehicle_test_scenario_runner
 ```
@@ -106,11 +106,10 @@ runner는 `enabled=false`로 시작하므로 이 시점에는 명령 메시지�
 
 **터미널 2 — 상태 확인 및 파라미터 설정:**
 
-```bash
+```zsh
 cd ~/KAI_ws
-source /opt/ros/humble/setup.zsh
+humble
 source ~/KAI_ws/install/setup.zsh
-export ROS_DOMAIN_ID=0
 
 ros2 topic info /planning/command
 # Publisher count: 1 (vehicle_test_scenario_runner 하나)이어야 함
