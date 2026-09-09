@@ -1,44 +1,6 @@
-import type { DisplayState } from "./VirtualDisplay";
-import { MPS_TO_KMH, RAD_TO_DEG } from "./units";
 import { useEffect, useRef, useState } from "react";
-export type Data = Record<string, any>;
-export type Sample = {
-  data: Data;
-  fresh: boolean;
-  age_ms: number;
-  rx_hz?: number | null;
-  period_ms?: number | null;
-  rx_count?: number;
-};
-export type Event = { id: number; time: number; kind: string; text: string };
-export type Snapshot = {
-  type: "state";
-  time: number;
-  topics: Record<string, Sample>;
-  connected: boolean;
-  desired: Data;
-  generator: Data;
-  generator_fresh: boolean;
-  control: { mine: boolean; occupied: boolean; armed: boolean };
-  events: Event[];
-  scenario: Data | null;
-  catalog: Data[];
-  display?: DisplayState;
-};
-/** Plot history: vehicle speed in km/h, wheel/shaft angles in degrees. */
-export type Point = {
-  time: number;
-  speed: number | null;
-  targetSpeed: number | null;
-  rpm: number | null;
-  targetRpm: number | null;
-  phase: number | null;
-  bus: number | null;
-  steer: number | null;
-  targetSteer: number | null;
-  wheel: number | null;
-  targetWheel: number | null;
-};
+import type { Data, Point, Snapshot } from "../domain/types";
+import { MPS_TO_KMH, RAD_TO_DEG } from "../domain/units";
 const empty: Snapshot = {
   type: "state",
   time: 0,

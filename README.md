@@ -79,8 +79,9 @@ Control/
 
 ## Web HIL
 
-브라우저에서 구동·조향·브레이크를 한 **벤치** 화면으로 조작하고, CAN 진단·수신 주기·
-시나리오 결과와 UNO의 **가상 LCD**를 확인할 수 있습니다. 화면의 속도는 km/h,
+브라우저의 전역 **Operator Remote**로 Mode/Gear/Pedal/E-stop을 조작하면서
+구동·조향·브레이크 관측 페이지를 전환할 수 있습니다. 벤치 개요, CAN 진단·수신 주기,
+시나리오 결과와 UNO의 **가상 LCD**도 제공합니다. 화면의 속도는 km/h,
 조향은 degree이며 ROS의 m/s·rad 계약은 유지합니다. 기존 PyQt GUI도 유지합니다.
 
 Web 의존성 설치, 프론트엔드·공통 LCD renderer 빌드, 전체 벤치 실행은

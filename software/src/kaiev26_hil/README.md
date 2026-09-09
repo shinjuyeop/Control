@@ -33,8 +33,9 @@ Web 접속, host 준비, 전체 HIL 실행, 브라우저에서의 기능·시나
 ## Web HIL Console
 
 React 기반 Web 운용 화면은 [WEB_CONSOLE.md](WEB_CONSOLE.md)를 따른다.
-벤치·고장 주입·시나리오·진단을 제공한다. 구동·조향·브레이크/안전은
-벤치 화면에서 함께 조작하며, 속도는 km/h·조향은 degree로 표시/입력한다.
+벤치·구동·조향·브레이크/안전·고장 주입·시나리오·가상 LCD·진단 페이지를 제공한다.
+전역 Operator Remote에서 Mode/Gear/Pedal/E-stop을 조작하며, 속도는 km/h·조향은 degree다.
+주행 명령과 engineering 설정은 기능 페이지에 두고, 상단에서 ARMED 상태를 확인한다.
 차량 dashboard 진단과 ROS 수신 주기·CAN age도 확인할 수 있다.
 기존 PyQt GUI는 유지한다. Web 전용 launch는 명령 생성기를 DISARMED로 시작한다.
 
@@ -133,6 +134,7 @@ communication timeout을 정상 정지수단으로 쓰는 것은 이 경로의 �
 
 ## Safe state
 
+Web의 Bench Reset(기존 Safe State)은 `/hil/reset_safe_state`를 그대로 사용한다.
 bridge의 Safe State는 `HilDesiredState()`의 기본값이다. MCU 부팅 기본값과 달리
 plant가 ON이며, E-stop 입력은 해제된다. bridge는 이 상태를
 desired state에 저장하고 serial 재연결 후 재적용한다. command generator의

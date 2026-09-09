@@ -1,0 +1,238 @@
+:root {
+  color-scheme: dark;
+  --sans:
+    "Noto Sans KR", "Noto Sans CJK KR", "Apple SD Gothic Neo", "Malgun Gothic",
+    -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono:
+    "JetBrains Mono", "SFMono-Regular", Consolas, "Noto Sans KR",
+    "Noto Sans CJK KR", "Malgun Gothic", monospace;
+  font-family: var(--sans);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  color: #dce2e7;
+  background: #101316;
+  font-synthesis: none;
+  font-size: 15px;
+  --surface: #171c21;
+  --line: #30383f;
+  --muted: #acb9c3;
+  --command: #7ab9dd;
+  --live: #82bca5;
+  --amber: #e5b767;
+  --red: #f18b87;
+  --nav: 190px;
+  --remote: 330px;
+  --bar: 72px;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+button,
+input,
+select {
+  font: inherit;
+}
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid #424c55;
+  border-radius: 3px;
+  background: #222a31;
+  color: #dce2e7;
+  padding: 8px 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.3;
+  min-height: 40px;
+}
+button:hover:not(:disabled) {
+  background: #303a44;
+  border-color: #82939f;
+}
+button:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+button:focus-visible,
+a:focus-visible,
+summary:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--command);
+  outline-offset: 3px;
+}
+button.primary {
+  background: #2a5167;
+  border-color: #5f92ae;
+  color: #e6f4fc;
+  font-weight: 600;
+}
+button.primary:hover:not(:disabled) {
+  background: #356782;
+}
+button.text-button {
+  border: 0;
+  background: none;
+  color: #aab8c2;
+  padding: 3px 0;
+  font-size: 14px;
+}
+.icon-button {
+  padding: 6px;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  background: transparent;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.reset-button,
+.safe-button {
+  background: #27251e;
+  color: #e4c48d;
+  border-color: #62553b;
+}
+.reset-button:hover:not(:disabled),
+.safe-button:hover:not(:disabled) {
+  background: #3b3221;
+}
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+h1 {
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+}
+h2 {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+h3 {
+  font-size: 16px;
+  font-weight: 600;
+}
+p {
+  line-height: 1.65;
+}
+small {
+  font-size: 14px;
+  color: var(--muted);
+}
+code {
+  font-family: var(--mono);
+  font-size: 14px;
+}
+.muted {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--muted);
+  margin: 12px 0;
+}
+.eyebrow {
+  display: block;
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.5;
+  font-weight: 500;
+  letter-spacing: 0.6px;
+  color: #8f9da8;
+  margin-bottom: 5px;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  font: 12px/1.3 var(--sans);
+  letter-spacing: 0.2px;
+  color: #9eafb9;
+  padding: 4px 6px;
+  border: 1px solid #36454f;
+  border-radius: 2px;
+  background: transparent;
+}
+.badge i,
+.status-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.badge.good {
+  color: var(--live);
+  border-color: #37564a;
+}
+.badge.warning {
+  color: var(--amber);
+  border-color: #775e34;
+  background: #372d1c;
+}
+.badge.danger {
+  color: #ffb7b2;
+  border-color: #a85757;
+  background: #51292c;
+}
+.status-dot {
+  color: #758894;
+}
+.status-dot.live {
+  color: var(--live);
+}
+.warning-text {
+  color: var(--amber);
+}
+select {
+  border: 1px solid #46535e;
+  border-radius: 2px;
+  background: #182129;
+  color: #d5e1e8;
+  padding: 7px 9px;
+  font-size: 14px;
+}
+a {
+  color: var(--command);
+}
+fieldset {
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+.spinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border: 2px solid #937542;
+  border-top-color: #f1d39c;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

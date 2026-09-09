@@ -1,10 +1,8 @@
-import { useEffect, useId, useState, type ReactNode } from "react";
-import { Activity, ChevronDown, Send, CircleHelp } from "lucide-react";
-import type { Point, Sample } from "./connection";
-export const fmt = (value: unknown, decimals = 1) =>
-  typeof value === "number" && Number.isFinite(value)
-    ? value.toFixed(decimals)
-    : "—";
+import { Activity, ChevronDown, CircleHelp, Send } from "lucide-react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import type { Point, Sample } from "../domain/types";
+import { fmt } from "../domain/format";
+export { fmt } from "../domain/format";
 export function Badge({
   children,
   tone = "muted",
@@ -282,6 +280,17 @@ export function Chart({
   height?: number;
 }) {
   const [hover, setHover] = useState<number | null>(null);
+  const container = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(740);
+  useEffect(() => {
+    const element = container.current;
+    if (!element) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry.contentRect.width > 0) setWidth(entry.contentRect.width);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const values = points
     .flatMap((p) => traces.map((t) => p[t.key]))
     .filter((n): n is number => typeof n === "number");
@@ -290,8 +299,7 @@ export function Chart({
   const pad = (high - low) * 0.12;
   low -= pad;
   high += pad;
-  const width = 740,
-    left = 48,
+  const left = 64,
     right = 16,
     top = 18,
     bottom = 30;
@@ -313,7 +321,7 @@ export function Chart({
           null,
         );
   return (
-    <div className="chart">
+    <div className="chart" ref={container}>
       <div className="chart-legend">
         {traces.map((t) => (
           <span key={t.key}>

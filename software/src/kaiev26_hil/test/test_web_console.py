@@ -41,7 +41,7 @@ def bench(tmp_path):
         tmp_path / "web",
     )
     original_lifespan = app.router.lifespan_context
-    observed = {"commands": [], "planning": [], "safe": 0, "publish": True}
+    observed = {"commands": [], "planning": [], "safe": 0, "publish": True, "ack": True}
     observed["drive"] = DriveActuatorStatus(
         part1_valid=True,
         speed_mps=1.2,
@@ -108,7 +108,8 @@ def bench(tmp_path):
 
             def command(message):
                 observed["commands"].append(message.data)
-                result_pub.publish(String(data="OK " + message.data))
+                if observed["ack"]:
+                    result_pub.publish(String(data="OK " + message.data))
 
             peer.create_subscription(String, "/hil/command", command, 20)
             peer.create_subscription(
@@ -131,6 +132,7 @@ def bench(tmp_path):
             console.executor.add_node(peer)
             console.executor.add_node(generator)
             observed["generator"] = generator
+            observed["result_pub"] = result_pub
             try:
                 yield
             finally:
@@ -343,12 +345,13 @@ def test_cancelling_a_scenario_saves_result_and_disarms(bench):
         assert client.get("/api/history").json()[0]["result"] == "CANCELLED"
 
 
-def test_react_controls_and_live_observations_in_browser(bench, tmp_path):
+@pytest.fixture
+def browser_page(bench, tmp_path):
     playwright = pytest.importorskip("playwright.sync_api")
     import shutil
     import socket
-
     import uvicorn
+    from fastapi.staticfiles import StaticFiles
 
     chrome = shutil.which("google-chrome")
     if chrome is None:
@@ -356,11 +359,7 @@ def test_react_controls_and_live_observations_in_browser(bench, tmp_path):
     static_dir = Path(__file__).parents[1] / "web/dist"
     if not (static_dir / "index.html").is_file():
         pytest.skip("Build the React console before the browser test")
-    from fastapi.staticfiles import StaticFiles
-
     client, observed = bench
-    # The same app/executor already running in TestClient's event loop serves
-    # the browser through Uvicorn. No extra ROS stack or serial emulator.
     client.app.router.routes = [
         route
         for route in client.app.router.routes
@@ -384,121 +383,252 @@ def test_react_controls_and_live_observations_in_browser(bench, tmp_path):
                 executable_path=chrome, headless=True
             )
             try:
-                page = browser.new_page(viewport={"width": 1440, "height": 1050})
+                page = browser.new_page(viewport={"width": 1440, "height": 1000})
                 errors = []
                 page.on("pageerror", lambda error: errors.append(str(error)))
                 page.goto(address)
                 page.get_by_text("Web bridge 연결됨", exact=True).wait_for()
-                page.get_by_role("button", name="조작권 가져오기").click()
-                page.get_by_role("button", name="조작권 해제").wait_for()
-                page.get_by_role("navigation").get_by_role(
-                    "button", name="벤치", exact=True
-                ).click()
-                page.get_by_role("group", name="운전 모드").get_by_role(
-                    "button", name="AUTO", exact=True
-                ).click()
-                page.get_by_role("status").get_by_text("OK SET MODE AUTO", exact=True).wait_for()
-                assert "SET MODE AUTO" in observed["commands"]
-                assert (
-                    page.get_by_role("group", name="운전 모드")
-                    .get_by_role("button", name="MANUAL", exact=True)
-                    .get_attribute("aria-pressed")
-                    == "true"
-                )
-                page.get_by_role("button", name="30%", exact=True).click()
-                page.get_by_role("status").get_by_text("OK SET PEDAL 30", exact=True).wait_for()
-                assert "SET PEDAL 30" in observed["commands"]
-                # ACKs do not overwrite the peer's observed pedal value (27%).
-                assert page.get_by_label("가속 페달", exact=True).input_value() == "27"
-                page.get_by_role("switch", name="대시보드 E-stop", exact=True).click()
-                page.get_by_role("status").get_by_text("OK SET ESTOP DASH ON", exact=True).wait_for()
-                assert "SET ESTOP DASH ON" in observed["commands"]
-                part2 = page.locator(".frame-card").filter(
-                    has=page.get_by_text("EZkontrol Part II", exact=True)
-                )
-                assert "750" in part2.inner_text() and "INVALID" in part2.inner_text()
-                page.get_by_text("조향 상태 플래그", exact=True).click()
-                informational_flag = page.locator(".flag-chip").filter(
-                    has=page.get_by_text("Enable 피드백 지원", exact=True)
-                )
-                assert "danger" not in informational_flag.get_attribute("class")
-                assert (
-                    "FAULT 0x0001"
-                    not in page.get_by_label("메시지가 보고한 상태").inner_text()
-                )
-                page.get_by_text("조향 상태 플래그", exact=True).click()
-                speed_metric = page.locator(".metric").filter(
-                    has=page.get_by_text("관측 속도", exact=True)
-                )
-                assert (
-                    "4.32" in speed_metric.inner_text()
-                    and "km/h" in speed_metric.inner_text()
-                )
-                angle_fact = page.locator(".fact").filter(
-                    has=page.get_by_text("목표 각도", exact=True)
-                )
-                assert "30.00°" in angle_fact.inner_text()
-                page.get_by_label("목표 속도", exact=True).fill("36")
-                page.get_by_label("목표 조향각", exact=True).fill("30")
-                page.get_by_role("button", name="ARM · 명령 발행", exact=True).click()
-                page.get_by_role("dialog").get_by_role(
-                    "button", name="ARM · 발행", exact=True
-                ).click()
-                page.get_by_text(
-                    "Command generator parameters applied", exact=True
-                ).wait_for()
-                assert observed["generator"].get_parameter("enabled").value
-                assert observed["generator"].get_parameter(
-                    "speed_target_mps"
-                ).value == pytest.approx(10.0)
-                assert observed["generator"].get_parameter(
-                    "steering_target_rad"
-                ).value == pytest.approx(math.pi / 6)
-                for name in [
-                    "벤치",
-                    "가상 LCD",
-                    "고장 주입",
-                    "시나리오",
-                    "진단 · 로그",
-                ]:
-                    page.get_by_role("navigation").get_by_role(
-                        "button", name=name, exact=True
-                    ).click()
-                    page.get_by_role("heading", name=name, exact=True).wait_for()
-                    assert not page.evaluate(
-                        "document.documentElement.scrollWidth > innerWidth"
-                    )
-                page.get_by_role("navigation").get_by_role(
-                    "button", name="벤치", exact=True
-                ).click()
-                page.get_by_role("button", name="알림 닫기").click()
-                page.screenshot(
-                    path=str(tmp_path / "live-operations.png"),
-                    full_page=False,
-                    animations="disabled",
-                )
-                page.set_viewport_size({"width": 390, "height": 844})
-                page.screenshot(
-                    path=str(tmp_path / "live-mobile.png"),
-                    full_page=True,
-                    animations="disabled",
-                )
-                assert not page.evaluate(
-                    "document.documentElement.scrollWidth > innerWidth"
-                )
-                page.close()
-                end = time.monotonic() + 5
-                while (
-                    observed["generator"].get_parameter("enabled").value
-                    and time.monotonic() < end
-                ):
-                    time.sleep(0.05)
-                assert not observed["generator"].get_parameter("enabled").value
+                yield page, client, observed, tmp_path
                 assert not errors
-                print(f"Browser screenshots: {tmp_path}")
             finally:
                 browser.close()
     finally:
         server.should_exit = True
         task.result(timeout=12)
         sock.close()
+
+
+def test_operator_remote_across_pages_and_navigation(browser_page):
+    from playwright.sync_api import expect
+    import re
+    import base64
+    from kaiev26_hil.dashboard_display import (
+        NativeDashboardRenderer,
+        decode_display_report,
+    )
+    from test_dashboard_display import LIBRARY, wire_report
+
+    page, client, observed, tmp_path = browser_page
+    remote = page.get_by_role("region", name="Operator Remote", exact=True)
+    expect(remote).to_be_visible()
+    expect(remote.get_by_role("button", name="AUTO", exact=True)).to_be_disabled()
+    expect(remote.get_by_label("가속 페달", exact=True)).to_be_disabled()
+    page.get_by_role("button", name="조작권 가져오기", exact=True).click()
+    expect(remote.get_by_role("button", name="AUTO", exact=True)).to_be_enabled()
+
+    page.get_by_role("navigation").get_by_role(
+        "button", name="구동", exact=True
+    ).click()
+    remote.get_by_role("button", name="AUTO", exact=True).click()
+    page.get_by_role("status").get_by_text("OK SET MODE AUTO", exact=True).wait_for()
+    assert "SET MODE AUTO" in observed["commands"]
+    # The peer still reports MANUAL: ACK must not paint AUTO as observed.
+    expect(remote.get_by_role("button", name="MANUAL", exact=True)).to_have_attribute(
+        "aria-pressed", "true"
+    )
+
+    slider = remote.get_by_label("가속 페달", exact=True)
+    box = slider.bounding_box()
+    before = len([c for c in observed["commands"] if c.startswith("SET PEDAL ")])
+    page.mouse.move(box["x"] + box["width"] * 0.27, box["y"] + box["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(
+        box["x"] + box["width"] * 0.65, box["y"] + box["height"] / 2, steps=8
+    )
+    page.wait_for_timeout(250)
+    assert (
+        len([c for c in observed["commands"] if c.startswith("SET PEDAL ")]) == before
+    )
+    page.mouse.up()
+    page.get_by_role("status").get_by_text(re.compile(r"^OK SET PEDAL ")).wait_for()
+    assert (
+        len([c for c in observed["commands"] if c.startswith("SET PEDAL ")])
+        == before + 1
+    )
+    expect(remote.get_by_text("27 %", exact=True)).to_be_visible()
+
+    # Command drafts are shared across pages; no navigation publishes them.
+    page.get_by_label("목표 속도", exact=True).fill("36")
+    page.get_by_label("목표 조향각", exact=True).fill("30")
+    page.get_by_role("navigation").get_by_role(
+        "button", name="조향", exact=True
+    ).click()
+    expect(page.get_by_label("목표 속도", exact=True)).to_have_value("36")
+    expect(page.get_by_label("목표 조향각", exact=True)).to_have_value("30")
+    remote.get_by_role("button", name="REV", exact=True).click()
+    page.get_by_role("status").get_by_text("OK SET GEAR REVERSE", exact=True).wait_for()
+    assert "SET GEAR REVERSE" in observed["commands"]
+    expect(remote.get_by_role("button", name="FWD", exact=True)).to_have_attribute(
+        "aria-pressed", "true"
+    )
+    angle = page.locator(".fact").filter(has=page.get_by_text("목표 각도", exact=True))
+    expect(angle).to_contain_text("30.00°")
+    assert not observed["planning"]
+    page.get_by_role("button", name="ARM · 명령 발행", exact=True).click()
+    page.get_by_role("dialog").get_by_role(
+        "button", name="ARM · 발행", exact=True
+    ).click()
+    expect(
+        page.get_by_label("주행 명령 상태").get_by_text("ARMED", exact=True)
+    ).to_be_visible()
+    assert observed["generator"].get_parameter(
+        "speed_target_mps"
+    ).value == pytest.approx(10)
+    assert observed["generator"].get_parameter(
+        "steering_target_rad"
+    ).value == pytest.approx(math.pi / 6)
+
+    page.get_by_role("navigation").get_by_role(
+        "button", name="브레이크 · 안전", exact=True
+    ).click()
+    remote.get_by_role("switch", name="대시보드 E-stop", exact=True).click()
+    page.get_by_role("status").get_by_text(
+        "OK SET ESTOP DASH ON", exact=True
+    ).wait_for()
+    expect(
+        remote.get_by_role("switch", name="대시보드 E-stop", exact=True)
+    ).to_have_attribute("aria-checked", "false")
+    assert "SET ESTOP DASH ON" in observed["commands"]
+    page.get_by_role("navigation").get_by_role(
+        "button", name="구동", exact=True
+    ).click()
+    part2 = page.locator(".frame-card").filter(
+        has=page.get_by_text("EZkontrol Part II", exact=True)
+    )
+    expect(part2).to_contain_text("750")
+    expect(part2).to_contain_text("INVALID")
+
+    # Exercise every observation page with the same active Remote and global ARM badge.
+    for name in [
+        "벤치",
+        "조향",
+        "브레이크 · 안전",
+        "고장 주입",
+        "시나리오",
+        "가상 LCD",
+        "진단 · 로그",
+    ]:
+        page.get_by_role("navigation").get_by_role(
+            "button", name=name, exact=True
+        ).click()
+        expect(page.get_by_role("heading", name=name, exact=True)).to_be_visible()
+        expect(remote).to_be_visible()
+        expect(
+            page.get_by_label("주행 명령 상태").get_by_text("ARMED", exact=True)
+        ).to_be_visible()
+        assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
+
+    # Display UI consumes an UNO-shaped report and PNG from the real C++ renderer.
+    report = decode_display_report(wire_report())
+    png = NativeDashboardRenderer(LIBRARY).render(report)
+
+    async def display_sample():
+        display = client.app.state.display
+        with display.lock:
+            display.port = "/dev/test-display"
+            display.serial_open = True
+            display.report = report
+            display.image = "data:image/png;base64," + base64.b64encode(png).decode()
+            display.received_at = time.monotonic()
+
+    client.portal.call(display_sample)
+    page.get_by_role("navigation").get_by_role(
+        "button", name="가상 LCD", exact=True
+    ).click()
+    page.get_by_text("UNO LIVE", exact=True).wait_for()
+    image = page.get_by_alt_text("UNO가 적용한 상태로 재구성한 가상 LCD")
+    expect(image).to_be_visible()
+    assert image.evaluate(
+        "(img)=>img.naturalWidth===480 && img.naturalHeight===320 && img.complete"
+    )
+    page.wait_for_timeout(1150)
+    expect(
+        page.get_by_text("마지막 수신 화면 · 현재 상태 미확인", exact=True)
+    ).to_be_visible()
+
+    for width in [1440, 1366, 1280]:
+        page.set_viewport_size(
+            {"width": width, "height": 900 if width == 1440 else 768}
+        )
+        page.get_by_role("navigation").get_by_role(
+            "button", name="구동", exact=True
+        ).click()
+        expect(remote).to_be_visible()
+        expect(
+            remote.get_by_role("switch", name="무선 리모컨 E-stop", exact=True)
+        ).to_be_in_viewport()
+        assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
+    page.screenshot(path=str(tmp_path / "drive-desktop.png"), full_page=False)
+    for width in [1024, 390]:
+        page.set_viewport_size({"width": width, "height": 844})
+        expect(remote).not_to_be_visible()
+        page.get_by_role("button", name="Operator Remote 열기", exact=True).click()
+        expect(remote).to_be_visible()
+        expect(
+            remote.get_by_role("switch", name="차체 측면 E-stop", exact=True)
+        ).to_be_enabled()
+        page.screenshot(path=str(tmp_path / f"remote-{width}.png"), full_page=False)
+        page.keyboard.press("Escape")
+        expect(remote).not_to_be_visible()
+        assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
+    page.close()
+    end = time.monotonic() + 5
+    while (
+        observed["generator"].get_parameter("enabled").value and time.monotonic() < end
+    ):
+        time.sleep(0.05)
+    assert not observed["generator"].get_parameter("enabled").value
+    print(f"Browser review images: {tmp_path}")
+
+
+def test_remote_busy_scenario_and_stale_locks(browser_page):
+    from playwright.sync_api import expect
+
+    page, client, observed, _ = browser_page
+    remote = page.get_by_role("region", name="Operator Remote", exact=True)
+    page.get_by_role("button", name="조작권 가져오기", exact=True).click()
+    expect(remote.get_by_role("button", name="AUTO", exact=True)).to_be_enabled()
+    observed["ack"] = False
+    remote.get_by_role("button", name="AUTO", exact=True).click()
+    expect(remote.get_by_label("가속 페달", exact=True)).to_be_disabled()
+    expect(
+        remote.get_by_role("switch", name="대시보드 E-stop", exact=True)
+    ).to_be_disabled()
+    observed["ack"] = True
+    observed["result_pub"].publish(String(data="OK SET MODE AUTO"))
+    expect(remote.get_by_label("가속 페달", exact=True)).to_be_enabled()
+
+    page.get_by_role("navigation").get_by_role(
+        "button", name="시나리오", exact=True
+    ).click()
+    page.get_by_role("checkbox").check()
+    page.get_by_role("button", name="시나리오 실행", exact=True).click()
+    page.get_by_role("dialog").get_by_role(
+        "button", name="ARM · 시험 시작", exact=True
+    ).click()
+    expect(page.get_by_label("시나리오 상태")).to_contain_text("RUNNING")
+    expect(remote.get_by_role("button", name="AUTO", exact=True)).to_be_disabled()
+    expect(
+        remote.get_by_role("switch", name="무선 리모컨 E-stop", exact=True)
+    ).to_be_disabled()
+    page.get_by_role("navigation").get_by_role(
+        "button", name="조향", exact=True
+    ).click()
+    expect(remote.get_by_label("가속 페달", exact=True)).to_be_disabled()
+    page.get_by_role("navigation").get_by_role(
+        "button", name="시나리오", exact=True
+    ).click()
+    page.get_by_role("button", name="중단 · Bench Reset", exact=True).click()
+    expect(page.get_by_label("시나리오 상태")).to_contain_text("IDLE")
+    expect(page.get_by_label("주행 명령 상태")).to_contain_text("DISARMED")
+    expect(remote.get_by_label("가속 페달", exact=True)).to_be_enabled()
+    assert client.get("/api/history").json()[0]["result"] == "CANCELLED"
+    observed["publish"] = False
+    expect(remote.get_by_role("button", name="AUTO", exact=True)).to_be_disabled(
+        timeout=3000
+    )
+    expect(remote.get_by_label("가속 페달", exact=True)).to_be_disabled()
+    expect(
+        remote.get_by_role("switch", name="대시보드 E-stop", exact=True)
+    ).to_be_disabled()
+    expect(remote).to_contain_text("STM_TEST 상태 미수신 / 지연")

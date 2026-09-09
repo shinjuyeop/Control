@@ -1,26 +1,15 @@
+import { Expand, Monitor, Shrink, Usb } from "lucide-react";
 import { useState } from "react";
-import { Monitor, Usb, Expand, Shrink } from "lucide-react";
-import { Badge, Details, Fact, fmt, Notice, Panel } from "./components";
-import type { Data } from "./connection";
+import {
+  Badge,
+  Details,
+  Fact,
+  fmt,
+  Notice,
+  Panel,
+} from "../components/instruments";
+import type { DisplayState } from "../domain/types";
 
-export type DisplayState = {
-  enabled: boolean;
-  port: string;
-  serial_open: boolean;
-  fresh: boolean;
-  report_age_ms: number | null;
-  waiting_for_report: boolean;
-  error: string;
-  image: string | null;
-  report: {
-    page: string;
-    can_lost: boolean;
-    can_age_ms: number;
-    uptime_ms: number;
-    seq: number;
-    values: Data;
-  } | null;
-};
 export function VirtualDisplay({
   display,
   online,

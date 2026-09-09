@@ -3,25 +3,58 @@
 React 기반 HIL 운용 화면이다. 기존 PyQt 화면과 별도로 제공하며 serial은 기존
 `stm_test_bridge`가 단독으로 소유한다. 펌웨어와 production topic 계약은 바꾸지 않는다.
 
-## 화면
+## 화면과 Operator Remote
 
-- **벤치**: 구동·조향·브레이크/안전을 한 페이지에서 조작하고 비교한다.
-  별도 개요 페이지를 합쳐 기본 화면으로 사용한다. 보드 연결 상태와 최근 이벤트도
-  이 페이지에 표시한다. 위쪽에 운전자 입력, 주행 명령, E-stop/PWM을 나란히 두고, 아래에서 속도·조향
-  응답 그래프와 차량 보드 상세값을 함께 본다. 모드·기어·페달, 폐루프/직접 피드백,
-  전압·전류·온도·모터축 위치 주입을 유지하며 주행 명령 입력은 한 곳으로 합쳤다.
-  `visualization/vehicle_dashboard`의 ADC raw, 명령/피드백/오차, 온도·전류,
-  timeout/해제 사유, 각 상태 플래그를 확인할 수 있다. 세부 플래그와 KEYA 모터
-  진단은 같은 페이지에서 펼친다.
-- **가상 LCD**: UNO가 실제 적용한 표시 상태를 받아 480×320 화면을 재구성한다.
-  MANUAL/AUTO와 CAN LOST를 실제 펌웨어 그리기 코드로 표시하고 USB 보고 지연을 따로 알린다.
-- **고장 주입**: 양쪽 CAN 활성화, TX DROP, controller fault, 주입한 고장 해제
-- **시나리오**: 기존 YAML 목록·단계·관측 조건, 실행·중단, 기존 runner의 PASS/FAIL,
-  결과 JSON 다운로드와 최근 저장 결과
-- **진단·로그**: RX age, CAN 오류 카운터, bus-off, ROS 수신 Hz/주기/age/누적 횟수, diagnostics, 명령/응답 로그
+모든 페이지에서 같은 **Operator Remote**를 사용한다. Desktop에서는 오른쪽 고정 패널,
+1100 px 이하에서는 상단 **Remote** 버튼으로 여는 drawer다. 좁은 화면의 패널은 닫기 버튼,
+바깥 영역 또는 Esc로 닫으며, 열린 동안 키보드 포커스가 패널 안에 머문다.
 
-그래프는 최근 60초를 보관한다. 그래프 일시정지는 표시만 멈추며 HIL 실행을 멈추지 않는다.
-UI는 5 Hz, bridge의 STATUS poll은 기존 10 Hz다. 페달은 드래그를 놓을 때 한 번 전송한다.
+Remote는 MANUAL/AUTO, FWD/REV, 가속 페달 0~100%, DASH/SIDE/RF E-stop 입력만 담당한다.
+E-stop은 **STM_TEST 입력 주입**이며 물리 비상정지 버튼이 아니다. Quick preset, 주행 목표,
+fault, Plant/RPM/전압/전류 설정은 Remote에 넣지 않는다.
+
+- **벤치**: 연결 상태, 주요 입력 → 명령 → 피드백, 구동/조향 요약과 최근 이벤트.
+- **구동**: 주행 명령, 목표/관측 속도/오차, EZ Part I·II age, RPM·전류 그래프,
+  구동 보드 상세값과 에뮬레이터 응답/피드백 설정.
+- **조향**: 주행 명령, 로드휠 target → commanded → corrected → actual과 오차,
+  KEYA 모터축 피드백·수신 상태·플래그.
+- **브레이크·안전**: 제동 요청, PWM, stop reason, RUN·구동 정지 요청·상전류 명령,
+  Host 브레이크 명령과 실제 피드백 지원 여부.
+- **고장 주입**: 양쪽 CAN 활성화, TX DROP, controller fault, 주입한 고장 해제.
+- **시나리오**: 기존 YAML 단계·관측 조건, 실행·중단, PASS/FAIL, JSON 다운로드와 이전 결과.
+- **가상 LCD**: UNO가 보고한 적용 표시값으로 실제 C++ renderer의 480×320 화면 재구성.
+- **진단·로그**: ROS 수신 Hz/주기/age/누적, CAN 오류 카운터, bus-off, diagnostics, 원본 명령 로그.
+
+주행 명령 입력은 구동·조향·안전 페이지가 공유한다. 속도·조향·브레이크 초안은 페이지를
+바꿔도 유지되며 적용할 때 세 값을 함께 보낸다. ARM 확인창에서 전송할 값을 확인한다.
+페이지 이동 자체로 명령을 보내지 않는다. 운전자 입력의 선택 표시는 보드 관측값이며,
+ACK를 받았다고 요청값으로 바꾸지 않는다. 페달은 드래그를 놓을 때 한 번 전송한다.
+
+Remote에는 기존 조작권·fresh·busy·시나리오 잠금을 그대로 적용한다. 상단에는 연결 상태,
+조작권, **COMMAND SOURCE ARMED/DISARMED/UNKNOWN**, 시나리오 실행 상태를 항상 표시한다.
+발행 상태를 읽지 못하면 DISARMED로 추정하지 않는다.
+
+UI는 graphite 배경과 평면 패널·얇은 구분선을 사용한다. 본문·조작 항목은 14–16 px,
+보조 정보는 최소 12 px이며 한글 상태 문구도 같은 sans-serif 글꼴을 사용한다.
+숫자는 tabular로 정렬하고 코드·토픽은 한글 fallback을 포함한 monospace를 사용한다.
+좁은 화면에서는 글자를 축소하는 대신 패널을 세로로 배치하며, 그래프 축 글자도
+패널 너비에 따라 작아지지 않는다. command/target은 blue/cyan, 정상 수신은 절제된 green, stale/warning은 amber,
+fault/E-stop은 red로 구분한다. 정상 상태의 배경 강조는 줄이고 ARMED는 상단에 강조한다.
+
+그래프는 최근 60초를 보관한다. 그래프 일시정지는 표시만 멈추며 HIL 실행이나 Remote를
+멈추지 않는다. UI는 5 Hz, bridge STATUS poll은 기존 10 Hz다.
+
+### Frontend 구성
+
+- `web/src/app`: App shell, navigation, global status와 responsive dock/drawer.
+- `web/src/hooks`: 단일 WebSocket 연결과 공유 조작/명령 초안/시나리오 상태.
+- `web/src/pages`: 관측·시험 목적별 페이지.
+- `web/src/components`: Operator Remote, 주행 명령, ARM 확인창, 그래프·telemetry.
+- `web/src/domain`: wire types, 단위 변환, 상태·fault 의미와 표시 형식.
+- `web/src/styles`: 공통 토큰, 레이아웃, 계측 표시, Remote와 페이지 스타일.
+
+backend action, ROS topic/service, lease, watchdog, scenario runner와 UNO 표시 보고 계약은
+변경하지 않았다. MCU Resource는 아직 실제 수집 경로가 없어 빈 페이지를 만들지 않았다.
 
 ## 설치와 빌드
 
@@ -102,7 +135,7 @@ Web 전용 launch는 **generator DISARMED**, heartbeat timeout **3초**로 시�
 1. 상단 **조작권 가져오기**로 이 브라우저를 유일한 Web 조작자로 지정한다.
 2. 입력 조작을 수행하고 명령 ACK와 보드 관측값을 확인한다.
 3. 주행 명령은 **ARM · 명령 발행**, 시나리오는 해당 시험의 명령 발행 허용 후 실행한다.
-4. 시나리오 실행 중에는 수동 입력을 잠근다. 종료/중단 시 명령 발행을 끄고 Safe State를 요청한다.
+4. 시나리오 실행 중에는 수동 입력을 잠근다. 종료/중단 시 명령 발행을 끄고 Bench Reset을 요청한다.
 5. 조작권 해제 또는 조작 브라우저 연결 종료 시에도 같은 정리를 수행한다.
 
 브라우저 heartbeat가 3초간 끊기면 Web 조작권을 회수한다.
@@ -111,7 +144,8 @@ Web 전용 launch는 **generator DISARMED**, heartbeat timeout **3초**로 시�
 WebSocket 연결은 유지되지만 브라우저 heartbeat만 멈춘 경우에는 조작권 회수와
 별개 generator watchdog이 순차적으로 적용될 수 있다. 이는 물리 E-stop을 대체하지 않는다.
 
-**Safe State는 물리 비상정지가 아니다.** 명령 발행 해제와 bridge의 기본 desired state
+**Bench Reset은 물리 비상정지가 아니다.** 기존 UI의 Safe State를 이름만 바꾼 것이다.
+backend action `safe`와 `/hil/reset_safe_state`는 그대로이며, 명령 발행 해제와 bridge의 기본 desired state
 큐 등록이다. 기본값에는 E-stop 해제와 plant ON이 포함된다. 보드가 끊겨 있으면
 재연결 때 적용된다. 서비스 응답은 큐 등록이며 물리 상태나 PWM 적용의 증명이 아니다.
 
@@ -137,7 +171,7 @@ WebSocket 연결은 유지되지만 브라우저 heartbeat만 멈춘 경우에�
 
 ### ROS 수신 주기와 EZkontrol CAN age
 
-벤치 화면과 진단 페이지에서 ROS 토픽별 **수신 Hz, 평균 주기(ms), 마지막
+진단·로그 페이지에서 ROS 토픽별 **수신 Hz, 평균 주기(ms), 마지막
 수신 경과시간(ms), 누적 수신 수**를 표시한다. Web 백엔드의 ROS 콜백 수신 시각을
 기준으로 최근 5초의 메시지 간격을 평균낸다. 표본이 하나면 Hz/주기는 `—`,
 1초 이상 수신이 없으면 Hz는 0으로 표시한다. 누적 횟수는 백엔드 재시작 시 초기화된다.
