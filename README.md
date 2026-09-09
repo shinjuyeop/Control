@@ -79,7 +79,7 @@ Control/
 
 ## Web HIL
 
-브라우저의 전역 **Operator Remote**로 Mode/Gear/Pedal/E-stop을 조작하면서
+브라우저의 전역 **Control Dock**로 Mode/Gear/Pedal/E-stop을 조작하면서
 구동·조향·브레이크 관측 페이지를 전환할 수 있습니다. 벤치 개요, CAN 진단·수신 주기,
 시나리오 결과와 UNO의 **가상 LCD**도 제공합니다. 화면의 속도는 km/h,
 조향은 degree이며 ROS의 m/s·rad 계약은 유지합니다. 기존 PyQt GUI도 유지합니다.

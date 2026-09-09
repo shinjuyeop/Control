@@ -223,8 +223,8 @@ traction 차단 조건으로 사용하지 않습니다.
 
 `kaiev26_hil/hil_web.launch.py`는 React 화면과 FastAPI/WebSocket bridge를 제공합니다.
 기본 실행은 Web만 띄우며 `start_bench:=true`가 기존 HIL bench를 GUI 없이 포함합니다.
-Web은 구동·조향·안전 등의 관측 페이지와 전역 Operator Remote를 분리합니다.
-Remote의 운전자 입력, 고장 주입과 시나리오는 기존 `/hil/*`와 command generator parameter를
+Web은 구동·조향·안전 등의 관측 페이지와 전역 Control Dock을 분리합니다.
+Control Dock의 운전자 입력, 고장 주입과 시나리오는 기존 `/hil/*`와 command generator parameter를
 사용합니다. STM_TEST serial의 소유자는 계속 `stm_test_bridge`입니다.
 
 `dashboard_port:=/dev/arduino_hil`을 지정하면 별도 reader가 UNO USB의 적용 표시값·

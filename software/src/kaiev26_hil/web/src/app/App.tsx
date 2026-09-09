@@ -120,6 +120,7 @@ function Workstation() {
     toast,
     setToast,
   } = useWorkbench();
+  const [dockCollapsed, setDockCollapsed] = useState(false);
   const [drawer, setDrawer] = useState<"navigation" | "remote" | null>(null);
   const [compact, setCompact] = useState(
     () => window.matchMedia("(max-width:1100px)").matches,
@@ -128,6 +129,15 @@ function Workstation() {
     remoteRef = useRef<HTMLElement>(null);
   const selected = pages.find((item) => item.id === page) ?? pages[0];
   const Page = selected.component;
+  const estopInputs = [hil.estop_dash, hil.estop_side, hil.estop_rf];
+  const estopState = !fresh
+    ? "UNKNOWN"
+    : estopInputs.some((value) => value === true)
+      ? "ACTIVE"
+      : estopInputs.every((value) => value === false)
+        ? "CLEAR"
+        : "UNKNOWN";
+  const dockOpen = compact ? drawer === "remote" : !dockCollapsed;
   useEffect(() => {
     const query = window.matchMedia("(max-width:1100px)");
     const resize = () => {
@@ -182,7 +192,9 @@ function Workstation() {
     setDrawer(null);
   };
   return (
-    <div className="workstation">
+    <div
+      className={`workstation ${!compact && dockCollapsed ? "dock-collapsed" : ""}`}
+    >
       <header className="global-bar">
         <button
           className="nav-toggle icon-button"
@@ -213,6 +225,14 @@ function Workstation() {
           >
             <span>COMMAND SOURCE</span>
             <strong>{commandState.text}</strong>
+          </span>
+          <span
+            className={`global-estop ${estopState.toLowerCase()}`}
+            role="status"
+            aria-label="E-stop 입력 상태"
+            title="STM_TEST 보고 DASH / SIDE / RF 입력 합산 · 물리 비상정지 상태의 증명이 아닙니다."
+          >
+            E-STOP {estopState}
           </span>
           <span
             className={`scenario-status ${running ? "running" : ""}`}
@@ -247,13 +267,24 @@ function Workstation() {
             Bench Reset
           </button>
           <button
-            className="remote-toggle"
-            aria-label="Operator Remote 열기"
-            aria-expanded={drawer === "remote"}
-            onClick={() => setDrawer("remote")}
+            className="control-dock-toggle"
+            aria-label={
+              compact
+                ? "Control Dock 열기"
+                : dockCollapsed
+                  ? "Control Dock 펼치기"
+                  : "Control Dock 접기"
+            }
+            aria-controls="control-dock"
+            aria-expanded={dockOpen}
+            onClick={() =>
+              compact
+                ? setDrawer("remote")
+                : setDockCollapsed((value) => !value)
+            }
           >
             <SlidersHorizontal size={15} />
-            Remote
+            Controls
           </button>
         </div>
       </header>
@@ -358,9 +389,6 @@ function Workstation() {
               : "STM_TEST NO FRESH DATA"}
           </span>
           <span>관측 5 Hz · 그래프 60 s</span>
-          <a href="?preview=pitwall" target="_blank" rel="noreferrer">
-            디자인 시안 ↗
-          </a>
           <span>{mine ? "TEST CONTROL" : "VIEW ONLY"}</span>
         </footer>
       </main>
@@ -373,17 +401,18 @@ function Workstation() {
         />
       )}
       <aside
+        id="control-dock"
         ref={remoteRef}
         className={`operator-dock ${drawer === "remote" ? "is-open" : ""}`}
         role={compact && drawer === "remote" ? "dialog" : "complementary"}
         aria-modal={compact && drawer === "remote" ? true : undefined}
-        aria-label="Operator Remote 패널"
+        aria-label="Control Dock"
       >
-        <div className="drawer-heading">
-          REMOTE
+        <div className="dock-heading">
+          <strong>CONTROL DOCK</strong>
           <button
-            className="icon-button"
-            aria-label="Operator Remote 닫기"
+            aria-label="Control Dock 닫기"
+            className="icon-button dock-close"
             onClick={() => setDrawer(null)}
           >
             <X size={18} />

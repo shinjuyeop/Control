@@ -21,6 +21,7 @@ export function ProductionCommand() {
     <Panel
       className="command-source"
       title="주행 명령"
+      eyebrow="HOST COMMAND"
       aside={<Badge tone={commandState.tone}>{commandState.text}</Badge>}
     >
       <form

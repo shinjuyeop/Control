@@ -90,10 +90,12 @@ def bench(tmp_path):
                 keya_rx_age_ms=4294967295,
             )
 
+            observed["hil"] = status
+
             def publish():
                 if not observed["publish"]:
                     return
-                status_pub.publish(String(data=status.to_json()))
+                status_pub.publish(String(data=observed["hil"].to_json()))
                 connected_pub.publish(Bool(data=True))
                 desired_pub.publish(String(data=HilDesiredState(pedal=65.0).to_json()))
                 drive_pub.publish(observed["drive"])
@@ -417,7 +419,7 @@ def test_operator_remote_across_pages_and_navigation(browser_page):
     page.get_by_text("Web bridge 연결됨", exact=True).wait_for()
     page.wait_for_timeout(500)
     expect(page.get_by_label("목표 속도", exact=True)).to_have_value("0")
-    remote = page.get_by_role("region", name="Operator Remote", exact=True)
+    remote = page.get_by_role("region", name="Operator Input", exact=True)
     expect(remote).to_be_visible()
     expect(remote.get_by_role("button", name="AUTO", exact=True)).to_be_disabled()
     expect(remote.get_by_label("가속 페달", exact=True)).to_be_disabled()
@@ -594,7 +596,7 @@ def test_operator_remote_across_pages_and_navigation(browser_page):
     for width in [1024, 390]:
         page.set_viewport_size({"width": width, "height": 844})
         expect(remote).not_to_be_visible()
-        page.get_by_role("button", name="Operator Remote 열기", exact=True).click()
+        page.get_by_role("button", name="Control Dock 열기", exact=True).click()
         expect(remote).to_be_visible()
         expect(
             remote.get_by_role("switch", name="차체 측면 E-stop", exact=True)
@@ -656,7 +658,7 @@ def test_remote_busy_scenario_and_stale_locks(browser_page):
     from playwright.sync_api import expect
 
     page, client, observed, _ = browser_page
-    remote = page.get_by_role("region", name="Operator Remote", exact=True)
+    remote = page.get_by_role("region", name="Operator Input", exact=True)
     page.get_by_role("button", name="조작권 가져오기", exact=True).click()
     expect(remote.get_by_role("button", name="AUTO", exact=True)).to_be_enabled()
     observed["ack"] = False
@@ -707,3 +709,116 @@ def test_remote_busy_scenario_and_stale_locks(browser_page):
     pedal_observation = page.get_by_role("group", name="페달 관측", exact=True)
     expect(pedal_observation).to_contain_text("—%")
     expect(pedal_observation).to_contain_text("— V")
+
+
+def test_control_dock_collapse_and_global_estop(browser_page):
+    from playwright.sync_api import expect
+
+    page, client, observed, _ = browser_page
+    dock = page.locator("#control-dock")
+    estop = page.get_by_role("status", name="E-stop 입력 상태", exact=True)
+    expect(dock).to_be_visible()
+    expect(estop).to_have_text("E-STOP CLEAR")
+    expect(page.get_by_label("주행 명령 상태")).to_contain_text("DISARMED")
+    page.get_by_role("button", name="조작권 가져오기", exact=True).click()
+    speed = page.get_by_label("목표 속도", exact=True)
+    speed.fill("12.5")
+    page.get_by_label("목표 조향각", exact=True).fill("-3")
+    for width in [1440, 1366, 1280]:
+        page.set_viewport_size({"width": width, "height": 768})
+        before_width = page.locator("main").bounding_box()["width"]
+        page.get_by_role("button", name="Control Dock 접기", exact=True).click()
+        expect(dock).not_to_be_visible()
+        assert page.locator("main").bounding_box()["width"] > before_width
+        page.get_by_role("navigation").get_by_role("button", name="구동", exact=True).click()
+        expect(dock).not_to_be_visible()
+        assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
+        page.get_by_role("button", name="Control Dock 펼치기", exact=True).click()
+        expect(dock).to_be_visible()
+        expect(speed).to_have_value("12.5")
+        expect(page.get_by_label("목표 조향각", exact=True)).to_have_value("-3")
+        expect(dock.get_by_role("button", name="MANUAL", exact=True)).to_have_attribute("aria-pressed", "true")
+        expect(page.get_by_label("가속 페달", exact=True)).to_have_value("27")
+        assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
+    assert not observed["commands"] and not observed["planning"]
+    slider = page.get_by_label("가속 페달", exact=True)
+    slider.dispatch_event("pointerdown")
+    slider.fill("70")
+    page.get_by_role("button", name="Control Dock 접기", exact=True).evaluate("b=>b.click()")
+    page.get_by_role("button", name="Control Dock 펼치기", exact=True).click()
+    expect(slider).to_have_value("70")
+    slider.dispatch_event("pointercancel")
+    expect(slider).to_have_value("27")
+    assert not observed["commands"]
+    page.get_by_role("button", name="Control Dock 접기", exact=True).click()
+    for field in ["estop_dash", "estop_side", "estop_rf"]:
+        observed["hil"] = replace(observed["hil"], **{field: True})
+        expect(estop).to_have_text("E-STOP ACTIVE")
+        observed["hil"] = replace(observed["hil"], **{field: False})
+        expect(estop).to_have_text("E-STOP CLEAR")
+    # Desktop preference is preserved through the tablet drawer breakpoint.
+    page.set_viewport_size({"width": 1024, "height": 844})
+    page.get_by_role("button", name="Control Dock 열기", exact=True).click()
+    expect(dock).to_be_visible()
+    close = page.get_by_role("button", name="Control Dock 닫기", exact=True)
+    close.focus()
+    page.keyboard.press("Shift+Tab")
+    assert dock.evaluate("d=>d.contains(document.activeElement)")
+    page.keyboard.press("Tab")
+    expect(close).to_be_focused()
+    page.get_by_role("button", name="패널 닫기", exact=True).click(position={"x": 10, "y": 100})
+    expect(dock).not_to_be_visible()
+    page.set_viewport_size({"width": 1366, "height": 768})
+    expect(dock).not_to_be_visible()
+    page.get_by_role("button", name="Control Dock 펼치기", exact=True).click()
+    expect(speed).to_have_value("12.5")
+    observed["publish"] = False
+    expect(estop).to_have_text("E-STOP UNKNOWN", timeout=4000)
+    # With no generator service responses, command state must age to UNKNOWN.
+    executor = client.app.state.console.executor
+    executor.remove_node(observed["generator"])
+    try:
+        expect(page.get_by_label("주행 명령 상태")).to_contain_text("UNKNOWN", timeout=6000)
+    finally:
+        executor.add_node(observed["generator"])
+    observed["publish"] = True
+    expect(page.get_by_label("주행 명령 상태")).to_contain_text("DISARMED")
+
+
+@pytest.mark.parametrize("lock", ["stale", "busy"])
+def test_pedal_edit_recovers_when_disabled_during_drag(browser_page, lock):
+    from playwright.sync_api import expect
+
+    page, client, observed, _ = browser_page
+    page.get_by_role("button", name="조작권 가져오기", exact=True).click()
+    slider = page.get_by_label("가속 페달", exact=True)
+    expect(slider).to_be_enabled()
+    box = slider.bounding_box()
+    page.mouse.move(box["x"] + box["width"] * .27, box["y"] + box["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] * .7, box["y"] + box["height"] / 2, steps=5)
+    assert not [c for c in observed["commands"] if c.startswith("SET PEDAL")]
+    if lock == "stale":
+        observed["publish"] = False
+    else:
+        observed["ack"] = False
+        page.get_by_role("button", name="AUTO", exact=True).evaluate("b=>b.click()")
+    expect(slider).to_be_disabled(timeout=4000)
+    page.mouse.up()
+    observed["hil"] = replace(observed["hil"], pedal=41.0)
+    observed["publish"] = True
+    if lock == "busy":
+        observed["ack"] = True
+        observed["result_pub"].publish(String(data="OK SET MODE AUTO"))
+    expect(slider).to_be_enabled()
+    expect(slider).to_have_value("41")
+    assert not [c for c in observed["commands"] if c.startswith("SET PEDAL")]
+    # Cancel also clears the draft without submitting it.
+    slider.dispatch_event("pointerdown")
+    slider.fill("70")
+    slider.dispatch_event("pointercancel")
+    expect(slider).to_have_value("41")
+    assert not [c for c in observed["commands"] if c.startswith("SET PEDAL")]
+    slider.press("ArrowRight")
+    page.get_by_text("OK SET PEDAL 42", exact=True).wait_for()
+    assert [c for c in observed["commands"] if c.startswith("SET PEDAL")] == ["SET PEDAL 42"]

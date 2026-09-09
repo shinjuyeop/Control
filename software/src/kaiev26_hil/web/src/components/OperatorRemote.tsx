@@ -15,11 +15,11 @@ export function OperatorRemote() {
     command,
   } = useWorkbench();
   return (
-    <section className="operator-remote" aria-label="Operator Remote">
+    <section className="operator-remote" aria-label="Operator Input">
       <header className="remote-header">
         <SlidersHorizontal size={17} />
         <div>
-          <h2>Operator Remote</h2>
+          <h2>OPERATOR INPUT</h2>
           <span>STM_TEST · 운전자 입력</span>
         </div>
       </header>
@@ -71,13 +71,11 @@ export function OperatorRemote() {
             setPedal(Number(e.target.value));
           }}
           onPointerUp={(e) => {
-            if (disabled) return;
-            command(`SET PEDAL ${e.currentTarget.value}`);
             setPedalEditing(false);
+            if (!disabled) command(`SET PEDAL ${e.currentTarget.value}`);
           }}
           onKeyUp={(e) => {
             if (
-              !disabled &&
               [
                 "ArrowLeft",
                 "ArrowRight",
@@ -89,8 +87,8 @@ export function OperatorRemote() {
                 "ArrowDown",
               ].includes(e.key)
             ) {
-              command(`SET PEDAL ${e.currentTarget.value}`);
               setPedalEditing(false);
+              if (!disabled) command(`SET PEDAL ${e.currentTarget.value}`);
             }
           }}
           onPointerCancel={() => setPedalEditing(false)}

@@ -44,6 +44,9 @@ function useWorkbenchState() {
   const running = state.scenario?.result === "RUNNING";
   // Same control gate as the original bench: no UI path can bypass it.
   const disabled = !fresh || !mine || busy || running;
+  useEffect(() => {
+    if (disabled) setPedalEditing(false);
+  }, [disabled]);
   const generator = online && state.generator_fresh ? state.generator : {};
   const commandState =
     typeof generator.enabled === "boolean"

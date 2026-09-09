@@ -3,17 +3,24 @@
 React 기반 HIL 운용 화면이다. 기존 PyQt 화면과 별도로 제공하며 serial은 기존
 `stm_test_bridge`가 단독으로 소유한다. 펌웨어와 production topic 계약은 바꾸지 않는다.
 
-## 화면과 Operator Remote
+## 화면과 Control Dock
 
-모든 페이지에서 같은 **Operator Remote**를 사용한다. Desktop에서는 오른쪽 고정 패널,
-1100 px 이하에서는 상단 **Remote** 버튼으로 여는 drawer다. 좁은 화면의 패널은 닫기 버튼,
+모든 페이지에서 같은 **Control Dock**을 사용한다. Desktop에서는 오른쪽 고정 패널,
+1100 px 이하에서는 상단 **Controls** 버튼으로 여는 drawer다. 좁은 화면의 패널은 닫기 버튼,
 바깥 영역 또는 Esc로 닫으며, 열린 동안 키보드 포커스가 패널 안에 머문다.
+Desktop에서도 상단 **Controls**로 도크를 접거나 펼친다. 접으면 중앙 영역이 넓어지며
+페이지를 바꾸거나 tablet 너비로 전환해도 desktop 접힘 선택과 입력 초안을 유지한다.
+도크를 숨기는 동작은 조작권·명령 발행 상태를 변경하지 않는다.
 
-Remote 상단은 MANUAL/AUTO, FWD/REV, 가속 페달 0~100%, DASH/SIDE/RF E-stop 입력을 담당한다.
+내부 **OPERATOR INPUT**은 STM_TEST Mode/Gear/Pedal/E-stop 입력,
+**HOST COMMAND / 주행 명령**은 Host 목표와 ARM/발행 해제를 담당한다.
+디자인 시안 링크와 preview 진입 코드는 최종 운용 번들에서 제거했다.
+
+Control Dock 상단은 MANUAL/AUTO, FWD/REV, 가속 페달 0~100%, DASH/SIDE/RF E-stop 입력을 담당한다.
 E-stop은 **STM_TEST 입력 주입**이며 물리 비상정지 버튼이 아니다. 그 아래 **주행 명령**에서
 Host 목표 속도·조향각·브레이크 요청을 입력하고 발행/해제한다. 페달 주입과 별도 경로다.
 Quick preset, fault, Plant/RPM/전압/전류 설정은 각 기능 페이지에 둔다.
-Remote는 조작 위주로 표시하며, 조작 불가 사유는 잠겼을 때만 표시한다.
+Control Dock은 조작 위주로 표시하며, 조작 불가 사유는 잠겼을 때만 표시한다.
 반복 설명, 수신 age, 별도 페달 관측 줄은 중앙 화면으로 옮겼다.
 벤치·구동의 **페달 관측 · STM_A**에서 수신 비율과 ADC 환산 전압을 확인한다.
 전압은 `pedal_adc_raw × 3.3 / 4095`로 계산한 STM_A ADC 입력 기준 추정값이며,
@@ -34,20 +41,26 @@ Part별 CAN age와 유효 상태는 별개로 표시하며 좁은 화면에서�
 - **진단·로그**: ROS 수신 Hz/주기/age/누적, CAN 오류 카운터, bus-off, diagnostics, 원본 명령 로그.
 
 주행 명령 입력은 오른쪽 공통 패널에 한 번만 표시한다. 패널이 길면 아래로 스크롤한다.
-좁은 화면에서도 상단 Remote로 열 수 있다. 속도·조향·브레이크 초안은 페이지를
+좁은 화면에서도 상단 Controls로 열 수 있다. 속도·조향·브레이크 초안은 페이지를
 바꿔도 유지되며 적용할 때 세 값을 함께 보낸다. ARM 확인창에서 전송할 값을 확인한다.
 목표 속도 초안은 새로 화면을 열면 0 km/h로 시작하며 이전 generator 목표를 가져오지 않는다.
 속도·조향각은 입력 중 빈칸을 허용하고, 빈칸으로 포커스를 벗어나면 0을 채운다.
 입력 편집이나 포커스 이동만으로 명령을 발행하지 않는다.
 페이지 이동 자체로 명령을 보내지 않는다. 운전자 입력의 선택 표시는 보드 관측값이며,
 ACK를 받았다고 요청값으로 바꾸지 않는다. 페달은 드래그를 놓을 때 한 번 전송한다.
+드래그 도중 조작 불가로 전환되면 편집을 해제하고 관측값 동기화를 복구한다.
+조작 불가 상태의 release나 pointer cancel은 페달 명령을 보내지 않는다.
 
-Remote에는 기존 조작권·fresh·busy·시나리오 잠금을 그대로 적용한다. 상단에는 연결 상태,
+Control Dock에는 기존 조작권·fresh·busy·시나리오 잠금을 그대로 적용한다. 상단에는 연결 상태,
 조작권, **COMMAND SOURCE ARMED/DISARMED/UNKNOWN**, 시나리오 실행 상태를 항상 표시한다.
 발행 상태를 읽지 못하면 DISARMED로 추정하지 않는다.
+상단 **E-STOP CLEAR / ACTIVE / UNKNOWN**은 STM_TEST가 보고한 DASH/SIDE/RF 입력의 합산이다.
+유효한 보고 중 하나라도 ON이면 ACTIVE, 세 입력 모두 OFF이면 CLEAR이며,
+수신 지연·연결 끊김 또는 확인할 수 없는 입력은 UNKNOWN으로 표시한다.
+ACTIVE는 빨간색으로 강조하며 물리 비상정지 상태의 증명으로 사용하지 않는다.
 
 기본 UI는 **Control Rack** 테마다. 밝은 회색 작업대와 계측 모듈 형태의 패널,
-진한 본문, 파란 선택 상태를 사용한다. Operator Remote는 어두운 제목 띠로 구분한다.
+진한 본문, 파란 선택 상태를 사용한다. Operator Input은 어두운 제목 띠로 구분한다.
 본문·조작 항목은 14–16 px,
 보조 정보는 최소 12 px이며 한글 상태 문구도 같은 sans-serif 글꼴을 사용한다.
 숫자는 tabular로 정렬하고 코드·토픽은 한글 fallback을 포함한 monospace를 사용한다.
@@ -56,7 +69,7 @@ Remote에는 기존 조작권·fresh·busy·시나리오 잠금을 그대로 적
 전류 보조선은 보라색이다. 정상 수신은 green, stale/warning은 amber,
 fault/E-stop은 red로 구분한다. 정상 상태의 배경 강조는 줄이고 ARMED는 상단에 강조한다.
 
-그래프는 최근 60초를 보관한다. 그래프 일시정지는 표시만 멈추며 HIL 실행이나 Remote를
+그래프는 최근 60초를 보관한다. 그래프 일시정지는 표시만 멈추며 HIL 실행이나 Control Dock을
 멈추지 않는다. 구동 통합 그래프는 같은 시간축에 속도(km/h, 왼쪽)와 RPM(오른쪽)을
 표시하며 축별로 자동 범위를 계산한다. RPM은 점선으로 구분하고 각각의 수신 출처를 표시한다.
 UI는 5 Hz, bridge STATUS poll은 기존 10 Hz다.
@@ -70,24 +83,14 @@ STM_TEST가 모사한 모터축 회전각을 비교한다. 두 그래프는 기�
 좁은 화면에서는 가용 너비에 맞춘다. 페이지 내부 가용 너비가 900 px 이상이면
 UNO Dashboard와 디스플레이 연결을 좌우로, 그보다 좁으면 세로로 배치한다.
 
-### 디자인 시안
-
-운용 화면 하단의 **디자인 시안 ↗**은 별도 탭으로 연다.
-`http://127.0.0.1:8765/?preview=pitwall`은 어두운 F1 텔레메트리 스타일,
-`http://127.0.0.1:8765/?preview=rack`은 밝은 계측 랙 스타일이다.
-상단에서 두 배치와 정상 주행·E-stop·CAN 지연 예시를 비교할 수 있다.
-시안의 입력 조작은 화면 내부 상태만 바꾸며 예시 계측값과 구분한다.
-시안은 WebSocket·ROS·USB 연결을 만들지 않고 실제 명령을 보내지 않는다.
-실제 운용 화면은 Control Rack 테마를 사용하며 시안의 예시 계측값은 가져오지 않는다.
-
 ### Frontend 구성
 
 - `web/src/app`: App shell, navigation, global status와 responsive dock/drawer.
 - `web/src/hooks`: 단일 WebSocket 연결과 공유 조작/명령 초안/시나리오 상태.
 - `web/src/pages`: 관측·시험 목적별 페이지.
-- `web/src/components`: Operator Remote, 주행 명령, ARM 확인창, 그래프·telemetry.
+- `web/src/components`: Control Dock, 주행 명령, ARM 확인창, 그래프·telemetry.
 - `web/src/domain`: wire types, 단위 변환, 상태·fault 의미와 표시 형식.
-- `web/src/styles`: 공통 토큰, 레이아웃, 계측 표시, Remote와 페이지 스타일.
+- `web/src/styles`: 공통 토큰, 레이아웃, 계측 표시, Control Dock과 페이지 스타일.
 
 backend action, ROS topic/service, lease, watchdog, scenario runner와 UNO 표시 보고 계약은
 변경하지 않았다. MCU Resource는 아직 실제 수집 경로가 없어 빈 페이지를 만들지 않았다.
