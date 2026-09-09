@@ -24,6 +24,7 @@ import { useEffect, useRef, useState } from "react";
 import { CommandDialog } from "../components/CommandDialog";
 import { Badge } from "../components/instruments";
 import { OperatorRemote } from "../components/OperatorRemote";
+import { ProductionCommand } from "../components/ProductionCommand";
 import { WorkbenchProvider, useWorkbench } from "../hooks/useWorkbench";
 import { BenchPage } from "../pages/BenchPage";
 import { DiagnosticsPage } from "../pages/DiagnosticsPage";
@@ -68,6 +69,14 @@ const pages = [
     component: SafetyPage,
   },
   {
+    id: "display",
+    name: "가상 LCD",
+    label: "VIRTUAL DISPLAY",
+    icon: Monitor,
+    description: "UNO가 적용한 표시 상태",
+    component: null,
+  },
+  {
     id: "faults",
     name: "고장 주입",
     label: "FAULT INJECTION",
@@ -82,14 +91,6 @@ const pages = [
     icon: FlaskConical,
     description: "시험 단계와 실제 관측 결과",
     component: ScenariosPage,
-  },
-  {
-    id: "display",
-    name: "가상 LCD",
-    label: "VIRTUAL DISPLAY",
-    icon: Monitor,
-    description: "UNO가 적용한 표시 상태",
-    component: null,
   },
   {
     id: "diagnostics",
@@ -150,6 +151,8 @@ function Workstation() {
       );
     focusable()[0]?.focus();
     const keyboard = (event: KeyboardEvent) => {
+      // The ARM dialog owns keyboard focus while it is above the Remote drawer.
+      if ((event.target as HTMLElement).closest("dialog[open]")) return;
       if (event.key === "Escape") {
         event.preventDefault();
         setDrawer(null);
@@ -355,6 +358,9 @@ function Workstation() {
               : "STM_TEST NO FRESH DATA"}
           </span>
           <span>관측 5 Hz · 그래프 60 s</span>
+          <a href="?preview=pitwall" target="_blank" rel="noreferrer">
+            디자인 시안 ↗
+          </a>
           <span>{mine ? "TEST CONTROL" : "VIEW ONLY"}</span>
         </footer>
       </main>
@@ -384,6 +390,7 @@ function Workstation() {
           </button>
         </div>
         <OperatorRemote />
+        <ProductionCommand />
       </aside>
       {busy && (
         <div className="pending-strip" role="status">

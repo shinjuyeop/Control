@@ -7,9 +7,18 @@ import {
   Panel,
   Source,
 } from "../components/instruments";
-import { ProductionCommand } from "../components/ProductionCommand";
-import { DriveTelemetry, FrameHealth } from "../components/VehicleTelemetry";
-import { age, amber, blue, boolean, cyan } from "../domain/format";
+import {
+  DriveTelemetry,
+  FrameHealth,
+  PedalMetric,
+} from "../components/VehicleTelemetry";
+import {
+  age,
+  auxiliaryColor,
+  targetColor,
+  boolean,
+  feedbackColor,
+} from "../domain/format";
 import { mpsToKmh } from "../domain/units";
 import { useWorkbench } from "../hooks/useWorkbench";
 export function DrivePage() {
@@ -23,8 +32,8 @@ export function DrivePage() {
       : undefined;
   return (
     <>
-      <ProductionCommand />
       <div className="metrics-grid drive-metrics">
+        <PedalMetric state={state} online={online} />
         <Metric
           label="주행 목표"
           value={fmt(mpsToKmh(target), 2)}
@@ -43,72 +52,84 @@ export function DrivePage() {
           unit="km/h"
           note="목표 − 관측"
         />
+        <FrameHealth state={state} online={online} />
       </div>
-      <FrameHealth state={state} online={online} />
       <Panel
-        title="속도 명령과 피드백"
-        eyebrow="GOVERNOR → STM_A"
+        title="구동 명령과 응답"
+        eyebrow="GOVERNOR → STM_A → STM_TEST"
         aside={linkBadge("ez")}
       >
         <Chart
           points={points}
           traces={[
-            { key: "targetSpeed", label: "Governor target", color: blue },
-            { key: "speed", label: "STM_A feedback", color: cyan },
+            { key: "targetSpeed", label: "속도 목표", color: targetColor },
+            { key: "speed", label: "STM_A 속도", color: feedbackColor },
+            {
+              key: "targetRpm",
+              label: "Plant 목표",
+              color: auxiliaryColor,
+              axis: "right",
+              dashed: true,
+            },
+            {
+              key: "rpm",
+              label: "모터 응답",
+              color: "#206449",
+              axis: "right",
+              dashed: true,
+            },
           ]}
           unit="km/h"
+          rightUnit="RPM"
+          height={280}
         />
+        <p className="muted">
+          왼쪽: 속도 km/h · 오른쪽: 모터 RPM · 축별 자동 범위. RPM 점선은
+          STM_TEST의 Plant 목표와 에뮬레이터 응답입니다.
+        </p>
         <Source
           name="/drive/status"
           sample={state.topics["/drive/status"]}
           online={online}
         />
-      </Panel>
-      <div className="grid-two">
-        <Panel title="EZ 명령 · 모터 응답" eyebrow="STM_A → STM_TEST">
-          <Chart
-            points={points}
-            traces={[
-              { key: "targetRpm", label: "Plant target", color: blue },
-              { key: "rpm", label: "Emulator output", color: cyan },
-            ]}
-            unit="RPM"
-            height={190}
+        <Source
+          name="/hil/status"
+          sample={state.topics["/hil/status"]}
+          online={online}
+        />
+        <div className="inline-facts">
+          <Fact label="RUN" value={boolean(hil.ez_running)} />
+          <Fact
+            label="제어 방식"
+            value={boolean(hil.ez_speed_control, "SPEED", "TORQUE")}
           />
-          <div className="inline-facts">
-            <Fact label="RUN" value={boolean(hil.ez_running)} />
-            <Fact
-              label="제어 방식"
-              value={boolean(hil.ez_speed_control, "SPEED", "TORQUE")}
-            />
-            <Fact label="수신 명령 RPM" value={fmt(hil.ez_command_rpm, 0)} />
-            <Fact
-              label="수신 상전류 명령"
-              value={fmt(hil.ez_command_current)}
-              unit="A"
-            />
-            <Fact
-              label="RX / TX"
-              value={`${fmt(hil.ez_rx, 0)} / ${fmt(hil.ez_tx, 0)}`}
-            />
-            <Fact label="RX age" value={age(hil.ez_rx_age_ms)} />
-          </div>
-        </Panel>
-        <Panel title="전류 응답" eyebrow="STM_A / PART I">
-          <Chart
-            points={points}
-            traces={[
-              { key: "bus", label: "Bus current", color: amber },
-              { key: "phase", label: "Phase current", color: cyan },
-            ]}
+          <Fact label="수신 명령 RPM" value={fmt(hil.ez_command_rpm, 0)} />
+          <Fact
+            label="수신 상전류 명령"
+            value={fmt(hil.ez_command_current)}
             unit="A"
-            height={190}
           />
-          <p className="muted">
-            배터리 버스 전류와 모터 상전류는 서로 다른 값입니다.
-          </p>
-        </Panel>
-      </div>
+          <Fact
+            label="RX / TX"
+            value={`${fmt(hil.ez_rx, 0)} / ${fmt(hil.ez_tx, 0)}`}
+          />
+          <Fact label="RX age" value={age(hil.ez_rx_age_ms)} />
+        </div>
+      </Panel>
+      <Panel title="전류 응답" eyebrow="STM_A / PART I">
+        <Chart
+          points={points}
+          traces={[
+            { key: "bus", label: "Bus current", color: auxiliaryColor },
+            { key: "phase", label: "Phase current", color: feedbackColor },
+          ]}
+          unit="A"
+          height={190}
+        />
+        <p className="muted">
+          배터리 버스 전류와 모터 상전류는 서로 다른 값입니다.
+        </p>
+      </Panel>
       <div className="grid-two details-grid">
         <DriveTelemetry state={state} online={online} />
         <TractionFeedback />

@@ -1,4 +1,4 @@
-import { ChevronRight, Play, Square } from "lucide-react";
+import { Play, Square } from "lucide-react";
 import { radToDeg } from "../domain/units";
 import { useWorkbench } from "../hooks/useWorkbench";
 import { Badge, Panel, Switch } from "./instruments";
@@ -21,12 +21,8 @@ export function ProductionCommand() {
     <Panel
       className="command-source"
       title="주행 명령"
-      eyebrow="HOST → GOVERNOR → CONTROLLERS"
       aside={<Badge tone={commandState.tone}>{commandState.text}</Badge>}
     >
-      <p className="panel-intro">
-        실제 제어 경로에 주행 목표를 공급합니다. 페달 주입과 별도의 입력입니다.
-      </p>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -50,8 +46,12 @@ export function ProductionCommand() {
                   setProductionEdited(true);
                   setProduction({
                     ...production,
-                    speed_kmh: Number(e.target.value),
+                    speed_kmh: e.target.value,
                   });
+                }}
+                onBlur={(e) => {
+                  if (e.target.value === "" && !e.target.validity.badInput)
+                    setProduction((draft) => ({ ...draft, speed_kmh: "0" }));
                 }}
               />
               <span>km/h</span>
@@ -73,8 +73,12 @@ export function ProductionCommand() {
                   setProductionEdited(true);
                   setProduction({
                     ...production,
-                    steering_deg: Number(e.target.value),
+                    steering_deg: e.target.value,
                   });
+                }}
+                onBlur={(e) => {
+                  if (e.target.value === "" && !e.target.validity.badInput)
+                    setProduction((draft) => ({ ...draft, steering_deg: "0" }));
                 }}
               />
               <span>deg</span>
@@ -106,13 +110,6 @@ export function ProductionCommand() {
           </button>
         </div>
       </form>
-      <div className="path-strip">
-        Planning 대역
-        <ChevronRight size={13} />
-        Governor
-        <ChevronRight size={13} />
-        STM_A / STM_B
-      </div>
     </Panel>
   );
 }

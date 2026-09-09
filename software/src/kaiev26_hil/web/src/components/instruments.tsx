@@ -161,6 +161,7 @@ export function Switch({
       </div>
       <button
         className={`switch ${danger ? "danger" : ""}`}
+        type="button"
         role="switch"
         aria-label={label}
         aria-checked={value === true}
@@ -267,16 +268,20 @@ export type Trace = {
   key: keyof Omit<Point, "time">;
   label: string;
   color: string;
+  axis?: "left" | "right";
+  dashed?: boolean;
 };
 export function Chart({
   points,
   traces,
   unit,
+  rightUnit,
   height = 210,
 }: {
   points: Point[];
   traces: Trace[];
   unit: string;
+  rightUnit?: string;
   height?: number;
 }) {
   const [hover, setHover] = useState<number | null>(null);
@@ -294,21 +299,31 @@ export function Chart({
   const values = points
     .flatMap((p) => traces.map((t) => p[t.key]))
     .filter((n): n is number => typeof n === "number");
-  let low = Math.min(0, ...values),
-    high = Math.max(1, ...values);
-  const pad = (high - low) * 0.12;
-  low -= pad;
-  high += pad;
+  const bounds = (axis: "left" | "right") => {
+    const samples = points
+      .flatMap((p) =>
+        traces.filter((t) => (t.axis ?? "left") === axis).map((t) => p[t.key]),
+      )
+      .filter((n): n is number => typeof n === "number");
+    const low = Math.min(0, ...samples),
+      high = Math.max(1, ...samples);
+    const pad = (high - low) * 0.12;
+    return { low: low - pad, high: high + pad };
+  };
+  const axes = { left: bounds("left"), right: bounds("right") };
+  const { low, high } = axes.left;
   const left = 64,
-    right = 16,
-    top = 18,
+    right = rightUnit ? 72 : 16,
+    top = rightUnit ? 30 : 18,
     bottom = 30;
   const end = points.at(-1)?.time ?? 0,
     start = end - 60;
   const x = (time: number) =>
     left + ((time - start) / 60) * (width - left - right);
-  const y = (v: number) =>
-    top + ((high - v) / (high - low)) * (height - top - bottom);
+  const y = (v: number, axis: "left" | "right" = "left") => {
+    const { low, high } = axes[axis];
+    return top + ((high - v) / (high - low)) * (height - top - bottom);
+  };
   const nearest =
     hover === null
       ? null
@@ -325,17 +340,23 @@ export function Chart({
       <div className="chart-legend">
         {traces.map((t) => (
           <span key={t.key}>
-            <i style={{ background: t.color }} />
+            <i
+              className={t.dashed ? "dashed" : ""}
+              style={{ color: t.color, borderColor: t.color }}
+            />
             {t.label}
+            {rightUnit && (
+              <small>{t.axis === "right" ? rightUnit : unit}</small>
+            )}
             {nearest && <b>{fmt(nearest[t.key])}</b>}
           </span>
         ))}
-        <small>{unit} · 최근 60초</small>
+        <small>{rightUnit ? `${unit} / ${rightUnit}` : unit} · 최근 60초</small>
       </div>
       <svg
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label={`${traces.map((t) => t.label).join(", ")} ${unit} 실시간 그래프`}
+        aria-label={`${traces.map((t) => t.label).join(", ")} ${unit}${rightUnit ? ` / ${rightUnit}` : ""} 실시간 그래프`}
         onMouseMove={(e) =>
           setHover(
             ((e.clientX - e.currentTarget.getBoundingClientRect().left) /
@@ -345,6 +366,16 @@ export function Chart({
         }
         onMouseLeave={() => setHover(null)}
       >
+        {rightUnit && (
+          <>
+            <text x={left} y={14}>
+              {unit}
+            </text>
+            <text x={width - right} y={14} textAnchor="end">
+              {rightUnit}
+            </text>
+          </>
+        )}
         {[0, 1, 2, 3].map((i) => {
           const yy = top + ((height - top - bottom) * i) / 3;
           return (
@@ -359,6 +390,15 @@ export function Chart({
               <text x={left - 9} y={yy + 4} textAnchor="end">
                 {fmt(high - ((high - low) * i) / 3, 1)}
               </text>
+              {rightUnit && (
+                <text x={width - right + 9} y={yy + 4} textAnchor="start">
+                  {fmt(
+                    axes.right.high -
+                      ((axes.right.high - axes.right.low) * i) / 3,
+                    axes.right.high - axes.right.low < 10 ? 1 : 0,
+                  )}
+                </text>
+              )}
             </g>
           );
         })}
@@ -381,7 +421,7 @@ export function Chart({
                 pen = false;
                 return "";
               }
-              const s = `${pen ? "L" : "M"}${x(p.time).toFixed(1)},${y(v).toFixed(1)}`;
+              const s = `${pen ? "L" : "M"}${x(p.time).toFixed(1)},${y(v, t.axis).toFixed(1)}`;
               pen = true;
               return s;
             })
@@ -393,6 +433,7 @@ export function Chart({
               fill="none"
               stroke={t.color}
               strokeWidth="2.3"
+              strokeDasharray={t.dashed ? "7 4" : undefined}
               vectorEffect="non-scaling-stroke"
             />
           );

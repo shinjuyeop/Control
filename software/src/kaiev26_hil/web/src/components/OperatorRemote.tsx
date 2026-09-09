@@ -13,7 +13,6 @@ export function OperatorRemote() {
     setPedal,
     setPedalEditing,
     command,
-    state,
   } = useWorkbench();
   return (
     <section className="operator-remote" aria-label="Operator Remote">
@@ -24,19 +23,12 @@ export function OperatorRemote() {
           <span>STM_TEST · 운전자 입력</span>
         </div>
       </header>
-      <div className={`remote-lock ${disabled ? "locked" : ""}`} role="status">
-        {disabled ? (
-          <>
-            <LockKeyhole size={13} />
-            {lockReason}
-          </>
-        ) : (
-          <>
-            <i className="status-dot live" />
-            조작 가능 · 보드 관측값 기준
-          </>
-        )}
-      </div>
+      {disabled && (
+        <div className="remote-lock locked" role="status">
+          <LockKeyhole size={13} />
+          {lockReason}
+        </div>
+      )}
       <div className="remote-section">
         <Choice
           label="운전 모드"
@@ -105,12 +97,7 @@ export function OperatorRemote() {
         />
         <div className="range-labels">
           <span>0</span>
-          <span>놓으면 한 번 전송</span>
           <span>100</span>
-        </div>
-        <div className="remote-observed">
-          <span>보드 관측</span>
-          <b>{fmt(hil.pedal, 0)} %</b>
         </div>
       </div>
       <div className="remote-section">
@@ -127,7 +114,6 @@ export function OperatorRemote() {
           >
             <Switch
               label={label}
-              description={`${key} · ${typeof hil[field] === "boolean" ? (hil[field] ? "관측 ON" : "관측 OFF") : "관측값 없음"}`}
               value={hil[field]}
               disabled={disabled}
               danger
@@ -138,18 +124,6 @@ export function OperatorRemote() {
           </div>
         ))}
       </div>
-      <footer className="remote-footer">
-        <span>/hil/status</span>
-        <span>
-          {fresh
-            ? `${fmt(state.topics["/hil/status"]?.age_ms, 0)} ms ago`
-            : "NO FRESH DATA"}
-        </span>
-        <p>
-          선택 표시는 실제 관측값입니다. ACK는 입력 적용 관측을 대신하지
-          않습니다.
-        </p>
-      </footer>
     </section>
   );
 }

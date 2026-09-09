@@ -3,17 +3,17 @@
 }
 .remote-header h2 {
   font-size: 16px;
-  color: #d6e5ee;
+  color: #f4f6f4;
   font-weight: 600;
 }
 .remote-header span {
   display: block;
   font-size: 12px;
-  color: #93aebb;
+  color: #cfdae1;
   margin-top: 5px;
 }
 .remote-lock.locked {
-  color: #c6af83;
+  color: var(--amber);
 }
 .remote-lock svg {
   flex-shrink: 0;
@@ -28,13 +28,13 @@
   gap: 8px;
 }
 .pedal-heading label {
-  color: #bdcdd7;
+  color: var(--text);
   font-size: 14px;
 }
 .pedal-heading small {
   font: 14px var(--sans);
   margin-left: 4px;
-  color: #92b0c2;
+  color: var(--muted);
 }
 .pedal-slider:disabled {
   cursor: not-allowed;
@@ -45,16 +45,12 @@
   align-items: center;
   justify-content: space-between;
   font: 12px var(--sans);
-  color: #849fad;
+  color: var(--muted);
   gap: 6px;
-}
-.remote-observed b {
-  font: 14px var(--sans);
-  color: #c7dce7;
 }
 .remote-section h3 {
   font: 14px var(--sans);
-  color: #c7d8e2;
+  color: var(--text);
 }
 .remote-estop:last-child {
   border: 0;
@@ -66,18 +62,18 @@
 }
 .remote-estop .switch-row strong {
   font-size: 14px;
-  color: #cbd8e1;
+  color: var(--text);
 }
 .remote-estop.asserted {
-  background: #3c2328;
+  background: var(--danger-bg);
   margin: 0 -8px;
   padding-left: 8px;
   padding-right: 8px;
-  border-color: #7e484e;
+  border-color: var(--danger-line);
 }
 .remote-estop.asserted .switch-row strong,
 .remote-estop.asserted .switch-row p {
-  color: #f4aaa1;
+  color: var(--red);
 }
 
 /* Keep all six operator inputs within a typical laptop-height dock. */
@@ -85,9 +81,11 @@
   display: flex;
   gap: 10px;
   align-items: center;
-  padding: 16px 0 12px;
-  border-bottom: 1px solid #3b4e5a;
-  color: var(--command);
+  padding: 14px 17px 12px;
+  border-bottom: 1px solid var(--text);
+  color: #f4f6f4;
+  margin: 0 -17px;
+  background: var(--text);
 }
 .remote-lock {
   display: flex;
@@ -96,11 +94,11 @@
   min-height: 33px;
   padding: 8px 0;
   font-size: 12px;
-  color: #8bac9f;
+  color: var(--live);
   line-height: 1.6;
 }
 .remote-section {
-  border-bottom: 1px solid #374b57;
+  border-bottom: 1px solid var(--line);
   padding: 10px 0;
 }
 .remote-section .control-row {
@@ -112,7 +110,7 @@
   display: block;
   margin-bottom: 9px;
   font-size: 14px;
-  color: #abbfcc;
+  color: var(--muted);
   margin: 0;
   flex-shrink: 0;
 }
@@ -138,45 +136,69 @@
   cursor: pointer;
   margin: 16px 0 10px;
 }
-.remote-observed {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 11px;
-  padding: 7px 9px;
-  background: #111e26;
-  border-left: 2px solid #75999f;
-  font-size: 14px;
-  color: #9bb7c5;
-}
 .remote-section > p {
   font-size: 12px;
   line-height: 1.8;
-  color: #a5adb0;
+  color: var(--muted);
   margin: 7px 0 11px;
 }
 .remote-estop {
   padding: 9px 0;
-  border-bottom: 1px solid #2f414b;
+  border-bottom: 1px solid var(--line);
 }
-.remote-estop .switch-row p {
-  font: 12px var(--sans);
-  color: #8da6b5;
-  margin-top: 4px;
+
+/* One shared Host command form below the board-input Remote. */
+.operator-dock > .command-source {
+  margin: 0 12px 18px;
+  padding: 0 12px 12px;
 }
-.remote-footer {
+.command-source .panel-heading {
+  margin: 0 -12px 12px;
+  padding: 12px;
+  gap: 8px;
+}
+.command-source h2 {
+  font-size: 16px;
+}
+.command-source form {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 7px;
-  padding: 12px 0 15px;
-  color: #7f9fae;
-  font: 12px var(--sans);
+  flex-direction: column;
+  gap: 12px;
 }
-.remote-footer p {
-  font: 12px/1.6 var(--sans);
-  flex-basis: 100%;
-  color: #99aebc;
+.production-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+.production-fields label {
+  min-width: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.production-fields .input-with-unit {
   margin-top: 6px;
-  line-height: 1.6;
+}
+.production-fields input {
+  font-size: 15px;
+  padding: 8px;
+}
+.production-fields .input-with-unit span {
+  font-size: 12px;
+  padding-right: 8px;
+}
+.command-source .switch-row {
+  margin: 0;
+}
+.command-source .actions {
+  display: flex;
+  gap: 6px;
+}
+.command-source .actions button {
+  flex: 1;
+  font-size: 13px;
+  padding: 9px 7px;
+}
+
+.operator-remote > .remote-section:last-child {
+  border-bottom: 0;
 }

@@ -49,6 +49,8 @@ def bench(tmp_path):
         part2_valid=False,
         part2_age_ms=750.0,
         motor_temperature_c=99.0,
+        pedal_percent=42,
+        pedal_adc_raw=1585,
     )
 
     @asynccontextmanager
@@ -409,6 +411,12 @@ def test_operator_remote_across_pages_and_navigation(browser_page):
     from test_dashboard_display import LIBRARY, wire_report
 
     page, client, observed, tmp_path = browser_page
+    # A previous generator target must not prefill a new speed draft.
+    observed["generator"].set_parameters([Parameter("speed_target_mps", value=3.0)])
+    page.reload()
+    page.get_by_text("Web bridge 연결됨", exact=True).wait_for()
+    page.wait_for_timeout(500)
+    expect(page.get_by_label("목표 속도", exact=True)).to_have_value("0")
     remote = page.get_by_role("region", name="Operator Remote", exact=True)
     expect(remote).to_be_visible()
     expect(remote.get_by_role("button", name="AUTO", exact=True)).to_be_disabled()
@@ -419,6 +427,15 @@ def test_operator_remote_across_pages_and_navigation(browser_page):
     page.get_by_role("navigation").get_by_role(
         "button", name="구동", exact=True
     ).click()
+    combined = page.get_by_role("img", name=re.compile(r"속도 목표"))
+    expect(combined).to_be_visible()
+    expect(combined.get_by_text("km/h", exact=True)).to_be_visible()
+    expect(combined.get_by_text("RPM", exact=True)).to_be_visible()
+    # The Host command form lives in the shared dock, once, on every page.
+    expect(page.get_by_label("목표 속도", exact=True)).to_have_count(1)
+    expect(
+        page.get_by_role("complementary").get_by_label("목표 속도", exact=True)
+    ).to_be_attached()
     remote.get_by_role("button", name="AUTO", exact=True).click()
     page.get_by_role("status").get_by_text("OK SET MODE AUTO", exact=True).wait_for()
     assert "SET MODE AUTO" in observed["commands"]
@@ -445,8 +462,25 @@ def test_operator_remote_across_pages_and_navigation(browser_page):
         len([c for c in observed["commands"] if c.startswith("SET PEDAL ")])
         == before + 1
     )
-    expect(remote.get_by_text("27 %", exact=True)).to_be_visible()
+    pedal_observation = page.get_by_role("group", name="페달 관측", exact=True)
+    expect(pedal_observation).to_contain_text("42%")
+    expect(pedal_observation).to_contain_text("1.28 V")
 
+    # Empty numeric drafts survive telemetry updates until blur, then become zero.
+    for label in ["목표 속도", "목표 조향각"]:
+        field = page.get_by_label(label, exact=True)
+        field.fill("")
+        expect(field).to_have_value("")
+        page.wait_for_timeout(250)
+        expect(field).to_have_value("")
+        field.press("Tab")
+        expect(field).to_have_value("0")
+        field.fill("")
+        field.press_sequentially("-2.5")
+        expect(field).to_have_value("-2.5")
+        field.press("Tab")
+        expect(field).to_have_value("-2.5")
+    assert not observed["planning"]
     # Command drafts are shared across pages; no navigation publishes them.
     page.get_by_label("목표 속도", exact=True).fill("36")
     page.get_by_label("목표 조향각", exact=True).fill("30")
@@ -492,9 +526,7 @@ def test_operator_remote_across_pages_and_navigation(browser_page):
     page.get_by_role("navigation").get_by_role(
         "button", name="구동", exact=True
     ).click()
-    part2 = page.locator(".frame-card").filter(
-        has=page.get_by_text("EZkontrol Part II", exact=True)
-    )
+    part2 = page.get_by_role("group", name="EZkontrol Part II", exact=True)
     expect(part2).to_contain_text("750")
     expect(part2).to_contain_text("INVALID")
 
@@ -568,6 +600,45 @@ def test_operator_remote_across_pages_and_navigation(browser_page):
             remote.get_by_role("switch", name="차체 측면 E-stop", exact=True)
         ).to_be_enabled()
         page.screenshot(path=str(tmp_path / f"remote-{width}.png"), full_page=False)
+        if width == 390:
+            page.get_by_label("목표 속도", exact=True).fill("54")
+            page.get_by_label("목표 조향각", exact=True).fill("-10")
+            page.get_by_role("switch", name="브레이크 요청", exact=True).click()
+            expect(
+                page.get_by_role("dialog", name="주행 명령을 발행합니다", exact=True)
+            ).not_to_be_visible()
+            page.get_by_role("button", name="목표 변경", exact=True).click()
+            confirmation = page.get_by_role(
+                "dialog", name="주행 명령을 발행합니다", exact=True
+            )
+            expect(confirmation).to_be_visible()
+            expect(confirmation).to_contain_text("54 km/h")
+            page.keyboard.press("Tab")
+            assert confirmation.evaluate("d=>d.contains(document.activeElement)")
+            page.keyboard.press("Escape")
+            expect(confirmation).not_to_be_visible()
+            expect(remote).to_be_visible()
+            assert observed["generator"].get_parameter(
+                "speed_target_mps"
+            ).value == pytest.approx(10)
+            page.get_by_role("button", name="목표 변경", exact=True).click()
+            confirmation.get_by_role("button", name="ARM · 발행", exact=True).click()
+            expect(confirmation).not_to_be_visible()
+            # The same command conversion and release path work inside the drawer.
+            end = time.monotonic() + 3
+            while (
+                observed["generator"].get_parameter("speed_target_mps").value != 15
+                and time.monotonic() < end
+            ):
+                time.sleep(0.05)
+            assert observed["generator"].get_parameter(
+                "speed_target_mps"
+            ).value == pytest.approx(15)
+            assert observed["generator"].get_parameter(
+                "steering_target_rad"
+            ).value == pytest.approx(-math.pi / 18)
+            page.get_by_role("button", name="발행 해제", exact=True).click()
+            expect(page.get_by_label("주행 명령 상태")).to_contain_text("DISARMED")
         page.keyboard.press("Escape")
         expect(remote).not_to_be_visible()
         assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
@@ -632,3 +703,7 @@ def test_remote_busy_scenario_and_stale_locks(browser_page):
         remote.get_by_role("switch", name="대시보드 E-stop", exact=True)
     ).to_be_disabled()
     expect(remote).to_contain_text("STM_TEST 상태 미수신 / 지연")
+    page.get_by_role("navigation").get_by_role("button", name="벤치", exact=True).click()
+    pedal_observation = page.get_by_role("group", name="페달 관측", exact=True)
+    expect(pedal_observation).to_contain_text("—%")
+    expect(pedal_observation).to_contain_text("— V")

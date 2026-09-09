@@ -1,28 +1,30 @@
 import { ShaftFeedback } from "../components/EmulatorControls";
 import { Chart, Fact, fmt, Panel, Source } from "../components/instruments";
-import { ProductionCommand } from "../components/ProductionCommand";
 import {
   SteeringSummary,
   SteeringTelemetry,
 } from "../components/VehicleTelemetry";
-import { age, blue, boolean, cyan } from "../domain/format";
+import { age, targetColor, boolean, feedbackColor } from "../domain/format";
 import { useWorkbench } from "../hooks/useWorkbench";
 export function SteeringPage() {
   const { state, online, hil, points, linkBadge } = useWorkbench();
   return (
     <>
-      <ProductionCommand />
       <SteeringSummary state={state} online={online} />
       <Panel
         title="로드휠 위치 추종"
         eyebrow="LATERAL CONTROLLER"
         aside={linkBadge("keya")}
       >
+        <p className="panel-intro">
+          타이어 방향을 나타내는 로드휠 등가 조향각입니다. 관측각은 KEYA
+          엔코더를 보정식으로 환산한 값이며 별도 바퀴 각도 센서값이 아닙니다.
+        </p>
         <Chart
           points={points}
           traces={[
-            { key: "targetWheel", label: "Commanded", color: blue },
-            { key: "wheel", label: "Actual feedback", color: cyan },
+            { key: "targetWheel", label: "로드휠 명령", color: targetColor },
+            { key: "wheel", label: "엔코더 환산 관측", color: feedbackColor },
           ]}
           unit="deg"
         />

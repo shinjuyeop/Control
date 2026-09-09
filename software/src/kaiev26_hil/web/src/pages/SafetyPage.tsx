@@ -6,7 +6,6 @@ import {
   Notice,
   Panel,
 } from "../components/instruments";
-import { ProductionCommand } from "../components/ProductionCommand";
 import { brakeReasons, CommandTelemetry } from "../components/VehicleTelemetry";
 import { boolean } from "../domain/format";
 import { useWorkbench } from "../hooks/useWorkbench";
@@ -86,7 +85,6 @@ export function SafetyPage() {
           </p>
         </Panel>
       </div>
-      <ProductionCommand />
       <CommandTelemetry state={state} online={online} />
       <Notice>
         Bench Reset은 주행 명령을 끄고 기본 입력을 재적용합니다. E-stop 해제와

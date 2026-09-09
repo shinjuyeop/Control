@@ -59,6 +59,34 @@ function Flags({
 function received(state: Snapshot, online: boolean, topic: string): Data {
   return online && state.topics[topic]?.fresh ? state.topics[topic].data : {};
 }
+export function PedalMetric({
+  state,
+  online,
+}: {
+  state: Snapshot;
+  online: boolean;
+}) {
+  const drive = received(state, online, "/drive/status");
+  // STM_A PA0 is a 12-bit ADC with nominal 3.3 V reference (firmware adc.c).
+  const voltage =
+    typeof drive.pedal_adc_raw === "number"
+      ? (drive.pedal_adc_raw * 3.3) / 4095
+      : undefined;
+  return (
+    <div className="metric pedal-metric" role="group" aria-label="페달 관측">
+      <span>페달 관측 · STM_A</span>
+      <div className="metric-number">
+        {fmt(drive.pedal_percent, 0)}
+        <small>%</small>
+      </div>
+      <p
+        title={`STM_A ADC raw ${fmt(drive.pedal_adc_raw, 0)} · 3.3 V / 4095 환산`}
+      >
+        <strong>{fmt(voltage, 2)} V</strong> · ADC 환산
+      </p>
+    </div>
+  );
+}
 export function VehicleSummary({
   state,
   online,
@@ -79,6 +107,7 @@ export function VehicleSummary({
   return (
     <>
       <div className="metrics-grid operation-metrics">
+        <PedalMetric state={state} online={online} />
         <Metric
           label="주행 목표"
           value={fmt(mpsToKmh(target), 2)}
@@ -209,29 +238,29 @@ export function FrameHealth({
 }) {
   const d = received(state, online, "/drive/status");
   return (
-    <div className="frame-health">
-      {[
-        [1, "0x1801D0EF", "전압 · 전류 · RPM"],
-        [2, "0x1802D0EF", "온도 · RUN · Fault"],
-      ].map(([part, id, description]) => {
+    <div
+      className="metric frame-summary"
+      role="group"
+      aria-label="EZkontrol CAN 수신"
+    >
+      <span>EZkontrol 수신</span>
+      {[1, 2].map((part) => {
         const valid = d[`part${part}_valid`],
           age = d[`part${part}_age_ms`];
+        const label = `Part ${part === 1 ? "I" : "II"}`;
         return (
           <div
-            className={`frame-card ${typeof valid !== "boolean" ? "waiting" : valid ? "" : "invalid"}`}
             key={part}
+            className={`frame-card ${typeof valid !== "boolean" ? "waiting" : valid ? "" : "invalid"}`}
+            role="group"
+            aria-label={`EZkontrol ${label}`}
+            title={`${part === 1 ? "0x1801D0EF · 전압 / 전류 / RPM" : "0x1802D0EF · 온도 / RUN / Fault"} · STM_A 보고 시점의 마지막 CAN 수신 이후`}
           >
-            <div>
-              <strong>EZkontrol Part {part === 1 ? "I" : "II"}</strong>
-              <code>{id}</code>
-              <small>{description}</small>
-            </div>
-            <div className="frame-age">
-              <strong>
-                {fmt(age, 0)} <small>ms</small>
-              </strong>
-              <span>STM_A의 마지막 CAN 수신 이후</span>
-            </div>
+            <strong>{label}</strong>
+            <span className="frame-age">
+              {fmt(age, 0)}
+              <small> ms</small>
+            </span>
             <Badge
               tone={
                 typeof valid !== "boolean"
@@ -250,10 +279,6 @@ export function FrameHealth({
           </div>
         );
       })}
-      <p>
-        STM_A가 상태 메시지를 만들 때의 CAN age입니다. ROS가 끊기면 값을 숨기며,
-        미수신 값은 — 로 표시합니다.
-      </p>
     </div>
   );
 }
@@ -398,7 +423,11 @@ export function DriveTelemetry({
   const num = (value: unknown, valid = true, n = 1) =>
     valid ? fmt(value, n) : "—";
   return (
-    <Panel title="구동 보드 관측" eyebrow="STM_A / DRIVE STATUS">
+    <Panel
+      className="board-telemetry"
+      title="구동 보드 관측"
+      eyebrow="STM_A / DRIVE STATUS"
+    >
       <Fact
         label="모터 RPM"
         value={num(d.motor_rpm, !!d.part1_valid)}
@@ -483,7 +512,11 @@ export function SteeringTelemetry({
   const num = (value: unknown, valid = true, n = 1) =>
     valid ? fmt(value, n) : "—";
   return (
-    <Panel title="조향 보드 관측" eyebrow="LATERAL CONTROLLER / KEYA">
+    <Panel
+      className="board-telemetry"
+      title="조향 보드 관측"
+      eyebrow="LATERAL CONTROLLER / KEYA"
+    >
       <Fact label="제어 상태" value={enumText(states, s.state)} />
       <Fact label="해제 사유" value={enumText(reasons, s.disable_reason)} />
       <Details title="KEYA 모터 · 피드백 · 수신 상태">
@@ -524,19 +557,22 @@ export function SteeringTelemetry({
           value={enumText(["MANUAL", "AUTO"], s.drive_mode)}
         />
       </Details>
-      <Fact label="KEYA Fault bits 원본" value={bitHex(s.fault_bits)} />
-      <Fact
-        label="Fault bits · bit0 제외"
-        value={
-          typeof s.fault_bits === "number" ? bitHex(s.fault_bits & ~1) : "—"
-        }
-      />
-      <Fact
-        label="bit0 · Enable 상태 비트"
-        value={
-          typeof s.fault_bits === "number" ? String(s.fault_bits & 1) : "—"
-        }
-      />
+      <div className="telemetry-group">
+        <span className="eyebrow">KEYA · 상태 비트</span>
+        <Fact label="KEYA Fault bits 원본" value={bitHex(s.fault_bits)} />
+        <Fact
+          label="Fault bits · bit0 제외"
+          value={
+            typeof s.fault_bits === "number" ? bitHex(s.fault_bits & ~1) : "—"
+          }
+        />
+        <Fact
+          label="bit0 · Enable 상태 비트"
+          value={
+            typeof s.fault_bits === "number" ? String(s.fault_bits & 1) : "—"
+          }
+        />
+      </div>
       <Details title="조향 상태 플래그">
         <Flags data={s} flags={steeringFlags} prefix="steering" />
         <p className="muted">

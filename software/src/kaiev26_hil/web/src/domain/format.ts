@@ -1,7 +1,7 @@
 import type { Data } from "./types";
-export const cyan = "#65b9da",
-  blue = "#83a7ff",
-  amber = "#dfb46b";
+export const feedbackColor = "#0756b4",
+  targetColor = "#a45b20",
+  auxiliaryColor = "#7047a5";
 export const modes = [
   { value: "MANUAL", label: "MANUAL" },
   { value: "AUTO", label: "AUTO" },

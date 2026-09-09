@@ -2,7 +2,7 @@ import { ArrowRight } from "lucide-react";
 import { EventList } from "../components/EventList";
 import { Badge, Chart, Fact, Panel, fmt } from "../components/instruments";
 import { VehicleSummary } from "../components/VehicleTelemetry";
-import { blue, boolean, cyan } from "../domain/format";
+import { targetColor, boolean, feedbackColor } from "../domain/format";
 import { useWorkbench } from "../hooks/useWorkbench";
 export function BenchPage() {
   const {
@@ -82,8 +82,12 @@ export function BenchPage() {
           <Chart
             points={points}
             traces={[
-              { key: "targetSpeed", label: "Governor target", color: blue },
-              { key: "speed", label: "STM_A observed", color: cyan },
+              {
+                key: "targetSpeed",
+                label: "Governor target",
+                color: targetColor,
+              },
+              { key: "speed", label: "STM_A observed", color: feedbackColor },
             ]}
             unit="km/h"
             height={190}
@@ -103,8 +107,8 @@ export function BenchPage() {
           <Chart
             points={points}
             traces={[
-              { key: "targetWheel", label: "Commanded", color: blue },
-              { key: "wheel", label: "Feedback", color: cyan },
+              { key: "targetWheel", label: "Commanded", color: targetColor },
+              { key: "wheel", label: "Feedback", color: feedbackColor },
             ]}
             unit="deg"
             height={190}

@@ -35,7 +35,8 @@ Web 접속, host 준비, 전체 HIL 실행, 브라우저에서의 기능·시나
 React 기반 Web 운용 화면은 [WEB_CONSOLE.md](WEB_CONSOLE.md)를 따른다.
 벤치·구동·조향·브레이크/안전·고장 주입·시나리오·가상 LCD·진단 페이지를 제공한다.
 전역 Operator Remote에서 Mode/Gear/Pedal/E-stop을 조작하며, 속도는 km/h·조향은 degree다.
-주행 명령과 engineering 설정은 기능 페이지에 두고, 상단에서 ARMED 상태를 확인한다.
+주행 명령은 Remote 아래의 공통 패널에, engineering 설정은 기능 페이지에 둔다.
+상단에서 ARMED 상태를 확인한다.
 차량 dashboard 진단과 ROS 수신 주기·CAN age도 확인할 수 있다.
 기존 PyQt GUI는 유지한다. Web 전용 launch는 명령 생성기를 DISARMED로 시작한다.
 

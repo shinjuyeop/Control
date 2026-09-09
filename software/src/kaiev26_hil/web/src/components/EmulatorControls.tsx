@@ -1,4 +1,4 @@
-import { blue, cyan } from "../domain/format";
+import { targetColor, feedbackColor } from "../domain/format";
 import { useWorkbench } from "../hooks/useWorkbench";
 import {
   Chart,
@@ -130,8 +130,9 @@ export function ShaftFeedback() {
         0.01,
       )}
       <Notice>
-        모터축 각도와 로드휠 조향각은 다른 물리량입니다. Enable 상태에서는
-        수신한 위치 명령을 다시 추종합니다.
+        STM_TEST가 모사한 KEYA 모터축 회전각입니다. 로드휠 조향각과는 다른
+        물리량이며 두 각도는 보정식으로 연결됩니다. Enable 상태에서는 수신한
+        위치 명령을 다시 추종합니다.
       </Notice>
       <Fact label="KEYA Enable 명령" value={boolText(hil.keya_enabled)} />
       <Fact
@@ -142,8 +143,8 @@ export function ShaftFeedback() {
       <Chart
         points={points}
         traces={[
-          { key: "targetSteer", label: "수신 모터축 목표", color: blue },
-          { key: "steer", label: "에뮬레이터 응답", color: cyan },
+          { key: "targetSteer", label: "수신 모터축 목표", color: targetColor },
+          { key: "steer", label: "에뮬레이터 응답", color: feedbackColor },
         ]}
         unit="motor deg"
       />

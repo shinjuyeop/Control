@@ -7,7 +7,7 @@ import {
   Panel,
   Switch,
 } from "../components/instruments";
-import { age, blue, boolean, cyan } from "../domain/format";
+import { age, targetColor, boolean, feedbackColor } from "../domain/format";
 import { useWorkbench } from "../hooks/useWorkbench";
 export function FaultsPage() {
   const { state, hil, points, disabled, commands, command, linkBadge } =
@@ -101,8 +101,8 @@ export function FaultsPage() {
         <Chart
           points={points}
           traces={[
-            { key: "targetSpeed", label: "Governor 출력", color: blue },
-            { key: "speed", label: "STM_A 피드백", color: cyan },
+            { key: "targetSpeed", label: "Governor 출력", color: targetColor },
+            { key: "speed", label: "STM_A 피드백", color: feedbackColor },
           ]}
           unit="km/h"
         />

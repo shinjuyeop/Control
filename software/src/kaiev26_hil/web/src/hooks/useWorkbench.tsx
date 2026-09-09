@@ -8,7 +8,7 @@ import {
 import { Badge } from "../components/instruments";
 import { canLink } from "../domain/format";
 import type { Data, Point } from "../domain/types";
-import { degToRad, kmhToMps, mpsToKmh, radToDeg } from "../domain/units";
+import { degToRad, kmhToMps, radToDeg } from "../domain/units";
 import { useConsole } from "./useConsole";
 
 function useWorkbenchState() {
@@ -26,8 +26,8 @@ function useWorkbenchState() {
   const [pedal, setPedal] = useState(0);
   const [pedalEditing, setPedalEditing] = useState(false);
   const [production, setProduction] = useState({
-    speed_kmh: 0,
-    steering_deg: 0,
+    speed_kmh: "0",
+    steering_deg: "0",
     brake_engage: false,
   });
   const [productionEdited, setProductionEdited] = useState(false);
@@ -59,8 +59,8 @@ function useWorkbenchState() {
   useEffect(() => {
     if (!productionEdited && state.generator_fresh)
       setProduction({
-        speed_kmh: mpsToKmh(generator.speed_target_mps ?? 0),
-        steering_deg: radToDeg(generator.steering_target_rad ?? 0),
+        speed_kmh: "0",
+        steering_deg: String(radToDeg(generator.steering_target_rad ?? 0)),
         brake_engage: generator.brake_engage ?? false,
       });
   }, [state.generator, productionEdited]);
@@ -122,8 +122,8 @@ function useWorkbenchState() {
   );
   const productionValues = (enabled: boolean) => ({
     enabled,
-    speed_target_mps: kmhToMps(production.speed_kmh),
-    steering_target_rad: degToRad(production.steering_deg),
+    speed_target_mps: kmhToMps(Number(production.speed_kmh)),
+    steering_target_rad: degToRad(Number(production.steering_deg)),
     brake_engage: production.brake_engage,
   });
   const lockReason = !online
