@@ -5,6 +5,7 @@ Use start_bench:=true for the Web-controlled bench (generator starts disarmed).
 """
 
 import sys
+import os
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
@@ -23,8 +24,11 @@ def generate_launch_description():
     share = Path(get_package_share_directory("kaiev26_hil"))
     arguments = {
         "start_bench": "false",
-        "web_python": sys.executable,
+        "web_python": os.path.join(os.environ["VIRTUAL_ENV"], "bin/python") if os.environ.get("VIRTUAL_ENV") else sys.executable,
         "port": "8765",
+        "bind": "127.0.0.1",
+        "allowed_hosts": "100.112.72.27,100.112.72.26",
+        "update_hz": "5.0",
         "dashboard_port": "",
         "serial_port": "/dev/hil_test",
         "stm_a_port": "/dev/hil_a",
@@ -59,7 +63,6 @@ def generate_launch_description():
                             "state",
                         )
                     },
-                    "gui": "false",
                     "generator_enabled": "false",
                     "web_heartbeat_timeout_sec": "3.0",
                 }.items(),
@@ -69,12 +72,12 @@ def generate_launch_description():
                     LaunchConfiguration("web_python"),
                     "-m",
                     "kaiev26_hil.hil_web_bridge",
-                    "--port",
-                    LaunchConfiguration("port"),
-                    "--dashboard-port",
-                    LaunchConfiguration("dashboard_port"),
-                    "--results-dir",
-                    LaunchConfiguration("results_dir"),
+                    ["--port=", LaunchConfiguration("port")],
+                    ["--bind=", LaunchConfiguration("bind")],
+                    ["--allowed-hosts=", LaunchConfiguration("allowed_hosts")],
+                    ["--update-hz=", LaunchConfiguration("update_hz")],
+                    ["--dashboard-port=", LaunchConfiguration("dashboard_port")],
+                    ["--results-dir=", LaunchConfiguration("results_dir")],
                 ],
                 output="screen",
             ),

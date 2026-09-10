@@ -1,5 +1,5 @@
 """Whole HIL bench in one launch: both micro-ROS Agents plus bridge/generator/
-governor/GUI, optionally with steering and vehicle state.
+governor, optionally with steering and vehicle state.
 
 This is the runbook's "현재 bench 실행" section as a single command. Defaults
 keep the historical minimal scope (no `lateral_ctrl`, no
@@ -48,14 +48,6 @@ def generate_launch_description():
         DeclareLaunchArgument("stm_b_port", default_value="/dev/hil_b"),
         DeclareLaunchArgument("agent_baud", default_value="460800"),
         DeclareLaunchArgument(
-            "gui", default_value="true",
-            description="HIL GUI를 함께 띄운다. headless/scenario 실행이면 false.",
-        ),
-        DeclareLaunchArgument(
-            "gui_refresh_ms", default_value="200",
-            description="GUI 갱신 주기(ms). 원격 X11 기준값이며 로컬 화면이면 100.",
-        ),
-        DeclareLaunchArgument(
             "agents", default_value="true",
             description="Start both micro-ROS Agents. Set false when they already run.",
         ),
@@ -80,8 +72,6 @@ def generate_launch_description():
             PythonLaunchDescriptionSource(hil_launch),
             launch_arguments={
                 "serial_port": LaunchConfiguration("serial_port"),
-                "gui": LaunchConfiguration("gui"),
-                "gui_refresh_ms": LaunchConfiguration("gui_refresh_ms"),
                 "scenario_file": LaunchConfiguration("scenario_file"),
                 "results_dir": LaunchConfiguration("results_dir"),
                 "generator_enabled": LaunchConfiguration("generator_enabled"),

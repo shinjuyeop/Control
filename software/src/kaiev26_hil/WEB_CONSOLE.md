@@ -1,6 +1,9 @@
-# Web HIL Console
+> 공용 frontend/ROS 관측/runtime 계층은 [vehicle_console](../vehicle_console/README.md)에 있다.
+> 이 문서는 HIL profile의 조작·시험·가상 HMI 운용을 설명한다. Vehicle은 별도 read-only 서버다.
 
-React 기반 HIL 운용 화면이다. 기존 PyQt 화면과 별도로 제공하며 serial은 기존
+# KAI Vehicle Console · HIL Console
+
+KAI Vehicle Console의 HIL 운용 profile이다. Qt surface를 대체하며 serial은 기존
 `stm_test_bridge`가 단독으로 소유한다. 펌웨어와 production topic 계약은 바꾸지 않는다.
 
 ## 화면과 Control Dock
@@ -102,12 +105,12 @@ UNO Dashboard와 디스플레이 연결을 좌우로, 그보다 좁으면 세로
 
 ### Frontend 구성
 
-- `web/src/app`: App shell, navigation, global status와 responsive dock/drawer.
-- `web/src/hooks`: 단일 WebSocket 연결과 공유 조작/명령 초안/시나리오 상태.
-- `web/src/pages`: 관측·시험 목적별 페이지.
-- `web/src/components`: Control Dock, 주행 명령, ARM 확인창, 그래프·telemetry.
-- `web/src/domain`: wire types, 단위 변환, 상태·fault 의미와 표시 형식.
-- `web/src/styles`: 공통 토큰, 레이아웃, 계측 표시, Control Dock과 페이지 스타일.
+- `../vehicle_console/web/src/app`: App shell, navigation, global status와 responsive dock/drawer.
+- `../vehicle_console/web/src/hooks`: 단일 WebSocket 연결과 공유 조작/명령 초안/시나리오 상태.
+- `../vehicle_console/web/src/pages`: 관측·시험 목적별 페이지.
+- `../vehicle_console/web/src/components`: Control Dock, 주행 명령, ARM 확인창, 그래프·telemetry.
+- `../vehicle_console/web/src/domain`: wire types, 단위 변환, 상태·fault 의미와 표시 형식.
+- `../vehicle_console/web/src/styles`: 공통 토큰, 레이아웃, 계측 표시, Control Dock과 페이지 스타일.
 
 ### 상태와 신호 흐름 우선 표시
 
@@ -146,10 +149,10 @@ backend action, 제어 ROS topic/service, lease, watchdog, scenario runner와 UN
 `/stm_a/runtime_stats`, `/stm_b/runtime_stats` (`kaiev26_msgs/msg/RuntimeStats`,
 약 1 Hz, best effort)를 기존 ROS observation cache로 수신한다. 원본은 WebSocket
 `topics[topic].data`, 정규화된 보드/task 모델은 `runtime.STM_A` / `runtime.STM_B`다.
-`kaiev26_hil/runtime_health.py`는 ROS·React에 의존하지 않으므로 이후 Vehicle Dashboard,
+`vehicle_console/runtime_health.py`는 ROS·React에 의존하지 않으며 Vehicle profile과 HIL이 같은 구현을 사용한다.
 diagnostics_publisher, Foxglove용 adapter에서 같은 해석을 재사용할 수 있다.
-UI 단위·문구는 `web/src/domain/runtime.ts`, 렌더링은 `RuntimeInstruments.tsx`와
-`RuntimePage.tsx`로 분리한다. 별도 공용 패키지나 새 ROS message는 만들지 않는다.
+UI 단위·문구는 `../vehicle_console/web/src/domain/runtime.ts`, 렌더링은 `RuntimeInstruments.tsx`와
+`RuntimePage.tsx`로 분리한다. 공용 Python 구현은 vehicle_console에 있으며 ROS message wire 계약은 바꾸지 않는다.
 
 - **Freshness**: `runtime_config.py`의 `RUNTIME_STALE_SECONDS=3.0`. 1 Hz 전후의
   best-effort 수신에 일반 1초 기준을 적용해 깜빡이는 것을 피한다. 3초 이상 수신이
@@ -213,14 +216,14 @@ Web의 Python 의존성은 기존 GUI 환경과 분리해 설치할 수 있다.
 cd /home/kai/KAI_ws/src/Control/software/src/kaiev26_hil
 uv venv --python /usr/bin/python3 --system-site-packages .venv
 uv pip install --python .venv/bin/python -r requirements-web.txt
-cd web
+cd ../vehicle_console/web
 npm ci
 npm run build
 
 cd ~/KAI_ws
 humble
 unset COLCON_CURRENT_PREFIX
-colcon build --symlink-install --packages-select kaiev26_hil
+colcon build --symlink-install --packages-select vehicle_console kaiev26_hil
 source ~/KAI_ws/install/setup.zsh
 ```
 
@@ -253,7 +256,7 @@ ros2 launch kaiev26_hil hil_web.launch.py \
 
 ## Web으로 벤치 전체 실행
 
-기존 `hil.launch.py`, `hil_bench.launch.py`, PyQt GUI, 별도 scenario runner와 중복 실행하지 않는다.
+기존 `hil.launch.py`, `hil_bench.launch.py`, 별도 scenario runner와 중복 실행하지 않는다.
 실차 Planning 또는 다른 `/planning/command` 발행자와도 동시에 실행하지 않는다.
 
 정지·중립, 가속페달 해제, E-stop 사용 가능 상태에서 대상 보드와 벤치 배선을 확인하고,
@@ -274,7 +277,7 @@ ros2 launch kaiev26_hil hil_web.launch.py \
 기존 bench와 동일하게 `agents:=false`, `steering:=true`, `state:=true`를 지원한다.
 조향/차량 상태 노드를 시작할지는 연결된 벤치 구성에 맞춘다.
 Web 전용 launch는 **generator DISARMED**, heartbeat timeout **3초**로 시작한다.
-기존 PyQt launch의 기본값은 유지한다.
+headless HIL launch의 generator 기본값은 유지한다.
 
 1. 상단 **조작권 가져오기**로 이 브라우저를 유일한 Web 조작자로 지정한다.
 2. 입력 조작을 수행하고 명령 ACK와 보드 관측값을 확인한다.
@@ -363,7 +366,7 @@ Part별 CAN Hz를 ROS 토픽 Hz로 추정하지 않는다. 현재 메시지에�
 `results_dir:=...`로 변경할 수 있고 API는 최근 30개 결과를 표시한다.
 이벤트 로그 150개와 그래프 60초는 메모리에만 유지된다.
 
-서버는 **127.0.0.1에만** 바인딩한다. WebSocket은 동일 Origin만 허용하고
+서버는 기본 **127.0.0.1**에 바인딩한다. `bind`, `port`, `allowed_hosts`를 launch 시 지정할 수 있다. WebSocket은 동일 Origin만 허용하고
 하나의 프로세스/worker에서 실행한다. 사용자별 인증은 포함하지 않는다.
 네트워크 공개용으로 bind/Host/Origin 검사를 제거하지 않는다.
 개발용 원격 화면 확인은 기존 SSH 터널로 가능하다.
@@ -380,7 +383,7 @@ ssh -N -L 8765:127.0.0.1:8765 kai@hil-host
 
 현재 HIL PC `kai`의 서버 측 주소와 공유받은 사용자 측 주소를
 `100.112.72.27`로 통일했다.
-서버는 계속 loopback에만 바인딩하며, Tailscale Serve의 TCP 전달로 로컬 접속과
+권장 구성은 서버를 계속 loopback에 바인딩하고, Tailscale Serve의 TCP 전달로 로컬 접속과
 Tailscale 주소 접속을 함께 지원한다. **사용자 PC에서는
 `http://100.112.72.27:8765/`로 접속한다.**
 Tailscale은 공유받은 tailnet에서 같은 장비에 다른 IPv4를 부여하고 NAT로 연결하므로
@@ -419,7 +422,7 @@ cd ~/KAI_ws
 humble
 source ~/KAI_ws/install/setup.zsh
 unset COLCON_CURRENT_PREFIX
-colcon build --symlink-install --packages-select kaiev26_hil
+colcon build --symlink-install --packages-select vehicle_console kaiev26_hil
 ```
 
 UNO에는 상태 보고 지원 펌웨어가 필요하다. 업로드는 대상 보드를 확인해 별도로 수행한다.
@@ -549,3 +552,18 @@ snapshot 누적 증가를 USB에서 수신했고, Web의 가상 LCD에서 480×3
 명령 발행 OFF로 실행해 두었다. 실행별 PID·종료 명령·로그는
 `~/.local/state/kaiev26_hil/web_runtime_20260909_7x0_c9jo/runtime.json`에 기록했다.
 이 기록의 PID는 해당 실행에만 해당하며, 다른 시점에는 현재 실행 상태를 다시 확인한다.
+
+## 공용 Console 이관 (2026-09-11)
+
+Frontend source는 `software/src/vehicle_console/web` 한 곳이다. HIL server는
+공용 Host/Origin 검사·static serving·WebSocket 송신·ROS 수신 계층을 사용한다.
+HIL deadline-history acknowledgment만 `kaiev26_hil/runtime_health.py`에 남았다.
+조작권 revision, lock, release/takeover, 3 s lease, generator watchdog, scenario
+runner, STM_TEST/UNO serial과 Virtual Touch 처리는 기존 HIL backend가 소유한다.
+
+Vehicle profile은 `ros2 launch vehicle_console vehicle.launch.py`로 실행하며
+기본 포트는 8766이다. HIL은 기존 8765를 유지한다. HIL과 Foxglove를 함께 쓸 때는
+`ros2 launch visualization foxglove_bridge.launch.py port:=8767`처럼 포트를 분리한다.
+실차 command를 보내는 profile 전환은 없으며 서버 재시작 없이 profile을 바꿀 수 없다.
+Qt GUI는 [archive](../../../archive/software/legacy_hil_gui), 대체 판단은
+[parity matrix](../../../docs/CONSOLE_PARITY.md)에 보관한다.

@@ -3,7 +3,7 @@
 <package format="3">
   <name>visualization</name>
   <version>0.0.0</version>
-  <description>Read-only vehicle monitoring and Foxglove demo helpers.</description>
+  <description>Vehicle diagnostics publisher and Foxglove engineering visualization.</description>
   <maintainer email="shinjp02@gmail.com">shinjuyeop</maintainer>
   <license>TODO: License declaration</license>
 
@@ -11,13 +11,10 @@
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>kaiev26_msgs</exec_depend>
-  <!-- HIL GUI와 dashboard가 같은 PyQt5 번들 Qt 우선순위 workaround를 공유한다. -->
-  <exec_depend>control_gui_common</exec_depend>
   <exec_depend>diagnostic_msgs</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>foxglove_bridge</exec_depend>
-  <exec_depend>python3-pyqt5</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

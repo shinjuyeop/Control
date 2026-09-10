@@ -12,33 +12,24 @@ import json
 import math
 import time
 import uuid
-from collections import defaultdict, deque
+from collections import deque
 from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict, fields
 from pathlib import Path
-from urllib.parse import urlsplit
 
 import rclpy
 from ament_index_python.packages import get_package_share_directory
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.staticfiles import StaticFiles
+from fastapi import WebSocket, WebSocketDisconnect
 from kaiev26_msgs.msg import (
     ActuatorCommand,
-    BrakeActuatorStatus,
-    DriveActuatorStatus,
-    RuntimeStats,
-    SteeringActuatorStatus,
     VehicleState,
 )
 from rcl_interfaces.msg import Parameter as ParameterMessage
 from rcl_interfaces.srv import GetParameters
 from rclpy.executors import SingleThreadedExecutor
-from rclpy.node import Node
 from rclpy.parameter import Parameter
-from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
+from rclpy.qos import DurabilityPolicy, QoSProfile
 from rclpy.signals import SignalHandlerOptions
-from rosidl_runtime_py.convert import message_to_ordereddict
-from starlette.middleware.trustedhost import TrustedHostMiddleware
 from std_msgs.msg import Bool, Empty, String
 from std_srvs.srv import Trigger
 
@@ -48,12 +39,12 @@ from .models import HilDesiredState, HilStatus, decode_json_fields
 from .protocol import validate_command
 from .remote_parameters import RemoteParameterClient
 from .scenario import load_scenario
-from .runtime_config import BOARDS, RUNTIME_STALE_SECONDS
+from vehicle_console.telemetry import ObserverNode, STALE_SECONDS
+from vehicle_console.web import (create_web_app, mount_frontend, accept_websocket, stream_states, add_web_arguments)
+from vehicle_console.profiles import HIL
 from .runtime_health import RuntimeHealth
 
 LEASE_SECONDS = 3.0
-STALE_SECONDS = 1.0  # Console freshness, not a firmware timeout or a safety gate.
-RATE_WINDOW_SECONDS = 5.0
 GENERATOR_FIELDS = (
     "enabled",
     "speed_target_mps",
@@ -61,20 +52,6 @@ GENERATOR_FIELDS = (
     "brake_engage",
     "web_heartbeat_timeout_sec",
 )
-
-
-def json_message(message):
-    # ROS explicitly uses +inf for an unavailable age. JSON sends it as null.
-    def convert(value):
-        if isinstance(value, dict):
-            return {key: convert(item) for key, item in value.items()}
-        if isinstance(value, (tuple, list)):
-            return [convert(item) for item in value]
-        if isinstance(value, float) and not math.isfinite(value):
-            return None
-        return value
-
-    return convert(message_to_ordereddict(message))
 
 
 async def ros_response(future, timeout=2.0):
@@ -93,13 +70,9 @@ async def ros_response(future, timeout=2.0):
     return await asyncio.wait_for(ready, timeout)
 
 
-class WebRos(Node):
+class WebRos(ObserverNode):
     def __init__(self):
-        super().__init__("hil_web_bridge")
-        self.samples = {}
-        self.runtime_health = RuntimeHealth()
-        self.received_times = defaultdict(deque)
-        self.received_count = defaultdict(int)
+        super().__init__("hil_web_bridge", runtime_health=RuntimeHealth())
         self.connected = False
         self.desired = {}
         self.events = deque(maxlen=150)
@@ -114,24 +87,8 @@ class WebRos(Node):
         self.create_subscription(String, "/hil/desired_state", self.on_desired, latched)
         self.create_subscription(String, "/hil/status", self.on_status, 10)
         self.create_subscription(String, "/hil/command_result", self.on_result, 20)
-        from diagnostic_msgs.msg import DiagnosticArray
-
-        for msg_type, topic in (
-            (DriveActuatorStatus, "/drive/status"),
-            (BrakeActuatorStatus, "/brake/status"),
-            (SteeringActuatorStatus, "/steering/status"),
-            (VehicleState, "/vehicle/state"),
-            (ActuatorCommand, "/planning/command"),
-            (ActuatorCommand, "/vehicle/command"),
-            (DiagnosticArray, "/diagnostics"),
-            *((RuntimeStats, topic) for topic in BOARDS),
-        ):
-            self.create_subscription(
-                msg_type,
-                topic,
-                lambda message, name=topic: self.receive(name, json_message(message)),
-                qos_profile_sensor_data,
-            )
+        self.subscribe(VehicleState, "/vehicle/state")
+        self.subscribe(ActuatorCommand, "/planning/command")
         self.hil_services = {
             name: self.create_client(Trigger, "/hil/" + name)
             for name in ("reset_safe_state", "refresh_status", "reapply_desired_state")
@@ -175,37 +132,6 @@ class WebRos(Node):
             self.receive("/hil/status", value)
         except ValueError as exc:
             self.event("error", f"STATUS decode: {exc}")
-
-    def receive(self, topic, data):
-        now = time.monotonic()
-        self.samples[topic] = (now, data)
-        if topic in BOARDS:
-            self.runtime_health.receive(topic, data, now)
-        arrivals = self.received_times[topic]
-        arrivals.append(now)
-        while arrivals and arrivals[0] < now - RATE_WINDOW_SECONDS:
-            arrivals.popleft()
-        self.received_count[topic] += 1
-
-    def topic_snapshot(self, now):
-        topics = {}
-        for name, (received, data) in self.samples.items():
-            arrivals = self.received_times[name]
-            while arrivals and arrivals[0] < now - RATE_WINDOW_SECONDS:
-                arrivals.popleft()
-            span = arrivals[-1] - arrivals[0] if len(arrivals) > 1 else 0.0
-            period = span / (len(arrivals) - 1) if span > 0 else None
-            stale_after = RUNTIME_STALE_SECONDS if name in BOARDS else STALE_SECONDS
-            fresh = now - received < stale_after
-            topics[name] = dict(
-                data=data,
-                age_ms=round((now - received) * 1000),
-                fresh=fresh,
-                rx_count=self.received_count[name],
-                rx_hz=(1.0 / period if period else None) if fresh else 0.0,
-                period_ms=period * 1000 if period else None,
-            )
-        return topics
 
     def on_desired(self, message):
         try:
@@ -702,6 +628,7 @@ class Console:
             )
         return dict(
             type="state",
+            **HIL.metadata(),
             time=time.time(),
             topics=topics,
             runtime=self.node.runtime_health.snapshot(now),
@@ -742,7 +669,8 @@ class Console:
 
 
 def create_app(
-    scenario_dir, results_dir, static_dir, *, dashboard_port="", dashboard_library=None
+    scenario_dir, results_dir, static_dir, *, dashboard_port="", dashboard_library=None,
+    allowed_hosts=("100.112.72.27", "100.112.72.26"), update_hz=5.0
 ):
     @asynccontextmanager
     async def lifespan(app):
@@ -761,19 +689,13 @@ def create_app(
             finally:
                 await console.close()
 
-    app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None)
-    app.add_middleware(
-        TrustedHostMiddleware,
-        # A shared node can have a different IPv4 address in the recipient's tailnet.
-        allowed_hosts=[
-            "127.0.0.1", "localhost", "[::1]", "100.112.72.27", "100.112.72.26"
-        ],
-    )
+    app = create_web_app(lifespan, allowed_hosts=allowed_hosts)
 
     @app.get("/api/health")
     async def health():
         return {
-            "service": "kaiev26_hil",
+            "service": "vehicle_console",
+            **HIL.metadata(),
             "mode": "local",
             "serial_owner": "stm_test_bridge",
         }
@@ -794,14 +716,8 @@ def create_app(
 
     @app.websocket("/ws")
     async def websocket(ws: WebSocket):
-        origin = urlsplit(ws.headers.get("origin", ""))
-        # A hostile website must not be able to drive a localhost HIL console.
-        if origin.scheme not in ("http", "https") or origin.netloc != ws.headers.get(
-            "host"
-        ):
-            await ws.close(code=1008)
+        if not await accept_websocket(ws):
             return
-        await ws.accept()
         console = app.state.console
         client = uuid.uuid4().hex
         send_lock = asyncio.Lock()
@@ -811,12 +727,10 @@ def create_app(
             async with send_lock:
                 await ws.send_json(payload)
 
-        async def states():
-            while True:
-                snapshot = console.snapshot(client)
-                snapshot["display"] = app.state.display.snapshot()
-                await send(snapshot)
-                await asyncio.sleep(0.2)
+        def snapshot():
+            value = console.snapshot(client)
+            value["display"] = app.state.display.snapshot()
+            return value
 
         async def perform(request):
             try:
@@ -833,7 +747,7 @@ def create_app(
                     dict(type="result", id=request.get("id"), ok=False, message=message)
                 )
 
-        sender = asyncio.create_task(states())
+        sender = asyncio.create_task(stream_states(send, snapshot, update_hz))
         try:
             while True:
                 raw = await ws.receive_text()
@@ -886,29 +800,14 @@ def create_app(
                     await action_task
             await console.release(client, "Browser disconnected")
 
-    static_dir = Path(static_dir)
-    if static_dir.is_dir():
-        # colcon --symlink-install links trusted built assets out of package share.
-        app.mount(
-            "/",
-            StaticFiles(directory=str(static_dir), html=True, follow_symlink=True),
-            name="web",
-        )
-    else:
-
-        @app.get("/")
-        async def missing_build():
-            return {
-                "message": "Build the console first: cd web && npm ci && npm run build"
-            }
+    mount_frontend(app, static_dir)
 
     return app
 
 
 def main(args=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--static-dir")
+    add_web_arguments(parser, default_hosts="100.112.72.27,100.112.72.26")
     parser.add_argument("--dashboard-port", default="")
     parser.add_argument("--dashboard-library")
     parser.add_argument(
@@ -919,7 +818,7 @@ def main(args=None):
     import uvicorn
 
     share = Path(get_package_share_directory("kaiev26_hil"))
-    static_dir = options.static_dir or share / "web"
+    static_dir = options.static_dir or Path(get_package_share_directory("vehicle_console")) / "web"
     # Uvicorn owns shutdown signals; ROS must stay alive for lifespan cleanup.
     rclpy.init(args=ros_args, signal_handler_options=SignalHandlerOptions.NO)
     try:
@@ -928,11 +827,13 @@ def main(args=None):
                 share / "config/scenarios",
                 options.results_dir,
                 static_dir,
+                allowed_hosts=options.allowed_hosts.split(","),
+                update_hz=options.update_hz,
                 dashboard_port=options.dashboard_port,
                 dashboard_library=options.dashboard_library
                 or share / "dashboard/libdashboard_renderer.so",
             ),
-            host="127.0.0.1",
+            host=options.bind,
             port=options.port,
             timeout_graceful_shutdown=8,
             ws_max_size=4096,

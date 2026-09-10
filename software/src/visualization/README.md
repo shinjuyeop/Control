@@ -1,28 +1,14 @@
 # visualization
 
-`visualization`은 현재 차량의 canonical ROS 2 명령과 액추에이터 상태를
-관찰하는 패키지다. 개발자용 read-only Qt 디버깅 GUI, 상태를 요약하는
-diagnostics publisher, ROS graph를 전달하는 Foxglove bridge launch를 제공한다.
+차량 상태를 `/diagnostics`로 요약하고 Foxglove의 상세 분석 연결을 제공한다.
+운영자용 브라우저 관측은 [KAI Vehicle Console](../vehicle_console/README.md)이
+담당한다. Console은 빠른 상태 확인과 원격/mobile monitoring, Foxglove는 plot,
+raw messages, state transition과 상세 진단을 담당한다.
 
-## 이 패키지가 하지 않는 일
-
-- 실차 운용용 차량 명령 생성 또는 중재
-- 안전 판단
-- command governor
-- 액추에이터 제어
-- canonical 상태를 Foxglove용 scalar 토픽으로 반복 발행
-
-`vehicle_dashboard`는 publisher나 parameter 변경 UI를 만들지 않는다. 화면에
-보이는 값만으로 메시지 계약에 없는 상태를 추정하지도 않는다.
-
-## 관찰하는 canonical 토픽
-
-| 토픽 | 타입 | 실제 운용 시 발행 주체 | GUI 주요 필드 |
-|---|---|---|---|
-| `/vehicle/command` | `kaiev26_msgs/msg/ActuatorCommand` | 차량 명령 경로 | 목표 속도, 목표 조향각, command brake |
-| `/drive/status` | `kaiev26_msgs/msg/DriveActuatorStatus` | 구동 액추에이터 상태 노드 | mode, gear, 속도, RPM, 전압/전류/온도, timeout, valid/age, fault bits |
-| `/brake/status` | `kaiev26_msgs/msg/BrakeActuatorStatus` | 브레이크 액추에이터 상태 노드 | brake commanded, stop reason, actual valid, command age |
-| `/steering/status` | `kaiev26_msgs/msg/SteeringActuatorStatus` | 조향 액추에이터 상태 노드 | state/reason, 목표/명령/실제 각도, timeout/valid/age, 모터 진단, fault bits |
+이 패키지는 command generator, governor 또는 액추에이터 제어기가 아니다.
+기존 Qt dashboard는 [legacy archive](../../../archive/software/legacy_vehicle_dashboard)에
+source/tests/launch/docs와 함께 보관한다. [parity matrix](../../../docs/CONSOLE_PARITY.md)에
+Web 대체 범위가 있다.
 
 ## Foxglove
 
@@ -67,109 +53,16 @@ status 3종(`/drive/status`, `/brake/status`, `/steering/status`)을 판정해
 diagnostics_publisher`. 구독하는 status가 없으면 STALE로 표시되므로, 조향
 없는 최소 HIL bench에는 포함하지 않는다.
 
-## 빌드
-
-현재 workspace에서 `kaiev26_msgs`와 `Control`은 나란히 있으므로 다음처럼
-함께 빌드한다.
+## Build / run
 
 ```bash
 source /opt/ros/humble/setup.bash
-cd "${KAIEV26_WS:?set KAIEV26_WS to the ROS 2 workspace root}"
-colcon build \
-  --base-paths src/kaiev26_msgs src/Control/software/src \
-  --packages-select kaiev26_msgs control_gui_common visualization
+colcon build --symlink-install --packages-select visualization
 source install/setup.bash
+ros2 launch visualization foxglove_bridge.launch.py
 ```
 
-`vehicle_dashboard`는 PyQt5 번들 Qt 우선순위 workaround인
-`control_gui_common.qt_runtime`을 HIL GUI와 공유한다. Dashboard가 HIL 패키지에
-의존하지 않으면서도 같은 파일을 두 패키지에 복제하지 않기 위한 선택이다.
-
-## 실제 차량 GUI 실행
-
-```bash
-ros2 run visualization vehicle_dashboard
-```
-
-또는:
-
-```bash
-ros2 launch visualization vehicle_dashboard.launch.py
-```
-
-### 화면 구성
-
-한 페이지에 전부 들어가며 스크롤도 plot도 없다. 디버깅 read-out에서 스크롤해야
-보이는 값은 보지 않은 값이기 때문이다. 신호 흐름 순서로 세 열이다.
-
-1. **Command · physical switches** — `/vehicle/command`가 요청한 값, `/drive/status`가
-   보고하는 물리 스위치(mode·gear·pedal), `/brake/status`의 제동과 정지 원인
-2. **Longitudinal** — `/drive/status`. 목표/실제 속도와 오차를 큰 글씨로 두고,
-   EZkontrol Part I·II 진단이 뒤따른다
-3. **Lateral** — `/steering/status`. 상태 머신과 disable 이유, 그리고
-   target → commanded → corrected → actual 각도 파이프라인
-
-읽는 방법은 두 가지 장치에 기대고 있다.
-
-- **Active conditions** — 헤더 아래 띠는 메시지가 이미 싣고 있는 원인 필드
-  (`stop_reason_bits`, `disable_reason`, 각종 `*_timeout`)를 **출처 필드명과 함께**
-  그대로 나열한다. 진단하지 않고 보고만 한다. 이 패키지 계약대로, 메시지가
-  말하지 않은 상태를 GUI가 추정하는 일은 없다.
-- **Flag chips** — bool은 정상일 때 흐리게, 아닐 때만 불이 들어오는 chip이다.
-  각 chip은 어느 쪽이 정상인지를 따로 갖는다. `command_received`는 false가
-  문제이고 `can_timeout`은 true가 문제이며, brake `actual_valid`와 steering
-  `enabled_feedback_valid`는 이 하드웨어에서 계약상 항상 false라 절대 fault로
-  표시하지 않는다.
-
-### Parameter
-
-| parameter | 기본값 |
-|---|---:|
-| `command_stale_ms` | 300 |
-| `drive_status_stale_ms` | 300 |
-| `brake_status_stale_ms` | 300 |
-| `steering_status_stale_ms` | 500 |
-| `ui_update_hz` | 4 |
-
-`ui_update_hz`는 원격 X11 기준으로 정한 값이다. plot이 없어져서 한 tick은 값이
-바뀐 위젯만 다시 그리므로 예전보다 훨씬 가볍다. 로컬 화면에서는 10으로 올리고,
-링크가 느리면 2로 낮추거나 Foxglove bridge를 쓴다(픽셀 대신 데이터만 보낸다).
-
-## 상태 표기의 의미
-
-- `NO DATA`: GUI 프로세스가 해당 토픽을 아직 받지 못했다.
-- `OK`: local receive age가 설정된 stale 기준 안에 있다.
-- `STALE`: 마지막 수신 이후 local monotonic 시간이 stale 기준을 넘었다.
-- `N/A`: 메시지는 받았지만 해당 `valid` 필드가 false이거나 현재 하드웨어
-  계약에서 지원하지 않는 값이다. `N/A`를 fault 또는 값 0으로 해석하지 않는다.
-
-freshness는 MCU의 header stamp가 아니라 GUI 프로세스의 실제 수신 시각을
-기준으로 계산한다. 예를 들어 `BrakeActuatorStatus.actual_valid=false`는
-현행 브레이크 서보의 실제 피드백 미지원 상태이며 fault가 아니다.
-
-## command governor
-
-명령 경로에 `command_governor`가 들어와 있다
-([`../command_governor/README.md`](../command_governor/README.md)).
-
-```text
-/planning/command
-        ↓
-command_governor (현재 패스스루, 형상은 이후 단계)
-        ↓
-/vehicle/command
-```
-
-향후 GUI에서는 planning / governed / actual 값을 비교할 예정이다. 거버너가
-형상을 시작하면 `/governor/status`류의 "무엇을 얼마나 잘랐는지" 표시가 함께
-필요하다.
-
-## 문제 해결
-
-- `kaiev26_msgs`를 찾지 못하면 위 빌드 명령처럼 메시지 패키지를 함께
-  빌드하거나 해당 메시지 workspace의 `install/setup.bash`를 먼저 source한다.
-- Qt display를 열지 못하면 `DISPLAY`와 GUI 세션을 확인한다. SSH에서는 X11
-  forwarding 또는 적절한 원격 desktop 환경이 필요하다.
-- 토픽이 `NO DATA`이면 `ros2 topic list`와 `ros2 topic info <토픽>`으로
-  발행 주체와 ROS domain을 확인한다.
-- `ros2 topic info /vehicle/command -v`로 publisher가 하나인지 확인한다.
+Foxglove 기본 포트는 8765, Vehicle Console은 8766이므로 동시에 실행할 수 있다.
+HIL Web은 기존 8765를 쓰므로 HIL과 함께 실행할 때는 Foxglove `port:=8767`을 준다.
+`control.json`은 기존 engineering layout이며 패키지 share에도 설치된다.
+Qt/PyQt5/control_gui_common은 active visualization의 dependency가 아니다.

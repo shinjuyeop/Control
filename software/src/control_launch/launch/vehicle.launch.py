@@ -3,9 +3,9 @@
 
 구동에 필요한 것만 띄운다: 차량·INS 기준 정적 TF, STM_A/B micro-ROS Agent,
 command_governor, steering_actuator, vehicle_state_publisher, 그리고 상태 3종을
-/diagnostics로 요약하는 diagnostics_publisher(headless라 구동 스택 소속). 관찰
-GUI(foxglove_bridge, vehicle_dashboard)는 의도적으로 제외한다 — 모니터링은
-`ros2 launch visualization foxglove_bridge.launch.py`를 따로 띄운다.
+/diagnostics로 요약하는 diagnostics_publisher(headless라 구동 스택 소속).
+관측 화면은 별도 실행한다: `ros2 launch vehicle_console vehicle.launch.py` 또는
+`ros2 launch visualization foxglove_bridge.launch.py`.
 
 Planning은 포함하지 않는다. 판단 계층은 별도로 실행되어 /planning/command를
 발행한다. Planning 없이 이 launch만 켜면 command_governor가 중계할 입력이

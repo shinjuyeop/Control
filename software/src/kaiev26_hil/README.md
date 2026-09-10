@@ -20,7 +20,7 @@ HIL도 실차와 같은 governor 경로를 지난다. `/vehicle/command`의 발�
 ([`../command_governor/README.md`](../command_governor/README.md)).
 
 - `vehicle_state_publisher`, visualization, Foxglove: 차량 상태 관찰
-- `hil_gui`: STM_TEST 시험 조건 입력과 fault injection
+- `hil_web_bridge`: vehicle_console의 공통 Web을 HIL 조작·시험 backend로 확장
 - `vcan_sim`: vcan 기반 SIL/교육용 plant. 실제 STM_TEST HIL과 별도 경로
 
 Web 접속, host 준비, 전체 HIL 실행, 브라우저에서의 기능·시나리오 시험과
@@ -38,7 +38,7 @@ React 기반 Web 운용 화면은 [WEB_CONSOLE.md](WEB_CONSOLE.md)를 따른다.
 주행 명령은 Control Dock 하단의 공통 패널에, engineering 설정은 기능 페이지에 둔다.
 상단에서 ARMED 상태를 확인한다.
 차량 dashboard 진단과 ROS 수신 주기·CAN age도 확인할 수 있다.
-기존 PyQt GUI는 유지한다. Web 전용 launch는 명령 생성기를 DISARMED로 시작한다.
+Qt GUI는 parity 검증 후 archive에 보관한다. Web 전용 launch는 명령 생성기를 DISARMED로 시작한다.
 
 ## Nodes
 
@@ -114,24 +114,13 @@ phase-current 상한은 현재 소스 기준 480 A이며 배터리 전류가 아
 0.25 m/s씩 1초 간격으로 올려 첫 1 m/s crawl을 만든다. 큰 속도 step, 무인 운행,
 communication timeout을 정상 정지수단으로 쓰는 것은 이 경로의 계약이 아니다.
 
-### hil_gui
+### KAI Vehicle Console · HIL
 
-기존 visualization과 동일하게 PyQt5를 사용한다. GUI는 serial을 열지 않고 ROS를
-통해 bridge만 조작한다.
-
-- 신호 방향별 화면: STM_TEST 주입 → controller command 관측 → emulated feedback
-- mode/gear/pedal DAC와 세 E-stop 주입
-- EZ command의 RUN/control mode/RPM/current/plant target 관측
-- brake PWM과 KEYA enable/target command 관측
-- `Closed-loop simulation` / `Direct feedback override` 응답 모드
-- CAN enable, TX drop, controller fault는 별도 advanced tab
-- Safe State, AUTO+Forward, pedal preset, E-stop, fault clear, STATUS refresh
-- 별도 tab으로 분리된 production `/planning/command` 입력 (governor 경유로
-  `/vehicle/command`가 됨)
-
-연결이 끊기면 일반 command panel은 비활성화되지만 Safe State는 계속 사용할 수
-있다. Safe State는 desired state에 저장되어 재연결 시 적용된다. GUI 종료 시에는
-자동으로 command나 safe state를 보내지 않는다.
+단일 frontend는 `../vehicle_console/web`에서 관리한다. HIL backend는 이 패키지에
+남으며 기존 조작권·인계·ARM·watchdog·scenario·Virtual LCD/Touch를 담당한다.
+실행과 빌드는 [WEB_CONSOLE.md](WEB_CONSOLE.md)를 따른다.
+Qt GUI source/tests는 [legacy_hil_gui](../../../archive/software/legacy_hil_gui)에
+보관한다. 대체 범위와 차이는 [parity matrix](../../../docs/CONSOLE_PARITY.md)에 있다.
 
 ## Safe state
 
@@ -220,7 +209,7 @@ STM_TEST 보드는 `firmware/udev/99-kaiev26-stm.rules`가 `/dev/hil_test`라는
 확인했다. STM_TEST 브레이크 PWM 판정값도 현재 STM_B 출력에 동기화했다.
 검증 결과와 남은 사항은 HIL runbook 15절을 따른다.
 
-HIL bridge, command generator와 GUI:
+Headless HIL bridge, command generator와 governor:
 
 ```bash
 ros2 launch kaiev26_hil hil.launch.py \
@@ -228,13 +217,13 @@ ros2 launch kaiev26_hil hil.launch.py \
 ```
 
 이 launch가 실행하는 것은 `stm_test_bridge`, `hil_command_generator`,
-`command_governor`, `hil_gui`다.
+`command_governor`다.
 STM_A/B용 micro-ROS Agent, `lateral_ctrl`, `vehicle_state_publisher`는 포함하지 않는다.
 현재 EZ CAN만 연결된 bench에서는 Agent 두 개와 위 launch까지만 실행하고 KEYA
 `NO RX / NOT CONNECTED`를 정상 상태로 취급한다.
 
-`gui`와 `scenario_file`은 서로 독립인 인자다. GUI 없이 bridge와 generator만
-띄우려면 `gui:=false`만 주면 된다.
+브라우저 조작에는 `hil_web.launch.py start_bench:=true`를 사용한다.
+`hil.launch.py`와 `hil_bench.launch.py`는 headless backend 진입점이다.
 
 Hardware HIL bench 전체를 한 번에:
 
@@ -249,16 +238,14 @@ ros2 launch kaiev26_hil hil_bench.launch.py \
 더한 것이다. Agent를 이미 따로 실행 중이면 `agents:=false`를 준다. 로그가 한
 터미널에 모이므로 Agent 로그만 읽어야 할 때는 터미널을 나눠 실행한다.
 `steering:=true`는 can0의 `lateral_ctrl`을, `state:=true`는
-`vehicle_state_publisher`를 함께 띄운다(기본은 둘 다 꺼짐). `gui:=false`는
-headless 실행이다.
+`vehicle_state_publisher`를 함께 띄운다(기본은 둘 다 꺼짐).
 
-Scenario. GUI 대신 scenario runner를 붙이려면 `gui:=false`와 `scenario_file`을
-함께 준다. `hil_bench.launch.py`도 같은 인자를 통과시키므로 Agent까지 포함해
+Scenario runner를 붙이려면 `scenario_file`을 준다. `hil_bench.launch.py`도 같은 인자를 통과시키므로 Agent까지 포함해
 한 명령으로 돌릴 수 있다.
 
 ```bash
 ros2 launch kaiev26_hil hil_bench.launch.py \
-  gui:=false steering:=true \
+  steering:=true \
   scenario_file:=$(ros2 pkg prefix kaiev26_hil)/share/kaiev26_hil/config/scenarios/smoke_test.yaml
 ```
 
@@ -293,19 +280,18 @@ cd "${KAIEV26_WS:?set KAIEV26_WS to the ROS 2 workspace root}"
 source /opt/ros/humble/setup.zsh
 colcon build --symlink-install --packages-up-to kaiev26_hil
 source install/setup.zsh
-colcon test --packages-select control_gui_common kaiev26_hil
+colcon test --packages-select vehicle_console kaiev26_hil
 colcon test-result --verbose
 ```
 
 `test/test_vcan_sim_*.py`는 vcan simulator의 CAN encode/decode, plant 물리와
 runtime 진단을 덮고 `kaiev26_hil.vcan_sim`을 직접 import한다.
 
-`test/test_hil_gui_smoke.py`는 `QT_QPA_PLATFORM=offscreen`으로 GUI window를 실제로
-구성하고 STATUS를 rendering하므로 X11 없이도 실행된다. PyQt5가 없으면 skip된다.
-사용하는 STATUS 문자열은 firmware README의 예시와 같은 형식이므로, firmware가
-field를 바꾸면 bench가 아니라 이 test에서 먼저 드러난다.
+Web/ROS·브라우저 회귀 시험은 `test/test_web_console.py`, 공용 runtime 해석은
+`vehicle_console/test/test_runtime_health.py`, HIL reset 정책은
+`test/test_runtime_acknowledgment.py`가 확인한다.
 
-필수 runtime dependency는 ROS 2 Humble, `pyserial`, `PyYAML`, PyQt5다. vcan
-simulator GUI는 추가로 Tkinter와 Matplotlib를 사용한다. host 준비와 전체 build
+필수 runtime dependency는 ROS 2 Humble, `vehicle_console`, `pyserial`, `PyYAML`이다.
+vcan simulator GUI는 Tkinter와 Matplotlib를 계속 사용한다. host 준비와 전체 build
 대상은 [HIL runbook](../../../docs/HIL_RUNBOOK.md#5-소프트웨어-빌드와-테스트)를
 따른다.

@@ -222,7 +222,7 @@ def test_receive_rate_measures_ros_arrivals_and_expires(bench):
 
 def runtime_messages():
     from rosidl_runtime_py.set_message import set_message_fields
-    from test_runtime_health import runtime_data
+    from runtime_samples import runtime_data
 
     uptime_ms = int(time.monotonic()) * 1000
     messages = []
@@ -318,10 +318,13 @@ def test_web_requires_origin_and_single_control_owner(bench):
         "ws://localhost/ws", headers={"origin": "http://localhost"}
     ) as first:
         state = fresh(first)
+        assert state["profile"] == "hil"
         assert state["topics"]["/hil/status"]["data"]["pedal"] == 27
         assert state["desired"]["pedal"] == 65  # An intent is never an observation.
         assert not request(first, "command", command="SET PEDAL 30")["ok"]
         assert request(first, "claim")["ok"]
+        assert not request(first, "set_profile", profile="vehicle")["ok"]
+        assert fresh(first)["profile"] == "hil"
         with client.websocket_connect(
             "ws://localhost/ws", headers={"origin": "http://localhost"}
         ) as second:
@@ -583,55 +586,12 @@ def test_cancelling_a_scenario_saves_result_and_disarms(bench):
 
 @pytest.fixture
 def browser_page(bench, tmp_path):
-    playwright = pytest.importorskip("playwright.sync_api")
-    import shutil
-    import socket
-    import uvicorn
-    from fastapi.staticfiles import StaticFiles
+    from browser_support import browser_session
 
-    chrome = shutil.which("google-chrome")
-    if chrome is None:
-        pytest.skip("Chrome is not installed")
-    static_dir = Path(__file__).parents[1] / "web/dist"
-    if not (static_dir / "index.html").is_file():
-        pytest.skip("Build the React console before the browser test")
     client, observed = bench
-    client.app.router.routes = [
-        route
-        for route in client.app.router.routes
-        if getattr(route, "path", None) != "/"
-    ]
-    client.app.mount("/", StaticFiles(directory=static_dir, html=True))
-    sock = socket.socket()
-    sock.bind(("127.0.0.1", 0))
-    address = f"http://127.0.0.1:{sock.getsockname()[1]}"
-    server = uvicorn.Server(
-        uvicorn.Config(client.app, lifespan="off", log_level="warning")
-    )
-
-    async def serve():
-        await server.serve(sockets=[sock])
-
-    task = client.portal.start_task_soon(serve)
-    try:
-        with playwright.sync_playwright() as browser_tools:
-            browser = browser_tools.chromium.launch(
-                executable_path=chrome, headless=True
-            )
-            try:
-                page = browser.new_page(viewport={"width": 1440, "height": 1000})
-                errors = []
-                page.on("pageerror", lambda error: errors.append(str(error)))
-                page.goto(address)
-                page.get_by_text("Web bridge 연결됨", exact=True).wait_for()
-                yield page, client, observed, tmp_path
-                assert not errors
-            finally:
-                browser.close()
-    finally:
-        server.should_exit = True
-        task.result(timeout=12)
-        sock.close()
+    with browser_session(client) as page:
+        page.get_by_text("Web bridge 연결됨", exact=True).wait_for()
+        yield page, client, observed, tmp_path
 
 
 def test_runtime_page_readonly_measurements_and_responsive(browser_page):
@@ -655,6 +615,7 @@ def test_runtime_page_readonly_measurements_and_responsive(browser_page):
     expect(tasks.get_by_role("row").filter(has=page.get_by_role("rowheader", name="uROS", exact=True))).to_contain_text("미계측")
     for width in (1920, 1440, 1280, 1024, 390):
         page.set_viewport_size({"width": width, "height": 1000 if width == 1920 else 844})
+        expect(page.locator(".profile-label")).to_be_visible()
         assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
         if width == 1920:
             assert abs(a.bounding_box()["y"] - b.bounding_box()["y"]) < 1
