@@ -115,8 +115,8 @@ STM_A safety UART와 micro-ROS 상태를 변경하지 않습니다.
 - `vehicle_state_publisher`가 `/drive/status`, `/brake/status`,
   `/steering/status`를 합성해 `/vehicle/state`를 20 Hz로 발행합니다.
 - 실차 구동 스택은 `control_launch/launch/vehicle.launch.py`로 실행합니다.
-  구동 노드와 `/diagnostics` 요약을 포함하며 관찰 GUI(Foxglove bridge·dashboard)는
-  `visualization`의 launch로 따로 켭니다. 실차 장치에서의 최종 확인은 아직이며
+  구동 노드와 `/diagnostics` 요약을 포함하며 관측 화면은 `vehicle_console/vehicle.launch.py`와
+  `visualization/foxglove_bridge.launch.py`로 따로 켭니다. 실차 장치에서의 최종 확인은 아직이며
   HIL bench에서 동형 구조로 검증했습니다.
 
 ### 3.4 조향 제어
@@ -219,10 +219,26 @@ traction 차단 조건으로 사용하지 않습니다.
 `command_governor` 경유의 동일한 명령 체인을 쓰지만, 하나의 launch로 실차와
 시뮬레이션을 전환하는 구조는 아닙니다.
 
-### 7.1 Web HIL과 가상 LCD
+### 7.1 KAI Vehicle Console과 HIL 가상 HMI
 
-`kaiev26_hil/hil_web.launch.py`는 React 화면과 FastAPI/WebSocket bridge를 제공합니다.
-기본 실행은 Web만 띄우며 `start_bench:=true`가 기존 HIL bench를 GUI 없이 포함합니다.
+`vehicle_console`은 유일한 React frontend, 공용 Web serving/Host·Origin 보안,
+ROS 수신·runtime normalization, 독립 Vehicle read-only backend를 제공합니다.
+`kaiev26_hil`이 이 공용 계층에 의존하며 반대 dependency는 없습니다.
+Vehicle backend는 HIL backend/serial/scenario를 import하거나 초기화하지 않습니다.
+
+```text
+canonical vehicle ROS topics → vehicle_console Vehicle observer → shared frontend
+canonical + HIL ROS / UNO → kaiev26_hil HIL backend → vehicle_console infrastructure / frontend
+canonical vehicle ROS topics → visualization diagnostics / Foxglove
+```
+
+Profile은 server 시작 시 고정합니다. Vehicle은 Overview/Drive/Steering/Safety/Runtime/
+Diagnostics만 제공하며 WebSocket 입력은 모두 거부합니다. HIL의 control/scenario/
+fault/display/touch capability와 ownership은 HIL backend 책임입니다.
+Vehicle은 기본 8766, Foxglove는 8765로 함께 실행할 수 있습니다.
+
+`kaiev26_hil/hil_web.launch.py`는 같은 frontend를 HIL profile로 제공합니다.
+기본 실행은 Web만 띄우며 `start_bench:=true`가 기존 headless HIL bench를 포함합니다.
 Web은 구동·조향·안전 등의 관측 페이지와 전역 Control Dock을 분리합니다.
 Control Dock의 운전자 입력, 고장 주입과 시나리오는 기존 `/hil/*`와 command generator parameter를
 사용합니다. STM_TEST serial의 소유자는 계속 `stm_test_bridge`입니다.
@@ -234,7 +250,8 @@ Control Dock의 운전자 입력, 고장 주입과 시나리오는 기존 `/hil/
 
 Web 전용 launch의 command generator는 DISARMED로 시작하고, 조작 브라우저의 명시적
 ARM 이후 발행합니다. Web 조작권은 한 브라우저에만 주며 heartbeat 단절 시 해제합니다.
-생성기에도 Web heartbeat watchdog을 적용하되, 기존 PyQt launch의 기본 동작은 유지합니다.
+생성기에도 Web heartbeat watchdog을 적용하되, headless HIL launch의 generator 기본값은 유지합니다. Qt surface는
+[parity 검증 후 archive](CONSOLE_PARITY.md)에 보관합니다.
 상세 실행·단위 변환·검증 결과는 [Web Console](../software/src/kaiev26_hil/WEB_CONSOLE.md)에 있습니다.
 
 ## 8. 설계 경계와 책임 분리
@@ -253,7 +270,9 @@ ARM 이후 발행합니다. Web 조작권은 한 브라우저에만 주며 heart
 | Production Planning / motion-control 명령 생성 (`/planning/command`) | 현재 코드에서 확인되지 않음 |
 | 실차 시험 `/planning/command` 생성 | Host `vehicle_test_scenarios` |
 | HIL `/planning/command` 생성 | Host `kaiev26_hil/hil_command_generator` |
-| Web HIL 조작·관측 | React + `kaiev26_hil/hil_web_bridge` |
+| 공용 Web frontend·관측·runtime | `vehicle_console` |
+| HIL 조작·scenario·가상 HMI | `kaiev26_hil/hil_web_bridge` + 공용 Console |
+| Vehicle read-only 관측 | `vehicle_console/vehicle` |
 | UNO 적용 상태 보고 / 가상 LCD | `hil_display_report.cpp` / `dashboard_display.py` + 공통 C++ renderer |
 
 ## 9. 관련 문서

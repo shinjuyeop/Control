@@ -45,16 +45,20 @@ can0는 부팅 때 자동으로 준비되어 있다. 이 시점에는 차가 **�
 
 각각 별도 터미널에서 아래 블록을 그대로 붙여 넣으면 된다.
 
-디버그 대시보드 (화면 필요 — 모니터 직결이면 그대로, 원격이면 `ssh -Y`
-터미널에서):
+KAI Vehicle Console (브라우저에서 차량 상태만 관찰, 명령 발행 없음):
 
 ```zsh
 cd ~/KAI_ws
 humble
 source ~/KAI_ws/install/setup.zsh
 
-ros2 launch visualization vehicle_dashboard.launch.py
+ros2 launch vehicle_console vehicle.launch.py \
+  web_python:=/home/kai/KAI_ws/src/Control/software/src/kaiev26_hil/.venv/bin/python
 ```
+
+브라우저는 `http://127.0.0.1:8766`으로 접속한다. Tailscale 접속은
+[Console 원격 사용](../software/src/vehicle_console/README.md#원격-접속)을 따른다.
+Qt dashboard는 archive로 이동했다.
 
 Foxglove bridge — 팀 단위로 PC당 하나만 띄운다. 이미 떠 있으면 켜지 않고
 아래 접속만 한다 (`/diagnostics` 요약은 구동 스택이 이미 발행 중이라
