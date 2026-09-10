@@ -22,6 +22,7 @@ from kaiev26_hil.models import HilDesiredState
 from kaiev26_msgs.msg import (
     ActuatorCommand,
     DriveActuatorStatus,
+    RuntimeStats,
     SteeringActuatorStatus,
 )
 from rclpy.node import Node
@@ -80,6 +81,17 @@ def bench(tmp_path):
             steering_pub = peer.create_publisher(
                 SteeringActuatorStatus, "/steering/status", 10
             )
+            runtime_pubs = {
+                board_id: peer.create_publisher(RuntimeStats, topic, 10)
+                for board_id, topic in ((1, "/stm_a/runtime_stats"), (2, "/stm_b/runtime_stats"))
+            }
+
+            def publish_runtime():
+                if observed.get("runtime"):
+                    for message in observed["runtime"]():
+                        runtime_pubs[message.board_id].publish(message)
+
+            peer.create_timer(1.0, publish_runtime)
             status = replace(
                 make_status(protocol=3),
                 pedal=27.0,
@@ -206,6 +218,38 @@ def test_receive_rate_measures_ros_arrivals_and_expires(bench):
     assert stopped["rx_hz"] == 0.0
     assert stopped["period_ms"] is None
     assert not stopped["fresh"]
+
+
+def runtime_messages():
+    from rosidl_runtime_py.set_message import set_message_fields
+    from test_runtime_health import runtime_data
+
+    uptime_ms = int(time.monotonic()) * 1000
+    messages = []
+    for board_id in (1, 2):
+        message = RuntimeStats()
+        set_message_fields(message, runtime_data(board_id, uptime_ms // 1000, uptime_ms))
+        messages.append(message)
+    return messages
+
+
+def test_runtime_ros_subscription_and_websocket_freshness(bench):
+    client, observed = bench
+    observed["runtime"] = runtime_messages
+    with client.websocket_connect("ws://localhost/ws", headers={"origin": "http://localhost"}) as ws:
+        state = receive(ws, lambda m: m.get("runtime", {}).get("STM_B", {}).get("status") == "ok")
+        assert state["topics"]["/stm_a/runtime_stats"]["data"]["board_id"] == 1
+        assert state["topics"]["/stm_b/runtime_stats"]["data"]["board_id"] == 2
+        assert state["runtime"]["STM_B"]["data"]["estop"]["max_us"] == 6
+        state = receive(ws, lambda m: m.get("runtime", {}).get("STM_A", {}).get("data", {}).get("worst_stack", {}).get("rate_hz") == 50)
+        assert state["runtime"]["STM_A"]["data"]["worst_stack"]["stack"]["used_bytes"] == 460
+        observed["runtime"] = None
+        state = receive(ws, lambda m: m.get("topics", {}).get("/stm_a/runtime_stats", {}).get("age_ms", 0) > 1500)
+        assert state["topics"]["/stm_a/runtime_stats"]["fresh"]
+        assert state["runtime"]["STM_A"]["status"] == "ok"
+        state = receive(ws, lambda m: m.get("runtime", {}).get("STM_A", {}).get("status") == "stale")
+        assert not state["topics"]["/stm_a/runtime_stats"]["fresh"]
+        assert not observed["commands"] and not observed["planning"]
 
 
 def test_web_requires_origin_and_single_control_owner(bench):
@@ -402,6 +446,63 @@ def browser_page(bench, tmp_path):
         sock.close()
 
 
+def test_runtime_page_readonly_measurements_and_responsive(browser_page):
+    from playwright.sync_api import expect
+
+    page, client, observed, tmp_path = browser_page
+    observed["runtime"] = runtime_messages
+    page.get_by_role("button", name="STM_A RUNTIME").click()
+    expect(page.get_by_role("heading", name="ECU 상태", exact=True)).to_be_visible()
+    a = page.locator(".runtime-summary").filter(has=page.get_by_role("heading", name="STM_A", exact=True))
+    b = page.locator(".runtime-summary").filter(has=page.get_by_role("heading", name="STM_B", exact=True))
+    expect(a).to_contain_text("RUNTIME OK")
+    expect(a).to_contain_text("12.7 / 64.0 KiB")
+    expect(a).to_contain_text("460 / 1024 B")
+    expect(a).to_contain_text("564 B margin")
+    expect(a).to_contain_text("미지원")
+    expect(b.locator(".runtime-latency")).to_contain_text("6 µs")
+    expect(b.locator(".runtime-latency")).to_contain_text("3 samples")
+    tasks = page.get_by_role("table", name="STM_A task runtime")
+    expect(tasks.get_by_role("row").filter(has=page.get_by_role("rowheader", name="BTx", exact=True))).to_contain_text("50.0 Hz")
+    expect(tasks.get_by_role("row").filter(has=page.get_by_role("rowheader", name="uROS", exact=True))).to_contain_text("미계측")
+    for width in (1920, 1440, 1280, 1024, 390):
+        page.set_viewport_size({"width": width, "height": 1000 if width == 1920 else 844})
+        assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
+        if width == 1920:
+            assert abs(a.bounding_box()["y"] - b.bounding_box()["y"]) < 1
+        if width in (1280, 1024, 390):
+            assert b.bounding_box()["y"] > a.bounding_box()["y"]
+        if width in (1920, 1024, 390):
+            page.screenshot(path=str(tmp_path / f"runtime-{width}.png"), full_page=True)
+    page.get_by_role("button", name="Control Dock 열기", exact=True).click()
+    expect(page.locator("#control-dock")).to_be_visible()
+    page.keyboard.press("Escape")
+    expect(page.locator("#control-dock")).not_to_be_visible()
+    page.get_by_role("button", name="메뉴 열기", exact=True).click()
+    page.get_by_role("navigation").get_by_role("button", name="벤치", exact=True).click()
+    page.get_by_role("button", name="STM_B RUNTIME").click()
+    expect(page.get_by_role("heading", name="ECU 상태", exact=True)).to_be_visible()
+
+    def malformed():
+        messages = runtime_messages()
+        messages[0].tasks[4].stack_free_bytes = 1025
+        messages[1].tasks[7].present = False
+        messages[1].estop_valid = False
+        messages[1].estop_dispatch_samples = 0
+        return messages
+
+    observed["runtime"] = malformed
+    expect(a).to_contain_text("INVALID")
+    expect(a).to_contain_text("stack free 1025 B > allocated 1024 B")
+    expect(page.get_by_role("table", name="STM_B task runtime").get_by_role("rowheader", name="Display", exact=True)).to_have_count(0)
+    expect(b.locator(".runtime-latency")).to_contain_text("미계측")
+    observed["runtime"] = None
+    expect(a).to_contain_text("STALE", timeout=5000)
+    expect(a.get_by_role("group", name="FREERTOS HEAP")).to_contain_text("—%")
+    assert not observed["commands"] and not observed["planning"] and observed["safe"] == 0
+    print(f"Runtime page images: {tmp_path}")
+
+
 def test_operator_remote_across_pages_and_navigation(browser_page):
     from playwright.sync_api import expect
     import re
@@ -541,6 +642,7 @@ def test_operator_remote_across_pages_and_navigation(browser_page):
         "시나리오",
         "가상 LCD",
         "진단 · 로그",
+        "ECU 상태",
     ]:
         page.get_by_role("navigation").get_by_role(
             "button", name=name, exact=True

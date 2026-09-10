@@ -114,6 +114,8 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-height: 0;
+  overflow-y: auto;
 }
 .navigation nav button {
   justify-content: flex-start;

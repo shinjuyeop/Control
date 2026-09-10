@@ -2,6 +2,8 @@ import { ArrowRight } from "lucide-react";
 import { EventList } from "../components/EventList";
 import { Badge, Chart, Fact, Panel, fmt } from "../components/instruments";
 import { VehicleSummary } from "../components/VehicleTelemetry";
+import { HealthIndicator } from "../components/RuntimeInstruments";
+import { runtimeBoards } from "../domain/runtime";
 import { targetColor, boolean, feedbackColor } from "../domain/format";
 import { useWorkbench } from "../hooks/useWorkbench";
 export function BenchPage() {
@@ -36,6 +38,11 @@ export function BenchPage() {
             <code>{topic}</code>
           </div>
         ))}
+      </div>
+      <div className="runtime-links" aria-label="ECU runtime diagnostic">
+        {runtimeBoards.map(name => <button key={name} onClick={() => navigate("runtime")}>
+          <span>{name} RUNTIME</span><HealthIndicator board={state.runtime?.[name]} online={online} /><ArrowRight size={13} />
+        </button>)}
       </div>
       <VehicleSummary state={state} online={online} />
       <Panel title="입력 → 명령 → 피드백" eyebrow="BENCH SIGNAL PATH">

@@ -39,6 +39,8 @@ Part별 CAN age와 유효 상태는 별개로 표시하며 좁은 화면에서�
 - **고장 주입**: 양쪽 CAN 활성화, TX DROP, controller fault, 주입한 고장 해제.
 - **시나리오**: 기존 YAML 단계·관측 조건, 실행·중단, PASS/FAIL, JSON 다운로드와 이전 결과.
 - **진단·로그**: ROS 수신 Hz/주기/age/누적, CAN 오류 카운터, bus-off, diagnostics, 원본 명령 로그.
+- **ECU 상태**: STM_A/B runtime health, FreeRTOS heap·최대 관측 stack, task 실행률과 timing.
+  Bench의 compact runtime indicator를 눌러 이동할 수 있다.
 
 주행 명령 입력은 오른쪽 공통 패널에 한 번만 표시한다. 패널이 길면 아래로 스크롤한다.
 좁은 화면에서도 상단 Controls로 열 수 있다. 속도·조향·브레이크 초안은 페이지를
@@ -92,8 +94,54 @@ UNO Dashboard와 디스플레이 연결을 좌우로, 그보다 좁으면 세로
 - `web/src/domain`: wire types, 단위 변환, 상태·fault 의미와 표시 형식.
 - `web/src/styles`: 공통 토큰, 레이아웃, 계측 표시, Control Dock과 페이지 스타일.
 
-backend action, ROS topic/service, lease, watchdog, scenario runner와 UNO 표시 보고 계약은
-변경하지 않았다. MCU Resource는 아직 실제 수집 경로가 없어 빈 페이지를 만들지 않았다.
+backend action, 제어 ROS topic/service, lease, watchdog, scenario runner와 UNO 표시 보고 계약은
+유지한다. ECU 상태는 아래의 독립 RuntimeStats 진단 경로를 사용한다.
+
+### ECU Runtime 계측
+
+`/stm_a/runtime_stats`, `/stm_b/runtime_stats` (`kaiev26_msgs/msg/RuntimeStats`,
+약 1 Hz, best effort)를 기존 ROS observation cache로 수신한다. 원본은 WebSocket
+`topics[topic].data`, 정규화된 보드/task 모델은 `runtime.STM_A` / `runtime.STM_B`다.
+`kaiev26_hil/runtime_health.py`는 ROS·React에 의존하지 않으므로 이후 Vehicle Dashboard,
+diagnostics_publisher, Foxglove용 adapter에서 같은 해석을 재사용할 수 있다.
+UI 단위·문구는 `web/src/domain/runtime.ts`, 렌더링은 `RuntimeInstruments.tsx`와
+`RuntimePage.tsx`로 분리한다. 별도 공용 패키지나 새 ROS message는 만들지 않는다.
+
+- **Freshness**: `runtime_config.py`의 `RUNTIME_STALE_SECONDS=3.0`. 1 Hz 전후의
+  best-effort 수신에 일반 1초 기준을 적용해 깜빡이는 것을 피한다. 3초 이상 수신이
+  없거나 같은 generation/uptime snapshot만 반복되면 ECU 상태는 STALE이다.
+  Snapshot age는 PC가 마지막 새 snapshot을 받은 이후이며, 단순 재수신 age와
+  구분한다. Task 표 아래 source age는 ROS 콜백 재수신 이후다.
+  Web 연결이 끊기거나 STALE이면 지난 gauge/task 값을 live로 표시하지 않는다.
+- **Rate**: `Δactivations / (Δuptime_ms / 1000)`. `window_ms`로 누적 count를 나누지 않는다.
+  첫 표본·uptime 감소·generation reset/wrap·누적 counter 감소·수신 중단 후에는
+  기준점부터 다시 시작한다. 중복 snapshot과 Web 5 Hz 갱신은 rate 표본이 아니다.
+  uint64 차이는 Python 정수로 계산하며 JSON task 누적 count는 십진 문자열로 보존한다.
+- **FreeRTOS heap**: `65536 - free_heap_bytes`, 분모 65536 B (64 KiB).
+  `minimum_free_heap_bytes`는 boot 이후 minimum-ever free이다. 전체 SRAM/linker RAM
+  사용량이 아닌 **heap_4 내부** 사용량이다. Flash/linker footprint는 live 메시지에 없으므로 표시하지 않는다.
+- **Peak stack**: `allocated_stack_bytes - stack_free_bytes`. HWM는 task 생성 이후
+  관측된 최소 free stack이므로 **현재 stack 사용량이 아니다**. Gauge와 bar는
+  최대 관측 사용량 / 할당량 및 margin을 함께 표시한다. Present task 중 비율이
+  가장 높은 task를 자동 선택한다. Free > allocated인 값은 clamp하지 않고 INVALID로 표시한다.
+  Allocation은 `runtime_config.py`에 모으며 STM_A/B `Core/Src/app_freertos.c`에 대응한다.
+- **Timing**: wall max/avg는 boot 이후 interrupt·preemption·내부 blocking을 포함한
+  관측값이며 **formal WCET가 아니다**. Jitter min/max는 **1 ms 해상도**이며
+  `jitter_samples=0`이면 미계측, `cpu_load_valid=false`이면 CPU load 미지원이다.
+- **EStop dispatch**: STM_B의 `EXTI callback → EStop task 처리 시작` 최대 관측값과
+  sample 수다. Physical-edge interrupt latency나 물리 브레이크 반응시간이 아니다.
+  Valid flag/timing/sample이 없으면 0 µs 대신 미계측이다.
+- **Health**: STALE, INVALID, TIMING N/A, CHECK를 구분한다. CHECK는 instrumentation
+  error 존재 또는 periodic deadline miss 증가다. 누적 miss만 남아 있으면 MISS HISTORY로
+  표시한다. `+N 최근`은 직전 snapshot 대비 증가이고 기준점은 증가 여부 미판정이다.
+  여러 사유가 겹치면 freshness/data/timing 순으로 badge를 표시하며 counter와 오류 상세를 함께 본다.
+  모든 상태는 **ECU runtime diagnostic**이며 차량 safety state를 판정하지 않는다.
+- **용량 색상**: 사용률 80% 이상 amber, 95% 이상 red는 UI advisory이다. 상수는
+  `runtime_config.py`에 중앙 관리하며 firmware safety threshold가 아니다.
+
+가용 본문 폭 900 px 이상에서는 A/B summary를 좌우로, 그 미만에서는 세로로 배치한다.
+Task 표는 본문 폭 790 px 이하에서 label이 있는 compact row로 바뀐다.
+Control Dock과 navigation drawer의 기존 동작 및 reduced-motion 정책을 따른다.
 
 ## 설치와 빌드
 
@@ -193,7 +241,7 @@ backend action `safe`와 `/hil/reset_safe_state`는 그대로이며, 명령 발�
 - 주입 요청(`desired`)과 STM_TEST의 STATUS 관측값을 분리한다.
   ACK를 받았다고 화면의 관측값을 요청값으로 덮어쓰지 않는다.
 - STATUS 수신과 별도로 각 ROS topic의 수신 age를 표시한다.
-  화면의 1초 stale 판정은 표시용이며 firmware timeout 정책을 변경하지 않는다.
+  화면의 일반 1초 / RuntimeStats 3초 stale 판정은 표시용이며 firmware timeout 정책을 변경하지 않는다.
 - CAN 초기화 성공, RX 프레임 수신, 오류 상태를 별도로 표시한다.
   Protocol 1의 명령 관측 필드나 Protocol 3 이전의 bus 진단은 미지원으로 표시한다.
 - `TX DROP`은 firmware STATUS에 없으므로 **bridge 요청 상태**라고 표시한다.
@@ -213,7 +261,8 @@ backend action `safe`와 `/hil/reset_safe_state`는 그대로이며, 명령 발�
 진단·로그 페이지에서 ROS 토픽별 **수신 Hz, 평균 주기(ms), 마지막
 수신 경과시간(ms), 누적 수신 수**를 표시한다. Web 백엔드의 ROS 콜백 수신 시각을
 기준으로 최근 5초의 메시지 간격을 평균낸다. 표본이 하나면 Hz/주기는 `—`,
-1초 이상 수신이 없으면 Hz는 0으로 표시한다. 누적 횟수는 백엔드 재시작 시 초기화된다.
+일반 토픽 1초 / RuntimeStats 3초 이상 수신이 없으면 Hz는 0으로 표시한다.
+누적 횟수는 백엔드 재시작 시 초기화된다.
 WebSocket 화면 갱신 주기(5 Hz)를 ROS 수신 주기로 표시하지 않는다.
 
 - **EZkontrol Part I (`0x1801D0EF`)**: `/drive/status.part1_age_ms`, `part1_valid`

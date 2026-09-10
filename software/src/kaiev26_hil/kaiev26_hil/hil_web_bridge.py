@@ -26,6 +26,7 @@ from kaiev26_msgs.msg import (
     ActuatorCommand,
     BrakeActuatorStatus,
     DriveActuatorStatus,
+    RuntimeStats,
     SteeringActuatorStatus,
     VehicleState,
 )
@@ -47,6 +48,8 @@ from .models import HilDesiredState, HilStatus, decode_json_fields
 from .protocol import validate_command
 from .remote_parameters import RemoteParameterClient
 from .scenario import load_scenario
+from .runtime_config import BOARDS, RUNTIME_STALE_SECONDS
+from .runtime_health import RuntimeHealth
 
 LEASE_SECONDS = 3.0
 STALE_SECONDS = 1.0  # Console freshness, not a firmware timeout or a safety gate.
@@ -94,6 +97,7 @@ class WebRos(Node):
     def __init__(self):
         super().__init__("hil_web_bridge")
         self.samples = {}
+        self.runtime_health = RuntimeHealth()
         self.received_times = defaultdict(deque)
         self.received_count = defaultdict(int)
         self.connected = False
@@ -120,6 +124,7 @@ class WebRos(Node):
             (ActuatorCommand, "/planning/command"),
             (ActuatorCommand, "/vehicle/command"),
             (DiagnosticArray, "/diagnostics"),
+            *((RuntimeStats, topic) for topic in BOARDS),
         ):
             self.create_subscription(
                 msg_type,
@@ -174,6 +179,8 @@ class WebRos(Node):
     def receive(self, topic, data):
         now = time.monotonic()
         self.samples[topic] = (now, data)
+        if topic in BOARDS:
+            self.runtime_health.receive(topic, data, now)
         arrivals = self.received_times[topic]
         arrivals.append(now)
         while arrivals and arrivals[0] < now - RATE_WINDOW_SECONDS:
@@ -188,7 +195,8 @@ class WebRos(Node):
                 arrivals.popleft()
             span = arrivals[-1] - arrivals[0] if len(arrivals) > 1 else 0.0
             period = span / (len(arrivals) - 1) if span > 0 else None
-            fresh = now - received < STALE_SECONDS
+            stale_after = RUNTIME_STALE_SECONDS if name in BOARDS else STALE_SECONDS
+            fresh = now - received < stale_after
             topics[name] = dict(
                 data=data,
                 age_ms=round((now - received) * 1000),
@@ -599,6 +607,7 @@ class Console:
             type="state",
             time=time.time(),
             topics=topics,
+            runtime=self.node.runtime_health.snapshot(now),
             connected=self.node.connected,
             desired=self.node.desired,
             generator=self.node.generator,

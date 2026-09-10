@@ -3,6 +3,7 @@ import {
   Check,
   ChevronRight,
   CircleGauge,
+  Cpu,
   FlaskConical,
   Gauge,
   LayoutDashboard,
@@ -28,6 +29,7 @@ import { ProductionCommand } from "../components/ProductionCommand";
 import { WorkbenchProvider, useWorkbench } from "../hooks/useWorkbench";
 import { BenchPage } from "../pages/BenchPage";
 import { DiagnosticsPage } from "../pages/DiagnosticsPage";
+import { RuntimePage } from "../pages/RuntimePage";
 import { DrivePage } from "../pages/DrivePage";
 import { FaultsPage } from "../pages/FaultsPage";
 import { SafetyPage } from "../pages/SafetyPage";
@@ -99,6 +101,14 @@ const pages = [
     icon: Terminal,
     description: "수신 주기 · CAN diagnostics · 원본 명령 로그",
     component: DiagnosticsPage,
+  },
+  {
+    id: "runtime",
+    name: "ECU 상태",
+    label: "ECU RUNTIME",
+    icon: Cpu,
+    description: "STM_A / STM_B · 실행 타이밍과 메모리 여유",
+    component: RuntimePage,
   },
 ];
 function Workstation() {

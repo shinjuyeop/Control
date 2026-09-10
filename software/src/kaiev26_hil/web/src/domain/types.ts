@@ -1,3 +1,4 @@
+import type { RuntimeBoard } from "./runtime";
 export type Data = Record<string, any>;
 export type Sample = {
   data: Data;
@@ -21,6 +22,7 @@ export type Snapshot = {
   scenario: Data | null;
   catalog: Data[];
   display?: DisplayState;
+  runtime?: Record<string, RuntimeBoard>;
 };
 /** Plot history: vehicle speed in km/h, wheel/shaft angles in degrees. */
 export type Point = {

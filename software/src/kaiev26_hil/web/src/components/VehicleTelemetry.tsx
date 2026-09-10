@@ -312,6 +312,8 @@ export function ReceptionTable({
         "/planning/command",
         "/vehicle/command",
         "/diagnostics",
+        "/stm_a/runtime_stats",
+        "/stm_b/runtime_stats",
       ].map((topic) => {
         const sample = state.topics[topic],
           exists = online && sample;
@@ -343,8 +345,9 @@ export function ReceptionTable({
         );
       })}
       <p className="muted">
-        PC의 ROS 콜백 수신 기준 · 최근 5초의 간격 평균 · 1초 이상 수신이 없으면
-        0 Hz. CAN 프레임의 주파수나 Web 화면 갱신률(5 Hz)과는 별개입니다.
+        PC의 ROS 콜백 수신 기준 · 최근 5초의 간격 평균 · 일반 토픽 1초,
+        RuntimeStats는 전용 freshness 기준 이후 0 Hz. ECU 상태에서 snapshot 진행과
+        task rate를 확인합니다. CAN 주파수나 Web 갱신률(5 Hz)과는 별개입니다.
       </p>
     </div>
   );
