@@ -53,10 +53,27 @@ humble
 source ~/KAI_ws/install/setup.zsh
 
 ros2 launch vehicle_console vehicle.launch.py \
+  allowed_hosts:=100.112.72.27 \
   web_python:=/home/kai/KAI_ws/src/Control/software/src/vehicle_console/.venv/bin/python
 ```
 
-브라우저는 `http://127.0.0.1:8766`으로 접속한다. Tailscale 접속은
+연결할 주소:
+
+- **차량 PC 로컬 브라우저:** `http://127.0.0.1:8766/`
+- **Tailscale 원격 브라우저:** `http://100.112.72.27:8766/`
+
+Console은 기본 loopback에 바인딩하므로, 차량 PC에서 **Vehicle용 8766 포트 전달**을
+별도로 등록한다. 기존 8765 전달만으로는 Vehicle Console에 접속할 수 없다.
+
+```zsh
+# 차량 PC에서 최초 1회 등록. Web launch는 별도로 실행되어 있어야 한다.
+tailscale serve --bg --tcp=8766 tcp://127.0.0.1:8766
+tailscale serve status
+```
+
+원격 PC도 Tailscale에 연결되어 있어야 한다. 공유받은 계정에서 차량 PC가 다른 IP로
+보이면 원격 PC의 `tailscale status`로 확인하고, 접속 URL과 `allowed_hosts`를 그 IP로
+맞춘다. 상세 설정과 공유 해제는
 [Console 원격 사용](../software/src/vehicle_console/README.md#원격-접속)을 따른다.
 Qt dashboard는 archive로 이동했다.
 
@@ -72,7 +89,7 @@ source ~/KAI_ws/install/setup.zsh
 ros2 launch visualization foxglove_bridge.launch.py
 ```
 
-- **Foxglove 접속**: 노트북의 Foxglove 앱에서 `ws://100.112.72.26:8765`
+- **Foxglove 접속**: 노트북의 Foxglove 앱에서 `ws://100.112.72.27:8765`
   (Tailscale 기준. 이 PC가 스스로 보는 IP와 노트북에서 보이는 IP가 다르니,
   안 붙으면 노트북에서 `tailscale status`로 이 PC의 IP를 다시 확인한다).
   레이아웃은 `software/src/visualization/control.json`을 import한다.
