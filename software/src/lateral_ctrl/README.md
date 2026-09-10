@@ -87,6 +87,7 @@ ABI에 넣지 않은 최종 브레이크 명령입니다.
 | --- | --- | --- |
 | `/steering/status` | `kaiev26_msgs/msg/SteeringActuatorStatus` | 상태, 비활성 원인, timeout, 목표·실제각과 모터 진단 |
 | `/steering/angle` | `std_msgs/msg/Float32` | 중앙 등가 실측 조향각, degree·좌회전 양수 |
+| `/steering/target_motor_position_count` | `std_msgs/msg/Int32` | `target_wheel_angle_rad`를 기존 calibration으로 역변환한 KEYA 목표 count. dashboard 표시용 |
 | `/steering/enable_commanded` | `std_msgs/msg/Bool` | 노드가 KEYA에 명령한 Enable 상태 |
 | `/steering/enabled` | `std_msgs/msg/Bool` | KEYA 피드백으로 확인한 Enable 상태 |
 

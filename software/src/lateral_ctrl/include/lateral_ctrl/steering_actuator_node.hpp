@@ -12,6 +12,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/float32.hpp>
+#include <std_msgs/msg/int32.hpp>
 #include <std_msgs/msg/u_int8.hpp>
 
 #include <memory>
@@ -96,6 +97,7 @@ private:
   rclcpp::Subscription<kaiev26_msgs::msg::BrakeActuatorStatus>::SharedPtr brake_status_sub_;
   rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr test_estop_sub_;
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr angle_pub_;
+  rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr target_motor_count_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr enable_commanded_pub_, enabled_pub_;
   rclcpp::Publisher<kaiev26_msgs::msg::SteeringActuatorStatus>::SharedPtr status_pub_;
   rclcpp::TimerBase::SharedPtr control_timer_;

@@ -11,6 +11,10 @@
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>kaiev26_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>um980_msgs</exec_depend>
   <!-- HIL GUI와 dashboard가 같은 PyQt5 번들 Qt 우선순위 workaround를 공유한다. -->
   <exec_depend>control_gui_common</exec_depend>
   <exec_depend>diagnostic_msgs</exec_depend>

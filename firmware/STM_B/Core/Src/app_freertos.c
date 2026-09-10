@@ -20,6 +20,7 @@
 #include <string.h>
 #include "board_uart_protocol.h"
 #include "dashboard_can.h"
+#include "dashboard_can_protocol.h"
 #include "globals.h"
 #include "usart.h"
 #include "tim.h"
@@ -31,6 +32,7 @@
 #include <kaiev26_msgs/msg/actuator_command.h>
 #include <kaiev26_msgs/msg/brake_actuator_status.h>
 #include <sensor_msgs/msg/nav_sat_fix.h>
+#include <std_msgs/msg/u_int8_multi_array.h>
 #include "rmw_microros/rmw_microros.h"
 
 bool cubemx_transport_open(struct uxrCustomTransport *transport);
@@ -121,6 +123,8 @@ static kaiev26_msgs__msg__ActuatorCommand s_cmd_msg;
 static char s_cmd_frame_id[16];
 static sensor_msgs__msg__NavSatFix s_gnss_msg;
 static char s_gnss_frame_id[16];
+static std_msgs__msg__UInt8MultiArray s_dashboard_auto_msg;
+static uint8_t s_dashboard_auto_data[DASHBOARD_AUTO_ROS_PAYLOAD_SIZE];
 static kaiev26_msgs__msg__BrakeActuatorStatus s_status_msg;
 static char s_status_frame_id[4];
 static volatile uint32_t s_last_command_tick = 0u;
@@ -132,12 +136,14 @@ static rclc_support_t s_ros_support;
 static rcl_node_t s_ros_node;
 static rcl_subscription_t s_ros_sub_cmd;
 static rcl_subscription_t s_ros_sub_gnss;
+static rcl_subscription_t s_ros_sub_dashboard_auto;
 static rcl_publisher_t s_ros_pub_brake_status;
 static rclc_executor_t s_ros_executor;
 static uint8_t s_ros_support_initialized = 0u;
 static uint8_t s_ros_node_initialized = 0u;
 static uint8_t s_ros_sub_cmd_initialized = 0u;
 static uint8_t s_ros_sub_gnss_initialized = 0u;
+static uint8_t s_ros_sub_dashboard_auto_initialized = 0u;
 static uint8_t s_ros_publisher_initialized = 0u;
 static uint8_t s_ros_executor_initialized = 0u;
 
@@ -158,6 +164,13 @@ static void cb_gnss(const void *m)
   const sensor_msgs__msg__NavSatFix *fix =
       (const sensor_msgs__msg__NavSatFix *)m;
   DashboardCan_ObserveGnssFix(fix->status.status);
+}
+
+static void cb_dashboard_auto(const void *m)
+{
+  const std_msgs__msg__UInt8MultiArray *summary =
+      (const std_msgs__msg__UInt8MultiArray *)m;
+  DashboardCan_ObserveAutoStatus(summary->data.data, summary->data.size);
 }
 
 static uint8_t s_usart1_rx_dma[UART_RX_DMA_SIZE];
@@ -622,6 +635,7 @@ static void init_ros_message_buffers(void)
 {
   memset(&s_cmd_msg, 0, sizeof(s_cmd_msg));
   memset(&s_gnss_msg, 0, sizeof(s_gnss_msg));
+  memset(&s_dashboard_auto_msg, 0, sizeof(s_dashboard_auto_msg));
   memset(&s_status_msg, 0, sizeof(s_status_msg));
 
   /* 수신 string은 reconnect 횟수와 무관하게 수명이 고정된 버퍼를 사용한다. */
@@ -629,6 +643,8 @@ static void init_ros_message_buffers(void)
   s_cmd_msg.header.frame_id.capacity = sizeof(s_cmd_frame_id);
   s_gnss_msg.header.frame_id.data = s_gnss_frame_id;
   s_gnss_msg.header.frame_id.capacity = sizeof(s_gnss_frame_id);
+  s_dashboard_auto_msg.data.data = s_dashboard_auto_data;
+  s_dashboard_auto_msg.data.capacity = sizeof(s_dashboard_auto_data);
   s_status_msg.header.frame_id.data = s_status_frame_id;
   s_status_msg.header.frame_id.capacity = sizeof(s_status_frame_id);
 }
@@ -640,11 +656,13 @@ static uint8_t create_ros_entities(void)
   s_ros_node = rcl_get_zero_initialized_node();
   s_ros_sub_cmd = rcl_get_zero_initialized_subscription();
   s_ros_sub_gnss = rcl_get_zero_initialized_subscription();
+  s_ros_sub_dashboard_auto = rcl_get_zero_initialized_subscription();
   s_ros_pub_brake_status = rcl_get_zero_initialized_publisher();
   s_ros_executor = rclc_executor_get_zero_initialized_executor();
 
   s_cmd_msg.header.frame_id.size = 0u;
   s_gnss_msg.header.frame_id.size = 0u;
+  s_dashboard_auto_msg.data.size = 0u;
   s_status_msg.header.frame_id.size = 0u;
 
   if (rclc_support_init(
@@ -675,6 +693,14 @@ static uint8_t create_ros_entities(void)
   }
   s_ros_sub_gnss_initialized = 1u;
 
+  if (rclc_subscription_init_default(
+          &s_ros_sub_dashboard_auto, &s_ros_node,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8MultiArray),
+          "/dashboard/auto_status") != RCL_RET_OK) {
+    return 0u;
+  }
+  s_ros_sub_dashboard_auto_initialized = 1u;
+
   if (rclc_publisher_init_default(
           &s_ros_pub_brake_status, &s_ros_node,
           ROSIDL_GET_MSG_TYPE_SUPPORT(
@@ -685,7 +711,7 @@ static uint8_t create_ros_entities(void)
   s_ros_publisher_initialized = 1u;
 
   if (rclc_executor_init(
-          &s_ros_executor, &s_ros_support.context, 2,
+          &s_ros_executor, &s_ros_support.context, 3,
           &s_ros_allocator) != RCL_RET_OK) {
     return 0u;
   }
@@ -698,6 +724,12 @@ static uint8_t create_ros_entities(void)
   }
   if (rclc_executor_add_subscription(
           &s_ros_executor, &s_ros_sub_gnss, &s_gnss_msg, &cb_gnss,
+          ON_NEW_DATA) != RCL_RET_OK) {
+    return 0u;
+  }
+  if (rclc_executor_add_subscription(
+          &s_ros_executor, &s_ros_sub_dashboard_auto,
+          &s_dashboard_auto_msg, &cb_dashboard_auto,
           ON_NEW_DATA) != RCL_RET_OK) {
     return 0u;
   }
@@ -730,6 +762,12 @@ static void destroy_ros_entities(void)
         rcl_subscription_fini(&s_ros_sub_gnss, &s_ros_node);
     (void)fini_result;
     s_ros_sub_gnss_initialized = 0u;
+  }
+  if (s_ros_sub_dashboard_auto_initialized != 0u) {
+    const rcl_ret_t fini_result =
+        rcl_subscription_fini(&s_ros_sub_dashboard_auto, &s_ros_node);
+    (void)fini_result;
+    s_ros_sub_dashboard_auto_initialized = 0u;
   }
   if (s_ros_sub_cmd_initialized != 0u) {
     const rcl_ret_t fini_result =

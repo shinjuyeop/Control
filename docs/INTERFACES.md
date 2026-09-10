@@ -34,11 +34,13 @@ KEYA 조향 CAN의 데이터 계약과 주기·timeout을 정리하는 기준 �
 | STM_A | Host·조향·상태 통합 | ROS 2 | `/drive/status` | `DriveActuatorStatus` | 20 ms | 조향에서 1500 ms | mode·gear·구동 진단 |
 | STM_B | Host·조향·상태 통합 | ROS 2 | `/brake/status` | `BrakeActuatorStatus` | 50 ms 및 원인 변경 시 | 조향에서 별도 timeout 없음 | brake·E-stop 원인 |
 | 조향 노드 | Host·상태 통합 | ROS 2 | `/steering/status` | `SteeringActuatorStatus` | 20 ms | 상태 통합에서 별도 timeout 없음 | 조향 상태·진단 |
+| 조향 노드 | AUTO dashboard summary | ROS 2 | `/steering/target_motor_position_count` | `std_msgs/Int32` | 20 ms | summary에서 300 ms | 기존 equivalent-angle→KEYA count 변환 결과 |
+| AUTO dashboard summary | STM_B | ROS 2 | `/dashboard/auto_status` | `std_msgs/UInt8MultiArray`, 고정 25 byte | 100 ms | STM_B에서 300 ms | health·방위·목표속도·조향 표시 전용 |
 | 상태 통합 | ROS 2 consumers | ROS 2 | `/vehicle/state` | `VehicleState` | 50 ms | 없음 | 세 status의 마지막 값 합성 |
 | STM_A | STM_B | USART1 | type `0x01` | mode, gear, speed | 20 ms | STM_B에서 200 ms | vehicle status |
 | STM_A | STM_B | USART1 | type `0x03` | 구동 bus·온도·fault·command 상태 | 100 ms | STM_B에서 300 ms | dashboard drive detail |
 | STM_B | STM_A | USART1 | type `0x02` | final brake request | 20 ms | STM_A에서 100 ms | safety status |
-| STM_B | UNO R4 | Classical CAN | `0x321`~`0x324` | status·power·thermal·fault snapshot | 50 ms | UNO에서 300 ms | 표시 전용 |
+| STM_B | UNO R4 | Classical CAN | `0x321`~`0x328` | native status 4 frame + AUTO summary 4 frame | 50 ms | UNO에서 native 300 ms | 표시 전용 |
 | STM_A | EZkontrol | FDCAN1 | `0x0C01EFD0` | handshake ACK 또는 command | 50 ms command | 명시적 TX timeout 없음 | AUTO speed / MANUAL torque |
 | EZkontrol | STM_A | FDCAN1 | `0x1801D0EF`, `0x1802D0EF` | Part I/II status | 외부 장치 설정 | 200 ms validity | 진단 validity에만 사용 |
 | 조향 노드 | KEYA | SocketCAN | `0x06000001` | enable/disable/position/query | position 20 ms | 500 ms | node ID 기본값 1 |
@@ -292,11 +294,16 @@ Part I과 Part II는 마지막 수신 후 200 ms 미만일 때 각각 valid입�
 
 ## 7. STM_B → UNO R4 Dashboard CAN
 
-STM_B는 250 kbit/s Classical CAN standard frame 네 개로 표시 snapshot을 전송합니다.
-각 frame은 protocol version과 같은 `alive` 값을 포함하며, UNO는 `0x321` STATUS,
-`0x322` POWER, `0x323` THERMAL, `0x324` FAULT가 모두 모였을 때만 새 snapshot을
-적용합니다. snapshot 주기는 50 ms이고 fresh complete snapshot이 300 ms 없으면
-UNO가 `CAN LOST`를 표시합니다.
+STM_B는 250 kbit/s Classical CAN standard frame 여덟 개로 표시 snapshot을
+전송합니다. 각 frame은 protocol version과 같은 `alive` 값을 포함합니다. UNO는
+`0x321` STATUS, `0x322` POWER, `0x323` THERMAL, `0x324` FAULT의 native 그룹과
+`0x325` AUTO HEALTH, `0x326` AUTO MOTION, `0x327` STEER ACTUAL,
+`0x328` STEER TARGET 그룹을 따로 조립합니다. snapshot 주기는 50 ms이고 fresh
+native complete snapshot이 300 ms 없으면 UNO가 `CAN LOST`를 표시합니다.
+
+AUTO 그룹은 PC의 `/dashboard/auto_status`를 STM_B가 표시용으로 중계합니다. PC
+summary가 300 ms stale이면 STM_B가 `HOST_VALID`를 내리지만 native E-stop frame은
+계속 보냅니다. 따라서 UNO의 `AUTO DATA LOST`는 STM_B↔UNO CAN 단절과 다릅니다.
 
 Dashboard CAN과 Arduino는 표시 전용입니다. CAN enqueue 실패, bus-off, Arduino reset과
 LCD fault는 STM_B의 E-stop, brake PWM, STM_A safety UART와 micro-ROS 판단에 입력되지

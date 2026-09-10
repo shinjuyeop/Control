@@ -54,5 +54,27 @@ int main(void)
                                   0x12U, 0U, 0U, 0U},
                 DASHBOARD_CAN_DLC) == 0);
 
+  for (uint8_t index = 0U; index < DASHBOARD_AUTO_DATA_SIZE; ++index)
+  {
+    snapshot.auto_data[index] = index;
+  }
+  snapshot.auto_host_valid = 1U;
+  for (uint8_t frame = 0U; frame < DASHBOARD_CAN_AUTO_FRAME_COUNT; ++frame)
+  {
+    DashboardCanProtocol_PackAuto(&snapshot, frame, payload);
+    assert(payload[0] == DASHBOARD_CAN_PROTOCOL_VERSION);
+    assert(payload[1] == snapshot.alive);
+    for (uint8_t index = 0U; index < 6U; ++index)
+    {
+      uint8_t expected = (uint8_t)(frame * 6U + index);
+      if (frame == 0U && index == 5U) expected |= DASHBOARD_AUTO_HOST_VALID;
+      assert(payload[2U + index] == expected);
+    }
+  }
+  snapshot.auto_host_valid = 0U;
+  snapshot.auto_data[5] = 0xFFU;
+  DashboardCanProtocol_PackAuto(&snapshot, 0U, payload);
+  assert((payload[7] & DASHBOARD_AUTO_HOST_VALID) == 0U);
+
   return 0;
 }

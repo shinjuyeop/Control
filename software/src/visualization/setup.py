@@ -23,6 +23,7 @@ setup(
         'console_scripts': [
             'vehicle_dashboard = visualization.vehicle_dashboard:main',
             'diagnostics_publisher = visualization.diagnostics_publisher:main',
+            'auto_dashboard_summary = visualization.auto_dashboard_summary:main',
         ],
     },
 )

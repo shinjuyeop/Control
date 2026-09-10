@@ -76,6 +76,8 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
   const auto test_estop_topic =
     declare_parameter("test_estop_topic", std::string("/steering/test/estop"));
   const auto angle_topic = declare_parameter("angle_topic", std::string("/steering/angle"));
+  const auto target_motor_count_topic = declare_parameter(
+    "target_motor_count_topic", std::string("/steering/target_motor_position_count"));
   const auto status_topic = declare_parameter("status_topic", std::string("/steering/status"));
   const auto enable_commanded_topic =
     declare_parameter("enable_commanded_topic", std::string("/steering/enable_commanded"));
@@ -96,6 +98,8 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
       [this](std_msgs::msg::UInt8::SharedPtr message) {setEstop(message->data != 0, true);});
   }
   angle_pub_ = create_publisher<std_msgs::msg::Float32>(angle_topic, 10);
+  target_motor_count_pub_ =
+    create_publisher<std_msgs::msg::Int32>(target_motor_count_topic, 10);
   status_pub_ = create_publisher<kaiev26_msgs::msg::SteeringActuatorStatus>(status_topic, 10);
   enable_commanded_pub_ = create_publisher<std_msgs::msg::Bool>(enable_commanded_topic, 10);
   enabled_pub_ = create_publisher<std_msgs::msg::Bool>(enabled_topic, 10);
@@ -457,6 +461,11 @@ void SteeringActuatorNode::publishState(
     angle.data = static_cast<float>(actual_wheel_angle_deg_);
     angle_pub_->publish(angle);
   }
+  std_msgs::msg::Int32 target_motor_count;
+  // Reuse the position-command conversion so dashboard actual and target share
+  // the KEYA encoder axis, zero, sign and full count representation.
+  target_motor_count.data = converter_.equivalentDegToCount(target_wheel_angle_deg_);
+  target_motor_count_pub_->publish(target_motor_count);
   std_msgs::msg::Bool commanded;
   commanded.data = enabled_commanded_;
   enable_commanded_pub_->publish(commanded);
