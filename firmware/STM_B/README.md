@@ -132,9 +132,10 @@ OFF 상태에서 전체 bus의 CANH-CANL 합성 저항은 약 60 ohm이어야 �
 Brake/EStop priority·주기 표기를 실제 생성 코드와 일치시켰습니다. Task 설정 자체는
 변경하지 않았습니다. Brake의 ramp와 EStop의 event/timeout 경로도 유지합니다.
 
-ATx는 `vTaskDelayUntil()` 기반으로 정상 20 ms cadence를 유지합니다. 늦은 activation은
-실제 시작 시점으로 주기를 다시 맞추고 작업이 한 주기를 소진하면 완료 후 한 주기를
-기다립니다. 밀린 safety frame을 burst로 재전송하지 않습니다. blocking UART TX의
+ATx는 `vTaskDelayUntil()` 기반으로 최초 scheduled release phase와 정상 20 ms cadence를
+유지합니다. 늦은 activation이나 work overrun에도 re-anchor하지 않고, 완료 tick 이하의
+release를 period 단위로 건너뛰어 첫 미래 scheduled release를 기다립니다.
+밀린 safety frame을 burst로 재전송하지 않습니다. blocking UART TX의
 10 ms timeout과 buffer lifetime을 유지하며 DMA로 치환하지 않았습니다.
 
 Display는 production에서 Dashboard CAN을 실행합니다. 기존 `vTaskDelayUntil()`과

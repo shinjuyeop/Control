@@ -128,9 +128,10 @@ Queue, semaphore, mutex, software timer는 생성하지 않습니다. ISR→Task
 CubeMX에서 제거됐습니다. 실제 CAN RX는 기존 `HAL_FDCAN_RxFifo0Callback()`이
 그대로 담당하며 CAN 수신 기능은 바꾸지 않았습니다.
 
-Control/Inputs/BTx는 `vTaskDelayUntil()` 기반입니다. 늦게 깨어나면 실제 activation에
-주기를 다시 맞추고, 작업 자체가 한 주기를 소진하면 완료 후 한 주기를 기다립니다.
-밀린 release를 재실행하지 않습니다. 정상 EZkontrol 50 ms cadence와 safety UART
+Control/Inputs/BTx는 최초 scheduled release phase를 유지하는 `vTaskDelayUntil()`
+기반입니다. 늦게 시작하거나 작업이 길어져도 actual/completion에 re-anchor하지 않고,
+완료 tick 이하의 release를 period 단위로 건너뛰어 첫 미래 scheduled release를
+기다립니다. 밀린 release를 재실행하지 않습니다. 정상 EZkontrol 50 ms cadence와 safety UART
 100 ms / AUTO host 500 ms timeout 상수 및 판단 로직은 유지합니다.
 
 Inputs의 task-alive LED toggle은 제거했습니다. ADC는 software-trigger single

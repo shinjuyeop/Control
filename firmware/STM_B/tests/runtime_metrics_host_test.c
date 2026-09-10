@@ -27,7 +27,9 @@ uint32_t uxTaskGetStackHighWaterMark(TaskHandle_t handle)
 void vTaskDelayUntil(TickType_t *previous, TickType_t period)
 {
   *previous += period;
-  if ((int32_t)(*previous - tick) > 0) tick = *previous;
+  /* Every wait must target the future, including at the exact deadline. */
+  assert((int32_t)(*previous - tick) > 0);
+  tick = *previous;
 }
 void test_barrier(void)
 {
@@ -37,6 +39,16 @@ void test_barrier(void)
     assert(!RuntimeMetrics_GetSnapshot(&snapshot));
     ++rejected_reads;
   }
+}
+
+static void check_periodic_wait(RuntimePeriodic *p, TickType_t wake,
+                                TickType_t work, TickType_t next_release)
+{
+  tick = wake;
+  RuntimeActivation activation = RuntimePeriodic_Begin(RM_TX, p);
+  tick += work;
+  RuntimePeriodic_Wait(RM_TX, p, activation);
+  assert(tick == next_release && p->release == next_release);
 }
 
 int main(void)
@@ -74,26 +86,30 @@ int main(void)
   assert(snapshot.tasks[RM_CONTROL].timed_samples == 1u);
   assert(saved.tasks[RM_CONTROL].completed == 1u);
 
-  /* Phase and no-catch-up behavior, including TickType_t wrap. */
-  tick = UINT32_MAX - 10u;
+  /* Fixed timeline: 100, 120, 140, ...; repeated late wakes must not drift. */
+  tick = 100u;
   RuntimePeriodic p = RuntimePeriodic_Init(20u);
-  a = RuntimePeriodic_Begin(RM_TX, &p);
-  tick += 2u;
-  RuntimePeriodic_Wait(RM_TX, &p, a);
-  assert(tick == 9u && p.release == tick);
-  tick += 7u; /* delayed dispatch; next release follows actual start */
-  a = RuntimePeriodic_Begin(RM_TX, &p);
-  tick += 2u;
-  RuntimePeriodic_Wait(RM_TX, &p, a);
-  assert(tick == 36u);
-  a = RuntimePeriodic_Begin(RM_TX, &p);
-  tick += 55u;
-  RuntimePeriodic_Wait(RM_TX, &p, a);
-  assert(tick == 111u); /* full period after overrun completion */
-  a = RuntimePeriodic_Begin(RM_TX, &p);
-  tick += 20u; /* exact deadline also must not replay a release */
-  RuntimePeriodic_Wait(RM_TX, &p, a);
-  assert(tick == 151u);
+  check_periodic_wait(&p, 100u, 2u, 120u);
+  check_periodic_wait(&p, 127u, 2u, 140u);
+  check_periodic_wait(&p, 148u, 1u, 160u);
+  check_periodic_wait(&p, 205u, 1u, 220u); /* wake misses two releases */
+  check_periodic_wait(&p, 220u, 55u, 280u); /* work misses two releases */
+  check_periodic_wait(&p, 280u, 20u, 320u); /* completion equals release */
+
+  /* Initial phase crosses tick wrap: UINT32_MAX-10, 9, 29, 49, ... */
+  tick = UINT32_MAX - 10u;
+  p = RuntimePeriodic_Init(20u);
+  check_periodic_wait(&p, tick, 2u, 9u);
+  check_periodic_wait(&p, 16u, 2u, 29u);
+
+  tick = UINT32_MAX - 10u;
+  p = RuntimePeriodic_Init(20u);
+  check_periodic_wait(&p, 16u, 0u, 29u); /* late wake across wrap */
+
+  tick = UINT32_MAX - 10u;
+  p = RuntimePeriodic_Init(20u);
+  check_periodic_wait(&p, tick, 55u, 49u); /* work overrun across wrap */
+  check_periodic_wait(&p, 49u, 0u, 69u);
 
   tick = 1000u;
   RuntimeMetrics_RecordEStopISR(UINT32_MAX - 99u);
@@ -104,8 +120,9 @@ int main(void)
   assert(snapshot.estop.callbacks == 2u && snapshot.estop.coalesced == 1u);
   assert(snapshot.estop.dispatch_samples == 1u);
   assert(snapshot.estop.dispatch_us_max == 2u);
-  assert(snapshot.tasks[RM_TX].deadline_misses == 2u);
-  assert(snapshot.tasks[RM_TX].jitter_ticks_max == 7);
+  assert(snapshot.tasks[RM_TX].deadline_misses == 5u);
+  assert(snapshot.tasks[RM_TX].jitter_ticks_min == 0);
+  assert(snapshot.tasks[RM_TX].jitter_ticks_max == 45);
 
   /* A callback newer than the captured dispatch is retained for next pass. */
   RuntimeMetrics_RecordEStopISR(1000u);

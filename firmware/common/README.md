@@ -7,11 +7,19 @@
 
 ## Scheduling과 계측 구간
 
-정상 실행은 이전 release에서 정확히 period만큼 뒤의 tick을 `vTaskDelayUntil()`로
-기다립니다. 늦게 깨어난 경우 actual activation을 다음 주기의 기준으로 삼습니다.
-작업이 period 이상 걸리면 완료 tick을 기준으로 한 period를 기다립니다. 누락된
-release는 버립니다. 따라서 command task가 과거 command를 catch-up burst로
-송신하지 않습니다. 한 tick 이내의 지연은 현재 tick 해상도로 구별할 수 없습니다.
+`RuntimePeriodic_Init()`의 최초 release phase를 기준으로 `release += period`인
+fixed-phase timeline을 유지합니다. actual activation이나 completion 시점으로
+re-anchor하지 않습니다. 완료 시 이미 도달하거나 지난 release는 period 단위로
+건너뛰고, 완료 tick보다 엄격히 미래인 첫 scheduled release를 `vTaskDelayUntil()`로
+기다립니다. 따라서 놓친 release를 catch-up burst로 실행하지 않습니다.
+
+예를 들어 최초 release 100, period 20이면 timeline은 100/120/140/160/...입니다.
+120 release를 127에 시작해 129에 완료해도 다음 release는 140입니다. 160 release를
+205에 시작해 206에 완료하면 180/200을 건너뛰어 220을 기다립니다. 완료가 scheduled
+release와 정확히 같아도 해당 release는 건너뜁니다. unsigned tick 차이와 덧셈으로
+wrap을 처리하며, 기존 jitter와 동일하게 release부터 completion까지의 간격이
+32-bit tick 범위의 절반(2^31 ticks) 미만임을 전제로 합니다. 한 tick 이내 지연은
+구별할 수 없습니다.
 이 정책은 RTOS activation 주기에 관한 것이며 CAN bus arbitration/ISR preemption을
 포함한 실제 wire 송신 간격의 hard real-time 보장을 뜻하지 않습니다.
 
@@ -27,8 +35,10 @@ release는 버립니다. 따라서 command task가 과거 command를 catch-up bu
 | `RM_DISPLAY` | 없음 | Display | Dashboard CAN slot 처리; 기존 delay-until 제외 |
 | `RM_PERFMON` | PerfMon | PerfMon | aggregate 처리; 1초 대기 제외 |
 
-Control handshake 대기는 기존 10 ms이며 명령을 보내지 않습니다. 이때 activation
-count를 20 Hz command count로 해석하면 안 됩니다. Dashboard CAN은 기존 absolute
+Control handshake 대기는 기존 10 ms이며 명령을 보내지 않습니다. 기존 handshake
+분기의 periodic 초기화도 유지하며 fixed phase는 그 이후 제어 주기에 적용됩니다.
+handshake 검사도 activation count에 포함되므로 이를 20 Hz command count로 해석하면
+안 됩니다. Dashboard CAN은 기존 absolute
 slot scheduling과 catch-up 동작을 유지합니다. Brake/EStop은 단순 fixed-period task로
 바꾸지 않았습니다. 명시적 delay를 제외해도 UART/ADC/ROS 내부 blocking은 포함됩니다.
 
@@ -163,6 +173,8 @@ message 계약으로 정하고 uROS task에서 성공한 snapshot 복사본을 �
 추가하지 않았습니다.
 
 ## 2026-09-10 구현 검증 범위
+
+아래 수치와 HIL 관측은 최초 계측 구현(`ab60824`) 시점의 기록입니다.
 
 시작점은 `Shin`, `d80e9a6e53fd367dea9390c6162d8ae235aebe11`, clean worktree입니다.
 CubeMX 생성 baseline과 구현 후 모두 A/B Release clean build를 통과했습니다.
