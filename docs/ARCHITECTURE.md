@@ -215,7 +215,7 @@ traction 차단 조건으로 사용하지 않습니다.
   검증되지 않으며, 실제 조향 기구에서 따로 확인해야 합니다.
 
 실차는 `control_launch/vehicle.launch.py`, HIL bench는
-`vehicle_console/hil_bench.launch.py`로 실행합니다. 두 launch 모두
+`vehicle_console/hil.launch.py start_bench:=true`로 실행합니다. 두 launch 모두
 `command_governor` 경유의 동일한 명령 체인을 쓰지만, 하나의 launch로 실차와
 시뮬레이션을 전환하는 구조는 아닙니다.
 

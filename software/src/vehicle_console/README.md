@@ -202,13 +202,17 @@ active backend는 `vehicle_console.hil`이다. 노드 이름과 ROS topic/servic
 | 이전 실행 | 현재 실행 |
 |---|---|
 | `kaiev26_hil hil_web.launch.py` | `vehicle_console hil.launch.py` |
-| `kaiev26_hil hil.launch.py` | `vehicle_console hil_backend.launch.py` |
-| `kaiev26_hil hil_bench.launch.py` | `vehicle_console hil_bench.launch.py` |
+| `kaiev26_hil hil.launch.py` | `vehicle_console hil.launch.py web:=false start_bench:=true agents:=false` |
+| `kaiev26_hil hil_bench.launch.py` | `vehicle_console hil.launch.py web:=false start_bench:=true` |
 | `kaiev26_hil vcan_sim.launch.py` | `vehicle_console vcan_sim.launch.py` |
 | `ros2 run kaiev26_hil <tool>` | `ros2 run vehicle_console <tool>` |
 
 HIL 결과 기본값 `~/.local/state/kaiev26_hil/web_results`는 이전 결과를 계속 표시하기
-위해 유지했다. 실행 중이던 구버전 HIL을 끊지 않도록 이 PC에는 old source path의
-로컬 compatibility symlink와 해당 프로세스가 참조하는 기존 install 파일을 일시 보존한다.
-옛 ROS package 등록은 제거했다. 새 소스 checkout에는 alias가 없으며 새 실행은
-위 명령을 사용한다. 기존 bench와 중복 실행하지 않는다.
+위해 유지했다. 구버전 프로세스 종료를 확인한 뒤 옛 source 경로의 호환 symlink와
+`build/kaiev26_hil`, `install/kaiev26_hil`을 제거했다. Archive와 기존 시험 결과는 보존한다.
+
+Active launch는 세 개다: HIL의 Web/headless를 제공하는 `hil.launch.py`, 실차 read-only
+`vehicle.launch.py`, 독립 CAN simulator인 `vcan_sim.launch.py`.
+HIL 중간 launch 두 개의 기능은 `hil.launch.py`로 통합했다. `web:=false`에서도
+`start_bench:=true`를 지정해야 backend를 시작한다. Headless generator 기본값은 기존과
+같이 enabled=true/watchdog=0이며 Web은 항상 DISARMED/watchdog=3 s로 시작한다.

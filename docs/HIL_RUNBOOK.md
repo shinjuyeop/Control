@@ -49,7 +49,7 @@ command generator, governor와 Web을 실행한다. `steering:=true`는 조향 �
 `state:=true`는 차량 상태 통합, `dashboard_port:=/dev/arduino_hil`은 가상 LCD용
 UNO USB reader를 추가한다.
 
-별도 `hil_backend.launch.py`, `hil_bench.launch.py`, 별도 Agent나 scenario runner와
+같은 HIL launch의 Web/headless 실행, 별도 Agent나 scenario runner와
 중복 실행하지 않는다. 실차용 `control_launch/vehicle.launch.py`도 함께 실행하지 않는다.
 
 ## 2. 호스트 최초 1회 준비

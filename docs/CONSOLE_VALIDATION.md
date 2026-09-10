@@ -102,7 +102,7 @@ Vehicle entrypoint remains `vehicle_console.vehicle`, and HIL is `vehicle_consol
 - TypeScript: **3 passed**, typecheck and Vite production build passed.
 - Targeted colcon: **vehicle_console, visualization, control_launch** built and
   installed. Source discovery includes the new package and excludes the archived
-  `kaiev26_hil`, including when its local compatibility symlink is present.
+  `kaiev26_hil`, including when its local compatibility symlink was present.
 - Installed launch smoke: `vehicle_console hil.launch.py start_bench:=true` on
   localhost domain 195 with `agents:=false`, no steering/state stack and a temporary
   nonexistent serial path. Bridge, generator, governor and Web started; generator
@@ -117,8 +117,8 @@ Vehicle entrypoint remains `vehicle_console.vehicle`, and HIL is `vehicle_consol
 
 The previously running user HIL was observed read only after the archive move:
 STM_TEST remained connected and UNO display reports stayed fresh. No owner was
-acquired and no command/reset/fault/touch was sent to that bench. The local old
-source path points to the ignored archive to preserve its imports, scenario paths,
+acquired and no command/reset/fault/touch was sent to that bench. At consolidation, the local old
+source path pointed to the ignored archive to preserve its imports, scenario paths,
 Python environment and already-served assets. The old ROS/colcon package
 registrations were retired so new invocations use `vehicle_console`.
 
@@ -129,3 +129,42 @@ firmware, vehicle command/safety logic or dashboard CAN behavior changed in this
 consolidation. Bandwidth numbers above are from the preceding frontend promotion;
 this package relocation did not remeasure a mobile/Tailscale link or physical HIL
 control/actuator behavior.
+
+## Legacy runtime and launch cleanup
+
+Starting HEAD: `78510e57971882be49089af842609bd9ae502c26`.
+After the user authorized legacy HIL shutdown, the recorded launcher, Web server
+and child PIDs were already absent, with no remaining member of launch group
+464338. No signal needed to be sent to that old runtime.
+
+Removed the old source compatibility symlink, the retired workspace HIL
+build/install directories, and the obsolete nested Control build/install prefix.
+The package archive, source/configuration history, run results and Tailscale
+forwarding configuration remain intact.
+
+Active launch files are now `hil.launch.py`, `vehicle.launch.py` and
+`vcan_sim.launch.py`. The former `hil_backend.launch.py` and `hil_bench.launch.py`
+were intermediate includes; their functions were absorbed into `hil.launch.py`
+before removing them and their installed/generated links. Headless operation uses
+`web:=false start_bench:=true`; `agents:=false` selects the minimal backend.
+
+Scoped validation after the launch change:
+
+- Targeted `vehicle_console` colcon build/install passed in `~/KAI_ws`.
+- Installed Web + bench launch on isolated localhost domain 195, no Agents or
+  hardware: generator remained **enabled=false / watchdog=3.0** even when the
+  headless-only overrides requested enabled=true / watchdog=0.0.
+- Installed Web-only launch on domain 197: HIL profile served without a bridge or
+  generator observation; no hardware backend was requested.
+- Installed headless launch on domain 194: bridge/generator/governor appeared,
+  no HIL Web node appeared, and generator defaults remained **enabled=true /
+  watchdog=0.0**, matching the retired headless entrypoints.
+- A separate headless scenario launch started the existing scenario runner and
+  preserved the supplied scenario file and results directory parameters.
+- All test launches used a temporary nonexistent serial path with Agents,
+  steering and state options off. Their exact process groups and children were
+  absent after shutdown. No physical actuator or USB/CAN test was performed.
+
+No frontend, HIL domain control/watchdog logic, Vehicle backend or firmware code
+changed in this cleanup; the earlier broader test results above were not rerun
+or counted as new validation for this launch-only change.

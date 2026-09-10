@@ -256,7 +256,7 @@ ros2 launch vehicle_console hil.launch.py \
 
 ## Web으로 벤치 전체 실행
 
-기존 `hil_backend.launch.py`, `hil_bench.launch.py`, 별도 scenario runner와 중복 실행하지 않는다.
+같은 `hil.launch.py`의 Web/headless 실행이나 별도 scenario runner를 중복 실행하지 않는다.
 실차 Planning 또는 다른 `/planning/command` 발행자와도 동시에 실행하지 않는다.
 
 정지·중립, 가속페달 해제, E-stop 사용 가능 상태에서 대상 보드와 벤치 배선을 확인하고,
@@ -561,8 +561,9 @@ Vehicle entrypoint는 HIL backend를 import하거나 초기화하지 않는다.
 
 HIL은 `ros2 launch vehicle_console hil.launch.py`, 실차 read-only 관측은
 `ros2 launch vehicle_console vehicle.launch.py`로 시작한다. 기본 포트는 각각 8765와
-8766이며 실행 중 profile 전환은 없다. Headless backend는 `hil_backend.launch.py`,
-Agent를 포함한 headless bench는 `hil_bench.launch.py`다. HIL과 Foxglove를 함께 쓸 때는
+8766이며 실행 중 profile 전환은 없다. Headless 실행은 같은 HIL launch에
+`web:=false start_bench:=true`를 주고, Agent 없이 실행하려면 `agents:=false`를 추가한다.
+HIL과 Foxglove를 함께 쓸 때는
 Foxglove에 `port:=8767` 등을 지정한다.
 
 이전 package 전체는 `archive/software/kaiev26_hil`에 보관하며 `COLCON_IGNORE`로

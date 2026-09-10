@@ -211,8 +211,8 @@ STM_TEST 보드는 `firmware/udev/99-kaiev26-stm.rules`가 `/dev/hil_test`라는
 Headless HIL bridge, command generator와 governor:
 
 ```bash
-ros2 launch vehicle_console hil_backend.launch.py \
-  serial_port:=/dev/hil_test
+ros2 launch vehicle_console hil.launch.py \
+  web:=false start_bench:=true agents:=false serial_port:=/dev/hil_test
 ```
 
 이 launch가 실행하는 것은 `stm_test_bridge`, `hil_command_generator`,
@@ -222,28 +222,32 @@ STM_A/B용 micro-ROS Agent, `lateral_ctrl`, `vehicle_state_publisher`는 포함�
 `NO RX / NOT CONNECTED`를 정상 상태로 취급한다.
 
 브라우저 조작에는 `hil.launch.py start_bench:=true`를 사용한다.
-`hil_backend.launch.py`와 `hil_bench.launch.py`는 headless backend 진입점이다.
+Headless 실행도 같은 launch에 `web:=false start_bench:=true`를 지정한다.
+Web에서는 generator DISARMED·3 s watchdog을 고정하고, headless에서는 기존과 같이
+`generator_enabled:=true`, `web_heartbeat_timeout_sec:=0.0`을 기본으로 사용한다.
+`results_dir` 미지정 시 Web은 기존 Web 결과 경로, headless는 `test_results`를 사용한다.
 
 Hardware HIL bench 전체를 한 번에:
 
 ```bash
-ros2 launch vehicle_console hil_bench.launch.py \
+ros2 launch vehicle_console hil.launch.py \
+  web:=false start_bench:=true \
   serial_port:=/dev/hil_test \
   stm_a_port:=/dev/hil_a \
   stm_b_port:=/dev/hil_b
 ```
 
-`hil_bench.launch.py`는 위 `hil_backend.launch.py`에 STM_A/B micro-ROS Agent 두 개를
-더한 것이다. Agent를 이미 따로 실행 중이면 `agents:=false`를 준다. 로그가 한
+`agents:=true` 기본값은 STM_A/B micro-ROS Agent 두 개를 함께 시작한다. Agent를 이미 따로 실행 중이면 `agents:=false`를 준다. 로그가 한
 터미널에 모이므로 Agent 로그만 읽어야 할 때는 터미널을 나눠 실행한다.
 `steering:=true`는 can0의 `lateral_ctrl`을, `state:=true`는
 `vehicle_state_publisher`를 함께 띄운다(기본은 둘 다 꺼짐).
 
-Scenario runner를 붙이려면 `scenario_file`을 준다. `hil_bench.launch.py`도 같은 인자를 통과시키므로 Agent까지 포함해
+Headless scenario runner를 붙이려면 `scenario_file`을 준다. Agent까지 포함해
 한 명령으로 돌릴 수 있다.
 
 ```bash
-ros2 launch vehicle_console hil_bench.launch.py \
+ros2 launch vehicle_console hil.launch.py \
+  web:=false start_bench:=true \
   steering:=true \
   scenario_file:=$(ros2 pkg prefix vehicle_console)/share/vehicle_console/config/scenarios/smoke_test.yaml
 ```
