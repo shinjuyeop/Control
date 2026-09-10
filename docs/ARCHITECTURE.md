@@ -202,7 +202,9 @@ traction 차단 조건으로 사용하지 않습니다.
 - `vehicle_console.hil.vcan_sim`은 `vcan`에서 구동·조향 CAN 동작을 시험하는
   software-only simulator입니다. `ros2 launch vehicle_console vcan_sim.launch.py`로
   실행합니다.
-- `gazebo/pid_gazebo`는 PID와 SILS 실험용 Python 패키지·자원을 포함합니다.
+- 구형 `/cmd_vel` 기반 PID/SILS 실험과 모델은
+  [`archive/software/gazebo`](../archive/software/gazebo/README.md)에 보관하며 active build에서 제외합니다.
+  `vehicle_test_scenarios/auto_sysid_gazebo.py`의 외부 Gazebo workspace 연결 경로와는 별개입니다.
 - 벤치용 `steering_bench_test_node`는 시험 `/vehicle/command`,
   `/drive/status`, `/steering/test/estop`을 선택적으로 발행합니다. STM_A/B 없이
   조향만 단독 시험할 때 쓰며, **`command_governor`를 우회해 `/vehicle/command`에

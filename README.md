@@ -44,8 +44,7 @@ Control/
 │       ├── control_launch/          # 실차 구동 통합 launch (vehicle.launch.py)
 │       ├── vehicle_test_scenarios/  # /planning/command 실차 시험 시나리오
 │       ├── vehicle_console/         # 통합 Console: Vehicle 관측 / HIL 시험 / 공용 Web
-│       ├── visualization/           # diagnostics, Foxglove engineering visualization
-│       └── gazebo/                  # PID·SILS 시뮬레이션 자원
+│       └── visualization/           # diagnostics, Foxglove engineering visualization
 ├── host/                            # 차량 PC 호스트 설정 (can0 systemd-networkd)
 └── archive/                         # 과거 구현 보관소, 빌드 대상 아님
 ```
@@ -73,7 +72,6 @@ Control/
 | `vehicle_test_scenarios` | production Planning 대신 `/planning/command`를 발행하는 실차 직진·조향·속도·제동 시험 시나리오 |
 | `vehicle_console` | KAI Vehicle Console: 단일 frontend·공용 Web/ROS/runtime, Vehicle read-only 및 HIL backend |
 | `visualization` | `/diagnostics` 요약과 Foxglove bridge / engineering layout |
-| `gazebo` | PID 및 SILS 관련 시뮬레이션 자원 |
 
 ## KAI Vehicle Console
 
@@ -184,7 +182,7 @@ bench([HIL runbook](docs/HIL_RUNBOOK.md)), 조향 단독
 ### 파일 배치
 
 - ROS 2 패키지는 `software/src/` 아래에 둡니다.
-- Gazebo 코드는 `software/src/gazebo/` 아래에 둡니다.
+- 구형 PID/Gazebo 실험 코드와 모델은 [`archive/software/gazebo`](archive/software/gazebo/README.md)에 보관하며 빌드에서 제외합니다.
 - 전체 제어 launch는 `software/src/control_launch/launch/` 아래에 둡니다.
 - 패키지 단독 시험 launch는 해당 패키지의 `launch/` 아래에 둡니다.
 - 주기·timeout·핀·통신 ID·안전 조건을 바꿀 때는 위 기준 문서를 함께 갱신합니다.
