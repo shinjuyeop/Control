@@ -53,7 +53,7 @@ humble
 source ~/KAI_ws/install/setup.zsh
 
 ros2 launch vehicle_console vehicle.launch.py \
-  web_python:=/home/kai/KAI_ws/src/Control/software/src/kaiev26_hil/.venv/bin/python
+  web_python:=/home/kai/KAI_ws/src/Control/software/src/vehicle_console/.venv/bin/python
 ```
 
 브라우저는 `http://127.0.0.1:8766`으로 접속한다. Tailscale 접속은

@@ -12,9 +12,9 @@ from fastapi import WebSocket, WebSocketDisconnect
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.signals import SignalHandlerOptions
 
-from .profiles import VEHICLE
-from .telemetry import ObserverNode
-from .web import (accept_websocket, add_web_arguments, create_web_app,
+from .common.profiles import VEHICLE
+from .common.telemetry import ObserverNode
+from .common.web import (accept_websocket, add_web_arguments, create_web_app,
                   mount_frontend, positive_number, stream_states)
 
 

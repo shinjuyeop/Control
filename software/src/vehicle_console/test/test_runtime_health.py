@@ -3,8 +3,8 @@ from copy import deepcopy
 
 import pytest
 
-from vehicle_console.runtime_config import BOARDS
-from vehicle_console.runtime_health import RuntimeHealth
+from vehicle_console.common.runtime_config import BOARDS
+from vehicle_console.common.runtime_health import RuntimeHealth
 
 A = "/stm_a/runtime_stats"
 B = "/stm_b/runtime_stats"

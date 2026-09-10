@@ -98,7 +98,7 @@ STM/UNO firmware 상태를 변경하지 않습니다.
 cmake -S firmware/UNO_R4_DASHBOARD/dashboard_preview/native \
   -B firmware/UNO_R4_DASHBOARD/build/host -DCMAKE_BUILD_TYPE=Release
 cmake --build firmware/UNO_R4_DASHBOARD/build/host --parallel 2
-cmake --install firmware/UNO_R4_DASHBOARD/build/host --prefix software/src/kaiev26_hil
+cmake --install firmware/UNO_R4_DASHBOARD/build/host --prefix software/src/vehicle_console
 ```
 
 USB serial 115200에서 `HIL_LCD ON\n`을 보내면 200 ms마다 한 줄의 상태 보고를
@@ -502,7 +502,7 @@ ctest --test-dir firmware/UNO_R4_DASHBOARD/build/host --output-on-failure
 release 전 이동 금지, tap/vertical/multitouch/invalid/finger/source cancel,
 physical priority/guard, virtual cancel/timeout, malformed VT를 확인합니다.
 Python serial PTY 시험과 실제 Chrome PointerEvent 시험은
-[Web HIL 검증](../../software/src/kaiev26_hil/WEB_CONSOLE.md#검증)을 따릅니다.
+[Web HIL 검증](../../software/src/vehicle_console/HIL_WEB.md#검증)을 따릅니다.
 
 #### 2026-09-10 구현·자동 검증 결과
 

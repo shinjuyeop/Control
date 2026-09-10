@@ -2,19 +2,32 @@
 <package format="3">
   <name>vehicle_console</name>
   <version>0.1.0</version>
-  <description>KAI Vehicle Console: shared Web frontend and read-only ROS vehicle monitoring.</description>
+  <description>KAI Vehicle Console: read-only vehicle monitoring and controlled HIL validation.</description>
   <maintainer email="shinjp02@gmail.com">shinjuyeop</maintainer>
   <license>TODO: License declaration</license>
   <buildtool_depend>ament_python</buildtool_depend>
   <exec_depend>rclpy</exec_depend>
   <exec_depend>kaiev26_msgs</exec_depend>
   <exec_depend>diagnostic_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>std_srvs</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
   <exec_depend>rosidl_runtime_py</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>python3-fastapi</exec_depend>
   <exec_depend>python3-uvicorn</exec_depend>
+  <!-- Installed HIL tools; Vehicle startup does not initialize these components. -->
+  <exec_depend>lateral_ctrl</exec_depend>
+  <exec_depend>command_governor</exec_depend>
+  <exec_depend>micro_ros_agent</exec_depend>
+  <exec_depend>vehicle_state_publisher</exec_depend>
+  <exec_depend>python3-serial</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>python3-pil</exec_depend>
+  <exec_depend>python3-tk</exec_depend>
+  <exec_depend>python3-matplotlib</exec_depend>
   <test_depend>ament_pytest</test_depend>
   <test_depend>python3-pytest</test_depend>
   <test_depend>python3-httpx</test_depend>

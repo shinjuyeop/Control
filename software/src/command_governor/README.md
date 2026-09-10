@@ -106,13 +106,13 @@ ros2 topic info -v /vehicle/command   # Publisher count: 1 (command_governor)
 
 위 단독 launch는 개발용이다. 실차에서는
 [`control_launch/vehicle.launch.py`](../control_launch/launch/vehicle.launch.py)가
-respawn과 함께 띄우고, HIL에서는 `kaiev26_hil`의 `hil.launch.py`가
+respawn과 함께 띄우고, HIL에서는 `vehicle_console`의 `hil_backend.launch.py`가
 respawn 없이(크래시가 드러나도록) 띄운다.
 
 ## 관련 문서
 
 - 통신 계약: [`../../../docs/INTERFACES.md`](../../../docs/INTERFACES.md)
 - 시스템 구조: [`../../../docs/ARCHITECTURE.md`](../../../docs/ARCHITECTURE.md)
-- HIL 경로: [`../kaiev26_hil/README.md`](../kaiev26_hil/README.md)
+- HIL 경로: [`../vehicle_console/HIL_BACKEND.md`](../vehicle_console/HIL_BACKEND.md)
 - 실차 시험 입력: [`../vehicle_test_scenarios/README.md`](../vehicle_test_scenarios/README.md)
 - 횡방향 소비자: [`../lateral_ctrl/README.md`](../lateral_ctrl/README.md)

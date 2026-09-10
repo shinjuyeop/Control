@@ -1,2 +1,5 @@
 fastapi>=0.115,<1
 uvicorn[standard]>=0.30,<1
+Pillow>=9,<13
+pyserial>=3.5,<4
+PyYAML>=6,<7

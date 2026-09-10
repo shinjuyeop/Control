@@ -2,7 +2,7 @@
 
 Archived after the shared KAI Vehicle Console HIL profile passed Web/ROS and
 browser regression tests. This is only the former GUI surface; the active
-`software/src/kaiev26_hil` still owns serial, protocol, commands, scenarios,
+`software/src/vehicle_console/vehicle_console/hil` now owns serial, protocol, commands, scenarios,
 emulators, watchdog, control ownership and Virtual Touch.
 
 `hil_gui.py` and `test_hil_gui_smoke.py` preserve the original source/tests.

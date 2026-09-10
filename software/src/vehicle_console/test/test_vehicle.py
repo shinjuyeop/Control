@@ -18,7 +18,7 @@ from rosidl_runtime_py.set_message import set_message_fields
 from starlette.websockets import WebSocketDisconnect
 
 from runtime_samples import runtime_data
-from vehicle_console.telemetry import VEHICLE_TOPICS
+from vehicle_console.common.telemetry import VEHICLE_TOPICS
 from vehicle_console.vehicle import create_app
 
 
@@ -95,7 +95,19 @@ def test_vehicle_starts_without_hil_and_owns_only_subscriptions(vehicle):
     assert {p.topic_name for p in node.publishers} <= {"/parameter_events"}
     assert not list(node.clients)
     assert not list(node.services)
-    subprocess.run([sys.executable, "-c", "import vehicle_console.vehicle; import sys; assert not any(n.startswith('kaiev26_hil') for n in sys.modules)"], check=True, timeout=10, cwd=Path(__file__).parents[1])
+    subprocess.run([sys.executable, "-c", """
+import sys
+import rclpy
+from vehicle_console.vehicle import VehicleObserver
+rclpy.init()
+node = VehicleObserver()
+try:
+    assert not any(n == 'vehicle_console.hil' or n.startswith('vehicle_console.hil.')
+                   or n.startswith('kaiev26_hil') for n in sys.modules)
+finally:
+    node.destroy_node()
+    rclpy.shutdown()
+"""], check=True, timeout=10, cwd=Path(__file__).parents[1])
     health = client.get("/api/health").json()
     assert health["profile"] == "vehicle"
     assert not {"control_bench", "virtual_touch", "scenarios"} & set(health["capabilities"])

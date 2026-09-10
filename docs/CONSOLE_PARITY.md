@@ -38,8 +38,18 @@ backend, vcan SIL and diagnostics/Foxglove remain. Archives are under
 
 The two GUI packages were the only active consumers of `control_gui_common` and
 PyQt5. Their active dependencies were removed. `python3-tk` and
-`python3-matplotlib` remain because active `kaiev26_hil.vcan_sim.hmi` imports them.
+`python3-matplotlib` remain because active `vehicle_console.hil.vcan_sim.hmi` imports them.
 
 Physical vehicle operation, actuator movement, LCD panel output and physical
 FT6336U touch were not repeated by these software tests. Historical board evidence
 in the HIL/UNO runbooks remains historical evidence, not proof of this refactor.
+
+## HIL backend package consolidation
+
+After the initial frontend/Qt migration, the user chose one Console system.
+The active HIL implementation is now `vehicle_console.hil`, shared infrastructure
+is `vehicle_console.common`, and the Vehicle entrypoint remains read only without
+initializing HIL modules. The former complete package is archived separately at
+`archive/software/kaiev26_hil`; its archived code is excluded from colcon discovery.
+Existing HIL node names, commands, watchdog, scenario and virtual-HMI behavior are
+preserved. Headless launch and CLI tools remain available from `vehicle_console`.

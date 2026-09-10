@@ -42,9 +42,8 @@ Control/
 │       ├── command_governor/        # /planning/command → /vehicle/command 단일 발행자
 │       ├── vehicle_state_publisher/ # status 3종을 /vehicle/state로 통합
 │       ├── control_launch/          # 실차 구동 통합 launch (vehicle.launch.py)
-│       ├── kaiev26_hil/             # HIL backend, ownership, Virtual HMI, scenario, vcan SIL
 │       ├── vehicle_test_scenarios/  # /planning/command 실차 시험 시나리오
-│       ├── vehicle_console/         # 단일 Web frontend, read-only Vehicle, 공용 runtime
+│       ├── vehicle_console/         # 통합 Console: Vehicle 관측 / HIL 시험 / 공용 Web
 │       ├── visualization/           # diagnostics, Foxglove engineering visualization
 │       └── gazebo/                  # PID·SILS 시뮬레이션 자원
 ├── host/                            # 차량 PC 호스트 설정 (can0 systemd-networkd)
@@ -71,9 +70,8 @@ Control/
 | `command_governor` | `/planning/command`를 정합성 게이트 후 `/vehicle/command`로 재발행하는 유일한 발행자. 현재 패스스루이며 형상(속도 상한·램프·축간 협조)은 이후 단계 |
 | `vehicle_state_publisher` | 액추에이터 status 3종을 `/vehicle/state`로 통합 |
 | `control_launch` | 실차 구동 스택 통합 `vehicle.launch.py` (Agent 2개 + 거버너 + 조향 + 상태 통합) |
-| `kaiev26_hil` | STM_TEST bridge, HIL Web backend, 조작권/watchdog, UNO Virtual LCD/Touch, scenario, `vcan` simulator |
 | `vehicle_test_scenarios` | production Planning 대신 `/planning/command`를 발행하는 실차 직진·조향·속도·제동 시험 시나리오 |
-| `vehicle_console` | KAI Vehicle Console: 단일 React frontend, 공용 Web/ROS/runtime, read-only Vehicle profile |
+| `vehicle_console` | KAI Vehicle Console: 단일 frontend·공용 Web/ROS/runtime, Vehicle read-only 및 HIL backend |
 | `visualization` | `/diagnostics` 요약과 Foxglove bridge / engineering layout |
 | `gazebo` | PID 및 SILS 관련 시뮬레이션 자원 |
 
@@ -84,15 +82,15 @@ HIL profile의 전역 **Control Dock**로 Mode/Gear/Pedal/E-stop을 조작하면
 시나리오 결과와 UNO의 **가상 LCD**도 제공합니다. 화면의 속도는 km/h,
 조향은 degree이며 ROS의 m/s·rad 계약은 유지합니다.
 
-단일 frontend를 HIL과 Vehicle이 공유합니다. **Vehicle · READ ONLY**는 제어기나 HIL을
+`vehicle_console` 한 패키지 안에서 frontend와 공용 계층을 HIL과 Vehicle이 공유합니다. **Vehicle · READ ONLY**는 제어기나 HIL을
 초기화하지 않고 차량 토픽만 구독하며, 서버에서 명령 입력을 거부합니다.
 `ros2 launch vehicle_console vehicle.launch.py`로 시작합니다(기본 8766).
-HIL은 기존 `ros2 launch kaiev26_hil hil_web.launch.py`를 사용합니다(8765).
+HIL은 `ros2 launch vehicle_console hil.launch.py`를 사용합니다(8765).
 [Console 설치·운용](software/src/vehicle_console/README.md),
 [Qt 대체 및 archive 판단](docs/CONSOLE_PARITY.md)을 참고하십시오.
 
 Web 의존성 설치, 프론트엔드·공통 LCD renderer 빌드, 전체 벤치 실행은
-[Web Console 운용 문서](software/src/kaiev26_hil/WEB_CONSOLE.md)를 따릅니다.
+[Web Console 운용 문서](software/src/vehicle_console/HIL_WEB.md)를 따릅니다.
 기존 HIL launch와 Web 전체 벤치를 중복 실행하지 않습니다.
 
 ## 빠른 빌드
@@ -176,9 +174,9 @@ bench([HIL runbook](docs/HIL_RUNBOOK.md)), 조향 단독
 | [STM_B](firmware/STM_B/README.md) | STM_B 내부 구조 및 동작 |
 | [STM_TEST](firmware/STM_TEST/README.md) | HIL emulator의 pin map, UART protocol과 Plant |
 | [lateral_ctrl](software/src/lateral_ctrl/README.md) | KEYA 조향 패키지 사용법과 상태 머신 |
-| [kaiev26_hil](software/src/kaiev26_hil/README.md) | STM_TEST bridge, HIL Web backend, protocol과 scenario 상세 |
 | [vehicle_test_scenarios](software/src/vehicle_test_scenarios/README.md) | 실차 직진·조향 sweep·속도 step/ramp·제동 시험 입력 |
-| [vehicle_console](software/src/vehicle_console/README.md) | 공용 Web frontend, Vehicle READ ONLY, 원격 관측 |
+| [vehicle_console](software/src/vehicle_console/README.md) | 통합 Console, Vehicle READ ONLY, HIL, 원격 관측 |
+| [HIL backend](software/src/vehicle_console/HIL_BACKEND.md) | bridge, protocol, scenario와 vcan 상세 |
 | [visualization](software/src/visualization/README.md) | diagnostics와 Foxglove 사용법 |
 
 ## 개발 규칙

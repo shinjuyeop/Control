@@ -105,3 +105,6 @@ micro_ros_stm32cubemx_utils/
 # 만약 pid_gazebo 폴더 안의 내용물을 통째로 제외하고 싶다면 (추천)
 pid_gazebo/analysis/
 pid_gazebo/bags/
+
+# Local alias for an already-running legacy HIL process after package archival.
+/software/src/kaiev26_hil

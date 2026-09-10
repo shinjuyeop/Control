@@ -1,16 +1,20 @@
 # KAI Vehicle Console
 
-Single maintained React/Vite frontend for HIL validation and read-only vehicle observation.
+KAI Vehicle Console을 하나의 ROS package로 설치·실행한다. 공용 frontend와
+관측 계층을 공유하면서 Vehicle과 HIL은 독립 backend로 동작한다.
 
 ```text
-kaiev26_hil (controls, scenario, serial, ownership) → vehicle_console (Web, telemetry, runtime)
-visualization (diagnostics / Foxglove) → canonical kaiev26_msgs
-vehicle_console → canonical kaiev26_msgs (no HIL dependency)
+vehicle_console/
+├── vehicle_console/common/   Web · ROS reception · runtime interpretation
+├── vehicle_console/vehicle.py Vehicle read-only backend
+├── vehicle_console/hil/      장비 · 명령 · scenario · fault · virtual HMI · vcan
+├── launch/                  vehicle.launch.py / hil.launch.py
+└── web/                     단일 React/Vite frontend
 ```
 
 ```bash
-ros2 launch vehicle_console vehicle.launch.py
-ros2 launch kaiev26_hil hil_web.launch.py
+ros2 launch vehicle_console vehicle.launch.py  # VEHICLE · READ ONLY / 8766
+ros2 launch vehicle_console hil.launch.py      # HIL / 8765
 ```
 
 The profile is fixed by the launched server. Vehicle exposes only canonical topic
@@ -37,7 +41,7 @@ npm run build
 cd /home/kai/KAI_ws
 source /opt/ros/humble/setup.bash
 unset COLCON_CURRENT_PREFIX
-colcon build --symlink-install --packages-select vehicle_console kaiev26_hil visualization control_launch
+colcon build --symlink-install --packages-select vehicle_console visualization control_launch
 source install/setup.bash
 source src/Control/software/src/vehicle_console/.venv/bin/activate
 ros2 launch vehicle_console vehicle.launch.py
@@ -45,17 +49,16 @@ ros2 launch vehicle_console vehicle.launch.py
 
 브라우저는 **http://127.0.0.1:8766**에 접속한다. launch는 활성화된 `VIRTUAL_ENV`의
 Python을 기본으로 사용한다. 다른 Python은 `web_python:=/absolute/path/to/python`으로
-지정한다. 현재 HIL Web에 설치된 `.venv`도 Web 의존성을 제공하는 Python 환경으로
-재사용할 수 있으며, 이것이 HIL backend를 import/시작한다는 뜻은 아니다.
-독립 설치에는 `vehicle_console/requirements-web.txt`만 필요하다.
+지정한다. 공용 `.venv`는 두 profile과 HIL CLI가 사용할 의존성을 제공한다.
+패키지에 HIL 의존성을 함께 설치해도 Vehicle 실행 시 HIL backend를 초기화하지 않는다.
 
 Frontend를 바꾸면 `npm run build` 뒤 `colcon build`를 실행한다. 유일한 source는
 `vehicle_console/web`, 설치 위치는 `share/vehicle_console/web`이다.
 
-HIL은 기존 실행 구조를 유지한다:
+HIL은 같은 패키지의 별도 진입점으로 실행한다:
 
 ```bash
-ros2 launch kaiev26_hil hil_web.launch.py  # Web backend만, 기본 8765
+ros2 launch vehicle_console hil.launch.py  # Web backend만, 기본 8765
 # 전체 bench 실행 인자와 UNO 연결은 HIL 운용 문서를 따른다.
 ros2 launch visualization foxglove_bridge.launch.py  # 상세 분석, 기본 8765
 ```
@@ -74,14 +77,15 @@ Vehicle(8766)과 Foxglove(8765)는 동시에 실행할 수 있다. HIL(8765)과 
 
 Profile은 선택한 서버 진입점에 고정되며 브라우저 전환 기능이 없다.
 서버의 `profile`/`capabilities`가 navigation을 구성한다. Vehicle 화면에 HIL
-controls나 비활성 버튼을 남겨놓지 않는다. HIL의 UNO touch readiness는 별도로
+controls나 비활성 버튼을 남겨놓지 않는다. HIL-only 모듈은 `vehicle_console.hil`에 두며 Vehicle은 이 모듈을 import하지 않는다.
+HIL의 UNO touch readiness는 별도로
 현재 owner, USB 상태, firmware 보고 freshness와 generation에 의존한다.
 
 Overview는 명령, mode/gear/pedal/RUN, 목표/관측 속도와 조향각, 브레이크 요청,
 STM_B가 보고한 E-stop, active conditions, ECU A/B 상태를 요약한다. 좁은 화면은
 패널을 세로로 배치하며 상단 탐색을 가로로 스크롤할 수 있다.
 동일한 StateRail, TargetActual, SteeringArc, telemetry/flag 해석과 runtime
-instruments를 HIL에서도 사용한다. HIL-only controls는 HIL wrappers에 남는다.
+instruments를 HIL에서도 사용한다. HIL-only controls는 HIL wrappers에 남는다. Headless 도구도 같은 패키지의 CLI로 유지한다.
 
 ## Topics와 freshness
 
@@ -110,9 +114,9 @@ monotonic elapsed time을 수신 age에 더해 만료시키며, 마지막 속도
 
 ## Runtime health
 
-`vehicle_console/runtime_config.py`가 MCU task ID와 stack/heap allocation을,
+`vehicle_console/common/runtime_config.py`가 MCU task ID와 stack/heap allocation을,
 `runtime_health.py`가 유효성·rate·history·stale 해석을 소유한다. HIL의 명시적인
-Bench Reset acknowledgment만 `kaiev26_hil/runtime_health.py`의 subclass에 남았다.
+Bench Reset acknowledgment만 `vehicle_console/hil/runtime_health.py`의 subclass에 남았다.
 Vehicle에는 acknowledgment 액션이 없다.
 
 Wall time은 관측 시간이며 WCET가 아니다. Stack free는 minimum-ever HWM,
@@ -169,11 +173,9 @@ cd /home/kai/KAI_ws/src/Control
 source /opt/ros/humble/setup.bash
 source /home/kai/KAI_ws/install/setup.bash
 ROS_DOMAIN_ID=193 ROS_LOCALHOST_ONLY=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
-  software/src/kaiev26_hil/.venv/bin/python -m pytest software/src/vehicle_console/test -q
-ROS_DOMAIN_ID=194 ROS_LOCALHOST_ONLY=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
-  software/src/kaiev26_hil/.venv/bin/python -m pytest software/src/kaiev26_hil/test -q
+  software/src/vehicle_console/.venv/bin/python -m pytest software/src/vehicle_console/test -q
 ROS_DOMAIN_ID=196 ROS_LOCALHOST_ONLY=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
-  software/src/kaiev26_hil/.venv/bin/python -m pytest software/src/visualization/test -q
+  software/src/vehicle_console/.venv/bin/python -m pytest software/src/visualization/test -q
 cd software/src/vehicle_console/web
 npm test
 npm run typecheck
@@ -188,4 +190,25 @@ Qt source/tests/launch/docs are preserved in `archive/software/legacy_hil_gui` a
 The subtree is excluded by `COLCON_IGNORE`. See [parity matrix](../../../docs/CONSOLE_PARITY.md).
 Tkinter and Matplotlib remain active dependencies of the vcan SIL GUI.
 
-HIL operational details: [WEB_CONSOLE.md](../kaiev26_hil/WEB_CONSOLE.md).
+HIL operational details: [HIL_WEB.md](HIL_WEB.md); headless/serial/SIL: [HIL_BACKEND.md](HIL_BACKEND.md).
+
+## 이전 패키지 이관
+
+`kaiev26_hil` 전체의 source/tests/config/launch/docs는
+`archive/software/kaiev26_hil`에 보관한다. 그 archive는 `COLCON_IGNORE`로 제외되며,
+active backend는 `vehicle_console.hil`이다. 노드 이름과 ROS topic/service/parameter는
+유지하므로 firmware 및 다른 제어 노드의 계약은 바뀌지 않는다.
+
+| 이전 실행 | 현재 실행 |
+|---|---|
+| `kaiev26_hil hil_web.launch.py` | `vehicle_console hil.launch.py` |
+| `kaiev26_hil hil.launch.py` | `vehicle_console hil_backend.launch.py` |
+| `kaiev26_hil hil_bench.launch.py` | `vehicle_console hil_bench.launch.py` |
+| `kaiev26_hil vcan_sim.launch.py` | `vehicle_console vcan_sim.launch.py` |
+| `ros2 run kaiev26_hil <tool>` | `ros2 run vehicle_console <tool>` |
+
+HIL 결과 기본값 `~/.local/state/kaiev26_hil/web_results`는 이전 결과를 계속 표시하기
+위해 유지했다. 실행 중이던 구버전 HIL을 끊지 않도록 이 PC에는 old source path의
+로컬 compatibility symlink와 해당 프로세스가 참조하는 기존 install 파일을 일시 보존한다.
+옛 ROS package 등록은 제거했다. 새 소스 checkout에는 alias가 없으며 새 실행은
+위 명령을 사용한다. 기존 bench와 중복 실행하지 않는다.

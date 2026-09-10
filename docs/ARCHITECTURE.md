@@ -57,7 +57,7 @@ STM_A와 STM_B는 각각 별도의 LPUART1 serial transport와 micro-ROS Agent�
 > 실행합니다(Agent 2개 + `command_governor` + 조향 + 상태 통합, 관찰 계열
 > 제외). Production Planning(`/planning/command` 발행자)의 구체 구현은 현재
 > 코드에서 확인되지 않으며 launch에도 포함되지 않습니다. 실차 시험에서는
-> `vehicle_test_scenarios`, HIL에서는 `kaiev26_hil`의 `hil_command_generator`가
+> `vehicle_test_scenarios`, HIL에서는 `vehicle_console.hil`의 `hil_command_generator`가
 > 그 자리를 대신합니다. `/vehicle/command`는 `command_governor`가 유일하게
 > 발행합니다.
 
@@ -199,8 +199,8 @@ traction 차단 조건으로 사용하지 않습니다.
 
 ## 7. 실차와 시뮬레이션의 관계
 
-- `kaiev26_hil.vcan_sim`은 `vcan`에서 구동·조향 CAN 동작을 시험하는
-  software-only simulator입니다. `ros2 launch kaiev26_hil vcan_sim.launch.py`로
+- `vehicle_console.hil.vcan_sim`은 `vcan`에서 구동·조향 CAN 동작을 시험하는
+  software-only simulator입니다. `ros2 launch vehicle_console vcan_sim.launch.py`로
   실행합니다.
 - `gazebo/pid_gazebo`는 PID와 SILS 실험용 Python 패키지·자원을 포함합니다.
 - 벤치용 `steering_bench_test_node`는 시험 `/vehicle/command`,
@@ -215,7 +215,7 @@ traction 차단 조건으로 사용하지 않습니다.
   검증되지 않으며, 실제 조향 기구에서 따로 확인해야 합니다.
 
 실차는 `control_launch/vehicle.launch.py`, HIL bench는
-`kaiev26_hil/hil_bench.launch.py`로 실행합니다. 두 launch 모두
+`vehicle_console/hil_bench.launch.py`로 실행합니다. 두 launch 모두
 `command_governor` 경유의 동일한 명령 체인을 쓰지만, 하나의 launch로 실차와
 시뮬레이션을 전환하는 구조는 아닙니다.
 
@@ -223,12 +223,13 @@ traction 차단 조건으로 사용하지 않습니다.
 
 `vehicle_console`은 유일한 React frontend, 공용 Web serving/Host·Origin 보안,
 ROS 수신·runtime normalization, 독립 Vehicle read-only backend를 제공합니다.
-`kaiev26_hil`이 이 공용 계층에 의존하며 반대 dependency는 없습니다.
+하나의 active ROS package 안에서 `vehicle_console.common`, `vehicle_console.vehicle`,
+`vehicle_console.hil`로 책임을 나눕니다. 기존 `kaiev26_hil`은 archive에 보관합니다.
 Vehicle backend는 HIL backend/serial/scenario를 import하거나 초기화하지 않습니다.
 
 ```text
 canonical vehicle ROS topics → vehicle_console Vehicle observer → shared frontend
-canonical + HIL ROS / UNO → kaiev26_hil HIL backend → vehicle_console infrastructure / frontend
+canonical + HIL ROS / UNO → vehicle_console.hil → common infrastructure / frontend
 canonical vehicle ROS topics → visualization diagnostics / Foxglove
 ```
 
@@ -237,7 +238,7 @@ Diagnostics만 제공하며 WebSocket 입력은 모두 거부합니다. HIL의 c
 fault/display/touch capability와 ownership은 HIL backend 책임입니다.
 Vehicle은 기본 8766, Foxglove는 8765로 함께 실행할 수 있습니다.
 
-`kaiev26_hil/hil_web.launch.py`는 같은 frontend를 HIL profile로 제공합니다.
+`vehicle_console/hil.launch.py`는 같은 frontend를 HIL profile로 제공합니다.
 기본 실행은 Web만 띄우며 `start_bench:=true`가 기존 headless HIL bench를 포함합니다.
 Web은 구동·조향·안전 등의 관측 페이지와 전역 Control Dock을 분리합니다.
 Control Dock의 운전자 입력, 고장 주입과 시나리오는 기존 `/hil/*`와 command generator parameter를
@@ -252,7 +253,7 @@ Web 전용 launch의 command generator는 DISARMED로 시작하고, 조작 브�
 ARM 이후 발행합니다. Web 조작권은 한 브라우저에만 주며 heartbeat 단절 시 해제합니다.
 생성기에도 Web heartbeat watchdog을 적용하되, headless HIL launch의 generator 기본값은 유지합니다. Qt surface는
 [parity 검증 후 archive](CONSOLE_PARITY.md)에 보관합니다.
-상세 실행·단위 변환·검증 결과는 [Web Console](../software/src/kaiev26_hil/WEB_CONSOLE.md)에 있습니다.
+상세 실행·단위 변환·검증 결과는 [Web Console](../software/src/vehicle_console/HIL_WEB.md)에 있습니다.
 
 ## 8. 설계 경계와 책임 분리
 
@@ -269,9 +270,9 @@ ARM 이후 발행합니다. Web 조작권은 한 브라우저에만 주며 heart
 | 명령 형상 (속도 상한·램프·축간 협조) | Host `command_governor` (예정, 현재 패스스루) |
 | Production Planning / motion-control 명령 생성 (`/planning/command`) | 현재 코드에서 확인되지 않음 |
 | 실차 시험 `/planning/command` 생성 | Host `vehicle_test_scenarios` |
-| HIL `/planning/command` 생성 | Host `kaiev26_hil/hil_command_generator` |
+| HIL `/planning/command` 생성 | Host `vehicle_console.hil.hil_command_generator` |
 | 공용 Web frontend·관측·runtime | `vehicle_console` |
-| HIL 조작·scenario·가상 HMI | `kaiev26_hil/hil_web_bridge` + 공용 Console |
+| HIL 조작·scenario·가상 HMI | `vehicle_console.hil.hil_web_bridge` + 공용 Console |
 | Vehicle read-only 관측 | `vehicle_console/vehicle` |
 | UNO 적용 상태 보고 / 가상 LCD | `hil_display_report.cpp` / `dashboard_display.py` + 공통 C++ renderer |
 

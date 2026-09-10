@@ -1,5 +1,7 @@
 # KAI Vehicle Console validation — 2026-09-11
 
+## Initial frontend promotion (historical)
+
 Starting branch/HEAD: `Shin`, `f8a0b766eaa1ab227eec6d574e696024c0ef8ab0`.
 Initial worktree was clean and matched freshly fetched `origin/Shin`.
 The existing Virtual Touch work (`dbcbb25`) and physical-touch/navigation firmware
@@ -31,7 +33,7 @@ not fail the tests. No dependency upgrade was performed for those warnings.
 
 ## Live observations and limits
 
-The pre-existing HIL launch PID `464338` and Web PID `464353` were owned by the
+At the initial frontend promotion, the pre-existing HIL launch PID `464338` and Web PID `464353` were owned by the
 user and left running. Read-only observation found STM_TEST connected/fresh,
 UNO USB open/fresh, Virtual Touch supported/ready, and no control owner/ARM.
 No control ownership was acquired and no test command, reset, fault or touch was
@@ -84,3 +86,46 @@ Duplicate raw RuntimeStats and unrendered runtime counters are also excluded.
 
 Architecture and archive decisions: [CONSOLE_PARITY.md](CONSOLE_PARITY.md).
 Launch/security instructions: [vehicle_console README](../software/src/vehicle_console/README.md).
+
+## Unified backend package consolidation
+
+Starting branch/HEAD: `Shin`, `d8b3089624424e4eb4e836f76ab25fa12e3df81a`.
+The user changed the architecture to a single Console system. HIL's backend,
+headless tools, launch/config/scenarios and native renderer installation now belong
+to `vehicle_console`. Common Python modules are in `vehicle_console.common`, the
+Vehicle entrypoint remains `vehicle_console.vehicle`, and HIL is `vehicle_console.hil`.
+
+- Migrated Python suite: **120 passed** (29 Vehicle/common + 91 HIL), with actual
+  isolated ROS pub/sub and Chrome browser tests, including takeover, watchdog,
+  scenarios, Virtual LCD/Touch, stale/reconnect and responsive rendering.
+- After archiving, the affected Vehicle/HIL Web tests ran again: **42 passed**.
+- TypeScript: **3 passed**, typecheck and Vite production build passed.
+- Targeted colcon: **vehicle_console, visualization, control_launch** built and
+  installed. Source discovery includes the new package and excludes the archived
+  `kaiev26_hil`, including when its local compatibility symlink is present.
+- Installed launch smoke: `vehicle_console hil.launch.py start_bench:=true` on
+  localhost domain 195 with `agents:=false`, no steering/state stack and a temporary
+  nonexistent serial path. Bridge, generator, governor and Web started; generator
+  reported **enabled=false, web_heartbeat_timeout_sec=3.0**, no owner and no ARM.
+- Installed Vehicle launch on isolated domain 196 started with NO DATA and rejected
+  an inbound claim with WebSocket **1008**. The fresh-process test constructs the
+  Vehicle observer and confirms no `vehicle_console.hil` or old HIL module loaded.
+- Installed native dashboard library rendered a **480×320 PNG**; both installed
+  profiles served the common index and current JS/CSS assets successfully.
+- All smoke-test launch groups and children shut down cleanly and were absent in
+  the post-check. No physical USB/CAN device was opened by those test launches.
+
+The previously running user HIL was observed read only after the archive move:
+STM_TEST remained connected and UNO display reports stayed fresh. No owner was
+acquired and no command/reset/fault/touch was sent to that bench. The local old
+source path points to the ignored archive to preserve its imports, scenario paths,
+Python environment and already-served assets. The old ROS/colcon package
+registrations were retired so new invocations use `vehicle_console`.
+
+The default results directory remains `~/.local/state/kaiev26_hil/web_results` to
+preserve access to prior scenario runs. This is a retained data path, not an active
+package dependency. No telemetry schema/cadence, runtime-health interpretation,
+firmware, vehicle command/safety logic or dashboard CAN behavior changed in this
+consolidation. Bandwidth numbers above are from the preceding frontend promotion;
+this package relocation did not remeasure a mobile/Tailscale link or physical HIL
+control/actuator behavior.
