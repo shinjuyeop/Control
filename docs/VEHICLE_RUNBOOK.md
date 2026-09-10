@@ -63,7 +63,7 @@ ros2 launch vehicle_console vehicle.launch.py \
 - **Tailscale 원격 브라우저:** `http://100.112.72.27:8766/`
 
 Console은 기본 loopback에 바인딩하므로, 차량 PC에서 **Vehicle용 8766 포트 전달**을
-별도로 등록한다. 기존 8765 전달만으로는 Vehicle Console에 접속할 수 없다.
+별도로 등록한다. HIL용 8767 전달만으로는 Vehicle Console에 접속할 수 없다.
 
 ```zsh
 # 차량 PC에서 최초 1회 등록. Web launch는 별도로 실행되어 있어야 한다.

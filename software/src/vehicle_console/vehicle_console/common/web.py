@@ -57,7 +57,7 @@ def positive_number(value):
     return number
 
 
-def add_web_arguments(parser, *, default_hosts="", default_port=8765):
+def add_web_arguments(parser, *, default_port, default_hosts=""):
     parser.add_argument("--bind", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=default_port)
     parser.add_argument("--allowed-hosts", default=default_hosts,

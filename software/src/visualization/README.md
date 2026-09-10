@@ -63,6 +63,6 @@ ros2 launch visualization foxglove_bridge.launch.py
 ```
 
 Foxglove 기본 포트는 8765, Vehicle Console은 8766이므로 동시에 실행할 수 있다.
-HIL Web은 기존 8765를 쓰므로 HIL과 함께 실행할 때는 Foxglove `port:=8767`을 준다.
+HIL Web은 기본 8767을 사용하므로 별도 포트 변경 없이 함께 실행할 수 있다.
 `control.json`은 기존 engineering layout이며 패키지 share에도 설치된다.
 Qt/PyQt5/control_gui_common은 active visualization의 dependency가 아니다.

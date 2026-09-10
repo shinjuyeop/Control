@@ -807,7 +807,7 @@ def create_app(
 
 def main(args=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    add_web_arguments(parser, default_hosts="100.112.72.27,100.112.72.26")
+    add_web_arguments(parser, default_port=8767, default_hosts="100.112.72.27,100.112.72.26")
     parser.add_argument("--dashboard-port", default="")
     parser.add_argument("--dashboard-library")
     parser.add_argument(

@@ -184,7 +184,7 @@ def test_host_and_origin_validation(vehicle):
         with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect("ws://localhost/ws", headers={"origin": origin}):
                 pass
-    with client.websocket_connect("ws://localhost/ws", headers={"host": "100.112.72.27:8765", "origin": "http://100.112.72.27:8765"}) as ws:
+    with client.websocket_connect("ws://localhost/ws", headers={"host": "100.112.72.27:8766", "origin": "http://100.112.72.27:8766"}) as ws:
         assert ws.receive_json()["profile"] == "vehicle"
 
 

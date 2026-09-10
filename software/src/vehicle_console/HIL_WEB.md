@@ -246,7 +246,7 @@ ros2 launch vehicle_console hil.launch.py \
   web_python:=/home/kai/KAI_ws/src/Control/software/src/vehicle_console/.venv/bin/python
 ```
 
-브라우저: **http://127.0.0.1:8765**
+브라우저: **http://127.0.0.1:8767**
 
 보드가 없어도 모든 페이지를 열 수 있으며 미수신 값은 `—`로 표시한다.
 가짜 연결이나 시뮬레이션 값을 실제 보드 상태로 표시하지 않는다.
@@ -373,10 +373,10 @@ Part별 CAN Hz를 ROS 토픽 Hz로 추정하지 않는다. 현재 메시지에�
 
 ```bash
 # 원격 노트북에서 실행. hil-host는 실제 SSH 호스트 이름으로 바꾼다.
-ssh -N -L 8765:127.0.0.1:8765 kai@hil-host
+ssh -N -L 8767:127.0.0.1:8767 kai@hil-host
 ```
 
-접속은 노트북의 `http://127.0.0.1:8765`다. ROS DDS 자체의 접근권한은 기존 신뢰된
+접속은 노트북의 `http://127.0.0.1:8767`다. ROS DDS 자체의 접근권한은 기존 신뢰된
 벤치 네트워크를 전제로 한다. 다른 CLI/GUI가 같은 domain을 조작하지 않도록 한다.
 
 ### Tailscale 공통 주소
@@ -385,7 +385,7 @@ ssh -N -L 8765:127.0.0.1:8765 kai@hil-host
 `100.112.72.27`로 통일했다.
 권장 구성은 서버를 계속 loopback에 바인딩하고, Tailscale Serve의 TCP 전달로 로컬 접속과
 Tailscale 주소 접속을 함께 지원한다. **사용자 PC에서는
-`http://100.112.72.27:8765/`로 접속한다.**
+`http://100.112.72.27:8767/`로 접속한다.**
 Tailscale은 공유받은 tailnet에서 같은 장비에 다른 IPv4를 부여하고 NAT로 연결하므로
 서버의 `tailscale ip -4`만으로 원격 사용자의 주소를 판단하면 안 된다.
 각 접속 PC의 `tailscale status` 또는 동작 중인 SSH 대상 주소로 확인한다.
@@ -393,14 +393,17 @@ Tailscale은 공유받은 tailnet에서 같은 장비에 다른 IPv4를 부여�
 
 ```bash
 # 이 HIL 서버에서 실행. 권한이 없으면 sudo로 실행한다.
-tailscale serve --bg --tcp=8765 tcp://127.0.0.1:8765
+tailscale serve --bg --tcp=8767 tcp://127.0.0.1:8767
 tailscale serve status
 # 공유만 종료; 로컬 웹 서버는 유지
-tailscale serve --tcp=8765 off
+tailscale serve --tcp=8767 off
 ```
 
+이전 HIL용 TCP 8765 전달은 새 8767 전달을 등록한 뒤 `sudo tailscale serve --tcp=8765 off`로
+제거한다. 전달 설정에 권한 오류가 나면 위 등록 명령도 `sudo`로 실행한다.
+
 `--bg` 공유 설정은 터미널 종료 뒤에도 유지되며 웹 launch는 별도로 실행해야 한다.
-팀원 PC는 Tailscale에 연결되고 접근 정책상 이 서버의 TCP 8765가 허용되어야 한다.
+팀원 PC는 Tailscale에 연결되고 접근 정책상 이 서버의 TCP 8767이 허용되어야 한다.
 접속자는 조작권 획득도 요청할 수 있으므로 HIL 조작 권한을 줄 팀원에게만 네트워크
 접근을 허용한다. TCP 전달은 Host·Origin을 그대로 전달하며 기존 동일 Origin
 검사와 단일 조작권 규칙을 유지한다. 인터넷 공개용 Funnel은 사용하지 않는다.
@@ -560,11 +563,10 @@ ROS 수신과 runtime 해석을, `vehicle_console.hil`은 HIL 장비·시험·�
 Vehicle entrypoint는 HIL backend를 import하거나 초기화하지 않는다.
 
 HIL은 `ros2 launch vehicle_console hil.launch.py`, 실차 read-only 관측은
-`ros2 launch vehicle_console vehicle.launch.py`로 시작한다. 기본 포트는 각각 8765와
+`ros2 launch vehicle_console vehicle.launch.py`로 시작한다. 기본 포트는 각각 8767과
 8766이며 실행 중 profile 전환은 없다. Headless 실행은 같은 HIL launch에
 `web:=false start_bench:=true`를 주고, Agent 없이 실행하려면 `agents:=false`를 추가한다.
-HIL과 Foxglove를 함께 쓸 때는
-Foxglove에 `port:=8767` 등을 지정한다.
+Foxglove는 기본 8765를 사용하므로 HIL과 포트 변경 없이 함께 실행할 수 있다.
 
 이전 package 전체는 `archive/software/kaiev26_hil`에 보관하며 `COLCON_IGNORE`로
 빌드에서 제외한다. 기존 결과를 계속 읽도록 기본 결과 경로

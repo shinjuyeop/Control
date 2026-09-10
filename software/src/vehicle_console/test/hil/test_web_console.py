@@ -295,13 +295,13 @@ def test_web_allows_hil_tailnet_host_only(bench, tailnet_host):
     for host in ("untrusted.example",):
         assert client.get("/api/health", headers={"host": host}).status_code == 400
     with client.websocket_connect(
-        f"ws://{tailnet_host}:8765/ws",
-        headers={"origin": f"http://{tailnet_host}:8765"},
+        f"ws://{tailnet_host}:8767/ws",
+        headers={"origin": f"http://{tailnet_host}:8767"},
     ) as ws:
         assert fresh(ws)["connected"]
     with pytest.raises(WebSocketDisconnect):
         with client.websocket_connect(
-            f"ws://{tailnet_host}:8765/ws",
+            f"ws://{tailnet_host}:8767/ws",
             headers={"origin": "http://untrusted.example"},
         ):
             pass

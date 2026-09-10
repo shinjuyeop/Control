@@ -14,7 +14,7 @@ vehicle_console/
 
 ```bash
 ros2 launch vehicle_console vehicle.launch.py  # VEHICLE · READ ONLY / 8766
-ros2 launch vehicle_console hil.launch.py      # HIL / 8765
+ros2 launch vehicle_console hil.launch.py      # HIL / 8767
 ```
 
 The profile is fixed by the launched server. Vehicle exposes only canonical topic
@@ -58,13 +58,12 @@ Frontend를 바꾸면 `npm run build` 뒤 `colcon build`를 실행한다. 유일
 HIL은 같은 패키지의 별도 진입점으로 실행한다:
 
 ```bash
-ros2 launch vehicle_console hil.launch.py  # Web backend만, 기본 8765
+ros2 launch vehicle_console hil.launch.py  # Web backend만, 기본 8767
 # 전체 bench 실행 인자와 UNO 연결은 HIL 운용 문서를 따른다.
 ros2 launch visualization foxglove_bridge.launch.py  # 상세 분석, 기본 8765
 ```
 
-Vehicle(8766)과 Foxglove(8765)는 동시에 실행할 수 있다. HIL(8765)과 Foxglove를
-동시에 실행할 때는 Foxglove에 `port:=8767` 등을 지정한다. Console은 Foxglove를
+Foxglove(8765), Vehicle(8766), HIL(8767)은 서로 다른 기본 포트를 사용한다. Console은 Foxglove를
 자동으로 띄우지 않는다. 구동 launch는 `control_launch/vehicle.launch.py`, 관측만
 시작하는 launch는 **`vehicle_console/vehicle.launch.py`**다.
 

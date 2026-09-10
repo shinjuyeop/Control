@@ -83,7 +83,7 @@ HIL profile의 전역 **Control Dock**로 Mode/Gear/Pedal/E-stop을 조작하면
 `vehicle_console` 한 패키지 안에서 frontend와 공용 계층을 HIL과 Vehicle이 공유합니다. **Vehicle · READ ONLY**는 제어기나 HIL을
 초기화하지 않고 차량 토픽만 구독하며, 서버에서 명령 입력을 거부합니다.
 `ros2 launch vehicle_console vehicle.launch.py`로 시작합니다(기본 8766).
-HIL은 `ros2 launch vehicle_console hil.launch.py`를 사용합니다(8765).
+HIL은 `ros2 launch vehicle_console hil.launch.py`를 사용합니다(8767).
 [Console 설치·운용](software/src/vehicle_console/README.md),
 [Qt 대체 및 archive 판단](docs/CONSOLE_PARITY.md)을 참고하십시오.
 

@@ -238,7 +238,7 @@ canonical vehicle ROS topics → visualization diagnostics / Foxglove
 Profile은 server 시작 시 고정합니다. Vehicle은 Overview/Drive/Steering/Safety/Runtime/
 Diagnostics만 제공하며 WebSocket 입력은 모두 거부합니다. HIL의 control/scenario/
 fault/display/touch capability와 ownership은 HIL backend 책임입니다.
-Vehicle은 기본 8766, Foxglove는 8765로 함께 실행할 수 있습니다.
+Foxglove는 기본 8765, Vehicle은 8766, HIL은 8767로 함께 실행할 수 있습니다.
 
 `vehicle_console/hil.launch.py`는 같은 frontend를 HIL profile로 제공합니다.
 기본 실행은 Web만 띄우며 `start_bench:=true`가 기존 headless HIL bench를 포함합니다.

@@ -98,7 +98,7 @@ def generate_launch_description():
         "web": "true",
         "start_bench": "false",
         "web_python": os.path.join(os.environ["VIRTUAL_ENV"], "bin/python") if os.environ.get("VIRTUAL_ENV") else sys.executable,
-        "port": "8765",
+        "port": "8767",
         "bind": "127.0.0.1",
         "allowed_hosts": "100.112.72.27,100.112.72.26",
         "update_hz": "5.0",
