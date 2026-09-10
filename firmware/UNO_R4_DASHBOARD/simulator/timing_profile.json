@@ -1,5 +1,6 @@
 {
   "calibrated": true,
+  "spi_call_us": 0,
   "state_prepare_us": {
     "startup": 4,
     "manual": 507,

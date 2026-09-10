@@ -174,9 +174,9 @@ python3 -m simulator --variant auto_gt3 --scenario auto_healthy
 
 다른 상태는 `--scenario auto_rtk_float`, `auto_steering_lost`, `auto_host_lost`
 등으로 지정하거나 GUI의 `AUTO` 탭에서 선택합니다. `--variant startup --time 0.7`
-처럼 부팅 중간 시각도 저장할 수 있습니다. `simulator/timing_profile.json`
-은 보드 계측값을 넣기 전에는 `calibrated=false`이며, 이때 host 결과는 실제 SPI wire
-time과 호출 순서를 사용하지만 UNO CPU 시간까지 일치했다고 보지 않습니다.
+처럼 부팅 중간 시각도 저장할 수 있습니다. `simulator/timing_profile.json`의
+기본 시간 프로파일은 보드 실측값을 사용하며, SPI 전송시간과 CPU 상태 준비·행 합성·전송
+부대비용을 가상 시각에 반영합니다. 다른 측정값은 `--timing-profile`로 지정합니다.
 GUI는 monotonic wall/virtual origin의 절대시각으로 native clock을 진행하고 60 Hz
 표시 deadline을 사용합니다. 10/20 Hz CAN sample tick은 GUI callback과 독립적으로
 모두 공급되며 Pause는 시나리오 시간만 멈춥니다.
