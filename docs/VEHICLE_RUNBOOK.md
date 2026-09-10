@@ -349,14 +349,3 @@ ros2 node list                              # /stm_a_node 가 보여야 함 (stm
 끝나면 수정한 규칙 파일과
 [`../firmware/README.md`](../firmware/README.md#stm-보드-고정-장치-이름)의
 serial 표를 함께 커밋해 저장소와 실물이 어긋나지 않게 한다.
-
----
-
-## 아직 검증 안 된 것
-
-- 이 절차의 launch를 **실차 보드(`/dev/stm_a`·`stm_b`)로 실행한 적은 아직
-  없다** (HIL bench 보드로 동형 구조 검증됨). 첫 실행은 구동륜을 들어 올리고
-  2절 확인부터 통과시킨다
-- 조향 캘리브레이션(`steering_motor_calibration.yaml`)의 실차 실측 검증
-
-확인이 끝나면 이 절을 지우고 확인 날짜를 기록한다.
