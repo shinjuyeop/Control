@@ -530,16 +530,28 @@ Arduino UNO R4 Boards core **1.6.0**, `arduino:renesas_uno:minima`로 이전 tou
   `colcon build --symlink-install --packages-select kaiev26_hil`: **PASS**.
 - 기존 Starlette/httpx·anyio deprecation warning 2개가 있었으며 실패는 없었습니다.
 
-**이번 변경의 실제 보드 flash/HIL은 아직 수행하지 않았습니다.** `/dev/arduino_hil`의
-USB serial `3114101259323437A93033334B57305C`까지 재확인했으며, 현재 대상 LCD와
-구동계·액추에이터 분리 bench 상태는 사용자 확인 대기입니다. 테스트의 PTY는 명시된
-보고값을 공급하는 peer이며 실제 FT6336U, CAN 또는 LCD 패널을 모사·검증하지 않습니다.
-따라서 위 이전 physical swipe 실물 결과를 이번 virtual 입력의 실물 통과로 간주하지 않습니다.
+사용자의 후속 업로드 요청에 따라 같은 날 구현 commit `dbcbb25460217771b04c04e535e73b2aed308032`를
+재빌드하고 **HIL용 `/dev/arduino_hil`에 업로드했습니다.** udev 규칙·현재 USB serial·기존
+Web reader가 사용하던 장치를 대조해 `3114101259323437A93033334B57305C`를 대상으로 지정했습니다.
+연결된 다른 UNO `31142C1F593234372E0233334B57305C`는 업로드 대상에서 제외했습니다.
+
+첫 Arduino CLI 시도는 두 DFU 장치가 감지되어 기록 전에 종료됐습니다. 설치된 core의
+`dfu-util`에 `--serial 3114101259323437A93033334B57305C --path 1-2.3`을 직접 지정한
+재시도에서 226,848-byte binary 전송과 manifestation이 오류 없이 완료됐습니다.
+Web HIL이 종료된 상태에서 기존 `DashboardDisplay` worker로 새 보고를 읽었으며,
+`vtouch=true`, `touch_ready=true`, `MANUAL_TFT`, `CAN LOST=false`를 확인했습니다.
+10초 관찰에서 CAN seq **201→401**, CAN LOST 관측 **0건**, touch errors **0→0**이었습니다.
+확인용 worker와 serial connection은 종료했습니다. 이 확인에서는 virtual gesture나 차량
+명령을 보내지 않았으며 Web launch를 새로 시작하지 않았습니다.
+
+자동 시험의 PTY는 명시된 보고값을 공급하는 peer이며 실제 FT6336U, CAN 또는 LCD 패널을
+모사·검증하지 않습니다. 위 이전 physical swipe 실물 결과와 이번 업로드/USB 보고 확인을
+virtual 입력의 실제 패널 통과로 간주하지 않습니다.
 
 남은 실보드 확인은 Web 오른쪽/왼쪽/왼쪽/오른쪽 drag에 대한 실제 패널의
 L→Dashboard→R→Dashboard, 그 뒤 UNO page report와 Web mirror의 일치,
 1~2분 반복 중 CAN `seq` 증가·CAN LOST 없음·`touch_errors` 증가 없음·USB 보고 지속입니다.
-물리 패널 표시, CAN continuity 및 LCD/CAN latency 악화 여부는 아직 미검증입니다.
+물리 패널 표시, 반복 virtual touch 중 CAN continuity 및 LCD/CAN latency 악화 여부는 아직 미검증입니다.
 
 ### LCD 초기화
 
