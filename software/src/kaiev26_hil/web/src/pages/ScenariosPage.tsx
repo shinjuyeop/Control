@@ -14,6 +14,8 @@ import { scenarioDescriptions } from "../domain/format";
 import type { Data } from "../domain/types";
 import { scenarioValue } from "../domain/units";
 import { useWorkbench } from "../hooks/useWorkbench";
+import { StateRail } from "../components/SignalInstruments";
+import { sequenceStep } from "../domain/presentation";
 export function ScenariosPage() {
   const {
     state,
@@ -33,6 +35,43 @@ export function ScenariosPage() {
   const run = state.scenario;
   return (
     <>
+      <StateRail
+        label="시나리오 실행 요약"
+        items={[
+          {
+            label: "TEST RUN",
+            value: run?.scenario ?? "IDLE",
+            detail: run
+              ? `${fmt(run.duration_sec, 1)} s elapsed`
+              : "시험 선택 후 실행",
+          },
+          {
+            label: "RESULT",
+            value: run?.result ?? "NOT RUN",
+            status: run
+              ? {
+                  label: run.result,
+                  tone:
+                    run.result === "FAIL"
+                      ? "danger"
+                      : run.result === "PASS"
+                        ? "good"
+                        : run.result === "RUNNING"
+                          ? "warning"
+                          : "muted",
+                }
+              : undefined,
+            detail: "관측 조건과 실행 오류를 반영한 결과",
+          },
+          {
+            label: "OBSERVATIONS",
+            value: run
+              ? `${run.records.filter((r: Data) => r.kind === "expectation" && r.result === "PASS").length} PASS / ${run.records.filter((r: Data) => r.kind === "expectation" && r.result === "FAIL").length} FAIL`
+              : "—",
+            detail: "명령 전송과 조건 통과는 별개",
+          },
+        ]}
+      />
       <div className="grid-two scenario-layout">
         <Panel title="시험 라이브러리" eyebrow="HIL SCENARIOS">
           <div className="scenario-list">
@@ -66,12 +105,20 @@ export function ScenariosPage() {
         >
           <div className="timeline">
             {definition?.steps.map((step: Data, i: number) => (
-              <div className="timeline-step" key={i}>
+              <div
+                className={`timeline-step ${sequenceStep(run, definition, i).tone}`}
+                key={i}
+              >
                 <span className="timeline-index">
                   {String(i + 1).padStart(2, "0")}
                 </span>
                 <div>
-                  <strong>{fmt(step.at, 1)}초</strong>
+                  <div className="sequence-step-heading">
+                    <strong>T+{fmt(step.at, 1)} s</strong>
+                    <Badge tone={sequenceStep(run, definition, i).tone}>
+                      {sequenceStep(run, definition, i).label}
+                    </Badge>
+                  </div>
                   {[
                     ["hil", "입력"],
                     ["fault", "고장"],
@@ -89,6 +136,49 @@ export function ScenariosPage() {
                 </div>
               </div>
             ))}
+          </div>
+          <div className="expectation-progress" aria-label="단계별 관측 결과">
+            <span className="eyebrow">OBSERVE / VERIFY</span>
+            {definition?.expectations.map(
+              (expectation: Data, index: number) => {
+                const record =
+                  run && run.scenario === definition.name
+                    ? run.records.find(
+                        (r: Data) =>
+                          r.kind === "expectation" && r.index === index,
+                      )
+                    : undefined;
+                return (
+                  <div
+                    key={index}
+                    className={`expectation-step ${record?.result === "FAIL" ? "danger" : ""}`}
+                  >
+                    <span>
+                      <strong>{expectation.field}</strong>
+                      <small>
+                        {expectation.topic} · T+{fmt(expectation.after, 1)} s
+                      </small>
+                    </span>
+                    <Badge
+                      tone={
+                        record?.result === "PASS"
+                          ? "good"
+                          : record?.result === "FAIL"
+                            ? "danger"
+                            : "muted"
+                      }
+                    >
+                      {record?.result ??
+                        (run?.scenario === definition.name
+                          ? running
+                            ? "PENDING"
+                            : "NOT OBSERVED"
+                          : "WAITING")}
+                    </Badge>
+                  </div>
+                );
+              },
+            )}
           </div>
           <Details
             title={`관측 조건 ${definition?.expectations.length ?? 0}개`}
@@ -195,10 +285,12 @@ export function ScenariosPage() {
               {run.records.map((record: Data, i: number) => (
                 <div className="result-row" key={i}>
                   <span
-                    className={`result-icon ${record.result === "FAIL" ? "danger" : "good"}`}
+                    className={`result-icon ${record.result === "FAIL" ? "danger" : record.kind === "step" ? "command" : "good"}`}
                   >
                     {record.result === "FAIL" ? (
                       <X size={15} />
+                    ) : record.kind === "step" ? (
+                      <ChevronRight size={15} />
                     ) : (
                       <Check size={15} />
                     )}
@@ -247,7 +339,15 @@ export function ScenariosPage() {
                     : ""}
                 </small>
               </div>
-              <Badge tone={result.result === "PASS" ? "good" : "danger"}>
+              <Badge
+                tone={
+                  result.result === "PASS"
+                    ? "good"
+                    : result.result === "FAIL"
+                      ? "danger"
+                      : "muted"
+                }
+              >
                 {result.result}
               </Badge>
               <span>{fmt(result.duration_sec, 1)}s</span>

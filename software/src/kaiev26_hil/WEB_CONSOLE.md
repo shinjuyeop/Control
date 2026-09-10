@@ -94,6 +94,35 @@ UNO Dashboard와 디스플레이 연결을 좌우로, 그보다 좁으면 세로
 - `web/src/domain`: wire types, 단위 변환, 상태·fault 의미와 표시 형식.
 - `web/src/styles`: 공통 토큰, 레이아웃, 계측 표시, Control Dock과 페이지 스타일.
 
+### 상태와 신호 흐름 우선 표시
+
+상단의 주요 상태 → 계기와 신호 경로 → 상세 관측/로그 순서로 읽는다.
+`SignalInstruments.tsx`의 StateRail, SignalFlow, TargetActual, SteeringArc,
+LinearMeter를 공통으로 사용하며 `styles/signals.css`에서 기존 Control Rack 토큰으로
+표현한다. 관측값의 freshness/validity는 기존 backend 계약을 그대로 따른다.
+
+- Bench: Host·Drive·Steering·Brake 상태 strip과 구동/조향/STM_B 출력 경로.
+  MANUAL은 페달→STM_A 상전류 경로, AUTO는 Host→Governor→STM_A 경로다.
+  STM_B의 PWM·STM_A UART·UNO CAN 출력은 병렬 출력으로 표시한다.
+- Drive: 목표/관측 속도를 한 계기로 비교하고, 페달 linear meter와 Part I/II 수신을
+  옆에 둔다. 기존 속도/RPM·전류 그래프 및 에뮬레이터 설정은 유지한다.
+- Steering: +좌회전/−우회전, 0 중심선, 목표 사각 마커와 피드백 바늘로 비교한다.
+  ±30°는 기본 `steering_motor_calibration.yaml`의 보정 범위를 포함하는 표시 눈금이며
+  runtime command limit가 아니다. 눈금 밖 값도 숫자는 유지하고 눈금 밖임을 표시한다.
+- Brake & Safety: STM_TEST E-stop 입력과 STM_B가 보고한 판단을 구별한다.
+  제동 PWM과 STM_A 구동 정지 경로를 나눠 표시하며 물리 서보 피드백은 추정하지 않는다.
+- ECU Runtime: 기존 계산/health/reset semantics를 유지하고 miss·invalid stack·용량
+  advisory가 있는 task 행만 강조한다. 좁은 화면은 task당 두 줄 grid로 재배치한다.
+- Fault Injection: 관측된 CAN OFF/FAULT와 TX DROP **요청**을 구별한 상단 요약을 둔다.
+  조작권·disabled 조건과 각 명령은 그대로다.
+- Scenario: 명령 전송(SENT)/다음 단계(NEXT)와 관측 조건(PASS/FAIL/PENDING)을 분리한다.
+  단계를 전송했다는 이유로 PASS로 표시하지 않는다. 저장 결과의 CANCELLED는 중립 표시다.
+- Diagnostics: 연결/CAN/ROS 수신/보관 오류 요약 뒤에 기존 dense table과 로그를 둔다.
+- Virtual LCD: mirror와 확대 제어를 유지하고 USB/CAN 상세와 측정 한계는 펼쳐서 본다.
+
+본문 가용 폭을 기준으로 계기와 신호 경로를 재배치한다. 좁은 화면의 신호 경로는
+번호가 있는 compact row로 표시하며, 1100px 이하 Control Dock/drawer 정책은 유지한다.
+
 backend action, 제어 ROS topic/service, lease, watchdog, scenario runner와 UNO 표시 보고 계약은
 유지한다. ECU 상태는 아래의 독립 RuntimeStats 진단 경로를 사용한다.
 

@@ -1,29 +1,19 @@
-import {
-  Badge,
-  Fact,
-  fmt,
-  Metric,
-  Notice,
-  Panel,
-} from "../components/instruments";
+import { Badge, Fact, fmt, Notice, Panel } from "../components/instruments";
 import { brakeReasons, CommandTelemetry } from "../components/VehicleTelemetry";
 import { boolean } from "../domain/format";
+import { SafetyChain } from "../components/SubsystemSignals";
 import { useWorkbench } from "../hooks/useWorkbench";
 export function SafetyPage() {
   const { state, online, hil, drive, brake } = useWorkbench();
   return (
     <>
-      <div className="metrics-grid safety-metrics">
-        <Metric
-          label="STM_B 제동 요청"
-          value={boolean(brake.brake_commanded, "ENGAGED", "RELEASED")}
-        />
-        <Metric label="STM_TEST PWM 판정" value={hil.brake ?? "—"} />
-        <Metric
-          label="구동 정지 요청"
-          value={boolean(drive.stop_request, "STOP", "CLEAR")}
-        />
-      </div>
+      <Panel
+        title="E-stop · 제동 · 구동 정지 경로"
+        eyebrow="SAFETY SIGNAL CHAIN"
+        className="pipeline-panel"
+      >
+        <SafetyChain />
+      </Panel>
       <div className="grid-two">
         <Panel title="브레이크 전기 신호" eyebrow="STM_B PWM → STM_TEST">
           <Fact label="PWM 펄스 폭" value={fmt(hil.brake_us, 0)} unit="μs" />

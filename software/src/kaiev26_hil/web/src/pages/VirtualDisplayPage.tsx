@@ -1,14 +1,8 @@
 import { Expand, Monitor, Shrink, Usb } from "lucide-react";
 import { useState } from "react";
-import {
-  Badge,
-  Details,
-  Fact,
-  fmt,
-  Notice,
-  Panel,
-} from "../components/instruments";
+import { Badge, Details, Fact, fmt, Panel } from "../components/instruments";
 import type { DisplayState } from "../domain/types";
+import { StateRail } from "../components/SignalInstruments";
 
 export function VirtualDisplay({
   display,
@@ -80,64 +74,96 @@ export function VirtualDisplay({
             <span>논리 해상도 480 × 320 · {scale}×</span>
             <span>{fresh ? report?.page : "현재 페이지 미확인"}</span>
           </div>
-          <Notice>
+          <Details title="LCD mirror의 확인 범위">
             실제 펌웨어의 화면 그리기 코드와 아셋으로 재구성합니다. SPI
             전송·패널·백라이트의 물리 상태는 이 화면으로 확인할 수 없습니다.
             터치는 후속 단계입니다.
-          </Notice>
+          </Details>
         </Panel>
         <Panel
           title="디스플레이 연결"
           eyebrow="UNO → USB → WEB"
           aside={<Usb size={20} />}
         >
-          <Fact
-            label="USB serial"
-            value={
-              <Badge tone={online && display?.serial_open ? "good" : "muted"}>
-                {online && display?.serial_open ? "OPEN" : "연결 대기"}
-              </Badge>
-            }
+          <StateRail
+            label="LCD 연결 요약"
+            items={[
+              {
+                label: "UNO REPORT",
+                value: fresh ? "RECEIVING" : "WAITING",
+                detail: online
+                  ? `${fmt(display?.report_age_ms, 0)} ms since report`
+                  : "Web 연결 대기",
+              },
+              {
+                label: "DASHBOARD CAN",
+                value: !fresh
+                  ? "UNKNOWN"
+                  : report?.can_lost
+                    ? "CAN LOST"
+                    : "RECEIVING",
+                status: !fresh
+                  ? undefined
+                  : {
+                      label: report?.can_lost ? "LOST" : "LIVE",
+                      tone: report?.can_lost ? "danger" : "good",
+                    },
+              },
+            ]}
           />
-          <Fact
-            label="UNO 상태 보고"
-            value={
-              <Badge tone={fresh ? "good" : "warning"}>
-                {fresh ? "수신 중" : "미수신 / 지연"}
-              </Badge>
-            }
-          />
-          <Fact
-            label="보고 수신 이후"
-            value={online ? fmt(display?.report_age_ms, 0) : "—"}
-            unit="ms"
-          />
-          <Fact label="UNO 페이지" value={fresh ? report?.page : "—"} />
-          <Fact
-            label="Dashboard CAN"
-            value={
-              <Badge
-                tone={!fresh ? "muted" : report?.can_lost ? "danger" : "good"}
-              >
-                {!fresh ? "UNKNOWN" : report?.can_lost ? "CAN LOST" : "수신 중"}
-              </Badge>
-            }
-          />
-          <Fact
-            label="완성 CAN snapshot 이후"
-            value={
-              fresh && report && report.can_age_ms >= 0
-                ? fmt(report.can_age_ms, 0)
-                : "—"
-            }
-            unit="ms"
-          />
-          <Fact label="UNO snapshot 누적" value={fresh ? report?.seq : "—"} />
-          <Fact
-            label="UNO uptime"
-            value={fresh && report ? fmt(report.uptime_ms / 1000, 1) : "—"}
-            unit="s"
-          />
+          <Details title="USB · CAN 상세">
+            <Fact
+              label="USB serial"
+              value={
+                <Badge tone={online && display?.serial_open ? "good" : "muted"}>
+                  {online && display?.serial_open ? "OPEN" : "연결 대기"}
+                </Badge>
+              }
+            />
+            <Fact
+              label="UNO 상태 보고"
+              value={
+                <Badge tone={fresh ? "good" : "warning"}>
+                  {fresh ? "수신 중" : "미수신 / 지연"}
+                </Badge>
+              }
+            />
+            <Fact
+              label="보고 수신 이후"
+              value={online ? fmt(display?.report_age_ms, 0) : "—"}
+              unit="ms"
+            />
+            <Fact label="UNO 페이지" value={fresh ? report?.page : "—"} />
+            <Fact
+              label="Dashboard CAN"
+              value={
+                <Badge
+                  tone={!fresh ? "muted" : report?.can_lost ? "danger" : "good"}
+                >
+                  {!fresh
+                    ? "UNKNOWN"
+                    : report?.can_lost
+                      ? "CAN LOST"
+                      : "수신 중"}
+                </Badge>
+              }
+            />
+            <Fact
+              label="완성 CAN snapshot 이후"
+              value={
+                fresh && report && report.can_age_ms >= 0
+                  ? fmt(report.can_age_ms, 0)
+                  : "—"
+              }
+              unit="ms"
+            />
+            <Fact label="UNO snapshot 누적" value={fresh ? report?.seq : "—"} />
+            <Fact
+              label="UNO uptime"
+              value={fresh && report ? fmt(report.uptime_ms / 1000, 1) : "—"}
+              unit="s"
+            />
+          </Details>
           <div className="display-connection-note">
             {!display?.enabled ? (
               <p>

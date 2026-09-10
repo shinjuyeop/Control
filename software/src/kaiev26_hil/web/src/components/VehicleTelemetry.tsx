@@ -1,4 +1,5 @@
 import type { Data, Snapshot } from "../domain/types";
+import { LinearMeter } from "./SignalInstruments";
 import { mpsToKmh } from "../domain/units";
 import {
   Badge,
@@ -75,10 +76,7 @@ export function PedalMetric({
   return (
     <div className="metric pedal-metric" role="group" aria-label="페달 관측">
       <span>페달 관측 · STM_A</span>
-      <div className="metric-number">
-        {fmt(drive.pedal_percent, 0)}
-        <small>%</small>
-      </div>
+      <LinearMeter label="입력 비율" value={drive.pedal_percent} />
       <p
         title={`STM_A ADC raw ${fmt(drive.pedal_adc_raw, 0)} · 3.3 V / 4095 환산`}
       >

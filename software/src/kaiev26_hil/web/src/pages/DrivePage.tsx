@@ -1,12 +1,8 @@
+import { DriveFlow } from "../components/SubsystemSignals";
+import { TargetActual, StateRail } from "../components/SignalInstruments";
+import { reception, reported } from "../domain/presentation";
 import { TractionFeedback } from "../components/EmulatorControls";
-import {
-  Chart,
-  Fact,
-  fmt,
-  Metric,
-  Panel,
-  Source,
-} from "../components/instruments";
+import { Chart, Fact, fmt, Panel, Source } from "../components/instruments";
 import {
   DriveTelemetry,
   FrameHealth,
@@ -26,34 +22,48 @@ export function DrivePage() {
     useWorkbench();
   const target = observed("/vehicle/command").speed_target_mps;
   const actual = drive.part1_valid ? drive.speed_mps : undefined;
-  const error =
-    typeof target === "number" && typeof actual === "number"
-      ? target - actual
-      : undefined;
   return (
     <>
-      <div className="metrics-grid drive-metrics">
-        <PedalMetric state={state} online={online} />
-        <Metric
-          label="주행 목표"
-          value={fmt(mpsToKmh(target), 2)}
+      <StateRail
+        label="구동 주요 상태"
+        items={[
+          {
+            label: "STM_A RUN COMMAND",
+            value: boolean(drive.tractive_commanded, "RUN", "STOP"),
+            status: reception(state, online, "/drive/status"),
+            detail: drive.command_timeout
+              ? "Host command timeout"
+              : "보드가 보고한 명령 상태",
+          },
+          {
+            label: "MOTOR RPM",
+            value: drive.part1_valid ? fmt(drive.motor_rpm, 0) : "—",
+            detail: "EZkontrol Part I",
+          },
+          {
+            label: "CONTROL MODE",
+            value: boolean(hil.ez_speed_control, "SPEED", "TORQUE"),
+            status: reported(hil.ez_fault, "FAULT", "NO FAULT", "danger"),
+            detail: "STM_TEST 수신 명령",
+          },
+        ]}
+      />
+      <div className="instrument-pair">
+        <TargetActual
+          label="주행 속도 비교"
+          target={target === undefined ? undefined : mpsToKmh(target)}
+          actual={actual === undefined ? undefined : mpsToKmh(actual)}
           unit="km/h"
-          note="Governor output"
+          targetLabel="주행 목표 · Governor"
+          actualLabel="관측 속도 · STM_A"
+          note="Host 목표는 AUTO 명령 · 피드백은 Part I 유효값"
         />
-        <Metric
-          label="관측 속도"
-          value={fmt(mpsToKmh(actual), 2)}
-          unit="km/h"
-          note="STM_A feedback"
-        />
-        <Metric
-          label="속도 오차"
-          value={fmt(error === undefined ? undefined : mpsToKmh(error), 2)}
-          unit="km/h"
-          note="목표 − 관측"
-        />
-        <FrameHealth state={state} online={online} />
+        <div className="instrument-companion">
+          <PedalMetric state={state} online={online} />
+          <FrameHealth state={state} online={online} />
+        </div>
       </div>
+      <DriveFlow />
       <Panel
         title="구동 명령과 응답"
         eyebrow="GOVERNOR → STM_A → STM_TEST"

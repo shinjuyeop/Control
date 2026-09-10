@@ -207,6 +207,17 @@
 .timeline-step strong {
   font: 14px var(--sans);
 }
+.sequence-step-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.timeline-step > div { flex: 1; min-width: 0; }
+.timeline-step.command .timeline-index { color: var(--command); border-color: var(--command); background: var(--command-bg); }
+.timeline-step.warning .timeline-index { color: var(--amber); border-color: var(--warning-line); background: var(--warning-bg); }
+.timeline-step.warning { border-right: 2px solid var(--amber); padding-right: 10px; }
+.expectation-progress { border-top: 1px solid var(--line); padding-top: 14px; }
+.expectation-step { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.expectation-step > span { min-width: 0; }
+.expectation-step strong { font: 13px var(--mono); overflow-wrap: anywhere; }
+.expectation-step small { display: block; font-size: 12px; overflow-wrap: anywhere; margin-top: 4px; }
+.expectation-step.danger { border-left: 2px solid var(--red); padding-left: 10px; color: var(--red); background: var(--danger-bg); }
 .timeline-step p {
   font: 12px/1.8 var(--sans);
   color: var(--muted);

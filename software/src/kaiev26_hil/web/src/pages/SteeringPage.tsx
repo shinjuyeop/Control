@@ -1,3 +1,6 @@
+import { SteeringArc } from "../components/SignalInstruments";
+import { SteeringFlow } from "../components/SubsystemSignals";
+import { radToDeg } from "../domain/units";
 import { ShaftFeedback } from "../components/EmulatorControls";
 import { Chart, Fact, fmt, Panel, Source } from "../components/instruments";
 import {
@@ -6,11 +9,28 @@ import {
 } from "../components/VehicleTelemetry";
 import { age, targetColor, boolean, feedbackColor } from "../domain/format";
 import { useWorkbench } from "../hooks/useWorkbench";
+import { steeringState } from "../domain/presentation";
 export function SteeringPage() {
-  const { state, online, hil, points, linkBadge } = useWorkbench();
+  const { state, online, hil, steering, points, linkBadge, observed } =
+    useWorkbench();
+  const target =
+    steering.target_wheel_angle_rad ??
+    observed("/vehicle/command").steering_target_rad;
   return (
     <>
-      <SteeringSummary state={state} online={online} />
+      <div className="instrument-pair">
+        <SteeringArc
+          status={steeringState(steering)}
+          target={typeof target === "number" ? radToDeg(target) : undefined}
+          actual={
+            steering.feedback_valid
+              ? radToDeg(steering.actual_wheel_angle_rad)
+              : undefined
+          }
+        />
+        <SteeringSummary state={state} online={online} />
+      </div>
+      <SteeringFlow />
       <Panel
         title="로드휠 위치 추종"
         eyebrow="LATERAL CONTROLLER"

@@ -4,79 +4,52 @@ import { Badge, Chart, Fact, Panel, fmt } from "../components/instruments";
 import { VehicleSummary } from "../components/VehicleTelemetry";
 import { HealthIndicator } from "../components/RuntimeInstruments";
 import { runtimeBoards } from "../domain/runtime";
-import { targetColor, boolean, feedbackColor } from "../domain/format";
+import { targetColor, feedbackColor } from "../domain/format";
 import { useWorkbench } from "../hooks/useWorkbench";
+import {
+  SystemState,
+  DriveFlow,
+  SteeringFlow,
+  BenchSafetyFlow,
+} from "../components/SubsystemSignals";
 export function BenchPage() {
-  const {
-    state,
-    online,
-    fresh,
-    hil,
-    drive,
-    brake,
-    points,
-    linkBadge,
-    navigate,
-  } = useWorkbench();
-  const connections = [
-    ["STM_TEST", fresh, "/hil/status"],
-    ["STM_A", !!drive.header, "/drive/status"],
-    ["STM_B", !!brake.header, "/brake/status"],
-    ...(state.display?.enabled
-      ? [["UNO R4", online && state.display.fresh, "USB display report"]]
-      : []),
-  ];
+  const { state, online, fresh, hil, points, navigate } = useWorkbench();
   return (
     <>
-      <div className="connection-strip" aria-label="보드 연결 상태">
-        {connections.map(([label, ok, topic]) => (
-          <div key={String(label)}>
-            <strong>{label}</strong>
-            <Badge tone={ok ? "good" : "muted"}>
-              {ok ? "RECEIVING" : "NO DATA"}
-            </Badge>
-            <code>{topic}</code>
-          </div>
-        ))}
-      </div>
-      <div className="runtime-links" aria-label="ECU runtime diagnostic">
-        {runtimeBoards.map(name => <button key={name} onClick={() => navigate("runtime")}>
-          <span>{name} RUNTIME</span><HealthIndicator board={state.runtime?.[name]} online={online} /><ArrowRight size={13} />
-        </button>)}
-      </div>
-      <VehicleSummary state={state} online={online} />
-      <Panel title="입력 → 명령 → 피드백" eyebrow="BENCH SIGNAL PATH">
-        <div className="signal-path">
-          <div>
-            <span>01 · STM_TEST 입력</span>
-            <strong>
-              {hil.mode ?? "—"} / {hil.gear ?? "—"}
-            </strong>
-            <p>
-              Pedal {fmt(hil.pedal, 0)}% · E-stop{" "}
-              {typeof hil.estop_dash === "boolean"
-                ? boolean(hil.estop_dash || hil.estop_side || hil.estop_rf)
-                : "—"}
-            </p>
-          </div>
-          <ArrowRight size={17} />
-          <div>
-            <span>02 · 보드 출력 관측</span>
-            <strong>EZ {boolean(hil.ez_running, "RUN", "STOP")}</strong>
-            <p>
-              {linkBadge("ez")} {linkBadge("keya")}
-            </p>
-          </div>
-          <ArrowRight size={17} />
-          <div>
-            <span>03 · 에뮬레이터 피드백</span>
-            <strong>{fmt(hil.rpm, 0)} RPM</strong>
-            <p>
-              PWM {hil.brake ?? "—"} · KEYA {fmt(hil.steer, 1)}°
-            </p>
-          </div>
+      <SystemState />
+      <Panel
+        title="차량 제어 경로"
+        eyebrow="SYSTEM OVERVIEW"
+        className="pipeline-panel"
+        aside={
+          <Badge tone={fresh ? "good" : "warning"}>
+            {fresh ? "BENCH LIVE" : "BENCH STALE"}
+          </Badge>
+        }
+      >
+        <div className="pipeline-input-note">
+          <span className="eyebrow">OPERATOR INPUT</span>
+          <strong>
+            {hil.mode ?? "—"} / {hil.gear ?? "—"}
+          </strong>
+          <span>Pedal {fmt(hil.pedal, 0)}% · STM_TEST → STM_A ADC / GPIO</span>
+        </div>
+        <DriveFlow />
+        <SteeringFlow />
+        <BenchSafetyFlow />
+        <div className="runtime-links" aria-label="ECU runtime diagnostic">
+          {runtimeBoards.map((name) => (
+            <button key={name} onClick={() => navigate("runtime")}>
+              <span>{name} RUNTIME</span>
+              <HealthIndicator board={state.runtime?.[name]} online={online} />
+              <ArrowRight size={13} />
+            </button>
+          ))}
         </div>
       </Panel>
+      <div className="secondary-metrics">
+        <VehicleSummary state={state} online={online} />
+      </div>
       <div className="grid-two">
         <Panel
           title="구동 응답"

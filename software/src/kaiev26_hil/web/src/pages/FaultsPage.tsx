@@ -1,3 +1,4 @@
+import { FaultSummary } from "../components/SubsystemSignals";
 import { RotateCcw } from "lucide-react";
 import {
   Chart,
@@ -14,6 +15,7 @@ export function FaultsPage() {
     useWorkbench();
   return (
     <>
+      <FaultSummary />
       <Notice>
         CAN OFF는 인터페이스 동작을 끄고, TX DROP은 에뮬레이터의 송신을
         차단합니다. 초기화 성공과 실제 프레임 수신은 별개입니다.
@@ -23,7 +25,12 @@ export function FaultsPage() {
           <Panel
             key={bus}
             title={bus === "ez" ? "EZkontrol · 구동" : "KEYA · 조향"}
-            eyebrow={bus === "ez" ? "CAN 1" : "CAN 2"}
+            eyebrow={
+              bus === "ez"
+                ? "CAN 1 / INJECTION CONTROLS"
+                : "CAN 2 / INJECTION CONTROLS"
+            }
+            className="fault-control-panel"
             aside={linkBadge(bus)}
           >
             <Switch

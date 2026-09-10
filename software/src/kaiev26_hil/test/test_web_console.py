@@ -569,6 +569,33 @@ def test_bench_reset_runtime_history_display(browser_page):
     expect(count).to_contain_text("부팅 누적 31")
 
 
+def test_subsystem_instruments_render_observed_faults_and_offline(browser_page):
+    from playwright.sync_api import expect
+
+    page, _, observed, tmp_path = browser_page
+    nav = page.get_by_role("navigation")
+    nav.get_by_role("button", name="구동", exact=True).click()
+    expect(page.get_by_role("group", name="주행 속도 비교", exact=True)).to_contain_text("4.32")
+    nav.get_by_role("button", name="조향", exact=True).click()
+    expect(page.get_by_role("group", name="조향각 목표와 피드백 계기", exact=True)).to_contain_text("30.00°")
+    observed["hil"] = replace(observed["hil"], estop_dash=True, ez_fault=True, keya_can=False)
+    nav.get_by_role("button", name="브레이크 · 안전", exact=True).click()
+    expect(page.get_by_role("group", name="E-stop 입력 관측", exact=True)).to_contain_text("ACTIVE")
+    # A test input being active must not fabricate a received STM_B safety report.
+    expect(page.get_by_role("group", name="STM_B safety 판단", exact=True)).to_contain_text("UNKNOWN")
+    page.screenshot(path=str(tmp_path / "safety-observed-input.png"), full_page=False)
+    nav.get_by_role("button", name="고장 주입", exact=True).click()
+    expect(page.get_by_role("group", name="현재 고장 주입 상태", exact=True)).to_contain_text("EZ FAULT")
+    expect(page.get_by_role("group", name="현재 고장 주입 상태", exact=True)).to_contain_text("KEYA CAN")
+    page.screenshot(path=str(tmp_path / "faults-observed.png"), full_page=False)
+    observed["publish"] = False
+    expect(page.locator(".fault-overview")).to_contain_text("주입 상태 미확인", timeout=4000)
+    page.context.set_offline(True)
+    expect(page.locator(".connection-notice strong")).to_have_text("Web 연결 대기", timeout=7000)
+    expect(page.get_by_role("button", name="조작권 가져오기", exact=True)).to_be_disabled()
+    assert not observed["commands"] and not observed["planning"] and observed["safe"] == 0
+
+
 def test_operator_remote_across_pages_and_navigation(browser_page):
     from playwright.sync_api import expect
     import re

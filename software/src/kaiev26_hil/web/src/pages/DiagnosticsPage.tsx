@@ -6,11 +6,53 @@ import { download } from "../domain/download";
 import { age, boolean } from "../domain/format";
 import type { Data } from "../domain/types";
 import { useWorkbench } from "../hooks/useWorkbench";
+import { StateRail } from "../components/SignalInstruments";
+import { canLink } from "../domain/format";
+import { reception } from "../domain/presentation";
 export function DiagnosticsPage() {
-  const { state, hil, online, observed, logFilter, setLogFilter, linkBadge } =
-    useWorkbench();
+  const {
+    state,
+    hil,
+    online,
+    fresh,
+    observed,
+    logFilter,
+    setLogFilter,
+    linkBadge,
+  } = useWorkbench();
+  const samples = Object.values(state.topics);
+  const receiving = online
+    ? samples.filter((sample) => sample.fresh).length
+    : 0;
+  const errors = state.events.filter((event) => event.kind === "error").length;
   return (
     <>
+      <StateRail
+        label="진단 요약"
+        items={[
+          {
+            label: "STM_TEST LINK",
+            value: reception(state, online, "/hil/status").label,
+            status: reception(state, online, "/hil/status"),
+            detail: "Serial bridge → ROS",
+          },
+          {
+            label: "CAN / EZ · KEYA",
+            value: `${canLink(hil, fresh, "ez").text} / ${canLink(hil, fresh, "keya").text}`,
+            detail: "각 CAN 경로의 현재 수신 상태",
+          },
+          {
+            label: "ROS RECEPTION",
+            value: `${receiving} / ${samples.length}`,
+            detail: "수신 중 / 관측된 토픽",
+          },
+          {
+            label: "ERROR HISTORY",
+            value: errors,
+            detail: "보관 중인 명령·연결 로그의 오류 수",
+          },
+        ]}
+      />
       <div className="grid-two">
         {(["ez", "keya"] as const).map((bus) => (
           <Panel
