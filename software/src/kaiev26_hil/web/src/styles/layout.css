@@ -35,11 +35,38 @@
   background: none;
 }
 .global-status {
-  display: flex;
-  align-items: center;
-  gap: 9px;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 6px;
   min-width: 0;
   flex: 1;
+}
+.connection-status,
+.connection-status > span:not(.badge) {
+  display: contents;
+}
+.global-status .badge,
+.global-status > .command-state,
+.global-status > .global-estop,
+.global-status > .scenario-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: none;
+  height: 48px;
+  padding: 6px 8px;
+  border-radius: 2px;
+  white-space: normal;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.global-status > .command-state {
+  flex-direction: column;
+  gap: 2px;
 }
 .command-state {
   display: flex;
@@ -69,6 +96,8 @@
 }
 .scenario-status {
   color: var(--muted);
+  border: 1px solid var(--line);
+  background: var(--surface-alt);
   font: 12px var(--sans);
   white-space: nowrap;
   overflow: hidden;
@@ -78,12 +107,15 @@
   color: var(--amber);
 }
 .global-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
-  align-items: center;
+  align-items: stretch;
+  flex-shrink: 0;
 }
 .global-actions button {
   font-size: 14px;
+  min-width: 0;
 }
 .global-actions .control-owned {
   color: var(--command);
@@ -358,6 +390,24 @@
   justify-content: flex-end;
   margin-top: 24px;
 }
+@media (max-width: 1600px) {
+  :root {
+    --bar: 120px;
+  }
+  .global-bar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 12px;
+  }
+  .global-status {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .global-actions {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
 @media (max-width: 1450px) {
   :root {
     --nav: 180px;
@@ -370,14 +420,11 @@
   .global-status {
     gap: 6px;
   }
-  .global-status > .badge {
+  .connection-status .badge {
     font-size: 12px;
   }
   .scenario-status {
     max-width: 125px;
-  }
-  .command-state > span {
-    display: none;
   }
   .global-actions button {
     font-size: 14px;
@@ -408,6 +455,9 @@
   }
 }
 @media (max-width: 1100px) {
+  .command-state .command-source-suffix {
+    display: none;
+  }
   :root {
     --remote: 0px;
     --nav: 180px;
@@ -432,9 +482,6 @@
     font: 12px var(--sans);
   }
   .navigation .drawer-heading {
-    display: none;
-  }
-  .global-status > .badge:nth-child(2) {
     display: none;
   }
   .scenario-status {
@@ -471,14 +518,10 @@
     justify-content: flex-end;
     gap: 8px;
   }
-  .global-status > .badge {
-    display: none;
-  }
   .command-state {
     padding: 6px 8px;
   }
   .command-state > span {
-    display: none;
     font-size: 12px;
   }
   .command-state > strong {
@@ -573,7 +616,8 @@
   font-size: 12px;
   padding: 6px 8px;
   color: var(--muted);
-  border: 1px solid transparent;
+  border: 1px solid var(--line);
+  background: var(--surface-alt);
 }
 .global-estop.active {
   color: var(--red);
@@ -619,7 +663,7 @@
 }
 @media (max-width: 760px) {
   :root {
-    --bar: 160px;
+    --bar: 280px;
   }
   .global-bar {
     display: grid;
@@ -628,28 +672,23 @@
   }
   .global-status {
     grid-column: 1/-1;
-    justify-content: flex-start;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px;
   }
   .global-estop {
     padding: 4px;
     font-size: 12px;
   }
-  .global-status .scenario-status {
-    flex: 1;
-    max-width: none;
-  }
   .global-actions {
     grid-column: 1/-1;
+    grid-row: 3;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px;
   }
   .global-actions button {
     font-size: 12px;
     padding: 7px;
-  }
-  .global-actions button:first-child {
     white-space: normal;
   }
 }

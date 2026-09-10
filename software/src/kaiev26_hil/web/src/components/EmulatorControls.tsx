@@ -4,14 +4,10 @@ import {
   Chart,
   Choice,
   Details,
-  Fact,
-  fmt,
-  Notice,
   Numeric,
   Panel,
   Source,
 } from "./instruments";
-import { boolText } from "./VehicleTelemetry";
 
 export function TractionFeedback() {
   const { hil, disabled, command, commands } = useWorkbench();
@@ -120,26 +116,6 @@ export function ShaftFeedback() {
   );
   return (
     <Panel title="KEYA 모터축 피드백" eyebrow="STM_TEST / MOTOR SHAFT">
-      {numeric(
-        "STEER_POS",
-        "모터축 초기 위치",
-        "steer",
-        -1800,
-        1800,
-        "deg",
-        0.01,
-      )}
-      <Notice>
-        STM_TEST가 모사한 KEYA 모터축 회전각입니다. 로드휠 조향각과는 다른
-        물리량이며 두 각도는 보정식으로 연결됩니다. Enable 상태에서는 수신한
-        위치 명령을 다시 추종합니다.
-      </Notice>
-      <Fact label="KEYA Enable 명령" value={boolText(hil.keya_enabled)} />
-      <Fact
-        label="모터축 관측 / 수신 목표"
-        value={`${fmt(hil.steer)} / ${fmt(hil.steer_target)}`}
-        unit="deg"
-      />
       <Chart
         points={points}
         traces={[
@@ -149,6 +125,15 @@ export function ShaftFeedback() {
         unit="motor deg"
       />
       {source("/hil/status")}
+      {numeric(
+        "STEER_POS",
+        "모터축 초기 위치",
+        "steer",
+        -1800,
+        1800,
+        "deg",
+        0.01,
+      )}
     </Panel>
   );
 }

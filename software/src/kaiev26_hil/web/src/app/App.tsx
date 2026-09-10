@@ -24,6 +24,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { CommandDialog } from "../components/CommandDialog";
 import { Badge } from "../components/instruments";
+import { reception } from "../domain/presentation";
 import { OperatorRemote } from "../components/OperatorRemote";
 import { ProductionCommand } from "../components/ProductionCommand";
 import { WorkbenchProvider, useWorkbench } from "../hooks/useWorkbench";
@@ -222,18 +223,31 @@ function Workstation() {
           <span>HIL / EV26</span>
         </button>
         <div className="global-status">
-          <Badge tone={online ? "good" : "muted"}>
-            {online ? "WEB LIVE" : "WEB OFFLINE"}
-          </Badge>
-          <Badge tone={fresh ? "good" : "warning"}>
-            {fresh ? "STM_TEST LIVE" : "STM_TEST STALE"}
-          </Badge>
+          <div className="connection-status" role="status" aria-label="연결 수신 상태">
+            <Badge tone={online ? "good" : "muted"}>
+              {online ? "WEB LIVE" : "WEB OFFLINE"}
+            </Badge>
+            {[
+              { name: "STM_A", topic: "/drive/status" },
+              { name: "STM_B", topic: "/brake/status" },
+            ].map(({ name, topic }) => {
+              const status = reception(state, online, topic);
+              return (
+                <span key={name} title={`${topic} 수신 상태`}>
+                  <Badge tone={status.tone}>{name} {status.label}</Badge>
+                </span>
+              );
+            })}
+            <Badge tone={fresh ? "good" : "warning"}>
+              {fresh ? "STM_TEST LIVE" : "STM_TEST STALE"}
+            </Badge>
+          </div>
           <span
             className={`command-state ${commandState.tone}`}
             role="status"
             aria-label="주행 명령 상태"
           >
-            <span>COMMAND SOURCE</span>
+            <span>COMMAND<span className="command-source-suffix"> SOURCE</span></span>
             <strong>{commandState.text}</strong>
           </span>
           <span

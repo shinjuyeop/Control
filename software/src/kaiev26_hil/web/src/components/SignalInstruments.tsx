@@ -1,4 +1,4 @@
-import { ArrowRight, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 import { Badge, fmt } from "./instruments";
 import type { Indicator } from "../domain/presentation";
@@ -105,13 +105,6 @@ export function SignalFlow({
               {stage.value}
             </span>
             {stage.detail && <small>{stage.detail}</small>}
-            {index < stages.length - 1 && (
-              <ArrowRight
-                className="signal-stage-arrow"
-                size={16}
-                aria-hidden="true"
-              />
-            )}
           </li>
         ))}
       </ol>
@@ -195,7 +188,6 @@ export function TargetActual({
             <small>{unit}</small>
           </strong>
         </div>
-        <ArrowRight size={22} aria-hidden="true" />
         <div className="actual-reading">
           <span>
             <i />
@@ -220,13 +212,54 @@ export function TargetActual({
   );
 }
 
+function SteeringWheel({
+  motorAngleDeg,
+  motorTargetDeg,
+}: {
+  motorAngleDeg?: number;
+  motorTargetDeg?: number;
+}) {
+  const available = motorAngleDeg != null;
+  return (
+    <div className={`steering-wheel ${available ? "" : "unavailable"}`}>
+      <svg
+        viewBox="0 0 200 200"
+        role="img"
+        aria-label={available ? `조향 모터축 각도 ${fmt(motorAngleDeg, 2)}도` : "조향 모터축 관측 대기"}
+      >
+        <circle className="wheel-guide" cx="100" cy="100" r="86" />
+        <g transform={`rotate(${available ? -motorAngleDeg : 0} 100 100)`}>
+          <circle className="wheel-rim" cx="100" cy="100" r="68" />
+          <path className="wheel-spokes" d="M38 82 L87 103 M162 82 L113 103 M100 114 L100 164" />
+          <circle className="wheel-hub" cx="100" cy="100" r="20" />
+          {available && <path className="wheel-marker" d="M100 27 L100 40" />}
+        </g>
+      </svg>
+      <div className="angle-readings">
+        <span className="target-reading" title="STM_TEST가 CAN으로 수신한 모터축 목표">
+          <b>{fmt(motorTargetDeg, 2)}°</b>
+          <small>□ 목표 모터축각</small>
+        </span>
+        <span className="actual-reading" title="/steering/status의 엔코더 기반 모터축 피드백">
+          <b>{available ? `${fmt(motorAngleDeg, 2)}°` : "관측 대기"}</b>
+          <small>● 피드백 모터축각</small>
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function SteeringArc({
   target,
   actual,
+  motorAngleDeg,
+  motorTargetDeg,
   status,
 }: {
   target?: number;
   actual?: number;
+  motorAngleDeg?: number;
+  motorTargetDeg?: number;
   status?: Indicator;
 }) {
   const limit = STEERING_SCALE_DEG;
@@ -256,74 +289,83 @@ export function SteeringArc({
         </div>
         {status && <Badge tone={status.tone}>{status.label}</Badge>}
       </div>
-      <svg
-        viewBox="0 0 300 155"
-        role="img"
-        aria-label={`목표 ${fmt(target, 2)}도, 피드백 ${fmt(actual, 2)}도. 양수는 좌회전.`}
-      >
-        <path
-          d={`M${left.x} ${left.y} A95 95 0 0 1 ${right.x} ${right.y}`}
-          className="angle-track"
-        />
-        {[-30, -20, -10, 0, 10, 20, 30].map((value) => {
-          const a = point(value, 95),
-            b = point(value, value === 0 ? 109 : 102),
-            text = point(value, 120);
-          return (
-            <g key={value}>
-              <line
-                x1={a.x}
-                y1={a.y}
-                x2={b.x}
-                y2={b.y}
-                className={value === 0 ? "angle-zero" : "angle-tick"}
-              />
-              <text x={text.x} y={text.y + 4} textAnchor="middle">
-                {value > 0 ? `+${value}` : value}
-              </text>
-            </g>
-          );
-        })}
-        {actual != null && (
-          <g className="angle-actual">
-            <line
-              x1="150"
-              y1="126"
-              x2={point(actual, 86).x}
-              y2={point(actual, 86).y}
+      <div className="steering-visuals">
+        <div className="steering-road-wheel">
+          <svg
+            className="steering-gauge"
+            viewBox="0 0 300 155"
+            role="img"
+            aria-label={`목표 ${fmt(target, 2)}도, 피드백 ${fmt(actual, 2)}도. 양수는 좌회전.`}
+          >
+            <path
+              d={`M${left.x} ${left.y} A95 95 0 0 1 ${right.x} ${right.y}`}
+              className="angle-track"
             />
-            <circle cx={point(actual, 86).x} cy={point(actual, 86).y} r="4" />
-          </g>
-        )}
-        {target != null && (
-          <rect
-            className="angle-target"
-            x={point(target, 107).x - 4}
-            y={point(target, 107).y - 4}
-            width="8"
-            height="8"
-          />
-        )}
-        <circle cx="150" cy="126" r="5" className="angle-pivot" />
-        <text x="18" y="146">
-          LEFT +
-        </text>
-        <text x="282" y="146" textAnchor="end">
-          − RIGHT
-        </text>
-      </svg>
-      <div className="angle-readings">
-        <span className="target-reading">
-          □ 목표 <b>{fmt(target, 2)}°</b>
-        </span>
-        <span className="actual-reading">
-          ● 피드백 <b>{fmt(actual, 2)}°</b>
-        </span>
+            {[-30, -20, -10, 0, 10, 20, 30].map((value) => {
+              const a = point(value, 95),
+                b = point(value, value === 0 ? 109 : 102),
+                text = point(value, 120);
+              return (
+                <g key={value}>
+                  <line
+                    x1={a.x}
+                    y1={a.y}
+                    x2={b.x}
+                    y2={b.y}
+                    className={value === 0 ? "angle-zero" : "angle-tick"}
+                  />
+                  <text x={text.x} y={text.y + 4} textAnchor="middle">
+                    {value > 0 ? `+${value}` : value}
+                  </text>
+                </g>
+              );
+            })}
+            {actual != null && (
+              <g className="angle-actual">
+                <line
+                  x1="150"
+                  y1="126"
+                  x2={point(actual, 86).x}
+                  y2={point(actual, 86).y}
+                />
+                <circle cx={point(actual, 86).x} cy={point(actual, 86).y} r="4" />
+              </g>
+            )}
+            {target != null && (
+              <rect
+                className="angle-target"
+                x={point(target, 107).x - 4}
+                y={point(target, 107).y - 4}
+                width="8"
+                height="8"
+              />
+            )}
+            <circle cx="150" cy="126" r="5" className="angle-pivot" />
+            <text x="18" y="146">
+              LEFT +
+            </text>
+            <text x="282" y="146" textAnchor="end">
+              − RIGHT
+            </text>
+          </svg>
+          <div className="angle-readings">
+            <span className="target-reading">
+              <b>{fmt(target, 2)}°</b>
+              <small>□ 목표 바퀴각</small>
+            </span>
+            <span className="actual-reading">
+              <b>{fmt(actual, 2)}°</b>
+              <small>● 피드백 바퀴각</small>
+            </span>
+          </div>
+        </div>
+        <SteeringWheel motorAngleDeg={motorAngleDeg} motorTargetDeg={motorTargetDeg} />
       </div>
       <small>
         {outOfScale
           ? "표시 눈금 밖 · 정확한 각도는 숫자를 확인하세요"
           : "엔코더 환산각 · 표시 눈금 ±30°"}
+        {" · 핸들 그림은 엔코더 기반 조향 모터축 각도"}
       </small>
     </div>
   );

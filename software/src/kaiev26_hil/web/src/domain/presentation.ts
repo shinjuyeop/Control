@@ -54,7 +54,10 @@ export const STEERING_SCALE_DEG = 30;
 export function runtimeRowState(task: RuntimeTask): Indicator | null {
   if (!task.stack.valid) return { label: "STACK INVALID", tone: "danger" };
   const misses = task.deadline_misses_since_reset ?? task.deadline_misses;
-  if (task.jitter && misses !== "0") return { label: "MISS", tone: "warning" };
+  if (task.jitter && misses !== "0") {
+    const recent = task.deadline_misses_since_reset_delta ?? task.deadline_misses_delta;
+    return { label: recent != null && recent !== "0" ? "MISS" : "MISS HISTORY", tone: "warning" };
+  }
   if (task.stack.tone === "warning" || task.stack.tone === "danger")
     return { label: "CAPACITY", tone: task.stack.tone };
   return null;

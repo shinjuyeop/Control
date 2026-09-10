@@ -55,6 +55,21 @@ ACK를 받았다고 요청값으로 바꾸지 않는다. 페달은 드래그를 
 
 Control Dock에는 기존 조작권·fresh·busy·시나리오 잠금을 그대로 적용한다. 상단에는 연결 상태,
 조작권, **COMMAND SOURCE ARMED/DISARMED/UNKNOWN**, 시나리오 실행 상태를 항상 표시한다.
+연결 배지는 **WEB → STM_A → STM_B → STM_TEST** 순서다. STM_A는 `/drive/status`,
+STM_B는 `/brake/status`의 기존 freshness를 기준으로 LIVE/STALE/NO DATA를 표시하며,
+Web 연결이 끊기면 OFFLINE으로 표시한다. 조작권·Bench Reset·Controls 버튼은 같은 폭이다.
+제어 경로는 단계 사이 장식 화살표 대신 번호와 구분선으로 나눈다. 조향 경로도
+Host 명령(`/planning/command`)부터 Governor(`/vehicle/command`) 순서로 표시한다.
+주행 속도 비교는 목표와 관측을 화살표 없이 나란히 표시하며, 페달·CAN 수신 박스는
+같은 높이 안에서 내용을 배치한다. 조향 게이지는 목표·관측 로드휠 등가각을 표시하고,
+옆 핸들 그림은 `/steering/status.motor_angle_deg`의 엔코더 기반 조향 모터축 각도로
+회전한다. 핸들 아래는 `/hil/status.steer_target`의 CAN 수신 모터축 목표와
+`/steering/status.motor_angle_deg`의 피드백을 나란히 표시한다.
+피드백이 무효하거나 모터축 값이 없으면 관측 대기로 표시한다.
+실제 운전대 각도로 간주하거나 임의 조향비를 적용하지 않는다.
+Task 행의 `MISS HISTORY`는 누적 이력이 있으나 최근 증가가 없는 경우이며, 최근
+증가가 확인될 때 `MISS`로 표시한다. Display miss는 Arduino 자체 오류 counter가 아니라
+STM_B의 10 ms Dashboard CAN task deadline 이력이다.
 발행 상태를 읽지 못하면 DISARMED로 추정하지 않는다.
 상단 **E-STOP CLEAR / ACTIVE / UNKNOWN**은 STM_TEST가 보고한 DASH/SIDE/RF 입력의 합산이다.
 유효한 보고 중 하나라도 ON이면 ACTIVE, 세 입력 모두 OFF이면 CLEAR이며,

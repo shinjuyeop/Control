@@ -134,9 +134,15 @@ export function SteeringFlow() {
       label="STEERING · HOST CONTROLLER → KEYA"
       stages={[
         {
+          label: "Host 명령",
+          value: degrees(observed("/planning/command").steering_target_rad),
+          detail: "/planning/command",
+          status: reception(state, online, "/planning/command"),
+        },
+        {
           label: "Governor",
           value: degrees(observed("/vehicle/command").steering_target_rad),
-          detail: "로드휠 목표",
+          detail: "/vehicle/command · 로드휠 목표",
           status: reception(state, online, "/vehicle/command"),
         },
         {
