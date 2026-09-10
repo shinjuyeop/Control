@@ -1,3 +1,4 @@
+#include "runtime_metrics.h"
 #include "dashboard_can.h"
 
 #include <limits.h>
@@ -238,6 +239,9 @@ void DashboardCan_Task(void *argument)
 
   for (;;)
   {
+    RuntimeActivation activation = RuntimeMetrics_Begin(RM_DISPLAY);
+    RuntimeMetrics_Release(RM_DISPLAY,
+        (int32_t)(activation.tick - last_wake));
     const uint32_t now = HAL_GetTick();
     if (fdcan_started &&
         ((uint32_t)(now - last_health_ms) >=
@@ -317,6 +321,10 @@ void DashboardCan_Task(void *argument)
     {
       slot = 0U;
     }
+    RuntimeMetrics_End(RM_DISPLAY, activation);
+    if ((int32_t)(xTaskGetTickCount() - last_wake) >=
+        (int32_t)pdMS_TO_TICKS(DASHBOARD_CAN_SLOT_PERIOD_MS))
+      RuntimeMetrics_DeadlineMiss(RM_DISPLAY);
     vTaskDelayUntil(
         &last_wake, pdMS_TO_TICKS(DASHBOARD_CAN_SLOT_PERIOD_MS));
   }

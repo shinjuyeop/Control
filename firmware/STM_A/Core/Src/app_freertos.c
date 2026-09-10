@@ -4,7 +4,7 @@
   * File Name          : app_freertos.c
   * Description        : STM_A FreeRTOS 태스크 전체 구현
   *                      베이스(uROS+UART 동작 확인) 구조 유지,
-  *                      Control / Inputs / MotorRx 로직 추가
+  *                      Control / Inputs 및 FDCAN RX callback
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "board_uart_protocol.h"
+#include "runtime_periodic.h"
 #include "globals.h"
 #include "usart.h"
 #include "adc.h"
@@ -278,6 +279,7 @@ void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
   */
 void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN Init */
+  RuntimeMetrics_Init();
 
   /* Task: Control — 모터 제어 (osPriorityRealtime) */
 
@@ -319,6 +321,13 @@ void MX_FREERTOS_Init(void) {
   PerfMonHandle = osThreadNew(StartPerfMon, NULL, &PerfMon_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
+  RuntimeMetrics_Register(RM_CONTROL, (TaskHandle_t)ControlHandle);
+  RuntimeMetrics_Register(RM_INPUTS, (TaskHandle_t)InputsHandle);
+  RuntimeMetrics_Register(RM_UROS, (TaskHandle_t)uROSHandle);
+  RuntimeMetrics_Register(RM_RX, (TaskHandle_t)BRxHandle);
+  RuntimeMetrics_Register(RM_TX, (TaskHandle_t)BTxHandle);
+  RuntimeMetrics_Register(RM_PERFMON, (TaskHandle_t)PerfMonHandle);
+
   /* add threads, ... */
   /* USER CODE END RTOS_THREADS */
 
@@ -356,12 +365,17 @@ void StartControl(void *argument)
   (void)HAL_FDCAN_ActivateNotification(
       &hfdcan1, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0);
 
+  RuntimePeriodic periodic = RuntimePeriodic_Init(pdMS_TO_TICKS(50u));
+
   for (;;)
   {
+    RuntimeActivation activation = RuntimePeriodic_Begin(RM_CONTROL, &periodic);
     if (s_motor_handshake_done == 0u)
     {
       s_tractive_commanded = 0u;
+      RuntimeMetrics_End(RM_CONTROL, activation);
       osDelay(10);
+      periodic = RuntimePeriodic_Init(pdMS_TO_TICKS(50u));
       continue;
     }
 
@@ -420,7 +434,7 @@ void StartControl(void *argument)
       send_motor_can(0, 0.0f, 0u, (MODE == 1u) ? 1u : 0u);
     }
     // 20Hz / 50ms 주기
-    osDelay(50);
+    RuntimePeriodic_Wait(RM_CONTROL, &periodic, activation);
   }
   /* USER CODE END StartControl */
 }
@@ -435,9 +449,11 @@ void StartControl(void *argument)
 void StartInputs(void *argument)
 {
   /* USER CODE BEGIN StartInputs */
+  RuntimePeriodic periodic = RuntimePeriodic_Init(pdMS_TO_TICKS(50u));
+
   for (;;)
   {
-    HAL_GPIO_TogglePin(LED2_GPIO_PORT, LED2_PIN); // TASK 먹통 확인 위한 LED 디버깅
+    RuntimeActivation activation = RuntimePeriodic_Begin(RM_INPUTS, &periodic);
 
     /* 페달 ADC 8회 평균 */
     uint32_t sum = 0;
@@ -466,7 +482,7 @@ void StartInputs(void *argument)
     // GEAR_Pin pull-up default value = 0 (forward)
     GEAR = (HAL_GPIO_ReadPin(SW_GEAR_GPIO_Port, SW_GEAR_Pin) == GPIO_PIN_RESET) ? 1u : 0u;
 
-    osDelay(50); // LED 확인 위해 주기 느리게 했음. 
+    RuntimePeriodic_Wait(RM_INPUTS, &periodic, activation);
   }
   /* USER CODE END StartInputs */
 }
@@ -496,6 +512,8 @@ void StartuROS(void *argument)
 
   for (;;)
   {
+    RuntimeActivation activation = RuntimeMetrics_Begin(RM_UROS);
+    uint32_t delay_ticks = 0u;
     const uint32_t now = HAL_GetTick();
 
     switch (state)
@@ -507,7 +525,7 @@ void StartuROS(void *argument)
             state = ROS_STATE_CREATE_ENTITIES;
           }
         }
-        osDelay(10);
+        delay_ticks = 10u;
         break;
 
       case ROS_STATE_CREATE_ENTITIES:
@@ -536,7 +554,7 @@ void StartuROS(void *argument)
 
         if ((uint32_t)(now - last_status) >= DRIVE_STATUS_PERIOD_MS) {
           publish_drive_status(now);
-          /* Agent ping 등으로 지연된 뒤 catch-up burst를 만들지 않고 20 Hz를 유지한다. */
+          /* Agent ping 등으로 지연된 뒤 catch-up burst를 만들지 않고 status 주기를 다시 맞춘다. */
           last_status = now;
         }
 
@@ -548,7 +566,7 @@ void StartuROS(void *argument)
             break;
           }
         }
-        osDelay(5);
+        delay_ticks = 5u;
         break;
       }
 
@@ -560,6 +578,8 @@ void StartuROS(void *argument)
         state = ROS_STATE_WAIT_AGENT;
         break;
     }
+    RuntimeMetrics_End(RM_UROS, activation);
+    if (delay_ticks != 0u) osDelay(delay_ticks);
   }
   /* USER CODE END StartuROS */
 }
@@ -587,6 +607,7 @@ void StartBRx(void *argument)
 
   for (;;)
   {
+    RuntimeActivation activation = RuntimeMetrics_Begin(RM_RX);
     uint8_t byte = 0u;
     while (usart1_rx_ring_pop(&byte) != 0u) {
       process_safety_rx_byte(byte);
@@ -615,6 +636,7 @@ void StartBRx(void *argument)
         last_restart_ms = now;
       }
     }
+    RuntimeMetrics_End(RM_RX, activation);
     osDelay(1);
   }
   /* USER CODE END StartBRx */
@@ -639,8 +661,11 @@ void StartBTx(void *argument)
   uint8_t detail_sequence = 0u;
   uint32_t last_detail_ms = HAL_GetTick() - DRIVE_DETAIL_TX_PERIOD_MS;
 
+  RuntimePeriodic periodic = RuntimePeriodic_Init(pdMS_TO_TICKS(VEHICLE_TX_PERIOD_MS));
+
   for (;;)
   {
+    RuntimeActivation activation = RuntimePeriodic_Begin(RM_TX, &periodic);
     uint8_t frame[BOARD_UART_MAX_FRAME_SIZE];
     uint8_t payload[BOARD_UART_DRIVE_DETAIL_PAYLOAD_LEN];
     uint8_t status = 0u;
@@ -689,7 +714,7 @@ void StartBTx(void *argument)
       }
       last_detail_ms = now;
     }
-    osDelay(VEHICLE_TX_PERIOD_MS);
+    RuntimePeriodic_Wait(RM_TX, &periodic, activation);
   }
   /* USER CODE END StartBTx */
 }
@@ -704,10 +729,11 @@ void StartBTx(void *argument)
 void StartPerfMon(void *argument)
 {
   /* USER CODE BEGIN StartPerfMon */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
+  RuntimePeriodic periodic = RuntimePeriodic_Init(pdMS_TO_TICKS(1000u));
+  for (;;) {
+    RuntimeActivation activation = RuntimePeriodic_Begin(RM_PERFMON, &periodic);
+    RuntimeMetrics_Aggregate();
+    RuntimePeriodic_Wait(RM_PERFMON, &periodic, activation);
   }
   /* USER CODE END StartPerfMon */
 }

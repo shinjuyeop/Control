@@ -118,18 +118,35 @@ OFF 상태에서 전체 bus의 CANH-CANL 합성 저항은 약 60 ohm이어야 �
 
 ## 6. FreeRTOS Task
 
-| Task | 책임 | 주기/대기 | 우선순위 |
-|---|---|---|---|
-| `Brake` | `BRAKE_REQUEST`를 PWM ramp로 적용 | 20 ms | Realtime |
-| `EStop` | 세 E-stop과 AUTO command brake를 통합 | event + 20 ms | Realtime |
-| `uROS` | Agent 상태, command subscription, brake status publish | state machine | Normal |
-| `Display` | dashboard snapshot/CAN 송신과 FDCAN recovery | 10 ms slot | Low |
-| `ARx` | STM_A vehicle/detail parse와 timeout | continuous, 1 ms delay | AboveNormal |
-| `ATx` | STM_A safety frame 송신 | 20 ms | High |
+| Task | 책임 | 주기/Trigger | 우선순위 (CMSIS 값) | Stack (words) |
+|---|---|---|---|---:|
+| `Brake` | `BRAKE_REQUEST`에 따른 PWM ramp | 기존 5 ms loop delay, 20 ms ramp step | `High1` (41) | 512 |
+| `EStop` | 물리 E-stop과 AUTO command brake 통합 | EXTI flags + 10 ms timeout 재확인 | `Realtime` (48) | 256 |
+| `uROS` | Agent 상태, command 수신, brake status 발행 | 상태 머신; running 후 5 ms delay | `Normal` (24) | 1280 |
+| `Display` | `DashboardCan_Task()` 실행 | 기존 absolute 10 ms slot / 50 ms snapshot | `Low` (8) | 512 |
+| `ARx` | vehicle/detail parse와 timeout | 작업 후 1 ms delay | `AboveNormal` (32) | 256 |
+| `ATx` | STM_A safety frame 송신 | absolute 20 ms | `High` (40) | 256 |
+| `PerfMon` | runtime snapshot 집계 | 약 1 Hz | `Low` (8) | 256 |
 
-Dashboard task는 higher-priority safety/UART task를 기다리게 하는 mutex나 queue를
-소유하지 않습니다. FDCAN stop/start는 Low priority task에서만 수행되며 HAL timeout으로
-bounded됩니다.
+모두 `.ioc` baseline의 Dynamic task이며 1 word는 4 bytes입니다. 기존 README의
+Brake/EStop priority·주기 표기를 실제 생성 코드와 일치시켰습니다. Task 설정 자체는
+변경하지 않았습니다. Brake의 ramp와 EStop의 event/timeout 경로도 유지합니다.
+
+ATx는 `vTaskDelayUntil()` 기반으로 정상 20 ms cadence를 유지합니다. 늦은 activation은
+실제 시작 시점으로 주기를 다시 맞추고 작업이 한 주기를 소진하면 완료 후 한 주기를
+기다립니다. 밀린 safety frame을 burst로 재전송하지 않습니다. blocking UART TX의
+10 ms timeout과 buffer lifetime을 유지하며 DMA로 치환하지 않았습니다.
+
+Display는 production에서 Dashboard CAN을 실행합니다. 기존 `vTaskDelayUntil()`과
+slot 순서를 유지하므로 지연 시 기존 catch-up 동작도 그대로입니다. Low priority와
+512-word stack을 유지하며 stack 축소 여부는 향후 HWM 실측으로 판단합니다.
+Dashboard와 PerfMon은 높은 priority의 safety/UART task가 기다리는 mutex를 소유하지
+않습니다. FDCAN stop/start는 Low task에서 수행되며 HAL timeout으로 bounded됩니다.
+
+EStop callback→task dispatch 및 처리 duration, task activation/wall time,
+stack HWM/heap, snapshot API와 물리 interrupt latency 측정 한계는
+[공통 runtime metrics 문서](../common/README.md)를 참고하십시오. PerfMon은 ROS
+publish를 하지 않습니다.
 
 ## 7. 외부 인터페이스
 

@@ -65,7 +65,7 @@ STM_A는 STM32G474 기반의 차량 입력·종방향 구동 보드입니다. �
 | `PC4` | `CN10-34` | `USART1_TX` | STM_B 보드 간 UART | 115200 8N1, DMA1 CH4 | `Core/Src/usart.c` |
 | `PC5` | `CN10-6` | `USART1_RX` | STM_B 보드 간 UART | Receive-to-Idle circular DMA, DMA1 CH3 | `Core/Src/usart.c` |
 
-`ADC1`은 DMA1 CH5를 사용합니다. FDCAN 핀은 반드시 CAN transceiver를 거쳐야 하며
+`ADC1`에는 DMA1 CH5가 설정돼 있지만 현재 Inputs는 polling으로 변환합니다. FDCAN 핀은 반드시 CAN transceiver를 거쳐야 하며
 MCU 핀을 CANH/CANL에 직접 연결하면 안 됩니다. `PA2`/`PA3`은 NUCLEO의 ST-LINK
 virtual COM port와 연결된 핀이므로 morpho 자리에 다른 신호를 물리면 micro-ROS
 transport와 충돌합니다.
@@ -115,16 +115,35 @@ Queue, semaphore, mutex, software timer는 생성하지 않습니다. ISR→Task
 
 ## 6. FreeRTOS Task
 
-| Task | 역할 | 주기/Trigger | 우선순위 | 관련 파일 |
-|---|---|---:|---|---|
-| `Control` | mode별 EZkontrol command와 HALTED 적용 | nominal 50 ms; handshake 대기는 10 ms | `Realtime` | `app_freertos.c` |
-| `Inputs` | 페달 8회 ADC 평균, mode·gear GPIO | blocking ADC 처리 후 50 ms delay | `High` | `app_freertos.c` |
-| `MotorRx` | 현재는 대기만 수행; 실제 RX는 FDCAN callback | 20 ms | `AboveNormal` | `app_freertos.c` |
-| `uROS` | Agent 연결 상태 머신, command callback, status publish | running loop 5 ms; status 50 ms | `Normal` | `app_freertos.c` |
-| `BRx` | STM_B safety frame parse와 timeout·stop 계산 | continuous loop, 1 ms delay | `High1` | `app_freertos.c` |
-| `BTx` | STM_B로 vehicle status 송신 | 20 ms | `Low` | `app_freertos.c` |
+| Task | 역할 | 주기/Trigger | 우선순위 (CMSIS 값) | Stack (words) |
+|---|---|---|---|---:|
+| `Control` | EZkontrol command / HALTED | absolute 50 ms; handshake 대기 10 ms | `Realtime` (48) | 512 |
+| `Inputs` | 페달 ADC 8회 평균, mode·gear GPIO | absolute 50 ms | `High` (40) | 256 |
+| `uROS` | Agent 상태, command 수신, status 발행 | 상태 머신; running 후 5 ms delay, status 목표 20 ms | `Normal` (24) | 1536 |
+| `BRx` | safety frame parse, timeout·stop 계산 | 작업 후 1 ms delay | `High1` (41) | 256 |
+| `BTx` | vehicle status / drive detail 송신 | absolute 20 ms / detail 100 ms | `Low` (8) | 256 |
+| `PerfMon` | runtime snapshot 집계 | 약 1 Hz | `Low` (8) | 256 |
 
-`osDelay()` 값은 nominal delay이며 Task 수행 시간은 별도로 더해집니다.
+모두 `.ioc` baseline의 Dynamic task이며 1 word는 4 bytes입니다. MotorRx는
+CubeMX에서 제거됐습니다. 실제 CAN RX는 기존 `HAL_FDCAN_RxFifo0Callback()`이
+그대로 담당하며 CAN 수신 기능은 바꾸지 않았습니다.
+
+Control/Inputs/BTx는 `vTaskDelayUntil()` 기반입니다. 늦게 깨어나면 실제 activation에
+주기를 다시 맞추고, 작업 자체가 한 주기를 소진하면 완료 후 한 주기를 기다립니다.
+밀린 release를 재실행하지 않습니다. 정상 EZkontrol 50 ms cadence와 safety UART
+100 ms / AUTO host 500 ms timeout 상수 및 판단 로직은 유지합니다.
+
+Inputs의 task-alive LED toggle은 제거했습니다. ADC는 software-trigger single
+conversion 8회 polling을 유지합니다. DMA1 CH5는 초기화·연결만 되어 있고,
+`HAL_ADC_Start_DMA()`를 호출하지 않습니다. 현재 sampling time은 247.5 cycles입니다.
+ADC 실패 시 기존 10 ms polling timeout이 8회 발생할 수 있으므로 observed wall time과
+miss를 확인해야 합니다. 페달 필터·실패 처리·DMA 수집 방식 재설계는 이번 범위에서
+수행하지 않았습니다.
+
+BRx 1 ms polling은 수신이 없어도 timeout/stop/restart를 평가합니다. BTx의 local
+frame buffer와 blocking UART TX(10 ms timeout)도 유지합니다. DMA/notification 전환
+판단과 계측 정의·snapshot API는 [공통 runtime metrics 문서](../common/README.md)를
+참고하십시오. PerfMon은 ROS publish를 하지 않습니다.
 
 ## 7. 외부 인터페이스
 
@@ -143,7 +162,7 @@ LPUART1(`PA2`/`PA3`) custom transport가 별도의 micro-ROS Agent에 연결됩�
 
 | Topic | Type | 주기 | 설명 |
 |---|---|---:|---|
-| `/drive/status` | `kaiev26_msgs/msg/DriveActuatorStatus` | 50 ms | mode·gear·속도, command·CAN status freshness와 진단 |
+| `/drive/status` | `kaiev26_msgs/msg/DriveActuatorStatus` | 목표 20 ms | mode·gear·속도, command·CAN status freshness와 진단 |
 
 ## 8. 동작 상세
 
@@ -222,7 +241,7 @@ sequenceDiagram
     Motor->>A: Status Part I / II
     A->>B: Vehicle status UART (20 ms)
     A->>B: Drive detail UART (100 ms)
-    A->>Host: /drive/status (50 ms)
+    A->>Host: /drive/status (목표 20 ms)
 ```
 
 AUTO 속도는 `speed_target_mps`를 타이어 지름 `0.47 m`, 감속비 `4.60`으로
@@ -299,7 +318,6 @@ ros2 topic echo /drive/status
 - STM_A 자신의 FDCAN controller 상태를 알 수 없습니다. `part1_valid=false`는
   EZkontrol 전원이 나간 경우와 STM_A CAN이 오류 상태로 송신을 못 하는 경우에
   똑같이 나타납니다.
-- `MotorRx` Task는 실제 수신 작업을 하지 않으며 CAN callback이 처리합니다.
 - MCU independent watchdog 사용은 현재 코드에서 확인되지 않습니다.
 - pedal calibration 값은 코드 상수이고 별도 calibration metadata가 없습니다.
 - `SW_MODE`·`SW_GEAR`에 software debounce가 없습니다.

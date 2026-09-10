@@ -5,7 +5,7 @@
  #include "globals.h"
 
  volatile float   COMMAND_SPEED   = 0.0f;   // 목표 속도(m/s) / write : uROS / read : Control
- volatile float   CURRENT_SPEED   = 0.0f;   // 현재 속도 (모터 피드백) / write : MotorRx / read : uROS
+ volatile float   CURRENT_SPEED   = 0.0f;   // 현재 속도 (모터 피드백) / write : HAL_FDCAN_RxFifo0Callback / read : uROS
  
  volatile uint8_t  BRAKE_REQUEST_FROM_B          = 0; // write: BRx
  volatile uint8_t  SAFETY_FRAME_VALID_FROM_B     = 0; // write: BRx
