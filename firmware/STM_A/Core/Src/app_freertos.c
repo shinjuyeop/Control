@@ -208,13 +208,6 @@ const osThreadAttr_t Inputs_attributes = {
   .priority = (osPriority_t) osPriorityHigh,
   .stack_size = 256 * 4
 };
-/* Definitions for MotorRx */
-osThreadId_t MotorRxHandle;
-const osThreadAttr_t MotorRx_attributes = {
-  .name = "MotorRx",
-  .priority = (osPriority_t) osPriorityAboveNormal,
-  .stack_size = 256 * 4
-};
 /* Definitions for uROS */
 osThreadId_t uROSHandle;
 const osThreadAttr_t uROS_attributes = {
@@ -233,6 +226,13 @@ const osThreadAttr_t BRx_attributes = {
 osThreadId_t BTxHandle;
 const osThreadAttr_t BTx_attributes = {
   .name = "BTx",
+  .priority = (osPriority_t) osPriorityLow,
+  .stack_size = 256 * 4
+};
+/* Definitions for PerfMon */
+osThreadId_t PerfMonHandle;
+const osThreadAttr_t PerfMon_attributes = {
+  .name = "PerfMon",
   .priority = (osPriority_t) osPriorityLow,
   .stack_size = 256 * 4
 };
@@ -264,10 +264,10 @@ static HAL_StatusTypeDef restart_usart1_rx(UART_HandleTypeDef *huart);
 
 void StartControl(void *argument);
 void StartInputs(void *argument);
-void StartMotorRx(void *argument);
 void StartuROS(void *argument);
 void StartBRx(void *argument);
 void StartBTx(void *argument);
+void StartPerfMon(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -306,9 +306,6 @@ void MX_FREERTOS_Init(void) {
   /* creation of Inputs */
   InputsHandle = osThreadNew(StartInputs, NULL, &Inputs_attributes);
 
-  /* creation of MotorRx */
-  MotorRxHandle = osThreadNew(StartMotorRx, NULL, &MotorRx_attributes);
-
   /* creation of uROS */
   uROSHandle = osThreadNew(StartuROS, NULL, &uROS_attributes);
 
@@ -317,6 +314,9 @@ void MX_FREERTOS_Init(void) {
 
   /* creation of BTx */
   BTxHandle = osThreadNew(StartBTx, NULL, &BTx_attributes);
+
+  /* creation of PerfMon */
+  PerfMonHandle = osThreadNew(StartPerfMon, NULL, &PerfMon_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -469,29 +469,6 @@ void StartInputs(void *argument)
     osDelay(50); // LED 확인 위해 주기 느리게 했음. 
   }
   /* USER CODE END StartInputs */
-}
-
-/* USER CODE BEGIN Header_StartMotorRx */
-/**
-* @brief Function implementing the MotorRx thread.
-* @param argument: Not used
-* @retval None
-*/
-
-/* ========================================================== */
-/* Task: MotorRx — Rx는 콜백 처리, 태스크 최소화 (osPriorityHigh2) */
-/* 수신은 콜백이 하므로 대기만 수행*/
-/* ========================================================== */
-
-/* USER CODE END Header_StartMotorRx */
-void StartMotorRx(void *argument)
-{
-  /* USER CODE BEGIN StartMotorRx */
-  for (;;)
-  {
-    osDelay(20);
-  }
-  /* USER CODE END StartMotorRx */
 }
 
 /* USER CODE BEGIN Header_StartuROS */
@@ -715,6 +692,24 @@ void StartBTx(void *argument)
     osDelay(VEHICLE_TX_PERIOD_MS);
   }
   /* USER CODE END StartBTx */
+}
+
+/* USER CODE BEGIN Header_StartPerfMon */
+/**
+* @brief Function implementing the PerfMon thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartPerfMon */
+void StartPerfMon(void *argument)
+{
+  /* USER CODE BEGIN StartPerfMon */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END StartPerfMon */
 }
 
 /* Private application code --------------------------------------------------*/
@@ -1384,3 +1379,4 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
   }
 }
 /* USER CODE END Application */
+

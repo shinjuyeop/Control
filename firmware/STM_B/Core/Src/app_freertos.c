@@ -242,6 +242,13 @@ const osThreadAttr_t ATx_attributes = {
   .priority = (osPriority_t) osPriorityHigh,
   .stack_size = 256 * 4
 };
+/* Definitions for PerfMon */
+osThreadId_t PerfMonHandle;
+const osThreadAttr_t PerfMon_attributes = {
+  .name = "PerfMon",
+  .priority = (osPriority_t) osPriorityLow,
+  .stack_size = 256 * 4
+};
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
@@ -263,6 +270,7 @@ void StartuROS(void *argument);
 void StartDisplay(void *argument);
 void StartARx(void *argument);
 void StartATx(void *argument);
+void StartPerfMon(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -309,6 +317,9 @@ void MX_FREERTOS_Init(void) {
 
   /* creation of ATx */
   ATxHandle = osThreadNew(StartATx, NULL, &ATx_attributes);
+
+  /* creation of PerfMon */
+  PerfMonHandle = osThreadNew(StartPerfMon, NULL, &PerfMon_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -614,6 +625,24 @@ void StartATx(void *argument)
     osDelay(SAFETY_TX_PERIOD_MS);
   }
   /* USER CODE END StartATx */
+}
+
+/* USER CODE BEGIN Header_StartPerfMon */
+/**
+* @brief Function implementing the PerfMon thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartPerfMon */
+void StartPerfMon(void *argument)
+{
+  /* USER CODE BEGIN StartPerfMon */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END StartPerfMon */
 }
 
 /* Private application code --------------------------------------------------*/
@@ -976,3 +1005,4 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 }
 
 /* USER CODE END Application */
+
