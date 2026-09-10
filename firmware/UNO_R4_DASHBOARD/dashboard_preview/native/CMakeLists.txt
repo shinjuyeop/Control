@@ -10,3 +10,14 @@ target_compile_features(dashboard_renderer PRIVATE cxx_std_17)
 target_compile_options(dashboard_renderer PRIVATE -Wall -Wextra)
 target_include_directories(dashboard_renderer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${DASHBOARD_ROOT})
 install(TARGETS dashboard_renderer LIBRARY DESTINATION dashboard)
+
+include(CTest)
+if(BUILD_TESTING)
+  add_executable(touch_navigation_test
+    ${DASHBOARD_ROOT}/tests/touch_navigation_test.cpp
+    ${DASHBOARD_ROOT}/touch_navigation.cpp)
+  target_compile_features(touch_navigation_test PRIVATE cxx_std_17)
+  target_compile_options(touch_navigation_test PRIVATE -Wall -Wextra -UNDEBUG)
+  target_include_directories(touch_navigation_test PRIVATE ${DASHBOARD_ROOT})
+  add_test(NAME touch_navigation COMMAND touch_navigation_test)
+endif()

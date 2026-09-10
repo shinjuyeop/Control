@@ -20,6 +20,7 @@ namespace HilDisplayReport {
 bool enabled() {return active || touch_active;}
 void poll(uint32_t now_ms,uint32_t snapshots,int32_t can_age_ms) {
   if(!Serial) {
+    SwipeTest::cancelVirtual();
     active=touch_active=false;input_size=0;input_overflow=false;report_size=report_sent=0;
     return;
   }
@@ -36,9 +37,16 @@ void poll(uint32_t now_ms,uint32_t snapshots,int32_t can_age_ms) {
         else if(strcmp(input,"HIL_TOUCH OFF")==0) touch_active=false;
         else if(strcmp(input,"SWIPE_TEST ON")==0) SwipeTest::setEnabled(true);
         else if(strcmp(input,"SWIPE_TEST OFF")==0) SwipeTest::setEnabled(false);
+        else if(strncmp(input,"VT",2)==0) {
+          TouchNavigation::TouchSample sample;
+          if(TouchNavigation::parseVirtualTouch(input,sample)) SwipeTest::virtualTouch(sample,now_ms);
+          else SwipeTest::cancelVirtual();
+        }
       }
+      else SwipeTest::cancelVirtual();
       input_size=0;input_overflow=false;
-    } else if(input_size<sizeof(input)-1) input[input_size++]=ch;
+    } else if(ch<' ' || ch>'~') input_overflow=true;
+    else if(input_size<sizeof(input)-1) input[input_size++]=ch;
     else input_overflow=true;
   }
   if(!enabled()) {report_size=report_sent=0;return;}
@@ -63,12 +71,13 @@ void poll(uint32_t now_ms,uint32_t snapshots,int32_t can_age_ms) {
     const DashboardValues &v=DashboardUi::displayedValues();
     written=snprintf(report,sizeof(report),
       "HIL_LCD {\"v\":1,\"uptime_ms\":%lu,\"seq\":%lu,\"can_lost\":%s,\"can_age_ms\":%ld,"
-      "\"page\":\"%s\",\"values\":[%u,%u,%u,%u,%d,%u,%d,%d,%d,%d,%lu]}\n",
+      "\"page\":\"%s\",\"values\":[%u,%u,%u,%u,%d,%u,%d,%d,%d,%d,%lu],"
+      "\"vtouch\":1,\"touch_errors\":%lu}\n",
       (unsigned long)now_ms,(unsigned long)snapshots,DashboardUi::canLost()?"true":"false",
       (long)can_age_ms,DashboardUi::pageName(),v.status_flags,v.drive_flags,v.pedal_percent,
       v.gnss_state,v.speed_centi_mps,v.bus_voltage_decivolt,v.bus_current_deciamp,
       v.phase_current_deciamp,v.controller_temperature_decic,v.motor_temperature_decic,
-      (unsigned long)v.motor_fault_bits);
+      (unsigned long)v.motor_fault_bits,(unsigned long)Ft6336Touch::state().errors);
     }
     report_size=(written>0 && size_t(written)<sizeof(report))?size_t(written):0;
     report_sent=0;last_report_ms=now_ms;

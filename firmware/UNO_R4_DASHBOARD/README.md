@@ -9,6 +9,7 @@ Arduino `setup()`/`loop()` 구조와 `Arduino_CAN` API를 사용합니다.
 snapshot에서 바뀐 문자와 badge만 갱신합니다. MSP4031 터치 모델의 FT6336U를
 I2C로 읽고, `HIL_TOUCH ON`으로 raw 좌표와 INT 상태를 관찰할 수 있습니다.
 부팅 시 기존 계기판에서 시작하며, 스와이프로 `L — 기존 계기판 — R` 사이를 이동합니다.
+물리 터치와 Web Virtual LCD 입력은 같은 UNO gesture/navigation 로직을 사용합니다.
 터치는 차량 명령에 연결하지 않습니다.
 
 ## Local UI preview
@@ -115,7 +116,9 @@ HIL_LCD {"v":1,"uptime_ms":10000,"seq":42,"can_lost":false,"can_age_ms":12,"page
 - `uptime_ms`: UNO의 millis. `seq`: 완성된 새 CAN snapshot의 부팅 이후 누적 수.
 - `can_lost`: **LCD drawing에 적용한** dashboard CAN LOST 상태.
 - `can_age_ms`: 마지막 완성 CAN snapshot 이후 경과시간. 미수신은 -1.
-- `page`: 실제 적용 페이지 `MANUAL_TFT` 또는 `AUTO_BASELINE`.
+- `page`: 실제 적용 페이지 `MANUAL_TFT`, `AUTO_BASELINE`, `SWIPE_L`, `SWIPE_R`.
+- `vtouch`: 선택적 확장 필드. `1`은 아래 Virtual Touch USB protocol 지원을 뜻한다.
+- `touch_errors`: 선택적 확장 필드. FT6336U의 누적 I2C/invalid sample 오류 수.
 - `values`: LCD drawing을 완료한 `DashboardValues`의 아래 순서 원시 정수 값.
 
 | Index | Field | 단위 / 의미 |
@@ -136,7 +139,7 @@ HIL_LCD {"v":1,"uptime_ms":10000,"seq":42,"can_lost":false,"can_age_ms":12,"page
 보고는 계속되며, 실제 표시와 같은 CAN LOST 화면을 PC가 재구성할 수 있다.
 USB 보고가 끊긴 것은 dashboard CAN LOST와 구분한다. PC는 마지막 이미지를 흐리게
 표시하고 현재 상태를 확인할 수 없음을 알린다. 전체 framebuffer는 UNO에 추가하지 않았다.
-320-byte TX 버퍼를 USB 가용 공간만큼 나누어 보내며 USB 전송을 기다리지 않는다.
+512-byte TX 버퍼를 USB 가용 공간만큼 나누어 보내며 USB 전송을 기다리지 않는다.
 
 2026-09-09 상태 보고 추가판 compile: Flash **217,880 B (83%)**, global RAM
 **10,720 B (32%)**. 이는 빌드 결과이며 실제 업로드/패널 검증과 별도다.
@@ -401,6 +404,142 @@ HIL Arduino에 복구 업로드를 완료했고, 부팅 시 `MANUAL_TFT`와 오�
 CAN LOST 보고 0건을 확인했습니다. 전원 재연결 후 사용자가 실제 LCD에서
 오른쪽 → 왼쪽 → 왼쪽 → 오른쪽 입력에 따라 `L → 기존 계기판 → R → 기존 계기판`이
 요청한 순서대로 표시됨을 확인했습니다(사용자 실물 LCD 검증 확인).
+
+### Web HIL Virtual Touch v1
+
+기존 `SwipeTest`는 FT6336U 상태를 직접 읽어 gesture 판정과 페이지 변경을 함께
+수행했습니다. 이제 [`touch_navigation.h`](touch_navigation.h)의 `Gesture`와
+`Navigator`는 Arduino API 없이 동작하고, `swipe_test.cpp`는 물리 입력 정규화와
+`DashboardUi::showSwipeTest()` 호출만 연결합니다. 기존 Serial 명령 이름은 유지합니다.
+
+```text
+FT6336U polling → screen TouchSample ─┐
+                                    ├→ Gesture / Navigator → DashboardUi → physical LCD
+Web PointerEvent → WebSocket → USB ─┘                               │
+                 Web Virtual LCD ← native renderer ← HIL_LCD report ┘
+```
+
+공통 `TouchSample`은 `phase`(DOWN/MOVE/UP/CANCEL), `source`(PHYSICAL/VIRTUAL),
+`x/y`, `finger`, `contacts`를 담습니다. 좌표는 항상 **480×320**, x=0..479,
+y=0..319입니다. 물리 raw 320×480 좌표는 검증된 `screen_x=raw_y`,
+`screen_y=319-raw_x`로 변환합니다. calibration 계수는 없습니다.
+
+FT6336U 주소 `0x38`, A4=SDA/A5=SCL/D3=RST/D2=INT 배선과 **20 ms polling**을
+그대로 사용합니다. **INT는 기능 경로에서 의도적으로 사용하지 않습니다.** 기존 ISR은
+진단용 edge counter만 유지하며, INT 전압 문제를 interrupt 구조 변경으로 우회하지 않습니다.
+`HIL_TOUCH ON/OFF`의 physical raw diagnostics JSON과 보고 주기는 유지합니다.
+
+USB 115200 baud, newline 구분 ASCII protocol:
+
+```text
+VT D 120 180
+VT M 160 181
+VT M 220 181
+VT U 300 182
+VT C
+```
+
+D=누름, M=접촉 이동, U=해제, C=판정 없이 취소입니다. D/M/U는 screen 좌표
+정수 두 개가 필요하며 음수·소수·범위 초과·추가 token을 거부합니다. C에는 좌표가
+없습니다. 잘못된 VT 명령이나 줄 overflow는 virtual gesture를 취소합니다.
+16-byte 고정 입력 버퍼와 loop당 최대 32-byte 입력 처리를 유지하며 동적 할당이나
+입력 대기가 없습니다. 출력은 기존 가용 USB TX 공간만큼 나누어 보내고 CAN loop로
+돌아갑니다. `HIL_LCD ON/OFF`, `HIL_TOUCH ON/OFF`, `SWIPE_TEST ON/OFF`는 유지합니다.
+
+**Physical touch wins.** 물리 손가락이 있거나 읽기 오류/다중 터치로 해제를 기다리는
+동안 virtual 입력을 무시합니다. virtual drag 도중 물리 입력이 시작되면 virtual
+동작을 취소하고 물리 입력을 받습니다. 물리 해제 후 **150 ms** 동안 virtual DOWN을
+받지 않으며, guard 중 무시된 DOWN의 뒤늦은 MOVE/UP으로 gesture가 시작되지 않습니다.
+물리 idle polling은 진행 중인 virtual gesture에 UP으로 전달되지 않습니다.
+두 source의 좌표를 한 gesture에 섞지 않습니다.
+
+두 입력 모두 가로 거리 **60 px 이상**, `abs(dx)>abs(dy)`, 손가락 하나, **UP에서
+한 번** 판정하며 L↔Dashboard↔R을 한 단계씩 이동합니다. 경계는 순환하지 않습니다.
+짧은 탭·세로 drag·다중 터치·invalid 좌표·finger/source 변경·C는 이동하지 않습니다.
+virtual 입력이 **1초** 동안 끊기거나 USB 연결이 닫히면 판정 없이 취소합니다.
+물리 polling 경로의 timeout이나 차량 safety semantics를 바꾸지 않습니다.
+
+PC는 `DashboardDisplay`의 기존 exclusive USB connection과 worker 하나를 사용합니다.
+Web 요청은 lock으로 보호된 최대 **32개** command queue에 들어갑니다. 대기 MOVE만
+최신 좌표로 합치고 USB MOVE는 최대 50 Hz로 보냅니다. DOWN/UP 순서는 보존하고,
+UP의 최종 좌표가 직전 대기 MOVE를 대신합니다. 포화·보고 stale·pointer timeout·취소 시
+gesture 전체를 폐기하고 C를 보냅니다. 하나의 edge만 버리고 계속 진행하지 않습니다.
+연결을 열 때 부분 line을 종료하고 C를 먼저 전송하며 pending gesture를 재생하지 않습니다.
+connection generation으로 재연결 전 브라우저 요청을 거부합니다.
+
+Web은 image content rect를 480×320으로 변환하므로 bezel·1×·2×·responsive 크기에
+영향받지 않습니다. Pointer Events와 capture로 mouse/touch를 함께 처리합니다.
+MOVE를 약 20 ms마다 합치고 정지한 pointer도 200 ms마다 접촉을 갱신합니다.
+`pointercancel`, capture 상실, tab 숨김, window blur, 페이지 이탈은 C로 끝납니다.
+화면 밖 release 좌표는 화면 경계로 제한합니다.
+
+**현재 Web control owner만** 입력할 수 있습니다. 기존 lease/revision과 transition
+검사를 거치며, release·heartbeat 만료·disconnect·takeover 시작에 queued gesture를
+취소합니다. 이전 owner의 지연 요청이나 C가 새 owner를 취소하지 못합니다.
+Virtual Touch는 차량 ARM이나 STM_TEST 상태 수신을 요구하지 않습니다. 기존 차량
+명령·takeover의 disarm/reset/heartbeat 계약은 그대로입니다.
+
+`VTOUCH READY`는 Web online, UNO serial open, 1초 미만의 지원 LCD report, 현재
+control owner, 인계 중이 아닌 조건에서만 표시합니다. viewer=`VIEW ONLY`, stale=
+`UNO STALE`, 구버전 firmware=`VTOUCH UNAVAILABLE`입니다. queue 등록 응답은 페이지
+적용 확인이 아닙니다. **React는 페이지를 미리 변경하지 않습니다.** UNO가 LCD drawing을
+마친 뒤 보고한 `page`와 표시값만 native renderer에 전달합니다.
+
+이 기능은 **dashboard navigation only**입니다. 기어·mode·브레이크·E-stop·가속·actuator
+command나 L/R 차량 기능 UI를 추가하지 않습니다. STM_A/B/TEST firmware, Dashboard CAN,
+micro-ROS RuntimeStats 및 vehicle command semantics는 변경하지 않습니다.
+
+공통 로직 회귀 시험:
+
+```bash
+cmake -S firmware/UNO_R4_DASHBOARD/dashboard_preview/native \
+  -B firmware/UNO_R4_DASHBOARD/build/host -DCMAKE_BUILD_TYPE=Release
+cmake --build firmware/UNO_R4_DASHBOARD/build/host --parallel 2
+ctest --test-dir firmware/UNO_R4_DASHBOARD/build/host --output-on-failure
+```
+
+`touch_navigation_test`는 양쪽 source의 모든 이동/경계, 정확히 60 px,
+release 전 이동 금지, tap/vertical/multitouch/invalid/finger/source cancel,
+physical priority/guard, virtual cancel/timeout, malformed VT를 확인합니다.
+Python serial PTY 시험과 실제 Chrome PointerEvent 시험은
+[Web HIL 검증](../../software/src/kaiev26_hil/WEB_CONSOLE.md#검증)을 따릅니다.
+
+#### 2026-09-10 구현·자동 검증 결과
+
+시작 checkout은 깨끗한 `main`, HEAD `14c38b1ff87362e27db9522a5c0a9d9b2ce88a8e`였습니다.
+원격 fetch 후 `origin/Shin`도 같은 HEAD임을 확인하고 `Shin`으로 전환해 작업했습니다.
+Arduino UNO R4 Boards core **1.6.0**, `arduino:renesas_uno:minima`로 이전 touch/swipe
+코드와 이번 코드를 각각 직접 compile했습니다.
+
+| 항목 | 이전 touch/swipe | Virtual Touch v1 | 증가 |
+|---|---:|---:|---:|
+| Flash / 262,144 B | 226,124 B (86.26%) | 226,840 B (86.53%) | 716 B |
+| Global RAM / 32,768 B | 12,152 B (37.08%) | 12,160 B (37.11%) | 8 B |
+
+- 공통 C++ gesture/navigation/VT parser CTest: **PASS**.
+- 기존 테스트를 포함한 `kaiev26_hil` 전체: **131 passed**, 67.03초.
+- 첫 test/build 이후 refinement: 유효하지 않은 Web 좌표 입력도 진행 중 gesture를
+  취소하도록 보완하고, USB 초기 명령의 partial write를 실패 처리했습니다.
+- refinement 후 관련 serial/Web/browser 시험: **17 passed**, 11.62초.
+  실제 Chrome에서 1×/2×/responsive mapping, 500개 MOVE burst의 coalescing,
+  pointercancel, 화면 밖 release/capture, 두 번째 손가락 취소, owner takeover,
+  stale UNO 입력 거부 및 **새 보고 전 mirror 불변**을 확인했습니다.
+- PTY serial 시험에서 reconnect의 C 선행·이전 DOWN/MOVE 폐기·이전 generation 거부와
+  터치 송신 중 HIL_LCD 수신/native PNG 생성을 확인했습니다.
+- TypeScript/Vite production build, native renderer build/install,
+  `colcon build --symlink-install --packages-select kaiev26_hil`: **PASS**.
+- 기존 Starlette/httpx·anyio deprecation warning 2개가 있었으며 실패는 없었습니다.
+
+**이번 변경의 실제 보드 flash/HIL은 아직 수행하지 않았습니다.** `/dev/arduino_hil`의
+USB serial `3114101259323437A93033334B57305C`까지 재확인했으며, 현재 대상 LCD와
+구동계·액추에이터 분리 bench 상태는 사용자 확인 대기입니다. 테스트의 PTY는 명시된
+보고값을 공급하는 peer이며 실제 FT6336U, CAN 또는 LCD 패널을 모사·검증하지 않습니다.
+따라서 위 이전 physical swipe 실물 결과를 이번 virtual 입력의 실물 통과로 간주하지 않습니다.
+
+남은 실보드 확인은 Web 오른쪽/왼쪽/왼쪽/오른쪽 drag에 대한 실제 패널의
+L→Dashboard→R→Dashboard, 그 뒤 UNO page report와 Web mirror의 일치,
+1~2분 반복 중 CAN `seq` 증가·CAN LOST 없음·`touch_errors` 증가 없음·USB 보고 지속입니다.
+물리 패널 표시, CAN continuity 및 LCD/CAN latency 악화 여부는 아직 미검증입니다.
 
 ### LCD 초기화
 

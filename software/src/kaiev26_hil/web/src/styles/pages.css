@@ -389,7 +389,11 @@
   height: 100%;
   object-fit: contain;
   image-rendering: pixelated;
+  touch-action: none;
+  user-select: none;
 }
+.lcd-panel img.lcd-touch-ready { cursor: grab; }
+.lcd-panel img.lcd-touch-ready:active { cursor: grabbing; }
 .lcd-panel.stale img {
   opacity: 0.4;
 }

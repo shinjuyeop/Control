@@ -204,6 +204,7 @@ function useWorkbenchState() {
     link,
     linkBadge,
     productionValues,
+    sendVirtualTouch: send,
   };
 }
 const WorkbenchContext = createContext<ReturnType<

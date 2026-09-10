@@ -405,7 +405,7 @@ tailscale serve --tcp=8765 off
 ## 가상 LCD 연결
 
 가상 LCD는 ROS 상태로 UNO 화면을 추정하지 않는다. UNO의 적용 표시값·페이지·CAN LOST
-보고를 전용 USB serial reader가 읽고, 실제 펌웨어 C++ renderer로 PNG를 만든다.
+보고를 전용 USB serial worker가 읽고, 실제 펌웨어 C++ renderer로 PNG를 만든다.
 PC용 renderer를 먼저 빌드한 뒤 colcon으로 설치한다.
 
 ```zsh
@@ -439,7 +439,7 @@ ros2 launch kaiev26_hil hil_web.launch.py \
 
 `dashboard_port` 기본값은 빈 문자열이다. 명시했을 때만 UNO serial을 연다.
 이미 벤치 스택을 실행 중이면 중복 launch하지 않는다. Arduino Serial Monitor도 같은
-포트를 동시에 열지 않는다. 이 reader는 `HIL_LCD ON/OFF`만 보내며, 터치나 차량 명령을 보내지 않는다.
+포트를 동시에 열지 않는다. 이 worker는 `HIL_LCD ON/OFF`와 dashboard navigation용 `VT`만 보내며, 차량 명령은 보내지 않는다.
 
 왼쪽 **가상 LCD**에서 확인한다. USB OPEN은 포트가 열렸다는 뜻이며 UNO 상태 보고
 수신과는 별개다. 새 보고를 1초 이상 받지 못하면 마지막 이미지를 흐리게 표시한다.
@@ -447,7 +447,50 @@ ros2 launch kaiev26_hil hil_web.launch.py \
 
 이미지는 같은 drawing 코드와 아셋으로 재구성한 논리 화면이다. 실제 SPI 출력·패널 방향·
 RGB/BGR·백라이트·물리 터치까지 증명하지 않는다. 실제 LCD의 partial redraw 잔상 같은
-하드웨어/출력 경로 문제도 별도 확인이 필요하다. 터치 입력과 Dashboard 입력 CAN은 후속 범위다.
+하드웨어/출력 경로 문제도 별도 확인이 필요하다. Virtual Touch는 아래 USB 경로만 사용하며 Dashboard 입력 CAN을 추가하지 않는다.
+
+### Virtual Touch 사용
+
+가상 LCD에서 **조작권 가져오기** 후 `VTOUCH READY`를 확인하고 좌우로 드래그한다.
+mouse와 touchscreen 모두 Pointer Events를 사용한다. 오른쪽은 Dashboard→L,
+왼쪽은 Dashboard→R이며 반대 방향으로 중앙에 복귀한다. ARM은 필요하지 않다.
+L/R은 navigation 확인 페이지이며 차량 기능 버튼은 없다.
+
+- `VTOUCH READY`: Web online + UNO USB open + 1초 미만의 Virtual Touch 지원 보고 +
+  현재 control owner + 조작권 인계 중이 아님.
+- `VIEW ONLY`: 다른 브라우저가 조작하거나 조작권이 없음. 화면 관찰은 가능하다.
+- `UNO STALE` / `WEB OFFLINE`: 입력 불가. 마지막 화면을 현재 상태처럼 표시하지 않는다.
+- `VTOUCH UNAVAILABLE`: 지원 firmware 보고가 아님. 구버전 mirror는 계속 볼 수 있다.
+
+브라우저는 image content rect의 위치/배율을 **480×320**으로 변환한다. 1×·2×·responsive
+배율에서 같은 좌표가 전달되고, 화면 밖 release는 pointer capture로 받고 좌표를 clamp한다.
+20 ms 주기로 MOVE를 합치며 정지한 pointer는 200 ms마다 접촉을 갱신한다.
+다중 pointer, cancel, capture 상실, blur, 숨겨진 tab, 페이지 이탈은 gesture를 취소한다.
+
+WebSocket `virtual_touch` action은 `phase` D/M/U/C, D/M/U의 `x/y`, 현재
+`control.revision`인 `revision`, `display.generation`인 `generation`을 받는다.
+backend가 owner/lease/transition을 확인한 뒤 기존 `DashboardDisplay` worker의 bounded
+queue로 보낸다. 별도 serial connection을 열지 않는다. queue 최대 32개, pending MOVE
+coalescing/최대 50 Hz, DOWN/UP 순서 보존, 포화 시 전체 gesture 취소를 적용한다.
+release·takeover·heartbeat 만료·disconnect는 C를 보내며, 재연결 전 요청은 거부한다.
+기존 차량 명령의 ARM, disarm, reset, heartbeat, Host/Origin 검사는 유지한다.
+
+USB 명령은 `VT D 100 160`, `VT M 200 160`, `VT U 300 160`, 취소는 `VT C`다.
+최종 swipe 방향을 Web에서 계산하지 않는다. 물리 FT6336U **20 ms polling**에서 얻은
+`screen_x=raw_y`, `screen_y=319-raw_x`와 같은 공통 `TouchSample`/UNO gesture 경로로
+처리한다. INT는 기능 경로에서 의도적으로 사용하지 않으며 배선과 진단 ISR은 유지한다.
+물리 입력이 virtual gesture를 선점하고, 물리 해제 뒤 150 ms guard를 적용한다.
+양쪽 입력의 판정은 가로 60 px 이상·가로 우세·한 손가락·release 시 한 번·한 page·non-wrap이다.
+
+**Closed-loop:** Web pointer → owner 검사 → 기존 UNO USB → 공통 gesture → 실제 LCD
+그리기 → `HIL_LCD` 적용 보고 → PC native renderer → Web mirror 순서다.
+입력 queue 응답을 받더라도 **optimistic page transition은 하지 않는다**.
+`HIL_LCD` v1의 기존 필드와 `HIL_TOUCH` physical raw diagnostics는 유지하고,
+LCD 보고에 `vtouch=1`, `touch_errors`만 추가한다. Virtual Touch는 dashboard navigation
+전용이며 gear/mode/brake/E-stop/accelerator/actuator command에는 연결하지 않는다.
+
+세부 arbitration·protocol·빌드 결과는
+[UNO Virtual Touch](../../../firmware/UNO_R4_DASHBOARD/README.md#web-hil-virtual-touch-v1)를 따른다.
 
 ## 검증
 

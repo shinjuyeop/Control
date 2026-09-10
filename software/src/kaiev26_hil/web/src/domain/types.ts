@@ -45,6 +45,8 @@ export type Point = {
   targetWheel: number | null;
 };
 export type DisplayState = {
+  generation?: number;
+  touch_ready?: boolean;
   enabled: boolean;
   port: string;
   serial_open: boolean;
@@ -59,6 +61,8 @@ export type DisplayState = {
     can_age_ms: number;
     uptime_ms: number;
     seq: number;
+    vtouch?: boolean;
+    touch_errors?: number | null;
     values: Data;
   } | null;
 };

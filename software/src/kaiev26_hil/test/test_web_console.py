@@ -1199,3 +1199,224 @@ def test_pedal_edit_recovers_when_disabled_during_drag(browser_page, lock):
     slider.press("ArrowRight")
     page.get_by_text("OK SET PEDAL 42", exact=True).wait_for()
     assert [c for c in observed["commands"] if c.startswith("SET PEDAL")] == ["SET PEDAL 42"]
+
+
+@pytest.fixture
+def uno_display(bench):
+    """Existing Web bench with a real serial worker; PTY supplies explicit reports.
+
+    This peer never interprets touch or predicts pages. Tests choose the next
+    report to distinguish queued input from firmware-applied observations.
+    """
+    import asyncio
+    import os
+    import pty
+    import threading
+    from kaiev26_hil.dashboard_display import DashboardDisplay
+    from test_dashboard_display import LIBRARY, wire_report
+
+    if not LIBRARY.is_file():
+        pytest.skip("Build the native dashboard renderer first")
+    client, _ = bench
+    master, slave = pty.openpty()
+    os.set_blocking(master, False)
+    display = DashboardDisplay(os.ttyname(slave), LIBRARY)
+    original = client.app.state.display
+    client.app.state.display = client.app.state.console.display = display
+    state = {"page": "MANUAL_TFT", "publish": True, "lines": []}
+    stopping = threading.Event()
+
+    async def peer():
+        buffer = b""
+        while not stopping.is_set():
+            if state["publish"]:
+                os.write(master, wire_report(vtouch=1, touch_errors=0, page=state["page"]))
+            try:
+                buffer += os.read(master, 4096)
+            except BlockingIOError:
+                pass
+            while b"\n" in buffer:
+                line, buffer = buffer.split(b"\n", 1)
+                if line.startswith(b"VT "):
+                    state["lines"].append(line.decode())
+            await asyncio.sleep(0.05)
+
+    display.start()
+    task = client.portal.start_task_soon(peer)
+    try:
+        end = time.monotonic() + 4
+        while not display.snapshot()["touch_ready"] and time.monotonic() < end:
+            time.sleep(0.01)
+        assert display.snapshot()["touch_ready"]
+        state["lines"].clear()
+        yield display, state
+    finally:
+        display.stop()
+        stopping.set()
+        task.result(timeout=3)
+        os.close(master)
+        os.close(slave)
+        client.app.state.display = client.app.state.console.display = original
+    assert not display.thread.is_alive()
+
+
+def wait_touch_line(state, line):
+    end = time.monotonic() + 3
+    while line not in state["lines"] and time.monotonic() < end:
+        time.sleep(0.01)
+    assert line in state["lines"]
+
+
+def test_virtual_touch_lease_takeover_and_disconnect_cancel(bench, uno_display):
+    client, observed = bench
+    display, uno = uno_display
+    with client.websocket_connect("ws://localhost/ws", headers={"origin": "http://localhost"}) as first:
+        assert fresh(first)
+        args = dict(phase="D", x=100, y=160, generation=display.generation, revision=0)
+        assert not request(first, "virtual_touch", **args)["ok"]
+        assert request(first, "claim")["ok"]
+        args["revision"] = fresh(first)["control"]["revision"]
+        assert request(first, "virtual_touch", **args)["ok"]
+        wait_touch_line(uno, "VT D 100 160")
+        assert not observed["commands"] and not client.app.state.console.armed
+        with client.websocket_connect("ws://localhost/ws", headers={"origin": "http://localhost"}) as second:
+            state = fresh(second)
+            assert not request(second, "virtual_touch", **args)["ok"]
+            assert request(second, "takeover", confirmed=True,
+                           expected_revision=state["control"]["revision"])["ok"]
+            wait_touch_line(uno, "VT C")
+            assert not request(first, "virtual_touch", **dict(args, phase="U", x=300))["ok"]
+            assert not request(second, "virtual_touch", **args)["ok"] # Old revision
+            args["revision"] = fresh(second)["control"]["revision"]
+            assert request(second, "virtual_touch", **args)["ok"]
+            wait_touch_line(uno, "VT D 100 160")
+            uno["lines"].clear()
+        wait_touch_line(uno, "VT C") # Browser disconnect
+    assert display.snapshot()["report"]["page"] == "MANUAL_TFT"
+
+
+def test_virtual_touch_heartbeat_expiry_and_unavailable_uno(bench, uno_display):
+    client, _ = bench
+    display, uno = uno_display
+    with client.websocket_connect("ws://localhost/ws", headers={"origin": "http://localhost"}) as ws:
+        fresh(ws)
+        assert request(ws, "claim")["ok"]
+        args = dict(phase="D", x=100, y=160, generation=display.generation,
+                    revision=fresh(ws)["control"]["revision"])
+        assert request(ws, "virtual_touch", **args)["ok"]
+        wait_touch_line(uno, "VT D 100 160")
+        client.app.state.console.heartbeat_at -= 4
+        receive(ws, lambda m: m.get("type") == "state" and not m["control"]["occupied"])
+        wait_touch_line(uno, "VT C")
+        assert not request(ws, "virtual_touch", **dict(args, phase="U", x=300))["ok"]
+        assert request(ws, "claim")["ok"]
+        args["revision"] = fresh(ws)["control"]["revision"]
+        uno["publish"] = False
+        time.sleep(1.1)
+        assert not request(ws, "virtual_touch", **args)["ok"]
+        assert display.snapshot()["report"]["page"] == "MANUAL_TFT"
+
+
+def test_virtual_lcd_pointer_mapping_cancel_and_report_only_mirror(browser_page, uno_display):
+    from playwright.sync_api import expect
+    page, client, observed, _ = browser_page
+    display, uno = uno_display
+    page.get_by_role("navigation").get_by_role("button", name="가상 LCD", exact=True).click()
+    expect(page.locator(".virtual-display-container").get_by_text("VIEW ONLY", exact=True)).to_be_visible()
+    lcd = page.get_by_role("img", name="UNO가 적용한 상태로 재구성한 가상 LCD")
+    box = lcd.bounding_box()
+    page.mouse.move(box["x"] + 50, box["y"] + 50)
+    page.mouse.down()
+    page.mouse.up()
+    assert not any(line.startswith("VT D") for line in uno["lines"])
+    page.get_by_role("button", name="조작권 가져오기", exact=True).click()
+    expect(page.get_by_text("VTOUCH READY", exact=True)).to_be_visible()
+    original_image = lcd.get_attribute("src")
+    # Fractional pointer positions avoid rounding ambiguity while proving all
+    # supported CSS scales use the same 480 x 320 content coordinate system.
+    for width, scale in [(1800, 1), (2400, 2), (1000, 2)]:
+        page.set_viewport_size({"width": width, "height": 1000})
+        page.get_by_role("button", name="LCD 원본 크기" if scale == 1 else "LCD 두 배 확대").click()
+        box = lcd.bounding_box()
+        uno["lines"].clear()
+        page.mouse.move(box["x"] + box["width"] * 100.25 / 480,
+                        box["y"] + box["height"] * 160.25 / 320)
+        page.mouse.down()
+        page.mouse.move(box["x"] + box["width"] * 300.25 / 480,
+                        box["y"] + box["height"] * 160.25 / 320, steps=40)
+        page.mouse.up()
+        wait_touch_line(uno, "VT D 100 160")
+        wait_touch_line(uno, "VT U 300 160")
+        assert lcd.get_attribute("src") == original_image
+        assert display.snapshot()["report"]["page"] == "MANUAL_TFT"
+    uno["page"] = "SWIPE_L" # Only the next UNO report is allowed to change the image.
+    expect(lcd).not_to_have_attribute("src", original_image)
+    expect(page.locator(".lcd-caption")).to_contain_text("SWIPE_L")
+    uno["lines"].clear()
+    box = lcd.bounding_box()
+    page.mouse.move(box["x"] + box["width"] * 100.25 / 480,
+                    box["y"] + box["height"] * 160.25 / 320)
+    page.mouse.down()
+    wait_touch_line(uno, "VT D 100 160")
+    lcd.dispatch_event("pointercancel", {"pointerId": 1})
+    page.mouse.up()
+    wait_touch_line(uno, "VT C")
+    assert not any(line.startswith("VT U") for line in uno["lines"])
+    # A burst of PointerEvents is coalesced; pointer capture preserves release
+    # outside the LCD, with the final coordinate clamped to the screen edge.
+    uno["lines"].clear()
+    page.mouse.down()
+    wait_touch_line(uno, "VT D 100 160")
+    lcd.evaluate("""img => {
+      const r = img.getBoundingClientRect();
+      for (let i = 0; i < 500; i++) img.dispatchEvent(new PointerEvent('pointermove', {
+        bubbles: true, pointerId: 1, isPrimary: true,
+        clientX: r.left + r.width * 300.25 / 480,
+        clientY: r.top + r.height * 160.25 / 320,
+      }));
+    }""")
+    page.wait_for_timeout(60)
+    wait_touch_line(uno, "VT M 300 160")
+    assert sum(line.startswith("VT M") for line in uno["lines"]) <= 3
+    page.mouse.move(box["x"] + box["width"] + 30,
+                    box["y"] + box["height"] * 160.25 / 320)
+    page.mouse.up()
+    wait_touch_line(uno, "VT U 479 160")
+    # A second finger cancels instead of mixing the two pointer sequences.
+    uno["lines"].clear()
+    page.mouse.move(box["x"] + box["width"] * 100.25 / 480,
+                    box["y"] + box["height"] * 160.25 / 320)
+    page.mouse.down()
+    wait_touch_line(uno, "VT D 100 160")
+    lcd.dispatch_event("pointerdown", {"pointerId": 2, "isPrimary": False, "button": 0})
+    page.mouse.up()
+    wait_touch_line(uno, "VT C")
+    assert not any(line.startswith("VT U") for line in uno["lines"])
+    assert not observed["commands"]
+
+
+def test_virtual_lcd_ownership_loss_cancel_and_no_false_success(browser_page, uno_display):
+    from playwright.sync_api import expect
+    page, client, _, _ = browser_page
+    display, uno = uno_display
+    page.get_by_role("navigation").get_by_role("button", name="가상 LCD", exact=True).click()
+    page.get_by_role("button", name="조작권 가져오기", exact=True).click()
+    expect(page.get_by_text("VTOUCH READY", exact=True)).to_be_visible()
+    lcd = page.get_by_role("img", name="UNO가 적용한 상태로 재구성한 가상 LCD")
+    box = lcd.bounding_box()
+    page.mouse.move(box["x"] + 100, box["y"] + 100)
+    page.mouse.down()
+    page.mouse.move(box["x"] + 250, box["y"] + 100)
+    with client.websocket_connect("ws://localhost/ws", headers={"origin": "http://localhost"}) as second:
+        state = fresh(second)
+        assert request(second, "takeover", confirmed=True,
+                       expected_revision=state["control"]["revision"])["ok"]
+        expect(page.locator(".virtual-display-container").get_by_text("VIEW ONLY", exact=True)).to_be_visible()
+        wait_touch_line(uno, "VT C")
+        page.mouse.up()
+        assert not any(line.startswith("VT U") for line in uno["lines"])
+        uno["publish"] = False
+        expect(page.get_by_text("UNO STALE", exact=True)).to_be_visible()
+        page.mouse.down()
+        page.mouse.up()
+        assert display.snapshot()["report"]["page"] == "MANUAL_TFT"

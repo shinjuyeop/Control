@@ -339,6 +339,7 @@ class Console:
         self.releasing = False
         self.generator_poll = None
         self.pump_task = None
+        self.display = None
 
     def spawn(self, coroutine):
         task = asyncio.create_task(coroutine)
@@ -369,6 +370,7 @@ class Console:
             ):
                 self.releasing = True
                 self.armed = False
+                self.cancel_touch()
                 self.spawn(
                     self.release(self.owner, "Operator heartbeat expired", force=True,
                                  expected_revision=self.control_revision)
@@ -388,6 +390,7 @@ class Console:
                 self.runner = None
                 self.armed = False
                 self.releasing = True
+                self.cancel_touch()
                 self.spawn(self.finish_run())
             # spin_once dispatches only one callback. Drive/steering alone add
             # 100 status messages/s, and an active scenario subscribes again.
@@ -455,6 +458,7 @@ class Console:
             self.releasing = True
             self.armed = False
             self.control_revision += 1
+            self.cancel_touch()
             try:
                 await self.stop_runner(reason)
                 with suppress(ValueError):
@@ -486,6 +490,7 @@ class Console:
             self.armed = False
             self.control_revision += 1
             self.node.event("control", "Control takeover requested; stopping Host command source")
+            self.cancel_touch()
             try:
                 # Finish the old action (the shared lock is held), cancel the
                 # scenario, then confirm generator disarm before granting control.
@@ -517,6 +522,24 @@ class Console:
             conflicts = self.node.conflicts(self.runner is not None)
             if conflicts:
                 raise ValueError("다른 명령 발행자가 있습니다: " + ", ".join(conflicts))
+
+    def cancel_touch(self):
+        if self.display is not None:
+            self.display.cancel_touch()
+
+    def virtual_touch(self, client, request):
+        # Synchronous: lease validation and enqueue cannot interleave with an
+        # ownership transition. Dashboard input needs no vehicle ARM/ROS freshness.
+        self.require_control(client, check_writers=False)
+        if self.closing or type(request.get("revision")) is not int or request["revision"] != self.control_revision:
+            raise ValueError("조작권이 변경되어 이전 터치를 취소했습니다.")
+        if self.display is None:
+            raise ValueError("UNO display가 연결되지 않았습니다.")
+        self.display.queue_touch(
+            request.get("phase"), request.get("x"), request.get("y"),
+            generation=request.get("generation"),
+        )
+        return "UNO 입력 큐에 등록했습니다. 페이지 적용은 LCD 보고로 확인합니다."
 
     async def action(self, client, request):
         action = request.get("action")
@@ -728,6 +751,7 @@ def create_app(
         console.pump_task = asyncio.create_task(console.pump())
         display = DashboardDisplay(dashboard_port, dashboard_library)
         app.state.display = display
+        console.display = display
         display.start()
         try:
             yield
@@ -827,6 +851,15 @@ def create_app(
                 if request.get("action") == "heartbeat":
                     if console.owner == client:
                         console.heartbeat_at = time.monotonic()
+                elif request.get("action") == "virtual_touch":
+                    # Pointer events remain ordered even while a vehicle action
+                    # awaits its ACK. No extra tasks, thread or serial connection.
+                    try:
+                        message = console.virtual_touch(client, request)
+                        ok = True
+                    except (ValueError, OSError) as exc:
+                        message, ok = str(exc), False
+                    await send(dict(type="result", id=request.get("id"), ok=ok, message=message))
                 elif action_task and not action_task.done():
                     await send(
                         dict(
@@ -841,6 +874,8 @@ def create_app(
         except WebSocketDisconnect:
             pass
         finally:
+            if console.owner == client:
+                console.cancel_touch()
             sender.cancel()
             with suppress(asyncio.CancelledError, WebSocketDisconnect, RuntimeError):
                 await sender

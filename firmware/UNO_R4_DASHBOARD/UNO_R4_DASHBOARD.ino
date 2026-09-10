@@ -431,7 +431,7 @@ void loop()
     try_reinitialize_can();
   }
   Ft6336Touch::poll(now);
-  SwipeTest::poll();
+  SwipeTest::poll(now);
   HilDisplayReport::poll(now, complete_snapshot_count,
       complete_snapshot_count ? (int32_t)(now-last_complete_snapshot_ms) : -1);
 }

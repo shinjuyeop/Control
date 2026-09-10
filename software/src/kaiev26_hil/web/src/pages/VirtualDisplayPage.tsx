@@ -3,6 +3,8 @@ import { useState } from "react";
 import { Badge, Details, Fact, fmt, Panel } from "../components/instruments";
 import type { DisplayState } from "../domain/types";
 import { StateRail } from "../components/SignalInstruments";
+import { useWorkbench } from "../hooks/useWorkbench";
+import { useVirtualTouch } from "../hooks/useVirtualTouch";
 
 export function VirtualDisplay({
   display,
@@ -14,6 +16,12 @@ export function VirtualDisplay({
   const [scale, setScale] = useState(1);
   const fresh = online && !!display?.fresh;
   const report = display?.report;
+  const { state, mine, sendVirtualTouch } = useWorkbench();
+  const ready = fresh && !!display?.serial_open && !!display.touch_ready && mine &&
+    !state.control.transitioning;
+  const touch = useVirtualTouch(ready, state.control.revision, display?.generation, sendVirtualTouch);
+  const touchStatus = !online ? "WEB OFFLINE" : !fresh || !display?.serial_open ? "UNO STALE" :
+    !report?.vtouch ? "VTOUCH UNAVAILABLE" : !mine || state.control.transitioning ? "VIEW ONLY" : "VTOUCH READY";
   return (
     <div className="virtual-display-container">
       <div className="virtual-display-layout">
@@ -41,6 +49,7 @@ export function VirtualDisplay({
               <Badge tone={fresh ? "good" : "muted"}>
                 {fresh ? "UNO LIVE" : "수신 대기 / 지연"}
               </Badge>
+              <Badge tone={ready ? "good" : "muted"}>{touchStatus}</Badge>
             </div>
           }
         >
@@ -51,6 +60,9 @@ export function VirtualDisplay({
             >
               {display?.image ? (
                 <img
+                  {...touch.handlers}
+                  className={ready ? "lcd-touch-ready" : ""}
+                  draggable={false}
                   src={display.image}
                   alt="UNO가 적용한 상태로 재구성한 가상 LCD"
                   width={480}
@@ -74,10 +86,12 @@ export function VirtualDisplay({
             <span>논리 해상도 480 × 320 · {scale}×</span>
             <span>{fresh ? report?.page : "현재 페이지 미확인"}</span>
           </div>
+          <p className="muted">조작권을 가진 브라우저에서 좌우로 드래그하세요. 페이지는 UNO 적용 보고 후 갱신됩니다.</p>
+          {touch.error && <p className="inline-error" role="alert">{touch.error}</p>}
           <Details title="LCD mirror의 확인 범위">
             실제 펌웨어의 화면 그리기 코드와 아셋으로 재구성합니다. SPI
             전송·패널·백라이트의 물리 상태는 이 화면으로 확인할 수 없습니다.
-            터치는 후속 단계입니다.
+            가상 터치는 Dashboard 페이지 이동만 수행합니다.
           </Details>
         </Panel>
         <Panel
@@ -158,6 +172,7 @@ export function VirtualDisplay({
               unit="ms"
             />
             <Fact label="UNO snapshot 누적" value={fresh ? report?.seq : "—"} />
+            <Fact label="Touch 오류 누적" value={fresh ? report?.touch_errors ?? "—" : "—"} />
             <Fact
               label="UNO uptime"
               value={fresh && report ? fmt(report.uptime_ms / 1000, 1) : "—"}
