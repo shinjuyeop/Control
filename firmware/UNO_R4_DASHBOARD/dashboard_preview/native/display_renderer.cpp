@@ -12,6 +12,14 @@ uint8_t command=0, position=0, high_byte=0;
 uint8_t address[4]{};
 uint16_t x0=0,y0=0,x1=479,y1=319,x=0,y=0;
 bool second_byte=false;
+void copyRgb(uint8_t *rgb) {
+  for(size_t i=0;i<pixels.size();++i) {
+    const uint16_t color=pixels[i];
+    rgb[i*3]=uint8_t(((color>>11)&31)*255/31);
+    rgb[i*3+1]=uint8_t(((color>>5)&63)*255/63);
+    rgb[i*3+2]=uint8_t((color&31)*255/31);
+  }
+}
 }
 DisplayPixelSink SPI;
 void digitalWrite(uint8_t pin, uint8_t value) {
@@ -49,10 +57,9 @@ extern "C" void render_dashboard(const int32_t *v, int can_lost, uint8_t *rgb) {
     uint16_t(v[5]),int16_t(v[6]),int16_t(v[7]),int16_t(v[8]),int16_t(v[9]),uint32_t(v[10])};
   // Full redraw from the UNO-reported applied values, independent of previous clients.
   DashboardUi::begin(values,can_lost!=0);
-  for(size_t i=0;i<pixels.size();++i) {
-    const uint16_t color=pixels[i];
-    rgb[i*3]=uint8_t(((color>>11)&31)*255/31);
-    rgb[i*3+1]=uint8_t(((color>>5)&63)*255/63);
-    rgb[i*3+2]=uint8_t((color&31)*255/31);
-  }
+  copyRgb(rgb);
+}
+extern "C" void render_swipe_test(int result, uint8_t *rgb) {
+  DashboardUi::showSwipeTest(result == 1 ? 'L' : result == 2 ? 'R' : '-');
+  copyRgb(rgb);
 }

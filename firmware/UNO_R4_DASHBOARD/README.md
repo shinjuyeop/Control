@@ -6,8 +6,10 @@ Arduino `setup()`/`loop()` 구조와 `Arduino_CAN` API를 사용합니다.
 
 기존 STM_B의 MSP4030/ST7796S 초기화 sequence와 480x320 dashboard UI의 배치, 문구,
 색상, validity 표현을 Arduino SPI로 이식했습니다. 첫 화면을 전체 렌더한 뒤에는 CAN
-snapshot에서 바뀐 문자와 badge만 갱신합니다. 현재 터치 신호는 물리적으로 배선했지만
-터치 컨트롤러를 읽는 firmware 기능은 아직 포함하지 않습니다.
+snapshot에서 바뀐 문자와 badge만 갱신합니다. MSP4031 터치 모델의 FT6336U를
+I2C로 읽고, `HIL_TOUCH ON`으로 raw 좌표와 INT 상태를 관찰할 수 있습니다.
+부팅 시 기존 계기판에서 시작하며, 스와이프로 `L — 기존 계기판 — R` 사이를 이동합니다.
+터치는 차량 명령에 연결하지 않습니다.
 
 ## Local UI preview
 
@@ -252,13 +254,14 @@ bitrate, ID/DLC/version, termination, CANH/CANL polarity, 공통 GND와 transcei
 전원을 먼저 확인합니다. LINK의 `vehicle/detail LOST`는 dashboard CAN 단절이 아니라
 STM_A→STM_B UART source가 stale인 상태입니다.
 
-## MSP4030/ST7796S LCD dashboard
+## MSP4030/MSP4031 ST7796S LCD dashboard
 
-대상은 기존 STM_B에 연결했던 QDtech MSP4030 4.0-inch SPI module입니다. 모듈 사양과
+대상은 QDtech MSP4030(터치 없음) 및 MSP4031(FT6336U 정전식 터치) 4.0-inch
+SPI module입니다. 모듈 사양과
 회로도에는 5V/3.3V MCU 호환 level conversion과 onboard 3.3V regulator가 있으며 VCC는
 5V 연결을 권장합니다. 이 배선은 raw ST7796S panel/FPC에 적용하면 안 됩니다.
 
-| MSP4030 header | UNO R4 Minima | 설명 |
+| MSP4030/MSP4031 header | UNO R4 Minima | 설명 |
 |---|---|---|
 | `VCC` | `5V` | module power; backlight 사양 전류 약 103 mA |
 | `GND` | `GND` | CAN/STM과도 공통 ground |
@@ -281,8 +284,125 @@ STM_A→STM_B UART source가 stale인 상태입니다.
 | `CTP_INT` | `D2` | touch interrupt |
 
 `D4/D5`는 CAN TX/RX로 계속 사용합니다. `D12/MISO`와 `SD_CS`는 연결하지 않습니다.
-CTP touch의 VCC/GND 배선은 현재 전달된 배선 목록에 없으므로 이 문서에는 임의로
-추가하지 않았습니다. 실제 모듈의 전원 요구와 공통 GND 연결을 확인해야 합니다.
+터치는 모듈의 공용 VCC/GND와 내부 3.3 V regulator에서 전원을 받습니다.
+제조사 회로도에서 SDA/SCL은 BSS138 양방향 level conversion, RST는
+74LVC245를 거칩니다. INT는 터치 칩에서 직접 연결되므로 D2는 `INPUT`으로
+설정하며 5 V `INPUT_PULLUP`을 사용하지 않습니다.
+UNO R4의 D2(P105)는 5 V 동작 시 HIGH 보장 입력이 4.0 V 이상입니다
+([RA4M1 datasheet, Table 2.4](https://www.renesas.com/en/document/dst/ra4m1-group-datasheet)).
+따라서 3.3 V CTP_INT 직결로는 HIGH 인식이 보장되지 않으며, INT를 사용할 경우
+3.3 V 신호를 받아 5 V로 내보내는 level conversion이 필요합니다.
+좌표 읽기는 INT에 의존하지 않는 polling으로 동작합니다.
+
+### FT6336U 터치 확인
+
+[`ft6336_touch.cpp`](ft6336_touch.cpp)는 제조사 예제의 I2C 7-bit 주소 `0x38`과
+리셋 LOW 20 ms / HIGH 후 500 ms 대기를 사용합니다. UNO의 `Wire`를 100 kHz로
+설정하고 20 ms마다 `0x02`부터 터치 수와 최대 두 점을 한 번에 읽습니다.
+I2C timeout은 3000 µs이며 읽기 실패 후 재시도 주기는 1초입니다.
+INT ISR은 falling edge 횟수만 셉니다. 좌표 읽기는 polling하므로 INT 배선이
+없거나 펄스를 놓쳐도 누름/해제를 확인할 수 있습니다.
+
+Arduino Serial Monitor(115200 baud, newline)에 다음을 입력합니다.
+HIL 웹의 Arduino reader와 Serial Monitor를 동시에 열지 않습니다.
+
+```text
+HIL_TOUCH ON
+```
+
+100 ms마다 `HIL_TOUCH {JSON}` 한 줄을 출력합니다. `HIL_LCD ON`과는
+상호 배타적이며, 기존 HIL LCD JSON 형식은 변경하지 않습니다.
+
+- `addr`: 56 = `0x38`; `identified`: 칩 식별 레지스터 읽기 성공
+- `vendor`, `chip`, `fw`: 실제 읽은 `0xA8`, `[0xA3,0x9F,0xA0]`, `0xA6`
+- `valid`, `sample_ms`: 최근 좌표 읽기의 성공 여부와 마지막 성공 시각
+- `irq`, `irq_edges`: D2 현재 레벨과 falling edge 누적 횟수
+- `count`: 현재 터치 수, 0이면 해제. `points`의 앞 `count`개만 유효
+- `points`: 각 점 `[id,event,raw_x,raw_y]`, event 0=down, 1=up, 2=contact
+- `samples`, `errors`: 읽기 시도와 오류 누적 횟수
+- `can_seq`, `can_age_ms`: 터치 확인 중에도 CAN 수신이 계속되는지 확인
+
+`points`는 패널의 raw 320×480 축을 유지합니다. 현재 가로 LCD 방향에는
+`screen_x = raw_y`, `screen_y = 319 - raw_x`로 대응합니다. 2026-09-10 사용자가
+좌상 → 우상 → 좌하 → 우하 → 중앙 순서로 누른 것을 확인하고 두 차례의
+터치 좌표로 방향을 대조했습니다. 임의의 5점 보정 계수는 적용하지 않습니다.
+
+```text
+HIL_TOUCH OFF
+```
+
+위 명령 또는 USB Serial Monitor 종료 시 터치 로그가 꺼집니다. CAN 수신과
+계기판 렌더링은 터치 진단 중에도 유지됩니다.
+
+2026-09-10 HIL Arduino(serial `3114101259323437A93033334B57305C`)에
+업로드 후 `0x38`에서 vendor `0x11`, chip `0x64/0x26/0x02`, firmware `0xA4`를
+읽었습니다. 실제 누름을 수집한 60초 동안 I2C errors=0, CAN seq 3563→4765였고
+각 누름에서 count=1, 해제 시 count=0으로 복귀했습니다. 두 번째 5점의 대표값은
+다음과 같습니다. 모서리의 정확한 경계값/픽셀 오차를 측정한 것은 아닙니다.
+
+| 사용자가 누른 위치 | raw X/Y | 현재 화면 방향의 X/Y |
+|---|---|---|
+| 좌상 | 319 / 43 | 43 / 0 |
+| 우상 | 303 / 445 | 445 / 16 |
+| 좌하 | 26 / 70 | 70 / 293 |
+| 우하 | 23 / 451 | 451 / 296 |
+| 중앙 | 142 / 253 | 253 / 177 |
+
+INT는 누름/해제 중에도 LOW, falling edge=0으로 관측했습니다. 터치 좌표는 polling으로
+정상 수신되지만 INT 배선/전압 동작은 통과하지 못했습니다. 앞서 설명한 3.3 V→5 V
+입력 레벨 문제와 물리 배선을 실측해야 하며, 이번에는 전압을 측정하지 않았습니다.
+빌드 결과는 Flash 225,364 bytes(85%), global RAM 12,116 bytes(36%)입니다.
+
+### L — 기존 계기판 — R 페이지 이동
+
+부팅 시 중앙의 기존 계기판이 나오고 페이지 이동은 기본으로 켜집니다.
+손가락으로 페이지를 끌어 넘기는 방향을 사용합니다.
+
+| 현재 화면 | 오른쪽으로 밀기 | 왼쪽으로 밀기 |
+|---|---|---|
+| L | L 유지 | 기존 계기판 |
+| 기존 계기판 | L | R |
+| R | 기존 계기판 | R 유지 |
+
+중앙은 기존 `MANUAL_TFT`/`AUTO_BASELINE` 코드 그대로 사용합니다.
+L/R 화면에서도 CAN 최신 값과 모드를 계속 받아 두고, 중앙으로 돌아오면 최신
+값으로 다시 그립니다. 한 번의 스와이프로 한 페이지만 이동하며 양 끝은 순환하지 않습니다.
+
+115200 baud Serial Monitor에서 다음을 보내면 중앙으로 돌아오며 페이지 이동을 켭니다.
+
+```text
+SWIPE_TEST ON
+```
+
+손가락 하나의 가로 이동이 60픽셀 이상이고 세로 이동보다 클 때, 손을 떼는 시점에 한 번
+판정합니다. 짧은 탭이나 세로 이동은 화면을 바꾸지 않습니다. 두 손가락 터치나
+I2C 읽기 실패가 끼어든 동작은 취소하고 완전히 손을 뗀 뒤 다시 받습니다.
+이 표시는 방향 확인용이며 기어 선택이나 차량 제어 명령이 아닙니다.
+
+```text
+SWIPE_TEST OFF
+```
+
+OFF는 최신 CAN 값의 계기판으로 복귀하고 페이지 이동을 끕니다.
+설정은 Serial Monitor를 닫아도 유지되며, Arduino reset 시 중앙/ON으로 돌아옵니다.
+
+웹 Virtual LCD는 중앙의 기존 page 값과 `page=SWIPE_R/SWIPE_L` 보고를 받아
+같은 C++ 그리기 코드로 표시합니다. 위 native renderer 빌드/설치와 Python
+`dashboard_display.py` 갱신을 함께 적용해야 합니다. `HIL_LCD ON/OFF`는
+보고만 켜고 끄며 스와이프 테스트 모드는 바꾸지 않습니다.
+이전 단일 방향 테스트의 `SWIPE_WAIT`는 호스트 호환용으로만 유지합니다.
+
+2026-09-10 페이지 이동 방식으로 갱신한 빌드는 Flash 226,124 bytes(86%),
+global RAM 12,152 bytes(37%)이며 기존 LCD 보고 테스트 6개를 통과했습니다.
+HIL Arduino에 복구 업로드를 완료했고, 부팅 시 `MANUAL_TFT`와 오른쪽 스와이프 후
+`SWIPE_L` 보고를 확인했습니다. 업로드 중 사용자 reset으로 전송이 한 번 중단됐고,
+복구 업로드 뒤 흰 화면은 Arduino/LCD 전원을 완전히 껐다 켠 후 정상 계기판으로
+돌아왔다고 사용자가 확인했습니다. 이후 60초 동안 CAN seq 572→1774,
+CAN LOST 보고 0건을 확인했습니다. 전원 재연결 후 사용자가 실제 LCD에서
+오른쪽 → 왼쪽 → 왼쪽 → 오른쪽 입력에 따라 `L → 기존 계기판 → R → 기존 계기판`이
+요청한 순서대로 표시됨을 확인했습니다(사용자 실물 LCD 검증 확인).
+
+### LCD 초기화
 
 [`st7796_lcd.cpp`](st7796_lcd.cpp)는 기존 STM_B와 같은 MSP4030 vendor command와
 landscape `MADCTL=0x28`, RGB565를 사용합니다. Arduino SPI는 mode 3, MSB first,

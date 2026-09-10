@@ -358,12 +358,22 @@ void drawCharScaled(uint16_t x,
                     uint16_t foreground,
                     uint16_t background)
 {
-  if ((scale == 0U) || (scale > MAX_FONT_SCALE)) return;
+  if (scale == 0U) return;
   const uint16_t width = (uint16_t)((FONT_WIDTH + 1U) * scale);
   const uint16_t height = (uint16_t)(FONT_HEIGHT * scale);
   if (((uint32_t)x + width > WIDTH) || ((uint32_t)y + height > HEIGHT)) return;
 
   const uint8_t *glyph = lookupGlyph(character);
+  if (scale > MAX_FONT_SCALE)
+  {
+    // Large single letters use solid blocks instead of growing the glyph RAM buffer.
+    fillRect(x, y, width, height, background);
+    for (uint8_t column = 0; column < FONT_WIDTH; ++column)
+      for (uint8_t row = 0; row < FONT_HEIGHT; ++row)
+        if (glyph[column] & (1U << row))
+          fillRect(x + column * scale, y + row * scale, scale, scale, foreground);
+    return;
+  }
   size_t index = 0U;
   for (uint8_t row = 0U; row < FONT_HEIGHT; ++row)
   {

@@ -3,9 +3,11 @@
 #include <stdint.h>
 
 #include "dashboard_ui.h"
+#include "ft6336_touch.h"
 #include "hil_display_report.h"
 #include "manual_tft_ui.h"
 #include "st7796_lcd.h"
+#include "swipe_test.h"
 
 static constexpr uint8_t DASHBOARD_PROTOCOL_VERSION = 1U;
 static constexpr uint32_t DASHBOARD_STATUS_ID = 0x321U;
@@ -388,8 +390,10 @@ void setup()
   St7796Lcd::begin();
   St7796Lcd::setBacklight(true);
   ManualTftUi::playStartup();
+  Ft6336Touch::begin();
   can_controller_ready = CAN.begin(CanBitRate::BR_250k);
   DashboardUi::begin(latest_values, true);
+  SwipeTest::setEnabled(true);
   Serial.println(F("LCD dashboard UI rendered"));
 
   if (!can_controller_ready)
@@ -426,6 +430,8 @@ void loop()
     last_can_reinit_ms = now;
     try_reinitialize_can();
   }
+  Ft6336Touch::poll(now);
+  SwipeTest::poll();
   HilDisplayReport::poll(now, complete_snapshot_count,
       complete_snapshot_count ? (int32_t)(now-last_complete_snapshot_ms) : -1);
 }

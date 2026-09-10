@@ -41,7 +41,7 @@ def decode_display_report(line: bytes):
     if not isinstance(raw, dict) or raw.get("v") != 1:
         raise ValueError("지원하지 않는 UNO LCD report protocol")
     page = raw.get("page")
-    if page not in ("MANUAL_TFT", "AUTO_BASELINE"):
+    if page not in ("MANUAL_TFT", "AUTO_BASELINE", "SWIPE_WAIT", "SWIPE_L", "SWIPE_R"):
         raise ValueError("지원하지 않는 UNO 화면")
     values = raw.get("values")
     if not isinstance(values, list) or len(values) < len(VALUE_FIELDS):
@@ -76,13 +76,22 @@ class NativeDashboardRenderer:
             ctypes.POINTER(ctypes.c_uint8),
         ]
         self.render_function.restype = None
+        self.swipe_render_function = self.library.render_swipe_test
+        self.swipe_render_function.argtypes = [
+            ctypes.c_int, ctypes.POINTER(ctypes.c_uint8)
+        ]
+        self.swipe_render_function.restype = None
         self.rgb = (ctypes.c_uint8 * (WIDTH * HEIGHT * 3))()
 
     def render(self, report):
         values = (ctypes.c_int32 * len(VALUE_FIELDS))(
             *(report["values"][name] for name, _, _ in VALUE_FIELDS)
         )
-        self.render_function(values, int(report["can_lost"]), self.rgb)
+        if report["page"].startswith("SWIPE_"):
+            direction = {"SWIPE_WAIT": 0, "SWIPE_L": 1, "SWIPE_R": 2}[report["page"]]
+            self.swipe_render_function(direction, self.rgb)
+        else:
+            self.render_function(values, int(report["can_lost"]), self.rgb)
         output = BytesIO()
         Image.frombytes("RGB", (WIDTH, HEIGHT), bytes(self.rgb)).save(
             output, format="PNG"

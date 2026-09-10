@@ -10,6 +10,7 @@ namespace
 {
 static DashboardValues applied_values = {};
 static bool applied_can_lost = true;
+static char swipe_page = '\0';
 
 
 static constexpr uint16_t UI_BG = St7796Lcd::COLOR_WHITE;
@@ -728,6 +729,7 @@ namespace DashboardUi
 
 void begin(const DashboardValues &values, bool dashboard_can_lost)
 {
+  swipe_page = '\0';
   const bool manual_page =
       !flagIsSet(values.status_flags, STATUS_MODE_AUTO);
   St7796Lcd::setBacklight(false);
@@ -751,6 +753,12 @@ void begin(const DashboardValues &values, bool dashboard_can_lost)
 
 void update(const DashboardValues &values, bool dashboard_can_lost)
 {
+  if (swipe_page)
+  {
+    applied_values = values;
+    applied_can_lost = dashboard_can_lost;
+    return;
+  }
   if (!initialized)
   {
     begin(values, dashboard_can_lost);
@@ -782,7 +790,29 @@ void update(const DashboardValues &values, bool dashboard_can_lost)
 const DashboardValues &displayedValues() { return applied_values; }
 bool canLost() { return applied_can_lost; }
 const char *pageName() {
+  if (swipe_page == 'L') return "SWIPE_L";
+  if (swipe_page == 'R') return "SWIPE_R";
+  if (swipe_page) return "SWIPE_WAIT";
   return displayed_manual_page ? "MANUAL_TFT" : "AUTO_BASELINE";
+}
+
+void showSwipeTest(char result)
+{
+  if (result == swipe_page) return;
+  if (!result)
+  {
+    begin(applied_values, applied_can_lost);
+    return;
+  }
+  St7796Lcd::fillScreen(St7796Lcd::COLOR_BLACK);
+  const char *hint = result == 'L' ? "SWIPE LEFT TO DASHBOARD" :
+                     result == 'R' ? "SWIPE RIGHT TO DASHBOARD" : "SWIPE LEFT OR RIGHT";
+  const uint16_t hint_x = uint16_t((St7796Lcd::WIDTH - strlen(hint) * 12) / 2);
+  St7796Lcd::drawStringScaled(hint_x, 24, hint, 2,
+                            St7796Lcd::COLOR_WHITE, St7796Lcd::COLOR_BLACK);
+  St7796Lcd::drawCharScaled(180, 76, result, 24,
+                          St7796Lcd::COLOR_WHITE, St7796Lcd::COLOR_BLACK);
+  swipe_page = result;
 }
 
 }  // namespace DashboardUi

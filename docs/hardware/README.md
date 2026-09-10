@@ -13,6 +13,21 @@
 - 이 문서는 raw ST7796S IC 기준이므로 MSP4030 모듈의 5 V 입력, level shifter,
   backlight와 header pinout 근거로 사용하지 않음
 
+## MSP4030/MSP4031 Module and Capacitive Touch
+
+- [MSP4030/MSP4031 Specification V1.0](./MSP4030_MSP4031_Specification_EN_V1.0.pdf):
+  MSP4030은 터치 없음, MSP4031은 FT6336U I2C 정전식 터치 모델. 공용 VCC/GND,
+  헤더 핀 기능과 모듈 전압을 설명합니다.
+- [제조사 제품 페이지](https://www.lcdwiki.com/4.0inch_Capacitive_SPI_Module_ST7796)
+- [모듈 회로도](https://www.lcdwiki.com/res/MSP4030_MSP4031/4.0inch_SPI_Module_MSP4030_MSP4031_Schematic.pdf)
+- [FT6336U datasheet V1.1](https://www.lcdwiki.com/res/MSP4030_MSP4031/DFT6336UDataSheetV1.1.pdf)
+- [FT6336U register table](https://www.lcdwiki.com/res/MSP4030_MSP4031/FT6336U_Register.xlsx)
+
+UNO 드라이버의 주소/리셋 절차는 제품 페이지의 MSP4030/MSP4031 V1.0 예제 중
+`Demo_UNO_Mega2560/Install libraries/LCDWIKI_TOUCH/ft6336g.cpp`와 `.h`를
+참조합니다. I2C register table의 normal work mode만 사용하며 factory mode,
+터치 칩 firmware, calibration 설정은 변경하지 않습니다.
+
 ## Drive Motor Controller
 
 ### GoldenMotor EZkontrol User Manual
