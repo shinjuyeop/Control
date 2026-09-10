@@ -28,6 +28,8 @@ def wire_report(**overrides):
         can_age_ms=12,
         page="MANUAL_TFT",
         values=[15, 3, 25, 3, 120, 523, 125, 1200, 320, 400, 0],
+        auto=[1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 1,
+              9000, 9100, 500, 1200, 1300, 42],
     )
     report.update(overrides)
     return b"HIL_LCD " + json.dumps(report).encode() + b"\n"
@@ -37,6 +39,7 @@ def test_report_decodes_raw_applied_values_and_tolerates_extensions():
     report = decode_display_report(wire_report(extra="future field"))
     assert report["values"]["bus_voltage_decivolt"] == 523
     assert report["values"]["pedal_percent"] == 25
+    assert report["auto_values"]["target_motor_count"] == 1300
     assert report["can_lost"] is False
     assert decode_display_report(b"DASH v1 alive=42 complete=101\n") is None
 

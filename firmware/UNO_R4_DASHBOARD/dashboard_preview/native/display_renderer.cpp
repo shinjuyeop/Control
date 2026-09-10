@@ -1,58 +1,49 @@
-// Host display surface for the production C++ drawing code. No MCU/USB I/O.
-// Only the ST7796 address-window and RGB565 memory-write operations are consumed.
-#include "SPI.h"
+// Render the current firmware UI from the values reported by the UNO.
+#include "host_runtime.h"
 #include "dashboard_ui.h"
 #include "st7796_lcd.h"
-#include <array>
 
-namespace {
-std::array<uint16_t, St7796Lcd::WIDTH * St7796Lcd::HEIGHT> pixels{};
-bool data_mode=true;
-uint8_t command=0, position=0, high_byte=0;
-uint8_t address[4]{};
-uint16_t x0=0,y0=0,x1=479,y1=319,x=0,y=0;
-bool second_byte=false;
-}
-DisplayPixelSink SPI;
-void digitalWrite(uint8_t pin, uint8_t value) {
-  if(pin==D9) data_mode=(value==HIGH);
-}
-uint8_t DisplayPixelSink::transfer(uint8_t value) {
-  if(!data_mode) {
-    command=value; position=0; second_byte=false;
-    if(command==0x2C) {x=x0; y=y0;}
-  } else if(command==0x2A || command==0x2B) {
-    if(position<4) address[position++]=value;
-    if(position==4) {
-      const uint16_t first=(uint16_t(address[0])<<8)|address[1];
-      const uint16_t last=(uint16_t(address[2])<<8)|address[3];
-      if(command==0x2A) {x0=first;x1=last;} else {y0=first;y1=last;}
-    }
-  } else if(command==0x2C) {
-    if(!second_byte) high_byte=value;
-    else {
-      if(x<St7796Lcd::WIDTH && y<St7796Lcd::HEIGHT)
-        pixels[size_t(y)*St7796Lcd::WIDTH+x]=(uint16_t(high_byte)<<8)|value;
-      if(++x>x1) {x=x0;if(++y>y1)y=y0;}
-    }
-    second_byte=!second_byte;
-  }
-  return 0;
-}
-void DisplayPixelSink::transfer(void *buffer,size_t length) {
-  const auto *bytes=static_cast<const uint8_t*>(buffer);
-  for(size_t i=0;i<length;++i) transfer(bytes[i]);
-}
-extern "C" void render_dashboard(const int32_t *v, int can_lost, uint8_t *rgb) {
-  DashboardValues values{
-    uint8_t(v[0]),uint8_t(v[1]),uint8_t(v[2]),uint8_t(v[3]),int16_t(v[4]),
-    uint16_t(v[5]),int16_t(v[6]),int16_t(v[7]),int16_t(v[8]),int16_t(v[9]),uint32_t(v[10])};
-  // Full redraw from the UNO-reported applied values, independent of previous clients.
-  DashboardUi::begin(values,can_lost!=0);
-  for(size_t i=0;i<pixels.size();++i) {
-    const uint16_t color=pixels[i];
-    rgb[i*3]=uint8_t(((color>>11)&31)*255/31);
-    rgb[i*3+1]=uint8_t(((color>>5)&63)*255/63);
-    rgb[i*3+2]=uint8_t((color&31)*255/31);
+#include <array>
+#include <cstdint>
+
+extern "C" void dashboard_host_publish_ui_state() {}
+
+extern "C" void render_dashboard(const int32_t *native_values,
+                                 const int32_t *auto_values,
+                                 int can_lost,
+                                 uint8_t *rgb)
+{
+  const DashboardValues native{
+      uint8_t(native_values[0]), uint8_t(native_values[1]),
+      uint8_t(native_values[2]), uint8_t(native_values[3]),
+      int16_t(native_values[4]), uint16_t(native_values[5]),
+      int16_t(native_values[6]), int16_t(native_values[7]),
+      int16_t(native_values[8]), int16_t(native_values[9]),
+      uint32_t(native_values[10])};
+  const AutoDashboardValues automatic{
+      uint8_t(auto_values[0]), uint8_t(auto_values[1]),
+      uint8_t(auto_values[2]), uint8_t(auto_values[3]),
+      uint8_t(auto_values[4]), uint8_t(auto_values[5]),
+      uint8_t(auto_values[6]), uint8_t(auto_values[7]),
+      uint8_t(auto_values[8]), uint8_t(auto_values[9]),
+      uint8_t(auto_values[10]), uint16_t(auto_values[11]),
+      uint16_t(auto_values[12]), int16_t(auto_values[13]),
+      int32_t(auto_values[14]), int32_t(auto_values[15]),
+      int16_t(auto_values[16])};
+
+  DashboardHostRuntime::reset();
+  DashboardHostRuntime::setAllowedTimeUs(60000000U);
+  St7796Lcd::begin();
+  DashboardUi::resetState();
+  DashboardUi::begin(native, automatic, can_lost != 0);
+
+  std::array<uint16_t, St7796Lcd::WIDTH * St7796Lcd::HEIGHT> pixels{};
+  DashboardHostRuntime::copyFramebuffer(pixels.data());
+  for (std::size_t index = 0; index < pixels.size(); ++index)
+  {
+    const uint16_t color = pixels[index];
+    rgb[index * 3U] = uint8_t(((color >> 11U) & 31U) * 255U / 31U);
+    rgb[index * 3U + 1U] = uint8_t(((color >> 5U) & 63U) * 255U / 63U);
+    rgb[index * 3U + 2U] = uint8_t((color & 31U) * 255U / 31U);
   }
 }
