@@ -60,8 +60,8 @@ STM_A는 STM32G474 기반의 차량 입력·종방향 구동 보드입니다. �
 |---|---|---|---|---|---|
 | `PA11` | `CN10-14` | `FDCAN1_RX` | EZkontrol CAN | Classic CAN, extended ID, 250 kbit/s | `Core/Src/fdcan.c` |
 | `PA12` | `CN10-12` | `FDCAN1_TX` | EZkontrol CAN | 동일 bus | `Core/Src/fdcan.c` |
-| `PA2` | `CN10-35` | `LPUART1_TX` | micro-ROS transport | 115200 8N1, DMA1 CH2 | `Core/Src/usart.c` |
-| `PA3` | `CN10-37` | `LPUART1_RX` | micro-ROS transport | 115200 8N1, DMA1 CH1 | `Core/Src/usart.c` |
+| `PA2` | `CN10-35` | `LPUART1_TX` | micro-ROS transport | 460800 8N1, DMA1 CH2 | `Core/Src/usart.c` |
+| `PA3` | `CN10-37` | `LPUART1_RX` | micro-ROS transport | 460800 8N1, DMA1 CH1 | `Core/Src/usart.c` |
 | `PC4` | `CN10-34` | `USART1_TX` | STM_B 보드 간 UART | 115200 8N1, DMA1 CH4 | `Core/Src/usart.c` |
 | `PC5` | `CN10-6` | `USART1_RX` | STM_B 보드 간 UART | Receive-to-Idle circular DMA, DMA1 CH3 | `Core/Src/usart.c` |
 
@@ -290,7 +290,7 @@ Agent는 STM_A의 LPUART1 장치에 하나 붙입니다.
 ```bash
 source /opt/ros/humble/setup.bash
 source ~/KAI_ws/install/setup.bash
-ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/stm_a -b 115200
+ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/stm_a -b 460800
 ```
 
 > **경고:** STM_B와 혼동하지 않도록 보드, serial device와 연결된 액추에이터를
@@ -361,3 +361,22 @@ error-passive이고 상대가 돌아오면 자동 복구되는 것으로 확인�
 - 시스템 구조: [`../../docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md)
 - 통신 계약: [`../../docs/INTERFACES.md`](../../docs/INTERFACES.md)
 - 안전 설계: [`../../docs/SAFETY.md`](../../docs/SAFETY.md)
+
+## Runtime diagnostics ROS interface
+
+`/stm_a/runtime_stats`는 `kaiev26_msgs/msg/RuntimeStats`를 약 1 Hz,
+best-effort로 발행합니다. 기존 uROS task만 publisher를 소유하고 PerfMon은
+aggregate/snapshot만 수행합니다. 진단 실패는 safety fault나 연결 teardown 조건이
+아닙니다. 고정 `TaskRuntimeStats[9]`, board/task ID, µs/ms/bytes 단위와 누적값,
+1 ms jitter 해상도, CPU load 미지원 및 E-stop callback→task latency 경계는
+[공통 runtime 문서](../common/README.md#host-tests--ros-연결)를 따릅니다.
+
+```bash
+ros2 topic type /stm_a/runtime_stats
+ros2 topic hz /stm_a/runtime_stats
+ros2 topic echo /stm_a/runtime_stats --once --qos-reliability best_effort
+```
+
+RuntimeStats 적용 firmware의 LPUART1과 Agent는 모두 **460800 baud**를 사용합니다.
+이전 115200 firmware를 사용할 때만 launch에 `agent_baud:=115200`을 지정하십시오.
+보드 간 USART1과 STM_TEST/Arduino serial은 115200으로 유지합니다.

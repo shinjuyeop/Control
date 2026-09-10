@@ -46,7 +46,7 @@ def generate_launch_description():
         DeclareLaunchArgument("serial_port", default_value="/dev/hil_test"),
         DeclareLaunchArgument("stm_a_port", default_value="/dev/hil_a"),
         DeclareLaunchArgument("stm_b_port", default_value="/dev/hil_b"),
-        DeclareLaunchArgument("agent_baud", default_value="115200"),
+        DeclareLaunchArgument("agent_baud", default_value="460800"),
         DeclareLaunchArgument(
             "gui", default_value="true",
             description="HIL GUI를 함께 띄운다. headless/scenario 실행이면 false.",

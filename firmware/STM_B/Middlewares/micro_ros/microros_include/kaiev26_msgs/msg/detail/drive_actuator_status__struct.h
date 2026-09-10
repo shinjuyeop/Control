@@ -62,8 +62,9 @@ typedef struct kaiev26_msgs__msg__DriveActuatorStatus
   uint8_t pedal_percent;
   /// 데드밴드 클램핑 전 ADC 원시값. 재보정 후 로그 재계산용
   int32_t pedal_adc_raw;
-  /// 모터 RPM 기반 추정 차량 속도
+  /// 최대 2개 연속 0 RPM을 직전 nonzero로 보정한 추정 차량 속도
   float speed_mps;
+  /// EZkontrol Part I 원본 RPM. 0-dropout 포함
   float motor_rpm;
   bool tractive_commanded;
   /// 드라이버 RUN 상태 (Part II byte 2 bit0)

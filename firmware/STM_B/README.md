@@ -37,7 +37,7 @@ micro-ROS 동작을 변경하지 않습니다. 이전 직접-SPI LCD 구현은
 | CubeMX 프로젝트 | `STM_B.ioc` |
 | 빌드 target | `STM_B.elf` |
 | FDCAN | 170 MHz kernel clock, Classical CAN 250 kbps |
-| micro-ROS transport | LPUART1, 115200 8N1 |
+| micro-ROS transport | LPUART1, 460800 8N1 |
 | STM_A transport | USART1, 115200 8N1 |
 | 고정 장치 이름 | 실차 `/dev/stm_b` |
 
@@ -356,7 +356,7 @@ micro-ROS Agent:
 ```bash
 source /opt/ros/humble/setup.bash
 source ~/KAI_ws/install/setup.bash
-ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/stm_b -b 115200
+ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/stm_b -b 460800
 ```
 
 ## 11. 상태 확인
@@ -410,3 +410,22 @@ recovery counter는 증가하지 않습니다. Arduino Serial의 `complete`는 �
 - 차량 interface: [`../../docs/INTERFACES.md`](../../docs/INTERFACES.md)
 - safety 계약: [`../../docs/SAFETY.md`](../../docs/SAFETY.md)
 - STM_A: [`../STM_A/README.md`](../STM_A/README.md)
+
+## Runtime diagnostics ROS interface
+
+`/stm_b/runtime_stats`는 `kaiev26_msgs/msg/RuntimeStats`를 약 1 Hz,
+best-effort로 발행합니다. 기존 uROS task만 publisher를 소유하고 PerfMon은
+aggregate/snapshot만 수행합니다. 진단 실패는 safety fault나 연결 teardown 조건이
+아닙니다. 고정 `TaskRuntimeStats[9]`, board/task ID, µs/ms/bytes 단위와 누적값,
+1 ms jitter 해상도, CPU load 미지원 및 E-stop callback→task latency 경계는
+[공통 runtime 문서](../common/README.md#host-tests--ros-연결)를 따릅니다.
+
+```bash
+ros2 topic type /stm_b/runtime_stats
+ros2 topic hz /stm_b/runtime_stats
+ros2 topic echo /stm_b/runtime_stats --once --qos-reliability best_effort
+```
+
+RuntimeStats 적용 firmware의 LPUART1과 Agent는 모두 **460800 baud**를 사용합니다.
+이전 115200 firmware를 사용할 때만 launch에 `agent_baud:=115200`을 지정하십시오.
+보드 간 USART1과 STM_TEST/Arduino serial은 115200으로 유지합니다.

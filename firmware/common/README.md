@@ -2,7 +2,7 @@
 
 `runtime_metrics.c/.h`는 두 보드에서 공유하는 Cortex-M4 DWT CYCCNT 계측 모듈입니다.
 `runtime_periodic.h`는 Control/Inputs/BTx/ATx/PerfMon의 absolute scheduling을
-담당합니다. `.ioc` task 구성, FreeRTOS 설정, CAN/UART protocol, ROS message는
+담당합니다. `.ioc` task 구성, FreeRTOS 설정, CAN/UART protocol, 기존 vehicle/status message는
 변경하지 않습니다.
 
 ## Scheduling과 계측 구간
@@ -101,7 +101,7 @@ iteration까지 반영되고 activations는 현재 iteration을 포함할 수 �
 첫 snapshot 전 또는 publication 중/preemption으로 copy가 겹치면 `false`를 반환합니다.
 이때 out을 버리고 다음 task iteration에서 다시 시도해야 합니다. 높은 priority에서
 spin retry하면 낮은 priority writer를 굶길 수 있습니다. 성공한 복사본은 이후 publish가
-일어나도 바뀌지 않으므로 향후 uROS message 변환에 사용할 수 있습니다. pointer를
+일어나도 바뀌지 않으므로 uROS message 변환에 사용할 수 있습니다. pointer를
 공유하지 말고, uROS에서도 큰 buffer는 static/caller 소유 저장소로 준비하십시오.
 
 ## STM_B E-stop latency
@@ -151,7 +151,7 @@ HAL_BUSY 정책, completion 소유권, timeout/abort/error recovery를 모두 �
 DMA 설정이 있다는 이유만으로 치환하지 않습니다. 기존 수신 validity/CRC/sequence,
 100 ms STM_B safety timeout, AUTO host 500 ms timeout은 변경하지 않았습니다.
 
-## Host tests / 후속 ROS 연결
+## Host tests / ROS 연결
 
 Control root에서 production module의 wrap, schedule overrun, snapshot publication,
 E-stop dispatch/coalescing을 native로 확인할 수 있습니다. 이 테스트는 MCU timing이나
@@ -165,12 +165,47 @@ cc -std=c11 -Wall -Wextra -Werror \
 /tmp/runtime_metrics_host_test
 ```
 
-별도 `RuntimeStats.msg`와 `/stm_a/runtime_stats`, `/stm_b/runtime_stats`는 후속 작업입니다.
-단위, board/task ID, valid/sample counts, 누적 값과 window 차이, snapshot generation을
-message 계약으로 정하고 uROS task에서 성공한 snapshot 복사본을 변환·발행하십시오.
-그때 entity/transport 용량, micro-ROS 재생성, host 소비자와 HIL 표시도 함께 검증합니다.
-기존 Drive/Brake/SteeringActuatorStatus, VehicleState, `kaiev26_msgs`에는 이번 metric을
-추가하지 않았습니다.
+`kaiev26_msgs/RuntimeStats`와 `TaskRuntimeStats`를 별도 진단 interface로 사용합니다.
+기존 Drive/Brake/SteeringActuatorStatus와 VehicleState의 필드는 바꾸지 않습니다.
+
+| Board | Topic | QoS | 발행 주체 |
+|---|---|---|---|
+| `BOARD_STM_A=1` | `/stm_a/runtime_stats` | best effort | STM_A uROS |
+| `BOARD_STM_B=2` | `/stm_b/runtime_stats` | best effort | STM_B uROS |
+
+`runtime_stats_ros.c`가 static caller-owned snapshot을 복사해 static ROS message로
+변환합니다. `TaskRuntimeStats[9]`는 고정 배열이며 string, Header, 가변 sequence가
+없습니다. task_id/slot은 위 RM ID 순서대로 0..8입니다. 미사용 slot도 task_id를
+유지하고 present=false로 표시합니다. stack은 words에서 bytes로 변환합니다.
+
+Count/total/extrema는 boot 이후 누적, `window_ms`는 PerfMon 집계 간격,
+`uptime_ms`는 snapshot 시각입니다. Rate는 같은 board/boot의 counter 차이를
+**snapshot uptime 차이**로 나눕니다. jitter_us는 signed 정수 µs지만 1 ms 해상도입니다.
+wall_us는 preemption/interrupt/내부 blocking 포함 observed time이며 formal WCET가
+아닙니다. cpu_load_valid는 현재 false이며, estop_valid는 B에서 timing과 dispatch
+표본이 있을 때만 true입니다. A E-stop 필드는 false/zero입니다. E-stop 시간은
+EXTI callback→task processing start이며 physical edge latency가 아닙니다.
+
+uROS task만 publisher 생성/발행/정리를 수행하고 PerfMon은 집계만 합니다. 기존
+command/status/ping 처리를 먼저 한 뒤 약 1 Hz로 최신 complete snapshot을 발행합니다.
+발행 완료 후 1초를 기다려 지연 뒤 retry/catch-up burst를 만들지 않습니다. Snapshot
+복사 실패는 건너뛰고, publish 실패는 오류를 해제한 뒤 기존 loop를 계속합니다.
+진단 publisher 생성 실패도 기존 control entity 실행을 막지 않으며 다음 Agent
+reconnect 때 재시도합니다. 런타임 message 저장소는 고정이며 발행 경로에 동적
+할당을 추가하지 않습니다.
+
+공식 `firmware/tools/regen_microros.sh`가 메시지 저장소의 clean commit을 사용해
+A/B 모두 재생성합니다. Fixed message의 host CDR 크기는 796 bytes라 기존 512-byte
+best-effort MTU에 들어가지 않습니다. generator의 `microxrcedds_client` 설정에
+`UCLIENT_CUSTOM_TRANSPORT_MTU=1024`를 지정하며 generated header를 수동 수정하지
+않습니다. Ubuntu GCC 10의 builtin stdint.h와 Newlib inttypes.h가 일관되게 동작하도록
+workflow CFLAGS에 `-isystem /usr/include/newlib`도 지정합니다. 이 설정은 최근 rcutils
+include 순서에서 드러난 PRId64 미정의 오류를 해결하며 MCU application의 compiler
+flags나 generated typesupport를 직접 수정하지 않습니다.
+LPUART1의 기존 DMA transport를 유지하고 MCU/Agent baud만 460800으로 맞춥니다. 이 transport의
+write는 DMA 완료를 기다리므로 큰 diagnostic frame의 실제 status/callback 영향은
+HIL에서 확인해야 합니다. Best effort는 ACK 대기를 피하지만 UART 전송시간을 없애지는
+않습니다.
 
 ## 2026-09-10 구현 검증 범위
 
@@ -199,3 +234,24 @@ brake status +93이었고 EZ bus-off/TEC/REC는 0, PWM loss는 false였습니다
 따라서 새 activation/jitter/deadline/heap/HWM/ISR-dispatch 값과 instrumentation
 overhead, 새 firmware의 HIL safety regression은 미검증입니다. 물리 분리 상태와
 flash 범위를 확인한 board-only bench에서 수행할 후속 항목입니다.
+
+## RuntimeStats 전송속도
+
+115200 baud 실보드 관측에서 RuntimeStats 약 796-byte 전송 때문에 /drive/status가
+기존 약 40 Hz에서 36–37 Hz로 낮아지고 약 110 ms 수신 공백이 관측됐습니다.
+DMA transport가 완료를 기다리는 동안 같은 uROS task가 진행하지 못하는 원인입니다.
+기존 코드의 baud 우선 조정 방침에 따라 LPUART1만 460800으로 올리고 HIL/vehicle
+Agent 기본값도 맞춥니다. USART1 A↔B, STM_TEST/Arduino serial, task 주기·priority,
+DMA 구조는 유지합니다. 이전 firmware와 조합할 때는 `agent_baud:=115200`을 사용합니다.
+
+460800-baud board-only HIL에서 runtime topic은 A 약 0.975 Hz, B 약 0.977 Hz,
+정상 AUTO `/drive/status` 직접 subscriber는 약 41.7–42.3 Hz였습니다. `ros2 topic hz`
+window도 약 40–44 Hz로 관측됐습니다. 115200에서 나타난 약 110 ms 공백은 정상
+구간 최대 약 49 ms로 줄었습니다. 목표 50 Hz와의 나머지 차이는 기존 uROS loop의
+관측 결과이며 scheduler는 변경하지 않았습니다. 65초 정상 관측에서 periodic
+activation rate, error/miss, stack/heap 및 E-stop/timeout 회귀를 확인했습니다.
+
+Host↔MCU의 baud는 firmware와 함께 배포해야 합니다. 현재 HIL은 기존 launch 구성에
+`agent_baud:=460800`을 적용한 user service `kaiev26-hil-runtime-ros.service`로 실행합니다.
+해당 bench를 종료할 때는 `systemctl --user stop kaiev26-hil-runtime-ros.service`를
+사용합니다. 다시 수동 launch하기 전에 같은 장치를 소유한 이 서비스를 먼저 종료합니다.

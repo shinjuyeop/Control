@@ -30,6 +30,7 @@ def generate_launch_description():
         "stm_a_port": "/dev/hil_a",
         "stm_b_port": "/dev/hil_b",
         "agents": "true",
+        "agent_baud": "460800",
         "steering": "false",
         "state": "false",
         "results_dir": str(Path.home() / ".local/state/kaiev26_hil/web_results"),
@@ -53,6 +54,7 @@ def generate_launch_description():
                             "stm_a_port",
                             "stm_b_port",
                             "agents",
+                            "agent_baud",
                             "steering",
                             "state",
                         )

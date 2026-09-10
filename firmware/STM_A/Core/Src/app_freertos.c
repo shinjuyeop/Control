@@ -22,6 +22,7 @@
 #include <string.h>
 #include "board_uart_protocol.h"
 #include "runtime_periodic.h"
+#include "runtime_stats_ros.h"
 #include "globals.h"
 #include "usart.h"
 #include "adc.h"
@@ -88,8 +89,8 @@ enum {
 #define AGENT_PING_PERIOD_MS 500u
 #define AGENT_PING_TIMEOUT_MS 100u
 /* 20ms(50Hz). 벤치에서 페달 밟는 속도와 EZkontrol 응답을 놓치지 않을 만큼 촘촘하다.
- * status 한 건이 직렬화와 전송 프레이밍까지 약 120B라 50Hz면 LPUART1 115200(초당
- * 11.5kB)의 절반쯤을 쓴다. 여유가 모자라면 주기가 아니라 baud를 올린다. */
+ * RuntimeStats fixed frame도 같은 LPUART1을 쓰므로 460800 baud로 전송 여유를 확보한다.
+ * 여유가 모자라면 주기가 아니라 baud를 올린다. */
 #define DRIVE_STATUS_PERIOD_MS 20u
 #define MOTOR_STATUS_PART1_ID 0x1801D0EFUL
 #define MOTOR_STATUS_PART2_ID 0x1802D0EFUL
@@ -178,6 +179,7 @@ static volatile uint32_t s_last_part2_rx_ms = 0u;
 static volatile uint8_t s_part2_received = 0u;
 
 /* micro-ROS entities are retained across reconnect attempts. */
+static RuntimeStatsRos s_runtime_ros;
 static rcl_allocator_t s_ros_allocator;
 static rclc_support_t s_ros_support;
 static rcl_node_t s_ros_node;
@@ -566,6 +568,7 @@ void StartuROS(void *argument)
             break;
           }
         }
+        RuntimeStatsRos_PublishIfDue(&s_runtime_ros);
         delay_ticks = 5u;
         break;
       }
@@ -927,6 +930,8 @@ static uint8_t create_ros_entities(void)
           ON_NEW_DATA) != RCL_RET_OK) {
     return 0u;
   }
+  RuntimeStatsRos_Init(&s_runtime_ros, &s_ros_node,
+      kaiev26_msgs__msg__RuntimeStats__BOARD_STM_A);
   return 1u;
 }
 
@@ -946,6 +951,7 @@ static void destroy_ros_entities(void)
     (void)rclc_executor_fini(&s_ros_executor);
     s_ros_executor_initialized = 0u;
   }
+  RuntimeStatsRos_Fini(&s_runtime_ros, &s_ros_node);
   if (s_ros_publisher_initialized != 0u) {
     const rcl_ret_t fini_result =
         rcl_publisher_fini(&s_ros_pub_drive_status, &s_ros_node);

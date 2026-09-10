@@ -20,6 +20,7 @@
 #include <string.h>
 #include "board_uart_protocol.h"
 #include "runtime_periodic.h"
+#include "runtime_stats_ros.h"
 #include "dashboard_can.h"
 #include "globals.h"
 #include "usart.h"
@@ -128,6 +129,7 @@ static volatile uint32_t s_last_command_tick = 0u;
 static volatile uint8_t s_command_received = 0u;
 
 /* entity별 생성 상태를 추적해 부분 초기화 실패와 반복 reconnect를 정리한다. */
+static RuntimeStatsRos s_runtime_ros;
 static rcl_allocator_t s_ros_allocator;
 static rclc_support_t s_ros_support;
 static rcl_node_t s_ros_node;
@@ -535,6 +537,7 @@ void StartuROS(void *argument)
             break;
           }
         }
+        RuntimeStatsRos_PublishIfDue(&s_runtime_ros);
         delay_ticks = 5u;
         break;
       }
@@ -756,6 +759,8 @@ static uint8_t create_ros_entities(void)
           ON_NEW_DATA) != RCL_RET_OK) {
     return 0u;
   }
+  RuntimeStatsRos_Init(&s_runtime_ros, &s_ros_node,
+      kaiev26_msgs__msg__RuntimeStats__BOARD_STM_B);
   return 1u;
 }
 
@@ -774,6 +779,7 @@ static void destroy_ros_entities(void)
     (void)rclc_executor_fini(&s_ros_executor);
     s_ros_executor_initialized = 0u;
   }
+  RuntimeStatsRos_Fini(&s_runtime_ros, &s_ros_node);
   if (s_ros_publisher_initialized != 0u) {
     const rcl_ret_t fini_result =
         rcl_publisher_fini(&s_ros_pub_brake_status, &s_ros_node);

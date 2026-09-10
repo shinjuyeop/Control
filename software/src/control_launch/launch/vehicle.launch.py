@@ -92,7 +92,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("stm_a_port", default_value="/dev/stm_a"),
         DeclareLaunchArgument("stm_b_port", default_value="/dev/stm_b"),
-        DeclareLaunchArgument("agent_baud", default_value="115200"),
+        DeclareLaunchArgument("agent_baud", default_value="460800"),
         DeclareLaunchArgument(
             "agents", default_value="true",
             description="STM_A/B micro-ROS Agent를 함께 띄운다. 이미 따로 실행 중이면 false.",

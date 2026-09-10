@@ -68,6 +68,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${MICROROS_EXTRA_SOURCES}
     ../common/board_uart_protocol.c
     ../common/runtime_metrics.c
+    ../common/runtime_stats_ros.c
     Core/Src/globals.c
     # Add user sources here
 )

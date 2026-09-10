@@ -152,7 +152,8 @@ enum
 /**
   * 조향 액추에이터 진단 status (D-10·D-11). 실차 lateral_ctrl의
   * SteeringActuatorStatus(533a3fb9) 설계를 계승하되 canonical 단위로 정리:
-  * 바퀴각은 rad·좌회전 양수. motor_angle_deg와 motor_speed_rpm은 KEYA 모터축 원시 진단값.
+  * 조향각은 중앙 등가 Ackermann 각이며 rad·좌회전 양수. motor_angle_deg와
+  * motor_speed_rpm은 KEYA 모터축 원시 진단값.
   * 실차 통합 시 lateral_ctrl 로컬 메시지를 삭제하고 이 메시지로 교체한다(D-15 SSOT).
  */
 typedef struct kaiev26_msgs__msg__SteeringActuatorStatus
@@ -184,17 +185,17 @@ typedef struct kaiev26_msgs__msg__SteeringActuatorStatus
   bool tracking_control_enabled;
   bool tracking_error_warning;
   bool tracking_error_fault;
-  /// 상위가 요청한 각. wheel_limit_deg로 클램프됨
+  /// 상위가 요청한 중앙 등가각. 측정된 KEYA count 범위로 제한됨
   float target_wheel_angle_rad;
-  /// target에 max_steering_rate_deg_s 기울기 제한을 건 값
+  /// target 중앙 등가각에 max_steering_rate_deg_s 기울기 제한을 건 값
   float commanded_wheel_angle_rad;
-  /// tracking PID 보정이 적용된 최종 명령각
+  /// tracking PID 보정이 적용된 최종 중앙 등가 명령각
   float corrected_wheel_angle_rad;
-  /// motor_position_count를 calibration 다항식으로 환산한 실측각. 명령 한계 클램프를 적용하지 않음
+  /// motor_position_count를 calibration으로 환산한 중앙 등가 실측각. 명령 한계 클램프 없음
   float actual_wheel_angle_rad;
-  /// commanded - actual. tracking PID의 입력
+  /// 중앙 등가각 commanded - actual. tracking PID의 입력
   float tracking_error_rad;
-  /// tracking PID가 더한 보정량
+  /// tracking PID가 더한 중앙 등가각 보정량
   float tracking_correction_rad;
   /// SDO position query(10000 count/turn) 원시값. 영점은 KEYA 드라이버가 들고 있다
   int32_t motor_position_count;
