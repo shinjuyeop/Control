@@ -287,6 +287,26 @@ def test_explicit_bench_reset_acknowledges_runtime_history_for_all_clients(bench
         assert state["runtime"]["STM_B"]["status"] in ("check", "history")
 
 
+@pytest.mark.parametrize("tailnet_host", ["100.112.72.27", "100.112.72.26"])
+def test_web_allows_hil_tailnet_host_only(bench, tailnet_host):
+    client, _ = bench
+    for host in ("localhost", "127.0.0.1", tailnet_host):
+        assert client.get("/api/health", headers={"host": host}).status_code == 200
+    for host in ("untrusted.example",):
+        assert client.get("/api/health", headers={"host": host}).status_code == 400
+    with client.websocket_connect(
+        f"ws://{tailnet_host}:8765/ws",
+        headers={"origin": f"http://{tailnet_host}:8765"},
+    ) as ws:
+        assert fresh(ws)["connected"]
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect(
+            f"ws://{tailnet_host}:8765/ws",
+            headers={"origin": "http://untrusted.example"},
+        ):
+            pass
+
+
 def test_web_requires_origin_and_single_control_owner(bench):
     client, observed = bench
     with pytest.raises(WebSocketDisconnect):
@@ -323,6 +343,139 @@ def test_web_requires_origin_and_single_control_owner(bench):
             ),
         )
         assert not request(first, "command", command="SET PEDAL 5")["ok"]
+
+
+def test_takeover_disarms_and_revokes_former_browser_without_resetting_inputs(bench):
+    client, observed = bench
+    with client.websocket_connect("ws://localhost/ws", headers={"origin": "http://localhost"}) as first:
+        fresh(first)
+        assert request(first, "claim")["ok"]
+        assert request(first, "production", values=dict(enabled=True, speed_target_mps=0.5,
+            steering_target_rad=0.0, brake_engage=False))["ok"]
+        with client.websocket_connect("ws://localhost/ws", headers={"origin": "http://localhost"}) as second:
+            state = fresh(second)
+            revision = state["control"]["revision"]
+            assert not request(second, "takeover", expected_revision=revision)["ok"]
+            assert request(second, "takeover", confirmed=True, expected_revision=revision)["ok"]
+            assert fresh(second)["control"]["mine"]
+            assert not observed["generator"].get_parameter("enabled").value
+            assert observed["safe"] == 0 and not observed["commands"]
+            assert not request(first, "command", command="SET PEDAL 30")["ok"]
+            first.send_json({"action": "heartbeat"})
+            assert request(first, "release")["ok"]
+            assert fresh(second)["control"]["mine"]
+            assert observed["safe"] == 0
+            assert not request(first, "takeover", confirmed=True, expected_revision=revision)["ok"]
+
+
+def test_takeover_cancels_scenario_but_does_not_run_bench_reset(bench):
+    client, observed = bench
+    with client.websocket_connect("ws://localhost/ws", headers={"origin": "http://localhost"}) as first:
+        fresh(first)
+        assert request(first, "claim")["ok"]
+        assert request(first, "scenario", name="smoke_test", arm=True)["ok"]
+        with client.websocket_connect("ws://localhost/ws", headers={"origin": "http://localhost"}) as second:
+            revision = fresh(second)["control"]["revision"]
+            assert request(second, "takeover", confirmed=True, expected_revision=revision)["ok"]
+            state = fresh(second)
+            assert state["scenario"]["result"] == "CANCELLED"
+            assert not observed["generator"].get_parameter("enabled").value
+            assert observed["safe"] == 0
+
+
+def test_takeover_serializes_contenders_and_fences_queued_old_actions(bench):
+    import asyncio
+
+    client, observed = bench
+
+    async def contend():
+        console = client.app.state.console
+        await console.action("former", {"action": "claim"})
+        revision = console.control_revision
+        original = console.node.production
+        entered, unblock = asyncio.Event(), asyncio.Event()
+        tasks = []
+
+        async def delayed(values):
+            entered.set()
+            await unblock.wait()
+            return await original(values)
+
+        console.node.production = delayed
+        await console.lock.acquire()
+        lock_held = True
+        try:
+            transfer = asyncio.create_task(console.action("winner", dict(action="takeover", confirmed=True, expected_revision=revision)))
+            tasks.append(transfer)
+            await asyncio.sleep(0)
+            old_command = asyncio.create_task(console.action("former", dict(action="command", command="SET PEDAL 30")))
+            tasks.append(old_command)
+            old_release = asyncio.create_task(console.release("former", "Late browser close"))
+            tasks.append(old_release)
+            loser = asyncio.create_task(console.action("loser", dict(action="takeover", confirmed=True, expected_revision=revision)))
+            tasks.append(loser)
+            await asyncio.sleep(0)
+            console.lock.release()
+            lock_held = False
+            await asyncio.wait_for(entered.wait(), 2)
+            assert console.owner == "former"
+            assert console.snapshot("winner")["control"]["transitioning"]
+            assert not console.snapshot("winner")["control"]["mine"]
+            unblock.set()
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            assert isinstance(results[0], str)
+            assert isinstance(results[1], ValueError)
+            assert results[2] is None
+            assert isinstance(results[3], ValueError)
+            assert console.owner == "winner"
+            await console.release("former", "Late watchdog", force=True, expected_revision=revision)
+            assert console.owner == "winner"
+        finally:
+            if lock_held: console.lock.release()
+            unblock.set()
+            for task in tasks:
+                if not task.done(): task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            console.node.production = original
+
+    client.portal.call(contend)
+    assert observed["safe"] == 0 and not observed["commands"]
+
+
+def test_takeover_refuses_unconfirmed_disarm_and_pending_scenario_requests(bench):
+    from types import SimpleNamespace
+    from rclpy.task import Future
+
+    client, _ = bench
+
+    async def failures():
+        console = client.app.state.console
+        await console.action("former", {"action": "claim"})
+        revision = console.control_revision
+        pending = Future()
+        console.runner = SimpleNamespace(parameter_requests=[pending])
+        try:
+            with pytest.raises(ValueError):
+                await console.action("next", dict(action="takeover", confirmed=True, expected_revision=revision))
+            assert console.owner == "former"
+        finally:
+            console.runner = None
+            pending.cancel()
+        original = console.node.production
+
+        async def fail_disarm(values):
+            raise ValueError("Generator service rejected disarm")
+
+        console.node.production = fail_disarm
+        try:
+            with pytest.raises(ValueError):
+                await console.action("next", dict(action="takeover", confirmed=True, expected_revision=revision))
+            assert console.owner == "former" and not console.releasing
+            assert not console.snapshot("next")["control"]["mine"]
+        finally:
+            console.node.production = original
+
+    client.portal.call(failures)
 
 
 def test_generator_stops_without_browser_heartbeat_and_requires_rearm(bench):
@@ -594,6 +747,35 @@ def test_subsystem_instruments_render_observed_faults_and_offline(browser_page):
     expect(page.locator(".connection-notice strong")).to_have_text("Web 연결 대기", timeout=7000)
     expect(page.get_by_role("button", name="조작권 가져오기", exact=True)).to_be_disabled()
     assert not observed["commands"] and not observed["planning"] and observed["safe"] == 0
+
+
+def test_browser_takeover_requires_confirmation_and_locks_former_operator(browser_page):
+    from playwright.sync_api import expect
+
+    first, _, observed, _ = browser_page
+    first.get_by_role("button", name="조작권 가져오기", exact=True).click()
+    expect(first.get_by_role("button", name="AUTO", exact=True)).to_be_enabled()
+    context = first.context.browser.new_context(viewport={"width": 390, "height": 844})
+    try:
+        second = context.new_page()
+        second.goto(first.url)
+        second.get_by_role("button", name="조작권 강제 인계", exact=True).click()
+        dialog = second.get_by_role("dialog", name="조작권을 강제로 인계합니다", exact=True)
+        expect(dialog).to_be_visible()
+        dialog.get_by_role("button", name="취소", exact=True).click()
+        expect(first.get_by_role("button", name="AUTO", exact=True)).to_be_enabled()
+        assert observed["safe"] == 0
+        second.get_by_role("button", name="조작권 강제 인계", exact=True).click()
+        dialog.get_by_role("button", name="Host 명령 중단 후 인계", exact=True).click()
+        expect(second.get_by_role("button", name="조작권 해제", exact=True)).to_be_visible()
+        expect(first.get_by_role("button", name="AUTO", exact=True)).to_be_disabled()
+        expect(second.get_by_label("주행 명령 상태")).to_contain_text("DISARMED")
+        first.close()
+        second.wait_for_timeout(250)
+        expect(second.get_by_role("button", name="조작권 해제", exact=True)).to_be_visible()
+        assert observed["safe"] == 0 and not observed["commands"]
+    finally:
+        context.close()
 
 
 def test_operator_remote_across_pages_and_navigation(browser_page):

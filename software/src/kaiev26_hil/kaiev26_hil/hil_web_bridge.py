@@ -327,6 +327,7 @@ class Console:
         self.executor.add_node(self.node)
         self.results_dir = Path(results_dir)
         self.owner = None
+        self.control_revision = 0
         self.heartbeat_at = 0.0
         self.armed = False
         self.runner = None
@@ -369,7 +370,8 @@ class Console:
                 self.releasing = True
                 self.armed = False
                 self.spawn(
-                    self.release(self.owner, "Operator heartbeat expired", force=True)
+                    self.release(self.owner, "Operator heartbeat expired", force=True,
+                                 expected_revision=self.control_revision)
                 )
             if (
                 self.owner
@@ -436,20 +438,73 @@ class Console:
             runner.destroy_node()
         self.node.event("scenario", reason)
 
-    async def release(self, client, reason="Control released", force=False):
+    async def release(self, client, reason="Control released", force=False,
+                      expected_revision=None):
         if not force and self.owner != client:
             return
-        self.releasing = True
-        self.armed = False
-        try:
-            async with self.lock:
+        revision = self.control_revision if expected_revision is None else expected_revision
+        async with self.lock:
+            if force and expected_revision is None:
+                # Shutdown owns the whole console. Watchdog callbacks instead
+                # supply the exact revision they observed and remain fenced.
+                client, revision = self.owner, self.control_revision
+            # A delayed disconnect/watchdog from the previous owner must not reset
+            # the new owner's bench, including when the same client later reclaims.
+            if self.owner != client or self.control_revision != revision:
+                return
+            self.releasing = True
+            self.armed = False
+            self.control_revision += 1
+            try:
                 await self.stop_runner(reason)
                 with suppress(ValueError):
                     await self.reset()
                 self.node.event("control", reason)
                 self.owner = None
-        finally:
-            self.releasing = False
+            finally:
+                self.control_revision += 1
+                self.releasing = False
+
+    async def takeover(self, client, request):
+        if request.get("confirmed") is not True or type(request.get("expected_revision")) is not int:
+            raise ValueError("현재 조작권 상태를 확인하고 강제 인계를 승인하세요.")
+        async with self.lock:
+            if self.closing or self.releasing:
+                raise ValueError("이전 조작을 정리하고 있습니다.")
+            if request["expected_revision"] != self.control_revision:
+                raise ValueError("조작권 상태가 변경됐습니다. 현재 상태를 확인하고 다시 시도하세요.")
+            if self.owner == client:
+                return "이미 이 브라우저가 조작권을 갖고 있습니다."
+            if self.owner is None:
+                raise ValueError("현재 조작자가 없습니다. 조작권 가져오기를 사용하세요.")
+            if self.runner and any(not future.done() for future in self.runner.parameter_requests):
+                raise ValueError("시나리오 명령 응답을 기다리고 있습니다. 응답 후 다시 인계하세요.")
+            conflicts = self.node.conflicts(self.runner is not None)
+            if conflicts:
+                raise ValueError("다른 명령 발행자를 먼저 종료하세요: " + ", ".join(conflicts))
+            self.releasing = True
+            self.armed = False
+            self.control_revision += 1
+            self.node.event("control", "Control takeover requested; stopping Host command source")
+            try:
+                # Finish the old action (the shared lock is held), cancel the
+                # scenario, then confirm generator disarm before granting control.
+                # Do not call Bench Reset: manual inputs/E-stop must be retained.
+                try:
+                    await self.stop_runner("Operator transferred control")
+                finally:
+                    await self.node.production({"enabled": False})
+                conflicts = self.node.conflicts()
+                if conflicts:
+                    raise ValueError("다른 명령 발행자가 있습니다: " + ", ".join(conflicts))
+                self.owner, self.heartbeat_at = client, time.monotonic()
+                self.node.event("control", "Control transferred; generator disabled; operator inputs retained")
+                return "조작권을 가져왔습니다. Host 명령은 꺼졌으며 입력은 유지됩니다. 필요하면 다시 ARM하세요."
+            finally:
+                # Also invalidate confirmations made during a failed transfer.
+                # On failure the former owner remains; no new authority is granted.
+                self.control_revision += 1
+                self.releasing = False
 
     def require_control(self, client, *, check_writers=True):
         if (
@@ -466,18 +521,23 @@ class Console:
     async def action(self, client, request):
         action = request.get("action")
         if action == "claim":
-            if self.releasing:
-                raise ValueError("이전 조작을 정리하고 있습니다.")
-            if self.owner and self.owner != client:
-                raise ValueError("다른 브라우저가 조작 중입니다.")
-            conflicts = self.node.conflicts(self.runner is not None)
-            if conflicts:
-                raise ValueError(
-                    "다른 명령 발행자를 먼저 종료하세요: " + ", ".join(conflicts)
-                )
-            self.owner, self.heartbeat_at = client, time.monotonic()
-            self.node.event("control", "Web operator acquired control")
-            return "조작권을 가져왔습니다."
+            async with self.lock:
+                if self.closing or self.releasing:
+                    raise ValueError("이전 조작을 정리하고 있습니다.")
+                if self.owner and self.owner != client:
+                    raise ValueError("다른 브라우저가 조작 중입니다.")
+                conflicts = self.node.conflicts(self.runner is not None)
+                if conflicts:
+                    raise ValueError(
+                        "다른 명령 발행자를 먼저 종료하세요: " + ", ".join(conflicts)
+                    )
+                if self.owner != client:
+                    self.control_revision += 1
+                self.owner, self.heartbeat_at = client, time.monotonic()
+                self.node.event("control", "Web operator acquired control")
+                return "조작권을 가져왔습니다."
+        if action == "takeover":
+            return await self.takeover(client, request)
         if action == "release":
             await self.release(client)
             return "조작권을 해제했습니다."
@@ -486,8 +546,11 @@ class Console:
             and isinstance(request.get("values"), dict)
             and request["values"].get("enabled") is False
         )
+        revision = self.control_revision
         self.require_control(client, check_writers=not stopping)
         async with self.lock:
+            if revision != self.control_revision:
+                raise ValueError("조작권이 변경되어 이전 요청을 취소했습니다.")
             self.require_control(client, check_writers=not stopping)
             if action in ("safe", "stop_scenario"):
                 self.armed = False
@@ -624,9 +687,11 @@ class Console:
             generator=self.node.generator,
             generator_fresh=now - self.node.generator_received < 2,
             control=dict(
-                mine=self.owner == client,
+                mine=self.owner == client and not self.releasing,
                 occupied=self.owner is not None,
                 armed=self.armed,
+                revision=self.control_revision,
+                transitioning=self.releasing,
             ),
             events=list(self.node.events),
             scenario=scenario,
@@ -674,7 +739,11 @@ def create_app(
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None)
     app.add_middleware(
-        TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "[::1]"]
+        TrustedHostMiddleware,
+        # A shared node can have a different IPv4 address in the recipient's tailnet.
+        allowed_hosts=[
+            "127.0.0.1", "localhost", "[::1]", "100.112.72.27", "100.112.72.26"
+        ],
     )
 
     @app.get("/api/health")

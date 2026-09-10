@@ -25,7 +25,10 @@ ros2 launch kaiev26_hil hil_web.launch.py \
   web_python:=/home/kai/KAI_ws/src/Control/software/src/kaiev26_hil/.venv/bin/python
 ```
 
-브라우저: **http://127.0.0.1:8765**
+로컬 브라우저: **http://127.0.0.1:8765/**
+
+Tailscale 원격 브라우저: **http://100.112.72.27:8765/**
+([원격 접속 준비](#3-원격-브라우저-접속) 필요).
 
 ## 1. 실행 구성
 
@@ -111,16 +114,49 @@ STM 세 행은 ST-LINK VCP, Arduino 행은 native USB serial 매핑이다. SWD p
 
 ## 3. 원격 브라우저 접속
 
-HIL PC에서 브라우저를 쓰면 이 절을 건너뛴다. 다른 PC에서는 SSH 포트 전달로 접속한다.
-`CONTROL_PC_IP`는 실제 HIL PC 주소나 SSH alias로 바꾼다.
+### 3.1 Tailscale 직접 접속
+
+현재 HIL PC와 사용자 측 공유 장비 주소는 `100.112.72.27`로 통일했다.
+팀원은 Tailscale 연결 후 **http://100.112.72.27:8765/** 를 연다.
+SSH 연결이나 VS Code 자동 포트 전달은 필요 없으며, HIL launch는 서버에서 한 번만 실행한다.
+
+HIL 서버에서 최초 한 번 공유를 설정한다. 이미 설정돼 있으면 상태만 확인한다.
 
 ```bash
-ssh -L 8765:127.0.0.1:8765 kai@CONTROL_PC_IP
+sudo tailscale serve --bg --tcp=8765 tcp://127.0.0.1:8765
+tailscale serve status
 ```
 
-이 SSH 터미널에서 아래 환경 설정과 launch를 실행하고, 로컬 브라우저에서
-`http://127.0.0.1:8765`를 연다. 서버는 loopback에 바인딩하므로 HIL PC의 LAN IP로
-직접 접속하는 방식은 지원하지 않는다.
+서버 자체는 `127.0.0.1:8765`에서 실행되고, Tailscale Serve가 원격 TCP 연결을 전달한다.
+`--bg` 설정은 터미널 종료 뒤에도 유지되지만 HIL 웹 서버는 별도로 실행 중이어야 한다.
+장비 공유 초대 수락 또는 같은 tailnet의 접근 권한과 서버 TCP 8765 접근 허용이 필요하다.
+접속자 PC의 수신 포트나 공유기 포트포워딩을 열 필요는 없다.
+접속자는 조작권 획득도 요청할 수 있으므로 HIL 조작을 맡길 팀원에게 접근을 허용한다.
+
+Tailscale 공유 장비는 사용자 네트워크마다 다른 IP로 보일 수 있다. 위 주소로 peer를
+찾지 못하면 **접속자 PC에서** `tailscale status`로 `kai`의 주소를 확인한다.
+서버에서 실행한 `tailscale ip -4`만으로 접속자의 주소를 판단하지 않는다.
+다른 주소를 사용한다면 웹 서버의 명시적 허용 Host에도 등록하고 빌드 후 웹을 재시작한다.
+Host·동일 Origin 검사를 제거하거나 전체 주소를 허용하지 않는다.
+상세 설정은 [Web Console Tailscale 공통 주소](../software/src/kaiev26_hil/WEB_CONSOLE.md#tailscale-공통-주소)를 따른다.
+
+공유만 끄고 로컬 웹 서버를 유지하려면 HIL 서버에서 실행한다.
+
+```bash
+sudo tailscale serve --tcp=8765 off
+```
+
+### 3.2 SSH 포트 전달로 접속
+
+SSH 방식도 사용할 수 있다. 접속자 PC에서 실행하며 `CONTROL_PC_IP`는
+그 PC에서 확인된 HIL 주소나 SSH alias로 바꾼다.
+
+```bash
+ssh -N -L 8765:127.0.0.1:8765 kai@CONTROL_PC_IP
+```
+
+포트 전달을 유지한 상태에서 접속자 브라우저의 `http://127.0.0.1:8765/`를 연다.
+HIL 서버가 이미 실행 중이면 launch를 추가로 실행하지 않는다.
 
 ## 4. 공통 ROS 환경
 
@@ -222,7 +258,10 @@ ros2 launch kaiev26_hil hil_web.launch.py \
   web_python:=/home/kai/KAI_ws/src/Control/software/src/kaiev26_hil/.venv/bin/python
 ```
 
-브라우저: **http://127.0.0.1:8765**
+로컬 브라우저: **http://127.0.0.1:8765/**
+
+Tailscale 원격 브라우저: **http://100.112.72.27:8765/**
+([원격 접속 준비](#3-원격-브라우저-접속) 필요).
 
 - 조향/상태 통합을 사용하지 않을 때만 해당 옵션을 생략한다.
 - UNO를 연결하지 않을 때는 `dashboard_port`를 생략한다.
@@ -475,8 +514,24 @@ USB 보고 자체가 끊기면 마지막 이미지를 흐리게 표시한다.
 
 ### Web 페이지가 열리지 않음
 
-launch 터미널의 오류와 접속 주소를 먼저 확인한다. 원격 PC라면 SSH 포트 전달이
-유지되는지 확인한다. 서버의 실제 listen 상태가 필요할 때만 터미널에서 확인한다.
+launch 터미널의 오류와 접속 주소를 먼저 확인한다. Tailscale 직접 접속이라면
+접속자 PC의 일반 터미널에서 확인한다(VS Code의 원격 터미널이 아님).
+
+```bash
+tailscale ping --c 3 100.112.72.27
+curl -v --connect-timeout 5 http://100.112.72.27:8765/api/health
+```
+
+- `no matching peer`: 해당 PC에서 장비가 다른 주소로 보이거나 공유·연결이 없는 상태다.
+  그 PC의 `tailscale status`로 실제 주소를 먼저 확인한다.
+- 연결 시간 초과: TCP 연결 경로, Tailscale 접근 정책, 방화벽과 서버 공유 상태를 확인한다.
+  ping 성공만으로 TCP 8765 접근이 허용됐다고 판단하지 않는다.
+- HTTP 400: 접속 주소가 웹 서버의 허용 Host에 있는지와 수정 후 재시작 여부를 확인한다.
+- HTTP 200이지만 실시간 연결 실패: WebSocket 오류와 Host·Origin을 확인한다.
+
+HIL 서버에서는 `tailscale serve status`로 공유 설정을 확인한다.
+SSH 포트 전달 방식이라면 해당 터널이 유지되는지 확인한다.
+서버의 실제 listen 상태가 필요할 때는 다음 명령을 사용한다.
 
 ```bash
 ss -ltnp 'sport = :8765'

@@ -282,6 +282,27 @@ Web 전용 launch는 **generator DISARMED**, heartbeat timeout **3초**로 시�
 4. 시나리오 실행 중에는 수동 입력을 잠근다. 종료/중단 시 명령 발행을 끄고 Bench Reset을 요청한다.
 5. 조작권 해제 또는 조작 브라우저 연결 종료 시에도 같은 정리를 수행한다.
 
+다른 브라우저가 조작 중이면 상단에 **조작권 강제 인계**가 표시된다. 확인창의
+**Host 명령 중단 후 인계**를 누르면 진행 중인 Web 요청의 처리를 기다리고,
+시나리오를 CANCELLED로 종료한 뒤 Host generator의 `enabled=false` 응답을 확인하고
+새 브라우저에 조작권을 준다. 기존 브라우저는 조회 모드가 되며 뒤늦은 명령·release·
+watchdog가 새 조작권을 변경하지 못한다. 새 Host 명령은 다시 ARM해야 한다.
+
+인계는 Bench Reset을 호출하지 않는다. **페달·기어·E-stop 입력을 유지하므로 MANUAL
+구동이 자동으로 정지하는 동작은 아니다.** Runtime miss 확인 기준도 유지한다.
+시나리오 parameter 응답이 아직 대기 중이거나, 명령 발행 중지 응답을 받지 못하거나,
+외부 명령 발행자가 있으면 인계를 거부한다. 인계 실패 시 새 브라우저에는 권한을 주지 않는다.
+인계 실패 전에 이미 중단한 시나리오나 Host 명령을 자동으로 재개하지 않는다.
+확인창을 연 뒤 조작권 상태가 바뀌었으면 다시 확인해야 하며, 동시에 인계 요청을 해도
+같은 조작권 revision에서는 하나만 성공한다.
+
+기존과 같이 이 서버에 접근을 허용한 HIL 운영자는 조작권을 요청할 수 있다.
+별도 관리자 계정은 추가하지 않는다. Host/Origin 및 ROS 발행자 충돌 검사는 유지한다.
+인계 요청은 WebSocket `takeover` action의 `confirmed=true`, `expected_revision`으로
+전달되며, `control.revision`은 확인 대상 조작권의 변경 번호,
+`control.transitioning`은 조작권 인계/정리 중 상태다. 이전 backend에서는 인계 버튼이
+활성화되지 않으므로 변경 후 Web backend와 브라우저를 다시 시작해야 한다.
+
 브라우저 heartbeat가 3초간 끊기면 Web 조작권을 회수한다.
 명령 생성기도 Web heartbeat를 직접 감시하므로 Web 서버가 비정상 종료되어도
 3초 내에 `enabled=false`로 전환한다. 재접속만으로 발행을 다시 켜지 않는다.
@@ -343,8 +364,8 @@ Part별 CAN Hz를 ROS 토픽 Hz로 추정하지 않는다. 현재 메시지에�
 이벤트 로그 150개와 그래프 60초는 메모리에만 유지된다.
 
 서버는 **127.0.0.1에만** 바인딩한다. WebSocket은 동일 Origin만 허용하고
-하나의 프로세스/worker에서 실행한다. 이번 버전에는 Tailscale 배포와 사용자별 인증을
-포함하지 않는다. 네트워크 공개용으로 bind/Host/Origin 검사를 제거하지 않는다.
+하나의 프로세스/worker에서 실행한다. 사용자별 인증은 포함하지 않는다.
+네트워크 공개용으로 bind/Host/Origin 검사를 제거하지 않는다.
 개발용 원격 화면 확인은 기존 SSH 터널로 가능하다.
 
 ```bash
@@ -354,6 +375,32 @@ ssh -N -L 8765:127.0.0.1:8765 kai@hil-host
 
 접속은 노트북의 `http://127.0.0.1:8765`다. ROS DDS 자체의 접근권한은 기존 신뢰된
 벤치 네트워크를 전제로 한다. 다른 CLI/GUI가 같은 domain을 조작하지 않도록 한다.
+
+### Tailscale 공통 주소
+
+현재 HIL PC `kai`의 서버 측 주소와 공유받은 사용자 측 주소를
+`100.112.72.27`로 통일했다.
+서버는 계속 loopback에만 바인딩하며, Tailscale Serve의 TCP 전달로 로컬 접속과
+Tailscale 주소 접속을 함께 지원한다. **사용자 PC에서는
+`http://100.112.72.27:8765/`로 접속한다.**
+Tailscale은 공유받은 tailnet에서 같은 장비에 다른 IPv4를 부여하고 NAT로 연결하므로
+서버의 `tailscale ip -4`만으로 원격 사용자의 주소를 판단하면 안 된다.
+각 접속 PC의 `tailscale status` 또는 동작 중인 SSH 대상 주소로 확인한다.
+다른 공유 사용자의 주소가 다르면 검증된 해당 Host를 명시적으로 추가해야 한다.
+
+```bash
+# 이 HIL 서버에서 실행. 권한이 없으면 sudo로 실행한다.
+tailscale serve --bg --tcp=8765 tcp://127.0.0.1:8765
+tailscale serve status
+# 공유만 종료; 로컬 웹 서버는 유지
+tailscale serve --tcp=8765 off
+```
+
+`--bg` 공유 설정은 터미널 종료 뒤에도 유지되며 웹 launch는 별도로 실행해야 한다.
+팀원 PC는 Tailscale에 연결되고 접근 정책상 이 서버의 TCP 8765가 허용되어야 한다.
+접속자는 조작권 획득도 요청할 수 있으므로 HIL 조작 권한을 줄 팀원에게만 네트워크
+접근을 허용한다. TCP 전달은 Host·Origin을 그대로 전달하며 기존 동일 Origin
+검사와 단일 조작권 규칙을 유지한다. 인터넷 공개용 Funnel은 사용하지 않는다.
 
 ## 가상 LCD 연결
 

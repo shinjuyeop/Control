@@ -17,7 +17,13 @@ export type Snapshot = {
   desired: Data;
   generator: Data;
   generator_fresh: boolean;
-  control: { mine: boolean; occupied: boolean; armed: boolean };
+  control: {
+    mine: boolean;
+    occupied: boolean;
+    armed: boolean;
+    revision?: number;
+    transitioning?: boolean;
+  };
   events: Event[];
   scenario: Data | null;
   catalog: Data[];

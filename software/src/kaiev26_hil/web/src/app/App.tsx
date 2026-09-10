@@ -130,6 +130,8 @@ function Workstation() {
     history,
     toast,
     setToast,
+    setModal,
+    setTakeoverRevision,
   } = useWorkbench();
   const [dockCollapsed, setDockCollapsed] = useState(false);
   const [drawer, setDrawer] = useState<"navigation" | "remote" | null>(null);
@@ -223,7 +225,11 @@ function Workstation() {
           <span>HIL / EV26</span>
         </button>
         <div className="global-status">
-          <div className="connection-status" role="status" aria-label="연결 수신 상태">
+          <div
+            className="connection-status"
+            role="status"
+            aria-label="연결 수신 상태"
+          >
             <Badge tone={online ? "good" : "muted"}>
               {online ? "WEB LIVE" : "WEB OFFLINE"}
             </Badge>
@@ -234,7 +240,9 @@ function Workstation() {
               const status = reception(state, online, topic);
               return (
                 <span key={name} title={`${topic} 수신 상태`}>
-                  <Badge tone={status.tone}>{name} {status.label}</Badge>
+                  <Badge tone={status.tone}>
+                    {name} {status.label}
+                  </Badge>
                 </span>
               );
             })}
@@ -247,7 +255,9 @@ function Workstation() {
             role="status"
             aria-label="주행 명령 상태"
           >
-            <span>COMMAND<span className="command-source-suffix"> SOURCE</span></span>
+            <span>
+              COMMAND<span className="command-source-suffix"> SOURCE</span>
+            </span>
             <strong>{commandState.text}</strong>
           </span>
           <span
@@ -271,15 +281,33 @@ function Workstation() {
         <div className="global-actions">
           <button
             className={mine ? "control-owned" : ""}
-            disabled={!online || busy || (state.control.occupied && !mine)}
-            onClick={() => act(mine ? "release" : "claim")}
+            disabled={
+              !online ||
+              busy ||
+              state.control.transitioning ||
+              (state.control.occupied &&
+                !mine &&
+                state.control.revision === undefined)
+            }
+            onClick={() => {
+              if (!mine && state.control.occupied) {
+                setTakeoverRevision(state.control.revision);
+                setModal("takeover");
+              } else {
+                act(mine ? "release" : "claim");
+              }
+            }}
           >
             <LockKeyhole size={13} />
-            {mine
-              ? "조작권 해제"
-              : state.control.occupied
-                ? "다른 브라우저 조작 중"
-                : "조작권 가져오기"}
+            {state.control.transitioning
+              ? "조작권 인계·정리 중"
+              : mine
+                ? "조작권 해제"
+                : state.control.occupied
+                  ? state.control.revision === undefined
+                    ? "다른 브라우저 조작 중"
+                    : "조작권 강제 인계"
+                  : "조작권 가져오기"}
           </button>
           <button
             className="reset-button"

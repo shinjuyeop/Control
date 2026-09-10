@@ -31,7 +31,12 @@ function useWorkbenchState() {
     brake_engage: false,
   });
   const [productionEdited, setProductionEdited] = useState(false);
-  const [modal, setModal] = useState<"production" | "scenario" | null>(null);
+  const [modal, setModal] = useState<
+    "production" | "scenario" | "takeover" | null
+  >(null);
+  const [takeoverRevision, setTakeoverRevision] = useState<
+    number | undefined
+  >();
   const observed = (topic: string): Data =>
     online && state.topics[topic]?.fresh ? state.topics[topic].data : {};
   const hil = observed("/hil/status"),
@@ -43,7 +48,8 @@ function useWorkbenchState() {
   const mine = online && state.control.mine;
   const running = state.scenario?.result === "RUNNING";
   // Same control gate as the original bench: no UI path can bypass it.
-  const disabled = !fresh || !mine || busy || running;
+  const disabled =
+    !fresh || !mine || busy || running || !!state.control.transitioning;
   useEffect(() => {
     if (disabled) setPedalEditing(false);
   }, [disabled]);
@@ -82,11 +88,17 @@ function useWorkbenchState() {
         );
   }, [page, online, state.scenario?.result]);
   useEffect(() => {
-    if (!mine || !fresh) {
+    if (
+      !online ||
+      ((!mine || !fresh) && modal !== "takeover") ||
+      (modal === "takeover" && (mine || !state.control.occupied))
+    ) {
       setModal(null);
+    }
+    if (!mine || !fresh) {
       setScenarioArm(false);
     }
-  }, [mine, fresh]);
+  }, [mine, fresh, online, modal, state.control.occupied]);
   async function act(action: string, args: Data = {}) {
     setBusy(true);
     try {
@@ -131,17 +143,19 @@ function useWorkbenchState() {
   });
   const lockReason = !online
     ? "Web 연결 없음"
-    : !fresh
-      ? "STM_TEST 상태 미수신 / 지연"
-      : !mine
-        ? state.control.occupied
-          ? "다른 브라우저가 조작 중"
-          : "조작권이 없습니다"
-        : running
-          ? "시나리오 실행 중 · 수동 입력 잠김"
-          : busy
-            ? "명령 응답 대기 중"
-            : "";
+    : state.control.transitioning
+      ? "조작권 인계·정리 중"
+      : !fresh
+        ? "STM_TEST 상태 미수신 / 지연"
+        : !mine
+          ? state.control.occupied
+            ? "다른 브라우저가 조작 중"
+            : "조작권이 없습니다"
+          : running
+            ? "시나리오 실행 중 · 수동 입력 잠김"
+            : busy
+              ? "명령 응답 대기 중"
+              : "";
   return {
     state,
     online,
@@ -170,6 +184,8 @@ function useWorkbenchState() {
     setProductionEdited,
     modal,
     setModal,
+    takeoverRevision,
+    setTakeoverRevision,
     observed,
     hil,
     drive,
