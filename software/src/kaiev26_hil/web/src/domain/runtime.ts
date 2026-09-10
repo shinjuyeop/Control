@@ -18,6 +18,8 @@ export type RuntimeTask = {
   jitter: { min_us: number; max_us: number } | null;
   deadline_misses: string;
   deadline_misses_delta: string | null;
+  deadline_misses_since_reset?: string;
+  deadline_misses_since_reset_delta?: string | null;
 };
 export type RuntimeData = {
   generation: number;
@@ -29,6 +31,9 @@ export type RuntimeData = {
   tasks: (RuntimeTask | { task_id: number; present: false })[];
   deadline_misses: string;
   deadline_misses_delta: string | null;
+  deadline_misses_since_reset?: string;
+  deadline_misses_since_reset_delta?: string | null;
+  deadline_reset_uptime_ms?: number | null;
   instrumentation_errors: number;
   instrumentation_errors_delta: number | null;
   cpu_load_percent: number | null;
@@ -72,6 +77,11 @@ export function runtimeView(board: RuntimeBoard | undefined, online: boolean) {
   const data = online && status !== "stale" ? board?.data ?? null : null;
   return {
     ...health[status],
+    detail: data?.deadline_reset_uptime_ms != null && status === "ok"
+      ? "수신·timing 정상 · 리셋 이후 deadline miss 미관측"
+      : data?.deadline_reset_uptime_ms != null && status === "history"
+        ? "리셋 이후 deadline miss 있음 · 최근 증가 미관측"
+        : health[status].detail,
     data,
     stackInvalid: data?.tasks.some(task => task.present && !task.stack.valid) ?? false,
     timing: data ? data.timing_available ? `DWT · ${fmt(data.core_clock_hz / 1e6, 0)} MHz` : "TIMING N/A" : "—",

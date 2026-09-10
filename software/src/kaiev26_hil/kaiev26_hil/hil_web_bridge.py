@@ -492,7 +492,18 @@ class Console:
             if action in ("safe", "stop_scenario"):
                 self.armed = False
                 await self.stop_runner("Operator stopped scenario")
-                return await self.reset()
+                result = await self.reset()
+                # Only the operator's explicit Bench Reset acknowledges history.
+                # Disconnect/watchdog/scenario cleanup must retain diagnostic evidence.
+                if action == "safe":
+                    cleared = self.node.runtime_health.reset_deadline_history(time.monotonic())
+                    note = (
+                        "Runtime miss 기준 초기화: " + ", ".join(cleared)
+                        if cleared else "Runtime 미수신/지연/invalid: miss 기준 유지"
+                    )
+                    self.node.event("runtime", note)
+                    result += "; " + note
+                return result
             if action == "refresh":
                 return await self.node.service("refresh_status")
             if self.runner:

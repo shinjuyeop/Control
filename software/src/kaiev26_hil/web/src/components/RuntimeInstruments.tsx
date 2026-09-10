@@ -51,7 +51,7 @@ export function UtilizationBar({ capacity }: { capacity: Capacity }) {
   );
 }
 
-export function RuntimeTaskRow({ task }: { task: RuntimeTask }) {
+export function RuntimeTaskRow({ task, sinceReset = false }: { task: RuntimeTask; sinceReset?: boolean }) {
   return (
     <div className="runtime-task-row" role="row">
       <strong role="rowheader">{task.name}</strong>
@@ -66,8 +66,9 @@ export function RuntimeTaskRow({ task }: { task: RuntimeTask }) {
       </div>
       <div role="cell" data-label="JITTER" title={runtimeNotes.jitter}><strong>{jitterRange(task)}</strong><small>min / max</small></div>
       <div role="cell" data-label="MISSES">
-        <strong>{task.jitter ? task.deadline_misses : "미계측"}</strong>
-        {task.jitter && <small>{delta(task.deadline_misses_delta)}</small>}
+        <strong>{task.jitter ? task.deadline_misses_since_reset ?? task.deadline_misses : "미계측"}</strong>
+        {task.jitter && <small>{delta(task.deadline_misses_since_reset_delta ?? task.deadline_misses_delta)}</small>}
+        {task.jitter && sinceReset && <small>부팅 누적 {task.deadline_misses}</small>}
       </div>
     </div>
   );

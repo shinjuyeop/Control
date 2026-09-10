@@ -20,7 +20,7 @@ function BoardSummary({ name, board, online }: { name: string; board?: RuntimeBo
         <small>Heap_4 only · Stack: observed max / allocated</small>
       </div>
       <div className="runtime-facts">
-        <Fact label="Deadline misses" value={<>{data?.deadline_misses ?? "—"}<small>{delta(data?.deadline_misses_delta)}</small></>} />
+        <Fact label={`Deadline misses · ${data?.deadline_reset_uptime_ms != null ? "리셋 이후" : "부팅 이후"}`} value={<>{data?.deadline_misses_since_reset ?? data?.deadline_misses ?? "—"}<small>{delta(data?.deadline_misses_since_reset_delta ?? data?.deadline_misses_delta)}</small>{data?.deadline_reset_uptime_ms != null && <small>부팅 누적 {data.deadline_misses}</small>}</>} />
         <Fact label="Instrumentation errors" value={<>{data?.instrumentation_errors ?? "—"}<small>{delta(data?.instrumentation_errors_delta)}</small></>} />
         <Fact label="Timing source" value={view.timing} />
         <Fact label="Uptime" value={uptime(data?.uptime_ms)} />
@@ -49,12 +49,12 @@ export function RuntimePage() {
         const board = state.runtime?.[name], view = runtimeView(board, online);
         const tasks = view.data?.tasks.filter(task => task.present) ?? [];
         return <Panel key={name} title={`${name} · Task runtime`} eyebrow="TASK INSTRUMENTATION" className="runtime-task-panel" aside={<HealthIndicator board={board} online={online} />}>
-          <p className="panel-intro">Rate: snapshot 간 Δ · Stack / wall / jitter / misses: boot 이후 관측</p>
+          <p className="panel-intro">Rate: snapshot 간 Δ · Stack / wall / jitter: boot 이후 관측 · Misses: {view.data?.deadline_reset_uptime_ms != null ? "Bench Reset 이후" : "boot 이후"}</p>
           {tasks.length > 0 ? <div className="runtime-task-table" role="table" aria-label={`${name} task runtime`}>
             <div className="runtime-task-row runtime-task-header" role="row">
               {["TASK", "RATE", "PEAK STACK", "WALL MAX / AVG", "JITTER", "MISSES"].map(label => <span key={label} role="columnheader">{label}</span>)}
             </div>
-            {tasks.map(task => <RuntimeTaskRow key={task.task_id} task={task} />)}
+            {tasks.map(task => <RuntimeTaskRow key={task.task_id} task={task} sinceReset={view.data?.deadline_reset_uptime_ms != null} />)}
           </div> : <p className="runtime-empty">{view.detail} · 유효한 present task가 없습니다.</p>}
           {board && <Source name={board.topic} sample={state.topics[board.topic]} online={online} />}
         </Panel>;
@@ -65,6 +65,7 @@ export function RuntimePage() {
           {Object.values(runtimeNotes).map(note => <p key={note}>{note}</p>)}
           <p>약 1 Hz RuntimeStats 수신 또는 snapshot 진행이 {freshnessSeconds(state.runtime?.STM_A)}초 이상 없으면 STALE입니다. 지난 값으로 live 게이지나 rate를 유지하지 않습니다.</p>
           <p>Deadline misses는 jitter를 계측하는 task의 누적값입니다. +N 최근은 직전 유효 snapshot 이후 증가량이며, 기준점에서는 증가 여부를 판정하지 않습니다.</p>
+          <p>Bench Reset을 누르면 마지막 유효 runtime snapshot을 기준으로 miss 표시와 경고를 새로 시작합니다. 부팅 누적값은 남으며, heap·stack·wall·jitter·계측 오류는 초기화하지 않습니다. 이 기준은 Web backend 재시작 시 해제됩니다.</p>
         </Details>
       </Panel>
     </div>

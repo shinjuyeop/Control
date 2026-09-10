@@ -269,7 +269,7 @@ function Workstation() {
           </button>
           <button
             className="reset-button"
-            title="주행 명령 OFF와 기본 입력 재적용. E-stop 해제, Plant ON을 포함합니다."
+            title="주행 명령 OFF와 기본 입력 재적용. E-stop 해제, Plant ON을 포함합니다. 유효한 ECU snapshot의 deadline miss 이력도 새 기준으로 시작합니다."
             disabled={!mine || busy}
             onClick={() => act("safe")}
           >

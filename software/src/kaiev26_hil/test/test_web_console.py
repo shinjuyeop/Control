@@ -252,6 +252,41 @@ def test_runtime_ros_subscription_and_websocket_freshness(bench):
         assert not observed["commands"] and not observed["planning"]
 
 
+def test_explicit_bench_reset_acknowledges_runtime_history_for_all_clients(bench):
+    client, observed = bench
+    misses = [30]
+
+    def runtime():
+        messages = runtime_messages()
+        messages[1].tasks[7].deadline_misses = misses[0]
+        return messages
+
+    observed["runtime"] = runtime
+    with client.websocket_connect("ws://localhost/ws", headers={"origin": "http://localhost"}) as ws:
+        receive(ws, lambda s: s.get("runtime", {}).get("STM_B", {}).get("status") == "history")
+        assert not request(ws, "safe")["ok"]  # Existing operator ownership applies.
+        assert request(ws, "claim")["ok"]
+        assert request(ws, "refresh")["ok"]
+        state = fresh(ws)
+        assert state["runtime"]["STM_B"]["status"] == "history"
+        assert request(ws, "safe")["ok"]
+        state = fresh(ws)
+        assert state["runtime"]["STM_B"]["status"] == "ok"
+        assert state["runtime"]["STM_B"]["data"]["deadline_misses_since_reset"] == "0"
+        assert state["topics"]["/stm_b/runtime_stats"]["data"]["tasks"][7]["deadline_misses"] == 30
+        with client.websocket_connect("ws://localhost/ws", headers={"origin": "http://localhost"}) as viewer:
+            state = fresh(viewer)
+            assert state["runtime"]["STM_B"]["data"]["deadline_misses"] == "30"
+            assert state["runtime"]["STM_B"]["data"]["deadline_misses_since_reset"] == "0"
+        misses[0] = 31
+        state = receive(ws, lambda s: s.get("runtime", {}).get("STM_B", {}).get("data", {}).get("deadline_misses_since_reset") == "1")
+        assert state["runtime"]["STM_B"]["status"] == "check"
+        assert request(ws, "release")["ok"]
+        state = fresh(ws)
+        assert state["runtime"]["STM_B"]["data"]["deadline_misses_since_reset"] == "1"
+        assert state["runtime"]["STM_B"]["status"] in ("check", "history")
+
+
 def test_web_requires_origin_and_single_control_owner(bench):
     client, observed = bench
     with pytest.raises(WebSocketDisconnect):
@@ -501,6 +536,37 @@ def test_runtime_page_readonly_measurements_and_responsive(browser_page):
     expect(a.get_by_role("group", name="FREERTOS HEAP")).to_contain_text("—%")
     assert not observed["commands"] and not observed["planning"] and observed["safe"] == 0
     print(f"Runtime page images: {tmp_path}")
+
+
+def test_bench_reset_runtime_history_display(browser_page):
+    from playwright.sync_api import expect
+    import re
+
+    page, _, observed, _ = browser_page
+    misses = [30]
+
+    def runtime():
+        messages = runtime_messages()
+        messages[1].tasks[7].deadline_misses = misses[0]
+        return messages
+
+    observed["runtime"] = runtime
+    page.get_by_role("button", name="STM_B RUNTIME").click()
+    board = page.locator(".runtime-summary").nth(1)
+    expect(board).to_contain_text("MISS HISTORY")
+    page.get_by_role("button", name="조작권 가져오기", exact=True).click()
+    page.get_by_role("button", name="Bench Reset", exact=True).click()
+    expect(board).to_contain_text("RUNTIME OK")
+    expect(board).to_contain_text("Deadline misses · 리셋 이후")
+    count = board.locator(".fact").filter(has=page.get_by_text("Deadline misses · 리셋 이후", exact=True))
+    expect(count.locator("strong")).to_have_text(re.compile(r"^0\D"))
+    expect(count).to_contain_text("부팅 누적 30")
+    task = page.get_by_role("table", name="STM_B task runtime").get_by_role("row").filter(has=page.get_by_role("rowheader", name="Display", exact=True))
+    expect(task).to_contain_text("부팅 누적 30")
+    misses[0] = 31
+    expect(board).to_contain_text("CHECK")
+    expect(count.locator("strong")).to_have_text(re.compile(r"^1\D"))
+    expect(count).to_contain_text("부팅 누적 31")
 
 
 def test_operator_remote_across_pages_and_navigation(browser_page):

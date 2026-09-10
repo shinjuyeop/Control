@@ -128,6 +128,23 @@ class RuntimeHealth:
         self.previous = {}
         self.progress_at = {}
         self.received_at = {}
+        self.deadline_baselines = {}
+
+    def reset_deadline_history(self, now):
+        """Acknowledge the latest fresh observations without changing MCU counters."""
+        cleared = []
+        for topic, board in self.boards.items():
+            if board.get("invalid") or board["issues"] or (
+                now - self.progress_at[topic] >= RUNTIME_STALE_SECONDS
+            ):
+                continue
+            self.deadline_baselines[topic] = {
+                "uptime_ms": board["uptime_ms"],
+                "misses": {t["task_id"]: t["deadline_misses"]
+                           for t in board["tasks"] if t["present"]},
+            }
+            cleared.append(BOARDS[topic]["name"])
+        return cleared
 
     def receive(self, topic, data, now):
         self.received_at[topic] = now
@@ -135,6 +152,7 @@ class RuntimeHealth:
             board = normalize_runtime(data, BOARDS[topic])
         except (KeyError, TypeError, ValueError) as exc:
             self.previous.pop(topic, None)
+            self.deadline_baselines.pop(topic, None)
             self.boards[topic] = dict(issues=[str(exc)], invalid=True)
             self.progress_at[topic] = now
             return
@@ -144,15 +162,25 @@ class RuntimeHealth:
             return  # Repeated ROS delivery is not a new firmware snapshot.
         reset = previous is None or now - self.progress_at[topic] >= RUNTIME_STALE_SECONDS
         reset |= bool(board["issues"] or (previous and previous["issues"]))
+        discontinuity = False
         if previous:
-            reset |= board["generation"] <= previous["generation"] or board["uptime_ms"] <= previous["uptime_ms"]
-            reset |= board["instrumentation_errors"] < previous["instrumentation_errors"]
+            discontinuity = board["generation"] <= previous["generation"] or board["uptime_ms"] <= previous["uptime_ms"]
+            discontinuity |= board["instrumentation_errors"] < previous["instrumentation_errors"]
             for task, old in zip(board["tasks"], previous["tasks"]):
                 if task["present"] and old["present"]:
-                    reset |= any(task[k] < old[k] for k in (
+                    discontinuity |= any(task[k] < old[k] for k in (
                         "activations", "completed", "timed_samples", "wall_us_total",
                         "jitter_samples", "deadline_misses",
                     ))
+        baseline = self.deadline_baselines.get(topic)
+        if baseline:
+            discontinuity |= any(
+                t["present"] and t["deadline_misses"] < baseline["misses"].get(t["task_id"], 0)
+                for t in board["tasks"]
+            )
+        reset |= discontinuity
+        if discontinuity or board["issues"]:
+            self.deadline_baselines.pop(topic, None)
         if not reset and not board["issues"] and not previous["issues"]:
             elapsed = (board["uptime_ms"] - previous["uptime_ms"]) / 1000
             for task, old in zip(board["tasks"], previous["tasks"]):
@@ -173,6 +201,13 @@ class RuntimeHealth:
             board = self.boards.get(topic)
             age = (now - self.received_at[topic]) * 1000 if board else None
             progress_age = (now - self.progress_at[topic]) * 1000 if board else None
+            baseline = self.deadline_baselines.get(topic)
+            misses_since_reset = 0
+            if board and not board.get("invalid"):
+                misses_since_reset = sum(
+                    self.misses_since_reset(t, baseline) for t in board["tasks"]
+                    if t["present"] and t["jitter"] is not None
+                )
             status = "waiting"
             if board:
                 if max(age, progress_age) >= RUNTIME_STALE_SECONDS * 1000:
@@ -181,20 +216,25 @@ class RuntimeHealth:
                     status = "invalid"
                 elif not board["timing_available"]:
                     status = "timing_unavailable"
-                elif board["instrumentation_errors"] or board["deadline_misses_delta"]:
+                elif board["instrumentation_errors"] or (misses_since_reset and board["deadline_misses_delta"]):
                     status = "check"
-                elif board["deadline_misses"]:
+                elif misses_since_reset:
                     status = "history"
                 else:
                     status = "ok"
             public = None
             if board and not board.get("invalid"):
-                public = {**board, "tasks": [self.public_task(t) for t in board["tasks"]]}
+                public = {**board, "tasks": [self.public_task(t, baseline) for t in board["tasks"]]}
                 worst = board["worst_stack"]
-                public["worst_stack"] = self.public_task(worst) if worst else None
+                public["worst_stack"] = self.public_task(worst, baseline) if worst else None
                 public["deadline_misses"] = str(board["deadline_misses"])
                 delta = board["deadline_misses_delta"]
                 public["deadline_misses_delta"] = str(delta) if delta is not None else None
+                public["deadline_reset_uptime_ms"] = baseline["uptime_ms"] if baseline else None
+                public["deadline_misses_since_reset"] = str(misses_since_reset)
+                public["deadline_misses_since_reset_delta"] = (
+                    str(min(delta, misses_since_reset)) if delta is not None else None
+                )
             result[config["name"]] = dict(
                 name=config["name"], role=config["role"], topic=topic,
                 status=status, age_ms=age, progress_age_ms=progress_age,
@@ -204,10 +244,23 @@ class RuntimeHealth:
         return result
 
     @staticmethod
-    def public_task(task):
+    def misses_since_reset(task, baseline):
+        return task["deadline_misses"] - (
+            baseline["misses"].get(task["task_id"], 0) if baseline else 0
+        )
+
+    @staticmethod
+    def public_task(task, baseline=None):
         if not task["present"]:
             return task
-        return {key: str(value) if key in (
+        public = {key: str(value) if key in (
             "activations", "completed", "timed_samples", "wall_us_total",
             "jitter_samples", "deadline_misses", "deadline_misses_delta",
         ) and value is not None else value for key, value in task.items()}
+        misses = RuntimeHealth.misses_since_reset(task, baseline)
+        public["deadline_misses_since_reset"] = str(misses)
+        delta = task["deadline_misses_delta"]
+        public["deadline_misses_since_reset_delta"] = (
+            str(min(delta, misses)) if delta is not None else None
+        )
+        return public

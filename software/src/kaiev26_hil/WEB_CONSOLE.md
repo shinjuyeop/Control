@@ -136,6 +136,19 @@ UI 단위·문구는 `web/src/domain/runtime.ts`, 렌더링은 `RuntimeInstrumen
   표시한다. `+N 최근`은 직전 snapshot 대비 증가이고 기준점은 증가 여부 미판정이다.
   여러 사유가 겹치면 freshness/data/timing 순으로 badge를 표시하며 counter와 오류 상세를 함께 본다.
   모든 상태는 **ECU runtime diagnostic**이며 차량 safety state를 판정하지 않는다.
+- **Bench Reset과 miss 이력**: 상단 버튼의 기존 주행 명령 OFF·기본 입력 재적용이
+  성공하면, 마지막 fresh/valid RuntimeStats를 기준으로 A/B의 **리셋 이후 miss**를
+  0부터 센다. MCU의 부팅 누적 counter는 변경하지 않고 summary와 task 행에 함께
+  표시한다. 새 miss가 생기면 다시 경고한다. 계측 오류·TIMING N/A·STALE·INVALID와
+  heap/stack/wall/jitter/dispatch 통계는 초기화하지 않는다.
+  미수신·지연·invalid 보드는 기준을 바꾸지 않는다. 자동 disconnect/watchdog 정리,
+  시나리오 종료 및 상태 새로고침은 miss 이력을 지우지 않는다.
+  기준은 Web backend 메모리에 있어 모든 브라우저에 공유되며 브라우저 새로고침으로는
+  사라지지 않는다. Backend 재시작, 보드 counter 불연속 또는 invalid data 후에는
+  해제되어 원본 누적 기준으로 돌아간다. 수신 공백만으로는 기준을 해제하지 않는다.
+  WebSocket의 기존 `deadline_misses`/`deadline_misses_delta`는 원래 누적/증가량을
+  유지하고 `deadline_misses_since_reset`/`deadline_misses_since_reset_delta`와
+  `deadline_reset_uptime_ms`를 별도로 제공한다.
 - **용량 색상**: 사용률 80% 이상 amber, 95% 이상 red는 UI advisory이다. 상수는
   `runtime_config.py`에 중앙 관리하며 firmware safety threshold가 아니다.
 
