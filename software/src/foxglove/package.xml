@@ -1,17 +1,14 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>visualization</name>
+  <name>foxglove</name>
   <version>0.0.0</version>
-  <description>Vehicle diagnostics publisher and Foxglove engineering visualization.</description>
+  <description>Foxglove bridge and KAI vehicle engineering layout.</description>
   <maintainer email="shinjp02@gmail.com">shinjuyeop</maintainer>
   <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_python</buildtool_depend>
 
-  <exec_depend>rclpy</exec_depend>
-  <exec_depend>kaiev26_msgs</exec_depend>
-  <exec_depend>diagnostic_msgs</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>foxglove_bridge</exec_depend>

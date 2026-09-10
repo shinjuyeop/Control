@@ -2,10 +2,10 @@
 실차 구동 스택 통합 launch.
 
 구동에 필요한 것만 띄운다: 차량·INS 기준 정적 TF, STM_A/B micro-ROS Agent,
-command_governor, steering_actuator, vehicle_state_publisher, 그리고 상태 3종을
-/diagnostics로 요약하는 diagnostics_publisher(headless라 구동 스택 소속).
+command_governor, steering_actuator, vehicle_state_publisher, 그리고 같은 상태 package의
+diagnostics_publisher를 실행한다. 두 상태 노드는 headless 구동 스택 소속이다.
 관측 화면은 별도 실행한다: `ros2 launch vehicle_console vehicle.launch.py` 또는
-`ros2 launch visualization foxglove_bridge.launch.py`.
+`ros2 launch foxglove foxglove_bridge.launch.py`.
 
 Planning은 포함하지 않는다. 판단 계층은 별도로 실행되어 /planning/command를
 발행한다. Planning 없이 이 launch만 켜면 command_governor가 중계할 입력이
@@ -139,7 +139,7 @@ def generate_launch_description():
         # status 3종 → /diagnostics 요약. Foxglove 없이도 발행되어야 bag
         # 기록과 나중에 붙는 관찰 클라이언트가 바로 쓸 수 있다.
         Node(
-            package="visualization",
+            package="vehicle_state_publisher",
             executable="diagnostics_publisher",
             name="diagnostics_publisher",
             output="screen",

@@ -19,7 +19,8 @@ HIL도 실차와 같은 governor 경로를 지난다. `/vehicle/command`의 발�
 `command_governor` 하나뿐이다
 ([`../command_governor/README.md`](../command_governor/README.md)).
 
-- `vehicle_state_publisher`, visualization, Foxglove: 차량 상태 관찰
+- `vehicle_state_publisher`: 차량 상태·wheel twist·diagnostics 발행
+- `foxglove`: 상세 engineering 관찰
 - `hil_web_bridge`: vehicle_console의 공통 Web을 HIL 조작·시험 backend로 확장
 - `vcan_sim`: vcan 기반 SIL/교육용 plant. 실제 STM_TEST HIL과 별도 경로
 
@@ -119,7 +120,7 @@ communication timeout을 정상 정지수단으로 쓰는 것은 이 경로의 �
 단일 frontend는 `web`에서 관리한다. `vehicle_console.hil` backend는 기존 조작권·인계·ARM·watchdog·scenario·Virtual LCD/Touch를 담당한다.
 실행과 빌드는 [HIL_WEB.md](HIL_WEB.md)를 따른다.
 Qt GUI source/tests는 [legacy_hil_gui](../../../archive/software/legacy_hil_gui)에
-보관한다. 대체 범위와 차이는 [parity matrix](../../../docs/CONSOLE_PARITY.md)에 있다.
+보관한다. 대체 범위와 차이는 [parity matrix](CONSOLE_PARITY.md)에 있다.
 
 ## Safe state
 
@@ -270,7 +271,7 @@ ros2 run vehicle_console vcan_sim --motor-iface vcan0 --steer-iface vcan1 --no-g
 vcan 생성과 simulator protocol은
 `vehicle_console/hil/vcan_sim/signals_reference.md`를 참고한다.
 
-## Foxglove/visualization
+## Foxglove
 
 Console의 HIL backend는 `/vehicle/state` 합성을 대체하지 않는다. 기존 흐름을 그대로 실행하고
 Foxglove에서 `/hil/status`, `/vehicle/state`, `/drive/status`, `/brake/status`,

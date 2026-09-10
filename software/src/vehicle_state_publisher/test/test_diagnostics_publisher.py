@@ -8,7 +8,7 @@ import rclpy
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 
-from visualization.diagnostics_publisher import DiagnosticsPublisher
+from vehicle_state_publisher.diagnostics_publisher import DiagnosticsPublisher
 
 
 def test_canonical_status_to_diagnostics_without_command_publishers():

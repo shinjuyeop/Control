@@ -40,11 +40,11 @@ Control/
 │   └── src/
 │       ├── lateral_ctrl/            # KEYA 조향 액추에이터 제어
 │       ├── command_governor/        # /planning/command → /vehicle/command 단일 발행자
-│       ├── vehicle_state_publisher/ # status 3종을 /vehicle/state로 통합
+│       ├── vehicle_state_publisher/ # 차량 상태·wheel twist·diagnostics 발행
 │       ├── control_launch/          # 실차 구동 통합 launch (vehicle.launch.py)
 │       ├── vehicle_test_scenarios/  # /planning/command 실차 시험 시나리오
 │       ├── vehicle_console/         # 통합 Console: Vehicle 관측 / HIL 시험 / 공용 Web
-│       └── visualization/           # diagnostics, Foxglove engineering visualization
+│       └── foxglove/                # Foxglove bridge와 engineering layout
 ├── host/                            # 차량 PC 호스트 설정 (can0 systemd-networkd)
 └── archive/                         # 과거 구현 보관소, 빌드 대상 아님
 ```
@@ -67,11 +67,11 @@ Control/
 |---|---|
 | `lateral_ctrl` | `/vehicle/command`와 STM 상태를 사용한 KEYA 조향 모터 제어 및 `/steering/status` |
 | `command_governor` | `/planning/command`를 정합성 게이트 후 `/vehicle/command`로 재발행하는 유일한 발행자. 현재 패스스루이며 형상(속도 상한·램프·축간 협조)은 이후 단계 |
-| `vehicle_state_publisher` | 액추에이터 status 3종을 `/vehicle/state`로 통합 |
+| `vehicle_state_publisher` | status 3종을 `/vehicle/state`, `/vehicle/wheel_twist`, `/diagnostics`로 변환 |
 | `control_launch` | 실차 구동 스택 통합 `vehicle.launch.py` (Agent 2개 + 거버너 + 조향 + 상태 통합) |
 | `vehicle_test_scenarios` | production Planning 대신 `/planning/command`를 발행하는 실차 직진·조향·속도·제동 시험 시나리오 |
 | `vehicle_console` | KAI Vehicle Console: 단일 frontend·공용 Web/ROS/runtime, Vehicle read-only 및 HIL backend |
-| `visualization` | `/diagnostics` 요약과 Foxglove bridge / engineering layout |
+| `foxglove` | Foxglove bridge와 engineering layout |
 
 ## KAI Vehicle Console
 
@@ -85,7 +85,7 @@ HIL profile의 전역 **Control Dock**로 Mode/Gear/Pedal/E-stop을 조작하면
 `ros2 launch vehicle_console vehicle.launch.py`로 시작합니다(기본 8766).
 HIL은 `ros2 launch vehicle_console hil.launch.py`를 사용합니다(8767).
 [Console 설치·운용](software/src/vehicle_console/README.md),
-[Qt 대체 및 archive 판단](docs/CONSOLE_PARITY.md)을 참고하십시오.
+[Qt 대체 및 archive 판단](software/src/vehicle_console/CONSOLE_PARITY.md)을 참고하십시오.
 
 Web 의존성 설치, 프론트엔드·공통 LCD renderer 빌드, 전체 벤치 실행은
 [Web Console 운용 문서](software/src/vehicle_console/HIL_WEB.md)를 따릅니다.
@@ -126,7 +126,7 @@ armed이므로 전원 인가 전에 배선과 E-stop을 먼저 확인하십시�
 
 ```bash
 ros2 launch control_launch vehicle.launch.py            # 실차 구동 스택
-ros2 launch visualization foxglove_bridge.launch.py     # 관찰 (선택, 별도)
+ros2 launch foxglove foxglove_bridge.launch.py          # 관찰 (선택, 별도)
 ```
 
 can0는 launch 전에 올라와 있어야 합니다. `host/systemd/`의 networkd 설정을
@@ -175,7 +175,8 @@ bench([HIL runbook](docs/HIL_RUNBOOK.md)), 조향 단독
 | [vehicle_test_scenarios](software/src/vehicle_test_scenarios/README.md) | 실차 직진·조향 sweep·속도 step/ramp·제동 시험 입력 |
 | [vehicle_console](software/src/vehicle_console/README.md) | 통합 Console, Vehicle READ ONLY, HIL, 원격 관측 |
 | [HIL backend](software/src/vehicle_console/HIL_BACKEND.md) | bridge, protocol, scenario와 vcan 상세 |
-| [visualization](software/src/visualization/README.md) | diagnostics와 Foxglove 사용법 |
+| [vehicle_state_publisher](software/src/vehicle_state_publisher/README.md) | 차량 상태·wheel twist·diagnostics 발행 |
+| [foxglove](software/src/foxglove/README.md) | Foxglove bridge와 engineering layout |
 
 ## 개발 규칙
 

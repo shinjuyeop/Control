@@ -86,13 +86,13 @@ cd ~/KAI_ws
 humble
 source ~/KAI_ws/install/setup.zsh
 
-ros2 launch visualization foxglove_bridge.launch.py
+ros2 launch foxglove foxglove_bridge.launch.py
 ```
 
 - **Foxglove 접속**: 노트북의 Foxglove 앱에서 `ws://100.112.72.27:8765`
   (Tailscale 기준. 이 PC가 스스로 보는 IP와 노트북에서 보이는 IP가 다르니,
   안 붙으면 노트북에서 `tailscale status`로 이 PC의 IP를 다시 확인한다).
-  레이아웃은 `software/src/visualization/control.json`을 import한다.
+  레이아웃은 `software/src/foxglove/control.json`을 import한다.
   Diagnostics 패널에서 문제 항목이 위로 정렬되어 뜬다
 - **bridge는 PC당 하나만 띄운다.** bridge 하나가 모든 파트의 토픽을
   서빙하고 노트북 여러 대가 동시에 접속할 수 있다. 각 파트의 launch에

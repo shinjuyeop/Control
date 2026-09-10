@@ -150,7 +150,8 @@ backend action, 제어 ROS topic/service, lease, watchdog, scenario runner와 UN
 약 1 Hz, best effort)를 기존 ROS observation cache로 수신한다. 원본은 WebSocket
 `topics[topic].data`, 정규화된 보드/task 모델은 `runtime.STM_A` / `runtime.STM_B`다.
 `vehicle_console/common/runtime_health.py`는 ROS·React에 의존하지 않으며 Vehicle profile과 HIL이 같은 구현을 사용한다.
-diagnostics_publisher, Foxglove용 adapter에서 같은 해석을 재사용할 수 있다.
+Console과 Foxglove가 같은 RuntimeStats 해석을 표시한다. 차량 status 기반
+`/diagnostics` 발행자는 `vehicle_state_publisher` package가 소유한다.
 UI 단위·문구는 `web/src/domain/runtime.ts`, 렌더링은 `RuntimeInstruments.tsx`와
 `RuntimePage.tsx`로 분리한다. 공용 Python 구현은 vehicle_console에 있으며 ROS message wire 계약은 바꾸지 않는다.
 
@@ -572,4 +573,4 @@ Foxglove는 기본 8765를 사용하므로 HIL과 포트 변경 없이 함께 �
 빌드에서 제외한다. 기존 결과를 계속 읽도록 기본 결과 경로
 `~/.local/state/kaiev26_hil/web_results`는 그대로 유지한다. `results_dir`로 변경할 수 있다.
 Qt 화면은 [legacy archive](../../../archive/software/legacy_hil_gui)에,
-검증 범위는 [Console validation](../../../docs/CONSOLE_VALIDATION.md)에 있다.
+검증 범위는 [Console validation](CONSOLE_VALIDATION.md)에 있다.

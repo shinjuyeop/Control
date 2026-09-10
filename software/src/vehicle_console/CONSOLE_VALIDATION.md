@@ -13,13 +13,13 @@ were included in the baseline and preserved.
 |---|---|
 | `vehicle_console/test` | 29 passed; actual ROS pub/sub, Vehicle read-only WebSocket boundary, Host/Origin, diagnostics identity/age, RuntimeStats, Chrome pages/reconnect/responsive |
 | Active `kaiev26_hil/test` after Qt archive | 91 passed; command ownership/takeover, revision fencing, heartbeat/watchdog, scenarios/faults, Virtual LCD/Touch, runtime acknowledgment and offline behavior |
-| `visualization/test` | 1 passed; canonical status → diagnostics including E-stop and no command publisher |
+| Historical `visualization/test` | 1 passed; canonical status → diagnostics including E-stop and no command publisher |
 | Legacy Qt tests before archive | 26 HIL Qt and 18 Vehicle Qt/cache tests passed before the source/tests were archived |
 | TypeScript domain tests | 3 passed using Node's test runner and the existing TypeScript compiler |
 | TypeScript | Typecheck and additional unused import/variable check passed |
 | Frontend | Vite production build passed; one maintained source tree |
-| Targeted colcon | `vehicle_console`, `kaiev26_hil`, `visualization`, `control_launch` built and installed |
-| Package discovery | Active Console/HIL/visualization found; archived `control_gui_common` excluded |
+| Historical targeted colcon | `vehicle_console`, `kaiev26_hil`, `visualization`, `control_launch` built and installed |
+| Historical package discovery | Active Console/HIL/visualization found; archived `control_gui_common` excluded |
 | Installed resources | Vehicle/HIL launch files, shared frontend assets and Foxglove `control.json` installed; obsolete Qt entrypoints/launch links removed from the local generated install |
 
 Python tests used isolated localhost domains 193/194/196. Browser tests ran with
@@ -85,7 +85,7 @@ desired state, ownership, event history and LCD PNG are absent from Vehicle fram
 Duplicate raw RuntimeStats and unrendered runtime counters are also excluded.
 
 Architecture and archive decisions: [CONSOLE_PARITY.md](CONSOLE_PARITY.md).
-Launch/security instructions: [vehicle_console README](../software/src/vehicle_console/README.md).
+Launch/security instructions: [vehicle_console README](README.md).
 
 ## Unified backend package consolidation
 
@@ -168,3 +168,36 @@ Scoped validation after the launch change:
 No frontend, HIL domain control/watchdog logic, Vehicle backend or firmware code
 changed in this cleanup; the earlier broader test results above were not rerun
 or counted as new validation for this launch-only change.
+
+## Diagnostics ownership and Foxglove package cleanup
+
+The Console parity and validation records now live beside the maintained
+`vehicle_console` package. The independent `diagnostics_publisher` node moved from
+the retired `visualization` package to `vehicle_state_publisher`; its node name,
+topics, rate and diagnostic interpretations did not change. The remaining bridge
+and `control.json` became the `foxglove` package.
+
+Current execution paths are `ros2 run vehicle_state_publisher diagnostics_publisher`
+and `ros2 launch foxglove foxglove_bridge.launch.py`. `control_launch` starts the
+diagnostic node from its new owner and has no dependency on the Foxglove package.
+
+Validation after the ownership move:
+
+- `vehicle_state_publisher` tests: **6 passed**, covering state/twist mapping and
+  canonical status → diagnostics, including stale inputs and E-stop severity.
+- Targeted `vehicle_state_publisher`, `foxglove`, `control_launch` and
+  `vehicle_console` colcon build/install: passed.
+- Installed package discovery: `vehicle_state_publisher` and `foxglove` present;
+  retired `visualization` absent. Console parity/validation files are installed in
+  `share/vehicle_console`.
+- Isolated localhost domain 198: `control_launch vehicle.launch.py agents:=false
+  steering:=false` started `vehicle_state_publisher`, `diagnostics_publisher`,
+  `command_governor` and `vehicle_robot_state_publisher`. The diagnostics endpoint
+  was present and no `/vehicle/command` message arrived without Planning input.
+- The renamed Foxglove launch connected concurrently on a temporary port using
+  subprotocol `foxglove.sdk.v1`.
+- All launch process groups and children were absent after the smoke check.
+
+No diagnostic rule, topic, node name, publication rate, vehicle state fusion,
+command path, firmware or safety action changed. The move was not tested with
+physical vehicle devices; the launch smoke deliberately disabled Agents and steering.

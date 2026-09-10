@@ -13,4 +13,4 @@ that package context when examining/running the historical version. Its Qt helpe
 is preserved in `../control_gui_common`. Nothing here is a colcon build target.
 
 Parity and the deliberate replacement of Qt quick presets with existing Web
-controls are documented in [Console parity](../../../../docs/CONSOLE_PARITY.md).
+controls are documented in [Console parity](../../../software/src/vehicle_console/CONSOLE_PARITY.md).

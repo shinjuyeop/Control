@@ -1,7 +1,7 @@
 from glob import glob
 from setuptools import find_packages, setup
 
-package_name = 'visualization'
+package_name = 'foxglove'
 
 setup(
     name=package_name,
@@ -16,12 +16,8 @@ setup(
     zip_safe=True,
     maintainer='shinjuyeop',
     maintainer_email='shinjp02@gmail.com',
-    description='Vehicle diagnostics publisher and Foxglove engineering visualization.',
+    description='Foxglove bridge and KAI vehicle engineering layout.',
     license='TODO: License declaration',
     tests_require=['pytest'],
-    entry_points={
-        'console_scripts': [
-            'diagnostics_publisher = visualization.diagnostics_publisher:main',
-        ],
-    },
+    entry_points={},
 )

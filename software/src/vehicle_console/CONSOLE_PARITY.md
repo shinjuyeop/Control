@@ -32,7 +32,9 @@ built browser UI. No firmware, CAN or actuator behavior is changed.
 
 Decision: archive both Qt surfaces after the first profile tests and targeted
 colcon build passed. Only legacy GUI code/tests/launch context moved; active HIL
-backend, vcan SIL and diagnostics/Foxglove remain. Archives are under
+backend and vcan SIL remain. Vehicle diagnostics now belong to
+`vehicle_state_publisher`, while the Foxglove bridge/layout belong to `foxglove`.
+Archives are under
 `archive/software/legacy_hil_gui`, `legacy_vehicle_dashboard` and
 `control_gui_common`; `archive/software/COLCON_IGNORE` excludes all three.
 

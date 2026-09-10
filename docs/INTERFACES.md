@@ -31,10 +31,12 @@ KEYA 조향 CAN의 데이터 계약과 주기·timeout을 정리하는 기준 �
 | `command_governor` | STM_A | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 500 ms | AUTO 속도·brake |
 | `command_governor` | STM_B | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 적용 안 함 | brake만 저장 |
 | `command_governor` | 조향 노드 | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 200 ms | ACTIVE 조향 freshness |
-| STM_A | Host·조향·상태 통합 | ROS 2 | `/drive/status` | `DriveActuatorStatus` | 20 ms | 조향에서 1500 ms | mode·gear·구동 진단 |
-| STM_B | Host·조향·상태 통합 | ROS 2 | `/brake/status` | `BrakeActuatorStatus` | 50 ms 및 원인 변경 시 | 조향에서 별도 timeout 없음 | brake·E-stop 원인 |
-| 조향 노드 | Host·상태 통합 | ROS 2 | `/steering/status` | `SteeringActuatorStatus` | 20 ms | 상태 통합에서 별도 timeout 없음 | 조향 상태·진단 |
-| 상태 통합 | ROS 2 consumers | ROS 2 | `/vehicle/state` | `VehicleState` | 50 ms | 없음 | 세 status의 마지막 값 합성 |
+| STM_A | Host·조향·상태·진단 | ROS 2 | `/drive/status` | `DriveActuatorStatus` | 20 ms | 조향에서 1500 ms | mode·gear·구동 진단 |
+| STM_B | Host·조향·상태·진단 | ROS 2 | `/brake/status` | `BrakeActuatorStatus` | 50 ms 및 원인 변경 시 | 조향에서 별도 timeout 없음 | brake·E-stop 원인 |
+| 조향 노드 | Host·상태·진단 | ROS 2 | `/steering/status` | `SteeringActuatorStatus` | 20 ms | 상태 통합에서 별도 timeout 없음 | 조향 상태·진단 |
+| `vehicle_state_publisher_node` | ROS 2 consumers | ROS 2 | `/vehicle/state` | `VehicleState` | 50 ms | 없음 | 세 status의 마지막 값 합성 |
+| `vehicle_state_publisher_node` | ESKF·기록 | ROS 2 | `/vehicle/wheel_twist` | `TwistWithCovarianceStamped` | 최대 50 ms | 자체 timeout 없음 | valid 구동·조향 관측의 Ackermann 근사 |
+| `diagnostics_publisher` | Console·Foxglove·기록 | ROS 2 | `/diagnostics` | `DiagnosticArray` | 1 s | 입력 status 1 s | 링크·상태·제동 진단 요약 |
 | STM_A | STM_B | USART1 | type `0x01` | mode, gear, speed | 20 ms | STM_B에서 200 ms | vehicle status |
 | STM_A | STM_B | USART1 | type `0x03` | 구동 bus·온도·fault·command 상태 | 100 ms | STM_B에서 300 ms | dashboard drive detail |
 | STM_B | STM_A | USART1 | type `0x02` | final brake request | 20 ms | STM_A에서 100 ms | safety status |
@@ -53,10 +55,12 @@ KEYA 조향 CAN의 데이터 계약과 주기·timeout을 정리하는 기준 �
 |---|---|---|---|---:|---|---|
 | `/planning/command` | Planning (production 미구현), 실차 시험 `vehicle_test_scenario_runner`, HIL `hil_command_generator` 중 하나 | `command_governor` | `kaiev26_msgs/msg/ActuatorCommand` | 시험 명령원 20 Hz | default | Planning 의도 명령 |
 | `/vehicle/command` | `command_governor` (유일 발행자) | STM_A, STM_B, `steering_actuator_node` | `kaiev26_msgs/msg/ActuatorCommand` | 입력 연동; HIL 20 Hz | default | 속도·조향·최종 brake 명령 |
-| `/drive/status` | `/stm_a_node` | 조향 노드, `vehicle_state_publisher` | `kaiev26_msgs/msg/DriveActuatorStatus` | 50 Hz | default | mode·gear·구동 명령 및 EZkontrol 진단 |
-| `/brake/status` | `/stm_b_node` | 조향 노드, `vehicle_state_publisher` | `kaiev26_msgs/msg/BrakeActuatorStatus` | 20 Hz + 변경 시 | default | 브레이크 command와 stop reason |
-| `/steering/status` | `/steering_actuator_node` | `vehicle_state_publisher`, 진단 도구 | `kaiev26_msgs/msg/SteeringActuatorStatus` | 50 Hz | Keep Last 10, reliable, volatile | 조향 상태 머신·timeout·모터 진단 |
-| `/vehicle/state` | `/vehicle_state_publisher` | 현재 코드에서 확인되지 않음 | `kaiev26_msgs/msg/VehicleState` | 20 Hz | Keep Last 10, reliable, volatile | 세 status가 모두 수신된 후 합성 |
+| `/drive/status` | `/stm_a_node` | 조향 노드, `vehicle_state_publisher_node`, `diagnostics_publisher`, 관측 도구 | `kaiev26_msgs/msg/DriveActuatorStatus` | 50 Hz | default | mode·gear·구동 명령 및 EZkontrol 진단 |
+| `/brake/status` | `/stm_b_node` | 조향 노드, `vehicle_state_publisher_node`, `diagnostics_publisher`, 관측 도구 | `kaiev26_msgs/msg/BrakeActuatorStatus` | 20 Hz + 변경 시 | default | 브레이크 command와 stop reason |
+| `/steering/status` | `/steering_actuator_node` | `vehicle_state_publisher_node`, `diagnostics_publisher`, 관측 도구 | `kaiev26_msgs/msg/SteeringActuatorStatus` | 50 Hz | Keep Last 10, reliable, volatile | 조향 상태 머신·timeout·모터 진단 |
+| `/vehicle/state` | `/vehicle_state_publisher` | 기록 및 차량 상태 consumer | `kaiev26_msgs/msg/VehicleState` | 20 Hz | Keep Last 10, reliable, volatile | 세 status가 모두 수신된 후 합성 |
+| `/vehicle/wheel_twist` | `/vehicle_state_publisher` | `eskf_localization`, 기록 | `geometry_msgs/msg/TwistWithCovarianceStamped` | 최대 20 Hz | Keep Last 10, reliable, volatile | drive Part I·steering feedback valid일 때만 발행 |
+| `/diagnostics` | `/diagnostics_publisher` 외 sensor/bridge 진단 노드 | Vehicle Console, Foxglove, 기록 | `diagnostic_msgs/msg/DiagnosticArray` | 차량 status 요약 1 Hz | Keep Last 10, reliable, volatile | publisher별 DiagnosticArray가 같은 topic에 공존 |
 
 STM micro-ROS endpoint는 `rclc_*_init_default`를 사용합니다. 이는 코드상 default
 QoS이며, 조향·상태 통합의 depth `10`도 rclcpp/rclpy default QoS를 사용합니다.
@@ -69,7 +73,15 @@ ros2 topic info -v /drive/status
 ros2 topic info -v /brake/status
 ros2 topic info -v /steering/status
 ros2 topic info -v /vehicle/state
+ros2 topic info -v /vehicle/wheel_twist
+ros2 topic info -v /diagnostics
 ```
+
+`vehicle_state_publisher` package는 두 독립 노드를 제공합니다. 상태 합성 노드는
+`/vehicle/state`와 `/vehicle/wheel_twist`를 발행하고, `diagnostics_publisher`는
+status 3종을 1 Hz `DiagnosticArray`로 요약합니다. `/diagnostics`에는 STM_TEST,
+INS 등 다른 publisher도 함께 쓸 수 있으므로 consumer는 배열 하나를 전체 시스템
+상태로 간주하지 않고 `hardware_id`와 `name`으로 항목을 구분합니다.
 
 `/vehicle/command`의 발행자는 `command_governor` 하나입니다. 거버너는
 `/planning/command`를 수신 즉시 정합성 게이트(stamp 0·음수, 나이 ±200 ms,
@@ -415,6 +427,9 @@ bus voltage·driver temperature는 500 ms 간격으로 번갈아 조회합니다
 | 조향 mode timeout | 1500 ms | `mode_timeout_ms` | `steering_actuator.yaml` |
 | 거버너 입력 나이 게이트 | 200 ms | `input_timeout_ms` | `command_governor.yaml` |
 | `/vehicle/state` publish | 50 ms | `publish_rate_hz=20.0` | vehicle state publisher |
+| `/vehicle/wheel_twist` publish | 최대 50 ms | state publisher timer + valid feedback gate | vehicle state publisher |
+| 차량 status `/diagnostics` publish | 1000 ms | `publish_rate_hz=1.0` | diagnostics publisher |
+| diagnostics 입력 status stale | 1000 ms | `STATUS_STALE_SEC` | diagnostics publisher |
 
 경계 비교는 구현마다 다릅니다. STM Host와 UART timeout은 `>=`, EZkontrol valid는
 `age < 200 ms`, 조향 timeout은 `age > 설정값`을 사용합니다.
@@ -440,7 +455,8 @@ bus voltage·driver temperature는 500 ms 간격으로 번갈아 조회합니다
 - Arduino dashboard: `firmware/UNO_R4_DASHBOARD/`
 - 조향: `software/src/lateral_ctrl/src/`
 - 명령 거버너: `software/src/command_governor/src/`
-- 상태 통합: `software/src/vehicle_state_publisher/`
+- 상태·wheel twist·diagnostics: `software/src/vehicle_state_publisher/`
+- Foxglove bridge·layout: `software/src/foxglove/`
 - 메시지 원본: 별도 workspace repository `kaiev26_msgs/msg/`
 
 ## 11. 확인 필요 항목

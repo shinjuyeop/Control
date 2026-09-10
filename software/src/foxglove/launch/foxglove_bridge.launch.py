@@ -6,8 +6,8 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
-    # bridge만 띄운다. /diagnostics 요약(diagnostics_publisher)은 관찰이
-    # 아니라 구동 스택 소속이라 control_launch/vehicle.launch.py가 띄운다.
+    # bridge만 띄운다. /diagnostics는 vehicle_state_publisher package가
+    # control_launch/vehicle.launch.py를 통해 독립 노드로 발행한다.
     # bridge는 PC당 하나만 실행한다 — 하나가 ROS graph 전체를 서빙하고
     # 클라이언트 여러 대가 동시 접속할 수 있다.
     return LaunchDescription(

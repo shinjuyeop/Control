@@ -41,7 +41,7 @@ npm run build
 cd /home/kai/KAI_ws
 source /opt/ros/humble/setup.bash
 unset COLCON_CURRENT_PREFIX
-colcon build --symlink-install --packages-select vehicle_console visualization control_launch
+colcon build --symlink-install --packages-select vehicle_console vehicle_state_publisher foxglove control_launch
 source install/setup.bash
 source src/Control/software/src/vehicle_console/.venv/bin/activate
 ros2 launch vehicle_console vehicle.launch.py
@@ -60,7 +60,7 @@ HIL은 같은 패키지의 별도 진입점으로 실행한다:
 ```bash
 ros2 launch vehicle_console hil.launch.py  # Web backend만, 기본 8767
 # 전체 bench 실행 인자와 UNO 연결은 HIL 운용 문서를 따른다.
-ros2 launch visualization foxglove_bridge.launch.py  # 상세 분석, 기본 8765
+ros2 launch foxglove foxglove_bridge.launch.py  # 상세 분석, 기본 8765
 ```
 
 Foxglove(8765), Vehicle(8766), HIL(8767)은 서로 다른 기본 포트를 사용한다. Console은 Foxglove를
@@ -174,7 +174,7 @@ source /home/kai/KAI_ws/install/setup.bash
 ROS_DOMAIN_ID=193 ROS_LOCALHOST_ONLY=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
   software/src/vehicle_console/.venv/bin/python -m pytest software/src/vehicle_console/test -q
 ROS_DOMAIN_ID=196 ROS_LOCALHOST_ONLY=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
-  software/src/vehicle_console/.venv/bin/python -m pytest software/src/visualization/test -q
+  software/src/vehicle_console/.venv/bin/python -m pytest software/src/vehicle_state_publisher/test -q
 cd software/src/vehicle_console/web
 npm test
 npm run typecheck
@@ -183,10 +183,10 @@ npm run build
 
 Browser tests use the existing Playwright/Chrome surface and skip if those tools
 are absent. Backend tests use actual isolated ROS pub/sub, with no hardware.
-Full results and remaining physical limits are in [CONSOLE_VALIDATION.md](../../../docs/CONSOLE_VALIDATION.md).
+Full results and remaining physical limits are in [CONSOLE_VALIDATION.md](CONSOLE_VALIDATION.md).
 Qt source/tests/launch/docs are preserved in `archive/software/legacy_hil_gui` and
 `legacy_vehicle_dashboard`, with the unused helper in `archive/software/control_gui_common`.
-The subtree is excluded by `COLCON_IGNORE`. See [parity matrix](../../../docs/CONSOLE_PARITY.md).
+The subtree is excluded by `COLCON_IGNORE`. See [parity matrix](CONSOLE_PARITY.md).
 Tkinter and Matplotlib remain active dependencies of the vcan SIL GUI.
 
 HIL operational details: [HIL_WEB.md](HIL_WEB.md); headless/serial/SIL: [HIL_BACKEND.md](HIL_BACKEND.md).

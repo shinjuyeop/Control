@@ -1,11 +1,11 @@
 """kaiev26 status 세 개를 diagnostic_msgs로 요약해 /diagnostics로 낸다.
 
-Foxglove Diagnostics 패널은 diagnostic_msgs/DiagnosticArray만 읽으므로,
-kaiev26_msgs를 그대로는 표시할 수 없다. 이 노드가 변환을 맡는다.
+Console과 Foxglove의 공통 진단 화면이 `DiagnosticArray`를 읽을 수 있도록
+canonical status를 변환한다.
 
-판정 임계값은 docs/SAFETY.md의 timeout 표를 기준으로 한다. 그 값들은 펌웨어가
-실제로 차단을 실행하는 시점이므로, 미리 알아채도록 WARN을 임계값의
-WARN_RATIO 지점에 두고 ERROR를 임계값에 둔다.
+판정 임계값은 docs/SAFETY.md의 timeout 표를 기준으로 한다. 실제 제어 timeout이
+있는 항목은 같은 경계를 표시하고, brake command age는 관측 기준이다.
+WARN은 각 기준의 WARN_RATIO 지점, ERROR는 기준에 둔다.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ LIMIT_MS = {
     'steer_command': 200.0,      # ACTIVE 조향. 초과 시 KEYA Disable
     'keya_feedback': 500.0,      # KEYA CAN·position
     'steer_mode': 1500.0,        # 조향이 보는 /drive/status
-    'brake_command': 500.0,      # SAFETY.md에 별도 표가 없어 host command와 같게 둔다
+    'brake_command': 500.0,      # Observation only; STM_B has no Host timeout action.
 }
 WARN_RATIO = 0.6
 

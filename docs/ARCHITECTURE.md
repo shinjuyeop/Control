@@ -30,8 +30,11 @@ flowchart LR
     Keya["KEYA<br/>조향 모터"]
     Estop["Dashboard / Side / RF<br/>E-stop"]
     Servo["브레이크 서보"]
-    Fusion["vehicle_state_publisher"]
+    Fusion["vehicle_state_publisher_node"]
     State["/vehicle/state"]
+    WheelTwist["/vehicle/wheel_twist"]
+    Diagnostics["diagnostics_publisher"]
+    DiagnosticTopic["/diagnostics"]
 
     Planning --> PlanCmd
     PlanCmd --> Governor
@@ -48,14 +51,19 @@ flowchart LR
     STMB -->|"/brake/status"| Fusion
     Steering -->|"/steering/status"| Fusion
     Fusion --> State
+    Fusion --> WheelTwist
+    STMA -.->|"/drive/status"| Diagnostics
+    STMB -.->|"/brake/status"| Diagnostics
+    Steering -.->|"/steering/status"| Diagnostics
+    Diagnostics --> DiagnosticTopic
 ```
 
 STM_A와 STM_B는 각각 별도의 LPUART1 serial transport와 micro-ROS Agent를
 사용합니다. 두 Agent는 MCU의 ROS 2 endpoint를 Host의 ROS graph에 연결합니다.
 
 > **주의:** 실차 구동 스택은 `control_launch`의 `vehicle.launch.py`로
-> 실행합니다(Agent 2개 + `command_governor` + 조향 + 상태 통합, 관찰 계열
-> 제외). Production Planning(`/planning/command` 발행자)의 구체 구현은 현재
+> 실행합니다(Agent 2개 + `command_governor` + 조향 + 상태·진단 발행,
+> 브라우저/Foxglove 화면 제외). Production Planning(`/planning/command` 발행자)의 구체 구현은 현재
 > 코드에서 확인되지 않으며 launch에도 포함되지 않습니다. 실차 시험에서는
 > `vehicle_test_scenarios`, HIL에서는 `vehicle_console.hil`의 `hil_command_generator`가
 > 그 자리를 대신합니다. `/vehicle/command`는 `command_governor`가 유일하게
@@ -112,11 +120,13 @@ STM_A safety UART와 micro-ROS 상태를 변경하지 않습니다.
   `hil_command_generator`가 대역입니다. 두 시험 발행자는 동시에 실행하지 않습니다.
 - `lateral_ctrl/steering_actuator_node`가 KEYA 모터의 SocketCAN 소유자가 되어
   조향을 제어합니다.
-- `vehicle_state_publisher`가 `/drive/status`, `/brake/status`,
-  `/steering/status`를 합성해 `/vehicle/state`를 20 Hz로 발행합니다.
+- `vehicle_state_publisher` package가 status 3종을 처리합니다.
+  `vehicle_state_publisher_node`는 `/vehicle/state`와 유효한 구동·조향 관측 기반
+  `/vehicle/wheel_twist`를 20 Hz로 발행하고, 별도 `diagnostics_publisher`는
+  `/diagnostics`를 1 Hz로 발행합니다.
 - 실차 구동 스택은 `control_launch/launch/vehicle.launch.py`로 실행합니다.
   구동 노드와 `/diagnostics` 요약을 포함하며 관측 화면은 `vehicle_console/vehicle.launch.py`와
-  `visualization/foxglove_bridge.launch.py`로 따로 켭니다. 실차 장치에서의 최종 확인은 아직이며
+  `foxglove/foxglove_bridge.launch.py`로 따로 켭니다. 실차 장치에서의 최종 확인은 아직이며
   HIL bench에서 동형 구조로 검증했습니다.
 
 ### 3.4 조향 제어
@@ -232,7 +242,8 @@ Vehicle backend는 HIL backend/serial/scenario를 import하거나 초기화하�
 ```text
 canonical vehicle ROS topics → vehicle_console Vehicle observer → shared frontend
 canonical + HIL ROS / UNO → vehicle_console.hil → common infrastructure / frontend
-canonical vehicle ROS topics → visualization diagnostics / Foxglove
+canonical status topics → vehicle_state_publisher diagnostics → Console / Foxglove
+canonical ROS graph → foxglove bridge
 ```
 
 Profile은 server 시작 시 고정합니다. Vehicle은 Overview/Drive/Steering/Safety/Runtime/
@@ -254,7 +265,7 @@ Control Dock의 운전자 입력, 고장 주입과 시나리오는 기존 `/hil/
 Web 전용 launch의 command generator는 DISARMED로 시작하고, 조작 브라우저의 명시적
 ARM 이후 발행합니다. Web 조작권은 한 브라우저에만 주며 heartbeat 단절 시 해제합니다.
 생성기에도 Web heartbeat watchdog을 적용하되, headless HIL launch의 generator 기본값은 유지합니다. Qt surface는
-[parity 검증 후 archive](CONSOLE_PARITY.md)에 보관합니다.
+[parity 검증 후 archive](../software/src/vehicle_console/CONSOLE_PARITY.md)에 보관합니다.
 상세 실행·단위 변환·검증 결과는 [Web Console](../software/src/vehicle_console/HIL_WEB.md)에 있습니다.
 
 ## 8. 설계 경계와 책임 분리
@@ -267,7 +278,8 @@ ARM 이후 발행합니다. Web 조작권은 한 브라우저에만 주며 heart
 | 물리 E-stop 판독과 브레이크 PWM | STM_B |
 | STM 간 safety/vehicle 상태 교환 | STM_A·STM_B USART1 |
 | KEYA 조향 제어와 조향 timeout | Host `lateral_ctrl` |
-| 공통 `/vehicle/state` 합성 | Host `vehicle_state_publisher` |
+| `/vehicle/state`·`/vehicle/wheel_twist` 합성 | Host `vehicle_state_publisher/vehicle_state_publisher_node` |
+| status 3종의 `/diagnostics` 요약 | Host `vehicle_state_publisher/diagnostics_publisher` |
 | `/vehicle/command` 단일 발행과 명령 정합성 게이트 | Host `command_governor` |
 | 명령 형상 (속도 상한·램프·축간 협조) | Host `command_governor` (예정, 현재 패스스루) |
 | Production Planning / motion-control 명령 생성 (`/planning/command`) | 현재 코드에서 확인되지 않음 |
@@ -276,6 +288,7 @@ ARM 이후 발행합니다. Web 조작권은 한 브라우저에만 주며 heart
 | 공용 Web frontend·관측·runtime | `vehicle_console` |
 | HIL 조작·scenario·가상 HMI | `vehicle_console.hil.hil_web_bridge` + 공용 Console |
 | Vehicle read-only 관측 | `vehicle_console/vehicle` |
+| ROS graph 상세 분석 bridge·layout | `foxglove` |
 | UNO 적용 상태 보고 / 가상 LCD | `hil_display_report.cpp` / `dashboard_display.py` + 공통 C++ renderer |
 
 ## 9. 관련 문서

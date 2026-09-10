@@ -40,6 +40,7 @@
 | STM_A→STM_B vehicle UART | STM_B | 200 ms timeout이면 frame invalid와 dashboard 표시 fault |
 | EZkontrol handshake | STM_A | ACK 성공 전 traction command 금지 |
 | EZkontrol Part I/II age | STM_A | 200 ms 이후 status valid false |
+| `/diagnostics` level/message | Console·Foxglove | 관측과 기록에만 사용; 제어 입력이나 차단 조건이 아님 |
 | KEYA CAN·position age | 조향 노드 | 각 500 ms 이후 Disable |
 | KEYA fault bits | 조향 노드 | bit 0을 제외한 fault가 있으면 Disable |
 | 물리 mode | STM_A → STM_B·조향 | MANUAL/AUTO 동작 선택 |
@@ -271,6 +272,24 @@ fresh 명령으로 AUTO traction·조향이 재활성화될 수 있습니다.
 | MANUAL→AUTO | 세 제어 경로 | mode 0→1 | STM_A와 조향은 MANUAL 중 수신한 fresh command를 사용할 수 있음 | 조건 충족 | STM_A·STM_B·조향 |
 | AUTO→MANUAL | 세 제어 경로 | mode 1→0 | 조향 Disable, Host brake 원인 제거 | AUTO 재진입 + MANUAL 진입 뒤 받은 fresh pending command | STM_A·STM_B·조향 |
 | MCU 재부팅 | 각 MCU | reset | STM_A stop 초기값, STM_B engage 초기값 | task 입력과 통신 정상화 | 각 `globals.c`, `app_freertos.c` |
+
+### 12.1 Diagnostics의 안전 경계
+
+`vehicle_state_publisher/diagnostics_publisher`는 status 3종을 별도 노드에서
+`/diagnostics`로 요약합니다. 이 노드는 차량 명령, parameter 또는 장치 출력을
+쓰지 않으며 MCU·조향 제어기의 safety state를 변경하지 않습니다.
+
+- status topic 자체가 1초 넘게 끊기면 해당 진단을 `STALE`로 표시합니다.
+- Host command 500 ms, EZkontrol 200 ms, 조향 command 200 ms, KEYA 500 ms,
+  mode 1500 ms 기준은 위 실제 제어 timeout을 표시 등급으로 반영합니다.
+- Brake command age 500 ms 표시는 관측용 기준입니다. STM_B에 Host timeout 기반
+  자동 brake가 구현됐다는 뜻이 아닙니다.
+- `/diagnostics`가 끊기거나 `ERROR`를 보고해도 그 자체로 traction, steering,
+  brake를 제어하지 않습니다. 실제 차단은 앞 절에 명시한 MCU와 조향 로직이 수행합니다.
+
+따라서 Console과 Foxglove의 진단은 고장 인지와 사후 분석에 사용하며, 물리 E-stop이나
+제어기 safety feedback을 대신하지 않습니다. 진단 구현 위치는
+`software/src/vehicle_state_publisher/vehicle_state_publisher/diagnostics_publisher.py`입니다.
 
 ## 13. 테스트 항목
 
