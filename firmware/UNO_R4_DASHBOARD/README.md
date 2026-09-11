@@ -9,7 +9,7 @@ Arduino `setup()`/`loop()` 구조와 `Arduino_CAN` API를 사용합니다.
 snapshot에서 바뀐 문자와 badge만 갱신합니다. MSP4031 터치 모델의 FT6336U를
 I2C로 읽고, `HIL_TOUCH ON`으로 raw 좌표와 INT 상태를 관찰할 수 있습니다.
 부팅 시 기존 계기판에서 시작하며, 스와이프로 `L — 기존 계기판 — R` 사이를 이동합니다.
-물리 터치와 Web Virtual LCD 입력은 같은 UNO gesture/navigation 로직을 사용합니다.
+물리 터치와 Web Virtual Touch 입력은 같은 UNO gesture/navigation 로직을 사용합니다.
 터치는 차량 명령에 연결하지 않습니다.
 
 ## Local UI preview

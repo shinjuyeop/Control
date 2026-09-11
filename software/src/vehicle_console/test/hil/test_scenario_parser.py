@@ -60,7 +60,7 @@ def test_condition_evaluator_supports_equality_range_and_bitmask():
     )[0]
 
 
-def evaluate_window(*, sample_elapsed, evaluator_elapsed):
+def evaluate_window(*, sample_elapsed, evaluator_elapsed, sample_value=True):
     expectation = ScenarioExpectation(
         "/hil/status", "ready", after=1.0, within_ms=100, equals=True
     )
@@ -73,7 +73,7 @@ def evaluate_window(*, sample_elapsed, evaluator_elapsed):
     if sample_elapsed is not None:
         runner.latest[expectation.topic] = (
             runner.start_monotonic + sample_elapsed,
-            {"ready": True},
+            {"ready": sample_value},
         )
     runner._evaluate_expectations(evaluator_elapsed)
     return runner
@@ -90,6 +90,9 @@ def test_sample_after_deadline_fails_even_if_value_matches():
     runner = evaluate_window(sample_elapsed=1.105, evaluator_elapsed=1.12)
     assert runner.expectation_state == ["failed"]
     assert runner.records[0]["result"] == "FAIL"
+    assert runner.records[0]["detail"] == (
+        "matching sample arrived 5.000 ms after deadline"
+    )
 
 
 def test_sample_at_exact_deadline_passes():
@@ -100,6 +103,7 @@ def test_sample_at_exact_deadline_passes():
 def test_no_sample_fails_at_deadline():
     runner = evaluate_window(sample_elapsed=None, evaluator_elapsed=1.1)
     assert runner.expectation_state == ["failed"]
+    assert runner.records[0]["detail"] == "no sample received in window"
 
 
 def test_sample_before_after_is_not_used():
@@ -107,3 +111,24 @@ def test_sample_before_after_is_not_used():
     assert runner.expectation_state == ["pending"]
     runner._evaluate_expectations(1.1)
     assert runner.expectation_state == ["failed"]
+    assert "before window" in runner.records[0]["detail"]
+
+
+def test_non_matching_sample_after_deadline_reports_timing_and_value_class():
+    runner = evaluate_window(
+        sample_elapsed=1.105, evaluator_elapsed=1.12, sample_value=False
+    )
+    assert runner.expectation_state == ["failed"]
+    assert runner.records[0]["detail"] == (
+        "non-matching sample arrived 5.000 ms after deadline"
+    )
+
+
+def test_in_window_non_matching_sample_reports_expectation_failure():
+    runner = evaluate_window(
+        sample_elapsed=1.05, evaluator_elapsed=1.12, sample_value=False
+    )
+    assert runner.expectation_state == ["failed"]
+    assert runner.records[0]["detail"].startswith(
+        "in-window sample did not satisfy expectation:"
+    )

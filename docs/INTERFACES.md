@@ -325,8 +325,9 @@ Part I과 Part II는 마지막 수신 후 200 ms 미만일 때 각각 valid입�
 
 ## 7. STM_B → UNO R4 Dashboard CAN
 
-STM_B는 internal CAN controller와 external transceiver를 통해 250 kbit/s
-Classical CAN standard frame 네 개로 표시 snapshot을 전송합니다.
+STM_B는 250 kbit/s Classical CAN standard frame 네 개로 Dashboard snapshot을
+송신합니다. Arduino UNO R4 Minima는 RA4M1 internal CAN controller와 external
+TJA1050 transceiver를 통해 이 frame을 수신합니다.
 
 | ID | 역할 |
 |---:|---|
@@ -341,9 +342,11 @@ Classical CAN standard frame 네 개로 표시 snapshot을 전송합니다.
 세부 byte layout, scale, signed type과 recovery 절차의 canonical source는
 [`../firmware/STM_B/README.md`](../firmware/STM_B/README.md#85-dashboard-snapshot과-wire-단위)입니다.
 
-Dashboard CAN과 Arduino는 표시 전용입니다. CAN enqueue 실패, bus-off, Arduino reset,
+Dashboard CAN은 STM_B에서 UNO로 차량 상태를 보내는 단방향 표시 경로입니다.
+Arduino는 LCD 출력과 physical/HIL touch navigation을 처리하는 local HMI이며 차량
+제어 또는 safety command source가 아닙니다. CAN enqueue 실패, bus-off, Arduino reset,
 LCD/touch 장애는 STM_B E-stop/brake PWM, STM_A safety UART와 traction 판단에 입력되지
-않습니다.
+않고, gear, mode, accelerator, brake, E-stop 또는 actuator command를 만들지 않습니다.
 
 ### 7.1 UNO → LCD와 FT6336U → UNO
 

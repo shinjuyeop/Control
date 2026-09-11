@@ -153,10 +153,29 @@ class HilScenarioRunner(Node):
                         })
                         continue
             if elapsed >= deadline:
-                detail = "no matching sample before timeout"
+                detail = "no sample received in window"
                 if sample is not None:
-                    _, message = sample
-                    _, detail = evaluate_expectation(expectation, message)
+                    received, message = sample
+                    matches, observed_detail = evaluate_expectation(
+                        expectation, message
+                    )
+                    if received < window_start:
+                        early_ms = (window_start - received) * 1000.0
+                        detail = (
+                            f"sample arrived {early_ms:.3f} ms before window"
+                        )
+                    elif received > window_deadline:
+                        late_ms = (received - window_deadline) * 1000.0
+                        match_text = "matching" if matches else "non-matching"
+                        detail = (
+                            f"{match_text} sample arrived {late_ms:.3f} ms "
+                            "after deadline"
+                        )
+                    else:
+                        detail = (
+                            "in-window sample did not satisfy expectation: "
+                            + observed_detail
+                        )
                 self.expectation_state[index] = "failed"
                 self.records.append({
                     "kind": "expectation", "index": index, "topic": expectation.topic,

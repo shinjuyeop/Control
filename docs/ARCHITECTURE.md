@@ -121,9 +121,10 @@ STM_A safety UART와 micro-ROS 상태를 변경하지 않습니다.
 
 ### 3.3 Arduino UNO R4 Dashboard
 
-Dashboard HMI는 **Arduino UNO R4 Minima**가 담당합니다. STM_B의 internal CAN
-controller와 외부 transceiver를 통해 250 kbit/s Classical CAN standard ID
-`0x321`~`0x324` snapshot을 받습니다. 네 frame의 protocol version과 alive가 모두
+Dashboard HMI는 **Arduino UNO R4 Minima**가 담당합니다. STM_B가 250 kbit/s
+Classical Dashboard CAN standard ID `0x321`~`0x324` snapshot을 송신하고,
+UNO R4는 RA4M1 internal CAN controller와 external TJA1050 transceiver로 이를
+수신합니다. 네 frame의 protocol version과 alive가 모두
 일치하는 complete snapshot만 적용하며 nominal snapshot 주기는 50 ms입니다.
 새 complete snapshot이 300 ms 없으면 `CAN LOST`를 표시합니다.
 
