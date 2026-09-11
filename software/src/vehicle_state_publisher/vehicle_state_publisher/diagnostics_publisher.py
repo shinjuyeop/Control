@@ -107,14 +107,16 @@ class DiagnosticsPublisher(Node):
     def _on_brake(self, msg: BrakeActuatorStatus) -> None:
         self._brake_msg, self._brake_sec = msg, self._now_sec()
 
-    def _stale(self, name: str, topic: str, last_sec: float | None) -> DiagnosticStatus | None:
+    def _stale(
+        self, name: str, hardware_id: str, topic: str, last_sec: float | None
+    ) -> DiagnosticStatus | None:
         """status 자체가 안 오는 경우. 이때 내부 필드는 판정하지 않는다."""
         if last_sec is None:
-            return self._status(name, topic, STALE, f'{topic} 미수신', [])
+            return self._status(name, hardware_id, STALE, f'{topic} 미수신', [])
         gap = self._now_sec() - last_sec
         if gap > STATUS_STALE_SEC:
             return self._status(
-                name, topic, STALE, f'{topic} {gap:.1f} s 동안 끊김', [])
+                name, hardware_id, STALE, f'{topic} {gap:.1f} s 동안 끊김', [])
         return None
 
     @staticmethod
@@ -137,7 +139,9 @@ class DiagnosticsPublisher(Node):
         return level, ' / '.join(bad[:3])
 
     def _drive_link(self) -> DiagnosticStatus:
-        stale = self._stale('구동 링크', '/drive/status', self._drive_sec)
+        stale = self._stale(
+            '구동 링크', 'STM_A / EZkontrol', '/drive/status', self._drive_sec
+        )
         if stale:
             return stale
         m = self._drive
@@ -159,7 +163,9 @@ class DiagnosticsPublisher(Node):
                             [(k, v) for k, _, v in checks])
 
     def _drive_state(self) -> DiagnosticStatus:
-        stale = self._stale('구동 상태', '/drive/status', self._drive_sec)
+        stale = self._stale(
+            '구동 상태', 'STM_A / EZkontrol', '/drive/status', self._drive_sec
+        )
         if stale:
             return stale
         m = self._drive
@@ -188,7 +194,9 @@ class DiagnosticsPublisher(Node):
                             [(k, v) for k, _, v in checks])
 
     def _steer_link(self) -> DiagnosticStatus:
-        stale = self._stale('조향 링크', '/steering/status', self._steering_sec)
+        stale = self._stale(
+            '조향 링크', 'KEYA / can0', '/steering/status', self._steering_sec
+        )
         if stale:
             return stale
         m = self._steering
@@ -214,7 +222,9 @@ class DiagnosticsPublisher(Node):
                             [(k, v) for k, _, v in checks])
 
     def _steer_state(self) -> DiagnosticStatus:
-        stale = self._stale('조향 상태', '/steering/status', self._steering_sec)
+        stale = self._stale(
+            '조향 상태', 'KEYA', '/steering/status', self._steering_sec
+        )
         if stale:
             return stale
         m = self._steering
@@ -235,7 +245,9 @@ class DiagnosticsPublisher(Node):
                             [(k, v) for k, _, v in checks])
 
     def _brake_group(self) -> DiagnosticStatus:
-        stale = self._stale('브레이크', '/brake/status', self._brake_sec)
+        stale = self._stale(
+            '브레이크', 'STM_B', '/brake/status', self._brake_sec
+        )
         if stale:
             return stale
         m = self._brake_msg

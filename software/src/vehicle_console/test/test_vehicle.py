@@ -162,6 +162,22 @@ def test_diagnostics_sources_have_independent_freshness(vehicle):
         assert next(row for row in state["topics"]["/diagnostics"]["data"]["status"] if row["name"] == "drive")["fresh"]
 
 
+def test_diagnostic_identity_transitions_do_not_grow_console_cache(vehicle):
+    _, node, _ = vehicle
+    assert not node.diagnostics
+    for level in (3, 0, 3, 0):
+        node.receive("/diagnostics", {"status": [{
+            "name": "구동 링크",
+            "hardware_id": "STM_A / EZkontrol",
+            "level": level,
+            "message": "state transition",
+            "values": [],
+        }]})
+        assert len(node.diagnostics) == 1
+    _, item = node.diagnostics[("STM_A / EZkontrol", "구동 링크")]
+    assert item["level"] == 0
+
+
 @pytest.mark.parametrize("action", ["claim", "takeover", "command", "production", "safe", "refresh", "scenario", "virtual_touch", "set_profile", "heartbeat"])
 def test_all_vehicle_actions_are_rejected(vehicle, action):
     client, _, _ = vehicle

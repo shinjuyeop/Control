@@ -50,3 +50,50 @@ def test_canonical_status_to_diagnostics_without_command_publishers():
         node.destroy_node()
         executor.shutdown()
         rclpy.shutdown()
+
+
+def test_diagnostic_identity_is_stable_across_waiting_live_stale_live():
+    rclpy.init()
+    node = DiagnosticsPublisher()
+    now = [100.0]
+    node._now_sec = lambda: now[0]
+    getters = (
+        node._drive_link,
+        node._drive_state,
+        node._steer_link,
+        node._steer_state,
+        node._brake_group,
+    )
+    expected = (
+        ("STM_A / EZkontrol", "구동 링크"),
+        ("STM_A / EZkontrol", "구동 상태"),
+        ("KEYA / can0", "조향 링크"),
+        ("KEYA", "조향 상태"),
+        ("STM_B", "브레이크"),
+    )
+
+    def identities():
+        statuses = (getter() for getter in getters)
+        return tuple((status.hardware_id, status.name) for status in statuses)
+
+    try:
+        assert identities() == expected
+        node._on_drive(DriveActuatorStatus(
+            part1_valid=True, part2_valid=True,
+            tractive_feedback_valid=True, fault_bits_valid=True,
+        ))
+        node._on_steering(SteeringActuatorStatus(
+            state=SteeringActuatorStatus.STATE_ACTIVE,
+            communication_ok=True, feedback_valid=True,
+        ))
+        node._on_brake(BrakeActuatorStatus())
+        assert identities() == expected
+        now[0] += 1.01
+        assert identities() == expected
+        node._on_drive(DriveActuatorStatus())
+        node._on_steering(SteeringActuatorStatus())
+        node._on_brake(BrakeActuatorStatus())
+        assert identities() == expected
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()

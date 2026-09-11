@@ -139,8 +139,10 @@ class HilScenarioRunner(Node):
             sample = self.latest.get(expectation.topic)
             if sample is not None:
                 received, message = sample
-                sample_elapsed = received - self.start_monotonic
-                if sample_elapsed >= expectation.after:
+                window_start = self.start_monotonic + expectation.after
+                window_deadline = window_start + expectation.within_ms / 1000.0
+                if window_start <= received <= window_deadline:
+                    sample_elapsed = received - self.start_monotonic
                     passed, detail = evaluate_expectation(expectation, message)
                     if passed:
                         self.expectation_state[index] = "passed"

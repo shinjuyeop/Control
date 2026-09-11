@@ -24,14 +24,32 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 
+def validate_configuration(*, web, start_bench, scenario_file):
+    """Reject combinations that bypass or silently omit scenario ownership."""
+    if scenario_file and web:
+        raise ValueError(
+            "scenario_file cannot be used with web:=true; "
+            "start scenarios from the HIL Web Console"
+        )
+    if scenario_file and not start_bench:
+        raise ValueError(
+            "scenario_file requires web:=false start_bench:=true"
+        )
+
+
 def _launch_actions(context):
     web = IfCondition(LaunchConfiguration("web")).evaluate(context)
+    start_bench = IfCondition(LaunchConfiguration("start_bench")).evaluate(context)
+    scenario_file = LaunchConfiguration("scenario_file").perform(context)
+    validate_configuration(
+        web=web, start_bench=start_bench, scenario_file=scenario_file
+    )
     share = Path(get_package_share_directory("vehicle_console"))
     results_dir = LaunchConfiguration("results_dir").perform(context) or (
         str(Path.home() / ".local/state/kaiev26_hil/web_results") if web else "test_results"
     )
     actions = []
-    if IfCondition(LaunchConfiguration("start_bench")).evaluate(context):
+    if start_bench:
         if IfCondition(LaunchConfiguration("agents")).evaluate(context):
             for name, port in (("stm_a_agent", "stm_a_port"), ("stm_b_agent", "stm_b_port")):
                 actions.append(Node(
@@ -63,7 +81,6 @@ def _launch_actions(context):
                     get_package_share_directory("command_governor"), "config", "command_governor.yaml")],
             ),
         ])
-        scenario_file = LaunchConfiguration("scenario_file").perform(context)
         if scenario_file:
             actions.append(Node(
                 package="vehicle_console", executable="hil_scenario_runner", name="hil_scenario_runner",
@@ -120,7 +137,7 @@ def generate_launch_description():
         "results_dir": "Empty selects ~/.local/state/kaiev26_hil/web_results for Web, test_results for headless.",
         "generator_enabled": "Headless only; Web always starts disarmed.",
         "web_heartbeat_timeout_sec": "Headless only; Web always uses a 3 s heartbeat watchdog.",
-        "scenario_file": "Optional standalone scenario runner; use with web:=false start_bench:=true.",
+        "scenario_file": "Headless standalone scenario only; requires web:=false start_bench:=true.",
     }
     return LaunchDescription([
         *[DeclareLaunchArgument(name, default_value=value, description=descriptions.get(name, ""))
