@@ -18,7 +18,11 @@
 - STM_B: 세 물리 E-stop 입력, 브레이크 서보, 최종 브레이크 요청 결정
 - Host / Control PC: 상위 ROS 2 제어 명령 전달, KEYA 조향 모터 제어, 상태 통합
 
-두 STM은 각각 LPUART1 115200 baud로 별도의 micro-ROS Agent에 연결되어 ROS 2
+Arduino UNO R4 Minima는 STM_B의 Dashboard CAN을 받아 LCD를 표시하고 local touch
+navigation을 처리하는 독립 HMI입니다. 차량 command consumer나 safety controller는
+아니며, HIL에서만 USB Virtual LCD/Touch에 연결됩니다.
+
+두 STM은 각각 LPUART1 460800 baud로 별도의 micro-ROS Agent에 연결되어 ROS 2
 graph에 참여합니다. 실차 없이 이 구성을 시험할 때는 STM_TEST 보드가 STM_A/B의
 물리 입출력과 EZkontrol·KEYA CAN을 대신합니다.
 
@@ -34,6 +38,7 @@ Control/
 │   ├── STM_A/                       # 구동 및 차량 입력 펌웨어
 │   ├── STM_B/                       # E-stop 및 브레이크 펌웨어
 │   ├── STM_TEST/                    # STM_A/B 입출력과 EZ/KEYA HIL emulator
+│   ├── UNO_R4_DASHBOARD/            # Dashboard CAN·LCD·FT6336U touch HMI
 │   ├── micro_ros_agent/             # vendored micro-ROS Agent
 │   └── tools/                       # micro-ROS 라이브러리 재생성 스크립트
 ├── software/

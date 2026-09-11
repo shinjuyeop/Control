@@ -35,6 +35,10 @@ flowchart LR
     WheelTwist["/vehicle/wheel_twist"]
     Diagnostics["diagnostics_publisher"]
     DiagnosticTopic["/diagnostics"]
+    UNO["Arduino UNO R4 Minima<br/>Dashboard HMI"]
+    LCD["MSP4030 / MSP4031<br/>ST7796S 480×320 LCD"]
+    Touch["FT6336U<br/>capacitive touch"]
+    HilConsole["vehicle_console<br/>HIL profile"]
 
     Planning --> PlanCmd
     PlanCmd --> Governor
@@ -56,6 +60,11 @@ flowchart LR
     STMB -.->|"/brake/status"| Diagnostics
     Steering -.->|"/steering/status"| Diagnostics
     Diagnostics --> DiagnosticTopic
+    STMB -->|"Dashboard CAN<br/>250 kbit/s · 0x321–0x324"| UNO
+    UNO -->|"SPI"| LCD
+    Touch -->|"I2C 0x38<br/>20 ms polling"| UNO
+    HilConsole -.->|"HIL-only USB Serial 115200<br/>VT D/M/U/C"| UNO
+    UNO -.->|"HIL_LCD report<br/>Virtual LCD mirror"| HilConsole
 ```
 
 STM_A와 STM_B는 각각 별도의 LPUART1 serial transport와 micro-ROS Agent를
@@ -110,7 +119,30 @@ STM_A safety UART와 micro-ROS 상태를 변경하지 않습니다.
 구현 기준: `firmware/STM_B/Core/Src/app_freertos.c`,
 `firmware/STM_B/Core/Src/dashboard_can.c`
 
-### 3.3 Host / Control PC
+### 3.3 Arduino UNO R4 Dashboard
+
+Dashboard HMI는 **Arduino UNO R4 Minima**가 담당합니다. STM_B의 internal CAN
+controller와 외부 transceiver를 통해 250 kbit/s Classical CAN standard ID
+`0x321`~`0x324` snapshot을 받습니다. 네 frame의 protocol version과 alive가 모두
+일치하는 complete snapshot만 적용하며 nominal snapshot 주기는 50 ms입니다.
+새 complete snapshot이 300 ms 없으면 `CAN LOST`를 표시합니다.
+
+- MSP4030/MSP4031의 ST7796S 480×320 LCD를 SPI로 렌더링합니다.
+- MSP4031의 FT6336U capacitive touch를 I2C로 20 ms polling합니다. INT는 기능상
+  입력 경로에 쓰지 않고 diagnostic counter만 유지합니다.
+- 물리 touch와 page navigation은 ROS 없이 UNO 내부에서 동작합니다.
+- HIL profile에서만 USB Serial로 Virtual LCD 보고와 Virtual Touch 입력을
+  주고받으며 실제 LCD에 적용된 page 보고를 Web mirror에 반영합니다.
+
+Dashboard 경로는 상태 표시와 local navigation 전용입니다. Dashboard CAN,
+Arduino, LCD 또는 touch 장애는 gear, mode, accelerator, vehicle command를 만들지
+않으며 STM_B E-stop/brake와 STM_A traction safety 판단에 들어가지 않습니다.
+CAN frame과 USB/touch 계약은 [`INTERFACES.md`](INTERFACES.md#7-stm_b--uno-r4-dashboard-can),
+pinout·전압·renderer 세부사항은
+[`firmware/UNO_R4_DASHBOARD/README.md`](../firmware/UNO_R4_DASHBOARD/README.md)를
+따릅니다.
+
+### 3.4 Host / Control PC
 
 - ROS 2 graph와 각 STM의 micro-ROS Agent를 실행합니다.
 - `command_governor`가 상위 Planning 계층의 `/planning/command`를 받아
@@ -129,7 +161,7 @@ STM_A safety UART와 micro-ROS 상태를 변경하지 않습니다.
   `foxglove/foxglove_bridge.launch.py`로 따로 켭니다. 실차 장치에서의 최종 확인은 아직이며
   HIL bench에서 동형 구조로 검증했습니다.
 
-### 3.4 조향 제어
+### 3.5 조향 제어
 
 > 이 절의 software 관련 내용은 현재 브랜치 구현을 기준으로 한 스냅샷입니다.
 > software 구조와 통합 실행 방식은 아직 정리 중이며 이후 변경될 수 있습니다.
@@ -185,11 +217,19 @@ flowchart LR
     BS --> F
     SS --> F
     F --> VS["/vehicle/state"]
+    A -->|"drive detail / vehicle UART"| B
+    B -->|"Dashboard CAN<br/>4-frame snapshot"| UNO["Arduino UNO R4"]
+    UNO -->|"SPI"| LCD["ST7796S LCD"]
+    Touch["FT6336U touch"] -->|"I2C polling"| UNO
+    HIL["vehicle_console HIL"] -.->|"USB Virtual Touch"| UNO
+    UNO -.->|"USB HIL_LCD report"| HIL
 ```
 
 `/vehicle/state`는 세 status가 모두 최소 한 번 수신된 후에만 발행됩니다. 현재
 구현은 각 입력의 age나 freshness를 다시 검사하지 않고 마지막 수신값을
 합성합니다.
+STM_B→UNO→LCD는 ROS state fusion과 독립적인 표시 branch입니다. FT6336U 입력은
+UNO의 local navigation으로만 이어지며, 점선 USB 경로는 HIL 전용 가상 HMI입니다.
 
 ## 6. MANUAL / AUTO 모드
 

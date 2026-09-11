@@ -291,6 +291,19 @@ fresh 명령으로 AUTO traction·조향이 재활성화될 수 있습니다.
 제어기 safety feedback을 대신하지 않습니다. 진단 구현 위치는
 `software/src/vehicle_state_publisher/vehicle_state_publisher/diagnostics_publisher.py`입니다.
 
+### 12.2 Dashboard와 HIL Virtual HMI의 안전 경계
+
+STM_B의 Dashboard CAN은 Arduino UNO R4의 LCD 표시로만 분기됩니다. FT6336U physical
+touch는 UNO 내부 page navigation에만 연결되고, HIL Virtual Touch도 현재 control
+owner의 USB 입력을 같은 Gesture/Navigator에 전달해 dashboard page만 변경합니다.
+
+이 경로는 gear, mode, accelerator, brake, E-stop 또는 `/vehicle/command`를 생성하지
+않습니다. Arduino·LCD·touch·USB가 끊기거나 오동작해도 STM_B의 물리 E-stop 판독과
+brake PWM, STM_A safety UART/traction 차단 조건은 바뀌지 않습니다. `CAN LOST`와
+Virtual LCD stale 표시는 상태 관측이며 안전 차단의 증거 또는 실행 신호가 아닙니다.
+세부 연결은 [`ARCHITECTURE.md`](ARCHITECTURE.md#33-arduino-uno-r4-dashboard), wire
+계약은 [`INTERFACES.md`](INTERFACES.md#7-stm_b--uno-r4-dashboard-can)를 따릅니다.
+
 ## 13. 테스트 항목
 
 - [ ] 부팅 직후 STM_A가 첫 유효 safety frame 전 traction command를 허용하지

@@ -341,7 +341,7 @@ serial은 장치 이름일 뿐 올라간 펌웨어가 어느 쪽인지는 별개
 node 이름으로 역할까지 대조한다.
 
 ```bash
-ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/stm_a -b 115200
+ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/stm_a -b 460800
 # 다른 터미널에서
 ros2 node list                              # /stm_a_node 가 보여야 함 (stm_b도 동일 요령)
 ```

@@ -687,8 +687,9 @@ node 이름과 토픽 문자열이 firmware에 그대로 박혀 있으므로 어
 
 ### RuntimeStats firmware의 micro-ROS baud
 
-RuntimeStats를 발행하는 STM_A/B는 LPUART1 **460800 baud**입니다. `hil_bench`,
-`hil_web`, `vehicle` launch의 `agent_baud` 기본값을 동일하게 사용합니다. 이전
+RuntimeStats를 발행하는 STM_A/B는 LPUART1 **460800 baud**입니다.
+`vehicle_console/hil.launch.py`와 `control_launch/vehicle.launch.py`의
+`agent_baud` 기본값도 460800입니다. 이전
 115200 firmware를 실행할 때만 `agent_baud:=115200`을 명시하십시오. 두 Agent를
 기존 속도로 둔 채 MCU만 새 firmware로 바꾸면 통신이 복구되지 않습니다.
 STM_TEST와 Arduino serial 및 STM_A↔STM_B USART1은 여전히 115200입니다.

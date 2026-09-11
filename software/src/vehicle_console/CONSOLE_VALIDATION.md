@@ -201,3 +201,45 @@ Validation after the ownership move:
 No diagnostic rule, topic, node name, publication rate, vehicle state fusion,
 command path, firmware or safety action changed. The move was not tested with
 physical vehicle devices; the launch smoke deliberately disabled Agents and steering.
+
+## Targeted correctness and Arduino contract closeout
+
+Starting HEAD: `85c609bc2fc9ec8c410f6a8e4415c8dcca19f94a` on `Shin`, equal to
+`origin/Shin` after fetch. This pass retained the Console/state/Foxglove package
+architecture and corrected three bounded behaviors:
+
+- HIL launch rejects any `web:=true scenario_file:=...` combination before
+  creating child actions. Headless `web:=false start_bench:=true scenario_file:=...`
+  still starts the standalone runner.
+- Scenario expectations accept matching samples only when their monotonic receive
+  time is inside the inclusive `after <= sample <= deadline` window. Evaluator
+  scheduling after the deadline does not invalidate an on-time sample or admit a
+  late sample.
+- Vehicle diagnostic `(hardware_id, name)` remains stable across waiting, LIVE,
+  WARN/ERROR and STALE states, so the Console cache does not grow on transitions.
+
+Validation completed without physical devices or HIL Web commands:
+
+- `vehicle_console/test`: **130 passed**, including launch combinations, five
+  expectation timing cases, diagnostic cache identity and existing Web/HIL behavior.
+- `vehicle_state_publisher/test`: **7 passed**, including stable identity across
+  waiting → LIVE → STALE → LIVE.
+- Targeted colcon build: `vehicle_console`, `vehicle_state_publisher`,
+  `control_launch`, `foxglove` passed.
+- Installed launch rejected Web + standalone scenario with an explicit error.
+  An isolated headless launch exposed bridge, generator, governor and scenario
+  runner without a Web node; its temporary process group was fully released.
+- Both Mermaid blocks in `docs/ARCHITECTURE.md` rendered successfully with the
+  Mermaid CLI. Generated render files were disposable and not added to the repository.
+- Active reference scan found no old `visualization` package path, obsolete HIL
+  launch entrypoint, Qt dashboard launch, old Console document path or pre-Virtual
+  Touch USB claim. Remaining old names in this document and the Console migration
+  table are explicitly historical; STM_TEST's LPUART1 115200 references describe
+  its separate ASCII protocol.
+
+Documentation now records STM_A/B PC-facing LPUART1 at 460800 baud while preserving
+the separate 115200 USART1, STM_TEST and Arduino links. Arduino UNO R4 is an explicit
+architecture component, and Dashboard CAN, LCD SPI, FT6336U polling and HIL-only USB
+Virtual Touch contracts are aligned with the firmware documentation. No firmware,
+Dashboard CAN bytes, touch implementation, ownership, command, brake/E-stop,
+RuntimeStats or Vehicle read-only behavior changed.

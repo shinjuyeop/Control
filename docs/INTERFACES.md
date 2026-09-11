@@ -5,9 +5,10 @@
 
 ## 1. 문서 목적
 
-이 문서는 현재 코드에서 확인되는 ROS 2 topic, STM_A↔STM_B UART, EZkontrol CAN,
-KEYA 조향 CAN의 데이터 계약과 주기·timeout을 정리하는 기준 문서입니다. 안전
-조건의 결과는 [`SAFETY.md`](SAFETY.md), 구성요소의 책임은
+이 문서는 현재 코드에서 확인되는 ROS 2 topic, STM_A↔STM_B UART, EZkontrol·KEYA
+CAN, Dashboard CAN, Arduino LCD/touch와 HIL UNO USB의 데이터 계약과
+주기·timeout을 정리하는 기준 문서입니다. 안전 조건의 결과는
+[`SAFETY.md`](SAFETY.md), 구성요소의 책임은
 [`ARCHITECTURE.md`](ARCHITECTURE.md)를 참고하십시오.
 
 ## 2. 표기 및 단위 규칙
@@ -41,11 +42,14 @@ KEYA 조향 CAN의 데이터 계약과 주기·timeout을 정리하는 기준 �
 | STM_A | STM_B | USART1 | type `0x03` | 구동 bus·온도·fault·command 상태 | 100 ms | STM_B에서 300 ms | dashboard drive detail |
 | STM_B | STM_A | USART1 | type `0x02` | final brake request | 20 ms | STM_A에서 100 ms | safety status |
 | STM_B | UNO R4 | Classical CAN | `0x321`~`0x324` | status·power·thermal·fault snapshot | 50 ms | UNO에서 300 ms | 표시 전용 |
+| UNO R4 | ST7796S LCD | SPI | MSP4030/MSP4031 | logical 480×320 화면 | 적용 상태 변경 시 | 없음 | local display output |
+| FT6336U | UNO R4 | I2C | address `0x38` | 최대 2점 raw touch | 20 ms polling | read 실패 시 1 s 재시도 | local navigation input |
+| HIL Console | UNO R4 | USB Serial | newline ASCII, 115200 | `HIL_LCD`, `HIL_TOUCH`, `VT D/M/U/C` | 보고 200/100 ms | Virtual Touch 1 s | HIL-only virtual HMI |
 | STM_A | EZkontrol | FDCAN1 | `0x0C01EFD0` | handshake ACK 또는 command | 50 ms command | 명시적 TX timeout 없음 | AUTO speed / MANUAL torque |
 | EZkontrol | STM_A | FDCAN1 | `0x1801D0EF`, `0x1802D0EF` | Part I/II status | 외부 장치 설정 | 200 ms validity | 진단 validity에만 사용 |
 | 조향 노드 | KEYA | SocketCAN | `0x06000001` | enable/disable/position/query | position 20 ms | 500 ms | node ID 기본값 1 |
 | KEYA | 조향 노드 | SocketCAN | `0x05800001`, `0x07000001` | query response, heartbeat | 외부 장치 설정 | CAN·position 각 500 ms | ID는 node ID에 따라 변함 |
-| Host Agent | 각 STM | LPUART1 serial | micro-ROS XRCE-DDS | ROS 2 serialization | event-driven | Agent ping 500/100 ms | 보드별 Agent 1개 |
+| Host Agent | 각 STM | LPUART1 serial, 460800 8N1 | micro-ROS XRCE-DDS | ROS 2 serialization | event-driven | Agent ping 500/100 ms | 보드별 Agent 1개 |
 
 ## 4. ROS 2 Topics
 
@@ -82,6 +86,23 @@ ros2 topic info -v /diagnostics
 status 3종을 1 Hz `DiagnosticArray`로 요약합니다. `/diagnostics`에는 STM_TEST,
 INS 등 다른 publisher도 함께 쓸 수 있으므로 consumer는 배열 하나를 전체 시스템
 상태로 간주하지 않고 `hardware_id`와 `name`으로 항목을 구분합니다.
+
+| `hardware_id` | `name` | 입력 topic |
+|---|---|---|
+| `STM_A / EZkontrol` | `구동 링크` | `/drive/status` |
+| `STM_A / EZkontrol` | `구동 상태` | `/drive/status` |
+| `KEYA / can0` | `조향 링크` | `/steering/status` |
+| `KEYA` | `조향 상태` | `/steering/status` |
+| `STM_B` | `브레이크` | `/brake/status` |
+
+이 identity는 NO DATA/STALE/LIVE와 severity가 바뀌어도 유지합니다. Topic명은
+message/detail에 표시하고 identity로 대체하지 않습니다. Vehicle Console도
+`(hardware_id, name)`을 cache key로 사용해 여러 `DiagnosticArray` publisher의
+동명 항목을 구분합니다.
+
+STM_A/B의 PC-facing micro-ROS transport는 각각 LPUART1 **460800 baud, 8N1**입니다.
+Host launch의 `agent_baud` 기본값도 460800입니다. 보드 사이 USART1, STM_TEST ASCII,
+UNO USB는 별개 인터페이스이며 115200을 유지합니다.
 
 `/vehicle/command`의 발행자는 `command_governor` 하나입니다. 거버너는
 `/planning/command`를 수신 즉시 정합성 게이트(stamp 0·음수, 나이 ±200 ms,
@@ -304,28 +325,82 @@ Part I과 Part II는 마지막 수신 후 200 ms 미만일 때 각각 valid입�
 
 ## 7. STM_B → UNO R4 Dashboard CAN
 
-STM_B는 250 kbit/s Classical CAN standard frame 네 개로 표시 snapshot을 전송합니다.
-각 frame은 protocol version과 같은 `alive` 값을 포함하며, UNO는 `0x321` STATUS,
-`0x322` POWER, `0x323` THERMAL, `0x324` FAULT가 모두 모였을 때만 새 snapshot을
-적용합니다. snapshot 주기는 50 ms이고 fresh complete snapshot이 300 ms 없으면
-UNO가 `CAN LOST`를 표시합니다.
+STM_B는 internal CAN controller와 external transceiver를 통해 250 kbit/s
+Classical CAN standard frame 네 개로 표시 snapshot을 전송합니다.
 
-Dashboard CAN과 Arduino는 표시 전용입니다. CAN enqueue 실패, bus-off, Arduino reset과
-LCD fault는 STM_B의 E-stop, brake PWM, STM_A safety UART와 micro-ROS 판단에 입력되지
-않습니다. byte layout, scale, signed type과 recovery 절차의 canonical contract는
+| ID | 역할 |
+|---:|---|
+| `0x321` | STATUS |
+| `0x322` | POWER |
+| `0x323` | THERMAL |
+| `0x324` | FAULT |
+
+각 frame은 protocol version과 같은 `alive`를 포함합니다. UNO는 네 ID가 모두
+도착하고 version/alive가 일치하는 complete snapshot만 적용합니다. nominal snapshot
+주기는 50 ms이며 fresh complete snapshot이 300 ms 없으면 `CAN LOST`를 표시합니다.
+세부 byte layout, scale, signed type과 recovery 절차의 canonical source는
 [`../firmware/STM_B/README.md`](../firmware/STM_B/README.md#85-dashboard-snapshot과-wire-단위)입니다.
 
-### 7.1 UNO USB 표시 상태 보고
+Dashboard CAN과 Arduino는 표시 전용입니다. CAN enqueue 실패, bus-off, Arduino reset,
+LCD/touch 장애는 STM_B E-stop/brake PWM, STM_A safety UART와 traction 판단에 입력되지
+않습니다.
 
-Web 가상 LCD는 UNO USB 115200의 `HIL_LCD ON`/`HIL_LCD OFF`로 보고를 켜고 끕니다.
-UNO는 200 ms마다 `HIL_LCD {JSON}` 한 줄에 적용 표시값·페이지·CAN LOST·CAN age·
-snapshot 누적을 보고합니다. 차량 명령이나 터치 입력을 받는 인터페이스는 아닙니다.
-USB가 없어도 CAN/LCD 동작은 독립적입니다. 상세 필드와 순서는
-[UNO README](../firmware/UNO_R4_DASHBOARD/README.md#web-virtual-lcd와-uno-상태-보고)를 따릅니다.
+### 7.1 UNO → LCD와 FT6336U → UNO
 
-Web의 토픽 Hz/주기는 PC ROS 수신 간격의 최근 5초 평균입니다. 개별 CAN 수신 주기로
-해석하지 않습니다. EZkontrol Part I/II age는 STM_A가 보고한 `part1_age_ms`와
-`part2_age_ms`를 표시합니다. MCU 보고 시점의 CAN age와 PC의 ROS 수신 age는 별도입니다.
+- UNO는 MSP4030/MSP4031의 ST7796S에 SPI로 logical 480×320 화면을 출력합니다.
+- MSP4031의 FT6336U는 I2C 7-bit address `0x38`이며 20 ms마다 polling합니다.
+- physical raw 320×480 좌표는 `screen_x = raw_y`,
+  `screen_y = 319 - raw_x`로 480×320 screen 좌표에 정규화합니다.
+- FT6336U INT는 diagnostic falling-edge counter만 유지합니다. 좌표를 얻는 기능
+  경로는 INT가 아니라 polling입니다.
+- physical touch는 UNO 내부 Gesture/Navigator와 local page navigation으로 이어지며
+  ROS나 차량 actuator command를 거치지 않습니다.
+
+I2C 전압·pinout, reset timing과 상세 touch report field는
+[UNO README](../firmware/UNO_R4_DASHBOARD/README.md#ft6336u-터치-확인)를 따릅니다.
+
+### 7.2 HIL UNO USB Serial과 Virtual Touch
+
+UNO USB는 **115200 baud, newline-delimited ASCII**입니다. CAN/LCD/local touch는
+USB 연결 없이도 동작하며, 아래 인터페이스는 HIL profile에서만 사용합니다.
+
+| 명령/보고 | 방향 | 의미와 주기 |
+|---|---|---|
+| `HIL_LCD ON/OFF` | HIL → UNO | 적용 화면 보고 enable/disable |
+| `HIL_LCD {JSON}` | UNO → HIL | 약 200 ms, 적용 표시값·page·CAN LOST·CAN age·snapshot 누적 |
+| `HIL_TOUCH ON/OFF` | maintenance diagnostic client → UNO | physical raw touch diagnostic enable/disable |
+| `HIL_TOUCH {JSON}` | UNO → maintenance diagnostic client | 약 100 ms, raw point·I2C/INT diagnostic·CAN age |
+| `VT D x y`, `VT M x y`, `VT U x y` | HIL → UNO | 480×320 screen coordinate의 down/move/up |
+| `VT C` | HIL → UNO | 현재 virtual gesture를 판정 없이 취소 |
+
+Virtual Touch는 현재 HIL control owner만 사용할 수 있습니다. physical touch가
+우선하며 physical release 뒤 150 ms guard를 둡니다. virtual 입력이 1초 끊기거나
+연결·ownership·pointer 상태가 해제되면 gesture를 취소합니다. 이 입력은 dashboard
+page navigation에만 연결되고 gear, mode, brake, E-stop, accelerator 또는 vehicle
+actuator command를 만들지 않습니다.
+현재 Web HIL worker는 `HIL_LCD`와 `VT`를 사용합니다. `HIL_TOUCH`는 Serial Monitor
+등의 물리 touch 점검용이며 `HIL_LCD` 보고와 상호 배타적이므로 같은 UNO serial을
+Web worker와 동시에 열지 않습니다.
+
+```text
+Web PointerEvent
+→ vehicle_console HIL ownership/revision check
+→ existing UNO USB connection
+→ common UNO Gesture/Navigator
+→ physical LCD page applied
+→ HIL_LCD report
+→ native renderer
+→ Web mirror
+```
+
+Web은 요청 전송만으로 page를 optimistic하게 변경하지 않고 UNO가 실제 적용했다고
+보고한 `HIL_LCD` page를 표시합니다. queue, MOVE coalescing과 상세 test 결과는
+[UNO Virtual Touch](../firmware/UNO_R4_DASHBOARD/README.md#web-hil-virtual-touch-v1)와
+[HIL Web Console](../software/src/vehicle_console/HIL_WEB.md#virtual-touch-사용)을
+따릅니다.
+
+Web의 토픽 Hz/주기는 PC ROS 수신 간격의 최근 5초 평균이며 개별 CAN 주기로
+해석하지 않습니다. MCU가 보고한 CAN age와 PC ROS/USB 수신 age도 서로 다릅니다.
 
 ## 8. Steering Motor CAN
 

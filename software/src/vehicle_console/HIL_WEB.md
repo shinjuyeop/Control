@@ -259,6 +259,9 @@ ros2 launch vehicle_console hil.launch.py \
 
 같은 `hil.launch.py`의 Web/headless 실행이나 별도 scenario runner를 중복 실행하지 않는다.
 실차 Planning 또는 다른 `/planning/command` 발행자와도 동시에 실행하지 않는다.
+`web:=true scenario_file:=...` 조합은 launch 오류입니다. Web scenario는 브라우저의
+조작권·ARM·revision·heartbeat 경계 안에서만 시작하고, standalone YAML runner는
+`web:=false start_bench:=true scenario_file:=...`로 실행합니다.
 
 정지·중립, 가속페달 해제, E-stop 사용 가능 상태에서 대상 보드와 벤치 배선을 확인하고,
 실제 액추에이터 연결 여부 및 서보/LV 전원 상태를 확인한 후 실행한다.

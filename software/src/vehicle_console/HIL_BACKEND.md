@@ -253,6 +253,10 @@ ros2 launch vehicle_console hil.launch.py \
   scenario_file:=$(ros2 pkg prefix vehicle_console)/share/vehicle_console/config/scenarios/smoke_test.yaml
 ```
 
+`scenario_file`은 standalone/headless runner 전용입니다. `web:=true`와 함께 주면
+Web Console의 ownership·ARM·takeover·cancellation 경계를 우회할 수 있으므로 launch가
+명시적으로 거부합니다. Web HIL에서는 브라우저의 Scenario 페이지에서 실행합니다.
+
 scenario에는 fault 주입 전에 해당 경로가 정상임을 확인하는 전제조건
 expectation이 들어 있다. 경로가 처음부터 죽어 있으면 결과 expectation이
 공허하게 통과할 수 있기 때문으로, 전제가 FAIL하면 시험 환경부터 고친다.

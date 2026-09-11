@@ -2,7 +2,8 @@
 
 STM_A는 종방향 모터와 차량 입력을 담당하고, STM_B는 물리 E-stop과 브레이크
 서보를 담당합니다. 두 보드는 USART1으로 차량 상태와 최종 브레이크 요청을 서로
-교환하며, 각 보드는 LPUART1 115200 baud로 별도의 micro-ROS Agent에 연결됩니다.
+교환하며, 각 보드는 LPUART1 460800 baud로 별도의 micro-ROS Agent에 연결됩니다.
+보드 간 USART1과 STM_TEST/Arduino serial은 115200을 유지합니다.
 
 ## 디렉터리 구조
 
