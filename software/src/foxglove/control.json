@@ -28,7 +28,7 @@
       "showPlotValuesInLegend": true
     },
     "Plot!common_age": {
-      "foxglovePanelTitle": "파트별 신호 신선도 — 여기에 각 파트 heartbeat 추가",
+      "foxglovePanelTitle": "명령 age (status 원본)",
       "paths": [
         {
           "timestampMethod": "receiveTime",
@@ -259,15 +259,6 @@
       "activeTabIdx": 0,
       "tabs": [
         {
-          "title": "Health",
-          "layout": {
-            "first": "DiagnosticSummary!ctrl_diag",
-            "second": "DiagnosticStatusPanel!ctrl_diag_detail",
-            "direction": "row",
-            "splitPercentage": 52
-          }
-        },
-        {
           "title": "Power",
           "layout": {
             "first": "Plot!ctrl_current",
@@ -450,6 +441,15 @@
             "second": "Tab!ctrl_detail",
             "direction": "row",
             "splitPercentage": 46
+          }
+        },
+        {
+          "title": "Diagnostics",
+          "layout": {
+            "first": "DiagnosticSummary!ctrl_diag",
+            "second": "DiagnosticStatusPanel!ctrl_diag_detail",
+            "direction": "row",
+            "splitPercentage": 52
           }
         }
       ]
@@ -653,7 +653,7 @@
       ]
     },
     "DiagnosticSummary!ctrl_diag": {
-      "foxglovePanelTitle": "진단 요약 (등급순)",
+      "foxglovePanelTitle": "ROS 진단 요약 (등급순)",
       "topicToRender": "/diagnostics",
       "minLevel": 0,
       "sortByLevel": true,
@@ -661,7 +661,7 @@
       "hardwareIdFilter": ""
     },
     "DiagnosticStatusPanel!ctrl_diag_detail": {
-      "foxglovePanelTitle": "진단 상세",
+      "foxglovePanelTitle": "ROS 진단 상세",
       "topicToRender": "/diagnostics",
       "selectedHardwareId": "",
       "selectedName": "",
