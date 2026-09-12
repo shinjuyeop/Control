@@ -112,10 +112,11 @@ def decode_display_report(line: bytes):
 class NativeDashboardRenderer:
     def __init__(self, library: str | Path):
         self.library = ctypes.CDLL(str(library))
-        self.render_function = self.library.render_dashboard
+        self.render_function = self.library.render_auto_dashboard
         self.render_function.argtypes = [
             ctypes.POINTER(ctypes.c_int32),
             ctypes.POINTER(ctypes.c_int32),
+            ctypes.c_int,
             ctypes.c_int,
             ctypes.POINTER(ctypes.c_uint8),
         ]
@@ -139,7 +140,8 @@ class NativeDashboardRenderer:
             self.swipe_render_function(direction, self.rgb)
         else:
             self.render_function(
-                values, auto_values, int(report["can_lost"]), self.rgb
+                values, auto_values, int(report["can_lost"]),
+                int(report["page"] in ("AUTO_GT3", "AUTO_BASELINE")), self.rgb
             )
         output = BytesIO()
         Image.frombytes("RGB", (WIDTH, HEIGHT), bytes(self.rgb)).save(

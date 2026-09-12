@@ -37,7 +37,7 @@ micro-ROS 동작을 변경하지 않습니다. 이전 직접-SPI LCD 구현은
 | CubeMX 프로젝트 | `STM_B.ioc` |
 | 빌드 target | `STM_B.elf` |
 | FDCAN | 170 MHz kernel clock, Classical CAN 250 kbps |
-| micro-ROS transport | LPUART1, 115200 8N1 |
+| micro-ROS transport | LPUART1, 460800 8N1 |
 | STM_A transport | USART1, 115200 8N1 |
 | 고정 장치 이름 | 실차 `/dev/stm_b` |
 
@@ -118,18 +118,36 @@ OFF 상태에서 전체 bus의 CANH-CANL 합성 저항은 약 60 ohm이어야 �
 
 ## 6. FreeRTOS Task
 
-| Task | 책임 | 주기/대기 | 우선순위 |
-|---|---|---|---|
-| `Brake` | `BRAKE_REQUEST`를 PWM ramp로 적용 | 20 ms | Realtime |
-| `EStop` | 세 E-stop과 AUTO command brake를 통합 | event + 20 ms | Realtime |
-| `uROS` | Agent 상태, command subscription, brake status publish | state machine | Normal |
-| `Display` | dashboard snapshot/CAN 송신과 FDCAN recovery | 10 ms slot, slot당 native+AUTO 각 1 frame | Low |
-| `ARx` | STM_A vehicle/detail parse와 timeout | continuous, 1 ms delay | AboveNormal |
-| `ATx` | STM_A safety frame 송신 | 20 ms | High |
+| Task | 책임 | 주기/Trigger | 우선순위 (CMSIS 값) | Stack (words) |
+|---|---|---|---|---:|
+| `Brake` | `BRAKE_REQUEST`에 따른 PWM ramp | 기존 5 ms loop delay, 20 ms ramp step | `High1` (41) | 512 |
+| `EStop` | 물리 E-stop과 AUTO command brake 통합 | EXTI flags + 10 ms timeout 재확인 | `Realtime` (48) | 256 |
+| `uROS` | Agent 상태, command 수신, brake status 발행 | 상태 머신; running 후 5 ms delay | `Normal` (24) | 1280 |
+| `Display` | `DashboardCan_Task()` 실행 | absolute 10 ms slot, native+AUTO 각 1 frame / 50 ms snapshot | `Low` (8) | 512 |
+| `ARx` | vehicle/detail parse와 timeout | 작업 후 1 ms delay | `AboveNormal` (32) | 256 |
+| `ATx` | STM_A safety frame 송신 | absolute 20 ms | `High` (40) | 256 |
+| `PerfMon` | runtime snapshot 집계 | 약 1 Hz | `Low` (8) | 256 |
 
-Dashboard task는 higher-priority safety/UART task를 기다리게 하는 mutex나 queue를
-소유하지 않습니다. FDCAN stop/start는 Low priority task에서만 수행되며 HAL timeout으로
-bounded됩니다.
+모두 `.ioc` baseline의 Dynamic task이며 1 word는 4 bytes입니다. 기존 README의
+Brake/EStop priority·주기 표기를 실제 생성 코드와 일치시켰습니다. Task 설정 자체는
+변경하지 않았습니다. Brake의 ramp와 EStop의 event/timeout 경로도 유지합니다.
+
+ATx는 `vTaskDelayUntil()` 기반으로 최초 scheduled release phase와 정상 20 ms cadence를
+유지합니다. 늦은 activation이나 work overrun에도 re-anchor하지 않고, 완료 tick 이하의
+release를 period 단위로 건너뛰어 첫 미래 scheduled release를 기다립니다.
+밀린 safety frame을 burst로 재전송하지 않습니다. blocking UART TX의
+10 ms timeout과 buffer lifetime을 유지하며 DMA로 치환하지 않았습니다.
+
+Display는 production에서 Dashboard CAN을 실행합니다. 기존 `vTaskDelayUntil()`과
+slot 순서를 유지하므로 지연 시 기존 catch-up 동작도 그대로입니다. Low priority와
+512-word stack을 유지하며 stack 축소 여부는 향후 HWM 실측으로 판단합니다.
+Dashboard와 PerfMon은 높은 priority의 safety/UART task가 기다리는 mutex를 소유하지
+않습니다. FDCAN stop/start는 Low task에서 수행되며 HAL timeout으로 bounded됩니다.
+
+EStop callback→task dispatch 및 처리 duration, task activation/wall time,
+stack HWM/heap, snapshot API와 물리 interrupt latency 측정 한계는
+[공통 runtime metrics 문서](../common/README.md)를 참고하십시오. PerfMon은 ROS
+publish를 하지 않습니다.
 
 ## 7. 외부 인터페이스
 
@@ -265,7 +283,7 @@ STM_B는 `/gnss/fix`를 best-effort로 구독하고 수신 시각을 monotonic t
 
 #### `0x325`–`0x328` AUTO
 
-PC의 `visualization/auto_dashboard_summary.py`는 다음 실제 입력을 arrival-time freshness와
+PC의 `vehicle_state_publisher/auto_dashboard_summary.py`는 다음 실제 입력을 arrival-time freshness와
 함께 요약합니다.
 
 - `/gnss/status.fix_mode`, `/ouster/points`, 좌/우 compressed camera
@@ -370,7 +388,7 @@ micro-ROS Agent:
 ```bash
 source /opt/ros/humble/setup.bash
 source ~/KAI_ws/install/setup.bash
-ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/stm_b -b 115200
+ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/stm_b -b 460800
 ```
 
 ## 11. 상태 확인
@@ -424,3 +442,22 @@ recovery counter는 증가하지 않습니다. Arduino Serial의 `complete`는 �
 - 차량 interface: [`../../docs/INTERFACES.md`](../../docs/INTERFACES.md)
 - safety 계약: [`../../docs/SAFETY.md`](../../docs/SAFETY.md)
 - STM_A: [`../STM_A/README.md`](../STM_A/README.md)
+
+## Runtime diagnostics ROS interface
+
+`/stm_b/runtime_stats`는 `kaiev26_msgs/msg/RuntimeStats`를 약 1 Hz,
+best-effort로 발행합니다. 기존 uROS task만 publisher를 소유하고 PerfMon은
+aggregate/snapshot만 수행합니다. 진단 실패는 safety fault나 연결 teardown 조건이
+아닙니다. 고정 `TaskRuntimeStats[9]`, board/task ID, µs/ms/bytes 단위와 누적값,
+1 ms jitter 해상도, CPU load 미지원 및 E-stop callback→task latency 경계는
+[공통 runtime 문서](../common/README.md#host-tests--ros-연결)를 따릅니다.
+
+```bash
+ros2 topic type /stm_b/runtime_stats
+ros2 topic hz /stm_b/runtime_stats
+ros2 topic echo /stm_b/runtime_stats --once --qos-reliability best_effort
+```
+
+RuntimeStats 적용 firmware의 LPUART1과 Agent는 모두 **460800 baud**를 사용합니다.
+이전 115200 firmware를 사용할 때만 launch에 `agent_baud:=115200`을 지정하십시오.
+보드 간 USART1과 STM_TEST/Arduino serial은 115200으로 유지합니다.

@@ -887,7 +887,9 @@ void setup()
       millis(), DashboardTiming::Page::Startup);
   ManualTftUi::playStartup();
   DashboardTiming::endSegment();
+#if !defined(DASHBOARD_HOST) && !defined(DASHBOARD_BENCH_INPUT)
   Ft6336Touch::begin();
+#endif
   start_auto_snapshot(0U);
   latest_auto = auto_assembly.values;
   auto_assembly.active = false;
@@ -898,7 +900,9 @@ void setup()
   can_controller_ready = CAN.begin(CanBitRate::BR_250k);
 #endif
   (void)DashboardSerial::enqueue("LCD dashboard UI rendered");
+#if !defined(DASHBOARD_HOST) && !defined(DASHBOARD_BENCH_INPUT)
   SwipeTest::setEnabled(true);
+#endif
 
   if (!can_controller_ready)
   {
@@ -972,8 +976,10 @@ void loop()
     try_reinitialize_can();
   }
 #endif
+#if !defined(DASHBOARD_HOST) && !defined(DASHBOARD_BENCH_INPUT)
   Ft6336Touch::poll(now);
   SwipeTest::poll(now);
+#endif
   DashboardUi::service(now);
 #if defined(DASHBOARD_BENCH_INPUT)
   service_bench_run();

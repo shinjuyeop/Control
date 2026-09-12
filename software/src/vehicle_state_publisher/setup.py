@@ -23,6 +23,8 @@ setup(
             "vehicle_state_publisher.vehicle_state_publisher_node:main",
             "diagnostics_publisher = "
             "vehicle_state_publisher.diagnostics_publisher:main",
+            "auto_dashboard_summary = "
+            "vehicle_state_publisher.auto_dashboard_summary:main",
         ],
     },
 )

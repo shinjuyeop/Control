@@ -1,6 +1,7 @@
 """UNO serial report boundary and the actual native LCD rendering path."""
 
 import base64
+import ctypes
 from io import BytesIO
 import json
 import os
@@ -11,7 +12,9 @@ import time
 
 import pytest
 from PIL import Image
-from vehicle_console.hil.dashboard_display import DashboardDisplay, decode_display_report
+from vehicle_console.hil.dashboard_display import (
+    DashboardDisplay, NativeDashboardRenderer, decode_display_report,
+)
 
 LIBRARY = (
     Path(__file__).resolve().parents[5]
@@ -53,6 +56,40 @@ def test_report_decodes_raw_applied_values_and_tolerates_extensions():
 def test_report_rejects_invalid_external_values(payload):
     with pytest.raises(ValueError):
         decode_display_report(payload)
+
+
+def test_native_renderer_uses_reported_page_during_transition_and_can_loss():
+    if not LIBRARY.is_file():
+        pytest.skip("Build the native dashboard renderer first")
+    renderer = NativeDashboardRenderer(LIBRARY)
+    values = [15, 3, 25, 3, 120, 523, 125, 1200, 320, 400, 0]
+    manual = renderer.render(decode_display_report(wire_report(values=values)))
+    values[0] |= 16  # New AUTO input arrives before the UNO finishes switching pages.
+    transitioning = renderer.render(decode_display_report(wire_report(values=values)))
+    assert transitioning == manual
+    auto = renderer.render(decode_display_report(
+        wire_report(values=values, page="AUTO_GT3")))
+    assert auto != manual
+    lost_auto = renderer.render(decode_display_report(
+        wire_report(values=values, page="AUTO_GT3", can_lost=True)))
+    lost_manual = renderer.render(decode_display_report(
+        wire_report(values=values, page="MANUAL_TFT", can_lost=True)))
+    assert lost_auto != lost_manual
+
+
+def test_native_renderer_accepts_main_console_three_argument_call():
+    if not LIBRARY.is_file():
+        pytest.skip("Build the native dashboard renderer first")
+    renderer = NativeDashboardRenderer(LIBRARY)
+    legacy = renderer.library.render_dashboard
+    legacy.argtypes = [ctypes.POINTER(ctypes.c_int32), ctypes.c_int,
+                       ctypes.POINTER(ctypes.c_uint8)]
+    legacy.restype = None
+    values = [15, 3, 25, 3, 120, 523, 125, 1200, 320, 400, 0]
+    legacy((ctypes.c_int32 * 11)(*values), 0, renderer.rgb)
+    expected = bytes(renderer.rgb)
+    renderer.render(decode_display_report(wire_report(values=values)))
+    assert bytes(renderer.rgb) == expected
 
 
 def test_serial_stream_renders_reported_state_and_distinguishes_can_loss():

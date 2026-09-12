@@ -670,6 +670,17 @@ void buildFrame(const DashboardValues &values,
     auto_values.feedback_state = AUTO_FEEDBACK_UNKNOWN;
   }
 
+  // Native STATUS carries fresh GNSS independently of the host AUTO summary.
+  if (!dashboard_can_lost && auto_values.gps_state == AUTO_GPS_WAIT)
+  {
+    switch (values.gnss_state)
+    {
+      case GNSS_RTK_FIXED: auto_values.gps_state = AUTO_GPS_FIXED; break;
+      case GNSS_FIX: auto_values.gps_state = AUTO_GPS_FIX; break;
+      case GNSS_NO_FIX: auto_values.gps_state = AUTO_GPS_NO_FIX; break;
+      default: break;
+    }
+  }
   buildGpsBadge(auto_values.gps_state, &frame->badges[0]);
   buildStreamBadge("LIDAR", auto_values.lidar_state, &frame->badges[1]);
   buildStreamBadge("CAMERA L", auto_values.camera_left_state, &frame->badges[2]);
@@ -687,6 +698,8 @@ void buildFrame(const DashboardValues &values,
     for (uint8_t index = 0U; index < 8U; ++index)
     {
       if (index == 6U && !dashboard_can_lost) continue;
+      if (index == 0U && !dashboard_can_lost &&
+          auto_values.gps_state != AUTO_GPS_WAIT) continue;
       (void)snprintf(frame->badges[index].state,
                      sizeof(frame->badges[index].state), "DATA LOST");
       frame->badges[index].background = UNKNOWN;

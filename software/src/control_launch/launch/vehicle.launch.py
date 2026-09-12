@@ -2,11 +2,10 @@
 실차 구동 스택 통합 launch.
 
 구동에 필요한 것만 띄운다: 차량·INS 기준 정적 TF, STM_A/B micro-ROS Agent,
-command_governor, steering_actuator, vehicle_state_publisher, 상태 3종을
-/diagnostics로 요약하는 diagnostics_publisher와 STM_B dashboard용 AUTO 상태를
-만드는 auto_dashboard_summary를 띄운다. 관찰
-GUI(foxglove_bridge, vehicle_dashboard)는 의도적으로 제외한다 — 모니터링은
-`ros2 launch visualization foxglove_bridge.launch.py`를 따로 띄운다.
+command_governor, steering_actuator와 vehicle_state_publisher package의 상태 합성,
+diagnostics_publisher, auto_dashboard_summary를 실행한다.
+관측 화면은 별도 실행한다: `ros2 launch vehicle_console vehicle.launch.py` 또는
+`ros2 launch foxglove foxglove_bridge.launch.py`.
 
 Planning은 포함하지 않는다. 판단 계층은 별도로 실행되어 /planning/command를
 발행한다. Planning 없이 이 launch만 켜면 command_governor가 중계할 입력이
@@ -93,7 +92,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("stm_a_port", default_value="/dev/stm_a"),
         DeclareLaunchArgument("stm_b_port", default_value="/dev/stm_b"),
-        DeclareLaunchArgument("agent_baud", default_value="115200"),
+        DeclareLaunchArgument("agent_baud", default_value="460800"),
         DeclareLaunchArgument(
             "agents", default_value="true",
             description="STM_A/B micro-ROS Agent를 함께 띄운다. 이미 따로 실행 중이면 false.",
@@ -140,7 +139,7 @@ def generate_launch_description():
         # status 3종 → /diagnostics 요약. Foxglove 없이도 발행되어야 bag
         # 기록과 나중에 붙는 관찰 클라이언트가 바로 쓸 수 있다.
         Node(
-            package="visualization",
+            package="vehicle_state_publisher",
             executable="diagnostics_publisher",
             name="diagnostics_publisher",
             output="screen",
@@ -148,7 +147,7 @@ def generate_launch_description():
         # 실제 수신 freshness와 액추에이터 명령/응답 관계를 display 전용
         # 고정 payload로 요약한다. STM_B가 /dashboard/auto_status를 CAN에 중계한다.
         Node(
-            package='visualization',
+            package='vehicle_state_publisher',
             executable='auto_dashboard_summary',
             name='auto_dashboard_summary',
             output='screen',

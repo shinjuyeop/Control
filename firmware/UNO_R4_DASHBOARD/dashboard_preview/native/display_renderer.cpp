@@ -1,6 +1,8 @@
 // Render the current firmware UI from the values reported by the UNO.
 #include "host_runtime.h"
 #include "dashboard_ui.h"
+#include "auto_tft_ui.h"
+#include "manual_tft_ui.h"
 #include "st7796_lcd.h"
 
 #include <array>
@@ -8,9 +10,10 @@
 
 extern "C" void dashboard_host_publish_ui_state() {}
 
-extern "C" void render_dashboard(const int32_t *native_values,
+extern "C" void render_auto_dashboard(const int32_t *native_values,
                                  const int32_t *auto_values,
                                  int can_lost,
+                                 int auto_page,
                                  uint8_t *rgb)
 {
   const DashboardValues native{
@@ -35,7 +38,12 @@ extern "C" void render_dashboard(const int32_t *native_values,
   DashboardHostRuntime::setAllowedTimeUs(60000000U);
   St7796Lcd::begin();
   DashboardUi::resetState();
-  DashboardUi::begin(native, automatic, can_lost != 0);
+  // The UNO-reported page remains authoritative during mode transitions and loss.
+  if (auto_page)
+    AutoTftUi::begin(native, automatic, can_lost != 0, millis());
+  else
+    ManualTftUi::begin(native, can_lost != 0);
+  St7796Lcd::setBacklight(true);
 
   std::array<uint16_t, St7796Lcd::WIDTH * St7796Lcd::HEIGHT> pixels{};
   DashboardHostRuntime::copyFramebuffer(pixels.data());
@@ -48,12 +56,27 @@ extern "C" void render_dashboard(const int32_t *native_values,
   }
 }
 
+// Keep main's three-argument entrypoint for already installed Console clients.
+extern "C" void render_dashboard(const int32_t *native_values,
+                                 int can_lost,
+                                 uint8_t *rgb)
+{
+  const int32_t unavailable_auto[] = {
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      AUTO_HEADING_INVALID, AUTO_HEADING_INVALID, AUTO_I16_INVALID,
+      AUTO_I32_INVALID, AUTO_I32_INVALID, AUTO_I16_INVALID};
+  render_auto_dashboard(native_values, unavailable_auto, can_lost,
+                        (native_values[0] & STATUS_MODE_AUTO) != 0, rgb);
+}
+
 extern "C" void render_swipe_test(int result, uint8_t *rgb)
 {
+  DashboardUi::resetState();
   DashboardHostRuntime::reset();
   DashboardHostRuntime::setAllowedTimeUs(60000000U);
   St7796Lcd::begin();
   DashboardUi::showSwipeTest(result == 1 ? 'L' : result == 2 ? 'R' : '-');
+  St7796Lcd::setBacklight(true);
 
   std::array<uint16_t, St7796Lcd::WIDTH * St7796Lcd::HEIGHT> pixels{};
   DashboardHostRuntime::copyFramebuffer(pixels.data());
