@@ -27,6 +27,7 @@ static bool transition_active = false;
 // Rows [auto_boundary, 319] currently contain AUTO; rows above are MANUAL.
 static uint16_t auto_boundary = St7796Lcd::HEIGHT;
 static uint8_t latest_input_alive = 0U;
+static char swipe_page = '\0';
 
 uint16_t urgentKey(const DashboardValues &values,
                    const AutoDashboardValues &auto_values,
@@ -100,6 +101,7 @@ void begin(const DashboardValues &values,
            const AutoDashboardValues &auto_values,
            bool dashboard_can_lost)
 {
+  swipe_page = '\0';
   latest_values = values;
   latest_auto = auto_values;
   latest_can_lost = dashboard_can_lost;
@@ -133,6 +135,14 @@ void update(const DashboardValues &values,
             bool dashboard_can_lost,
             uint8_t input_alive)
 {
+  if (swipe_page != '\0')
+  {
+    latest_values = values;
+    latest_auto = auto_values;
+    latest_can_lost = dashboard_can_lost;
+    latest_input_alive = input_alive;
+    return;
+  }
   if (!initialized)
   {
     begin(values, auto_values, dashboard_can_lost);
@@ -171,6 +181,7 @@ void service(uint32_t now_ms)
 {
   DashboardTiming::ServiceScope timing_scope;
   if (!initialized) return;
+  if (swipe_page != '\0') return;
   if (transition_active)
   {
     const uint32_t service_started_us = micros();
@@ -239,6 +250,7 @@ void resetState()
   transition_active = false;
   auto_boundary = St7796Lcd::HEIGHT;
   latest_input_alive = 0U;
+  swipe_page = '\0';
   ManualTftUi::resetState();
   AutoTftUi::resetState();
   PUBLISH_HOST_UI_STATE();
@@ -250,6 +262,30 @@ uint16_t transitionBoundary() { return auto_boundary; }
 const DashboardValues &displayedValues() { return latest_values; }
 const AutoDashboardValues &displayedAutoValues() { return latest_auto; }
 bool canLost() { return latest_can_lost; }
-const char *pageName() { return displayed_auto ? "AUTO_GT3" : "MANUAL_TFT"; }
+const char *pageName()
+{
+  if (swipe_page == 'L') return "SWIPE_L";
+  if (swipe_page == 'R') return "SWIPE_R";
+  if (swipe_page != '\0') return "SWIPE_WAIT";
+  return displayed_auto ? "AUTO_GT3" : "MANUAL_TFT";
+}
+
+void showSwipeTest(char result)
+{
+  if (result == swipe_page) return;
+  if (result == '\0')
+  {
+    swipe_page = '\0';
+    redraw();
+    return;
+  }
+  swipe_page = result;
+  St7796Lcd::fillScreen(St7796Lcd::COLOR_BLACK);
+  const uint16_t color = result == 'L' ? St7796Lcd::COLOR_BLUE :
+                         result == 'R' ? St7796Lcd::COLOR_ORANGE :
+                                         St7796Lcd::COLOR_WHITE;
+  St7796Lcd::fillRect(176U, 72U, 128U, 176U, color);
+  PUBLISH_HOST_UI_STATE();
+}
 
 }  // namespace DashboardUi

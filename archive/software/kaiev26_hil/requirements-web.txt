@@ -1,0 +1,2 @@
+-r ../vehicle_console/requirements-web.txt
+Pillow>=9,<13

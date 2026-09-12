@@ -23,7 +23,13 @@ extern "C"
 // Member 'current_zone'
 // Member 'next_zone'
 // Member 'next_maneuver'
+// Member 'current_lanelet_id'
+// Member 'current_road_code'
+// Member 'current_intersection_id'
+// Member 'next_stop_line_id'
+// Member 'next_traffic_light_ids'
 #include "rosidl_runtime_c/string.h"
+// Member 'next_traffic_light_positions'
 // Member 'local_path_points'
 #include "geometry_msgs/msg/detail/point__struct.h"
 
@@ -35,9 +41,16 @@ typedef struct kaiev26_msgs__msg__RouteContext
   rosidl_runtime_c__String current_zone;
   rosidl_runtime_c__String next_zone;
   rosidl_runtime_c__String next_maneuver;
+  rosidl_runtime_c__String current_lanelet_id;
+  rosidl_runtime_c__String current_road_code;
+  rosidl_runtime_c__String current_intersection_id;
+  rosidl_runtime_c__String next_stop_line_id;
+  rosidl_runtime_c__String__Sequence next_traffic_light_ids;
+  geometry_msgs__msg__Point__Sequence next_traffic_light_positions;
   float distance_to_stopline;
   float distance_to_intersection;
   float distance_to_finish;
+  float speed_limit_mps;
   bool route_projection_valid;
   float projection_confidence;
   float cross_track_error;

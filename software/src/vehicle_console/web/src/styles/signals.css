@@ -1,0 +1,746 @@
+/* Shared observation instruments, using the existing Control Rack palette. */
+:root {
+  --target: #a45b20;
+}
+.instrument-led {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: var(--muted);
+  margin: 0 8px 3px 0;
+  border-radius: 50%;
+}
+.instrument-led.good {
+  background: var(--live);
+}
+.instrument-led.warning {
+  background: var(--amber);
+}
+.instrument-led.danger {
+  background: var(--red);
+}
+.instrument-led.command {
+  background: var(--command);
+}
+.workspace-main {
+  container: workstation / inline-size;
+}
+.instrument-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.instrument-title h2 {
+  font-size: 17px;
+}
+.instrument-title .eyebrow {
+  margin-bottom: 4px;
+}
+.state-rail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+}
+.state-tile,
+button.state-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding: 13px 15px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  white-space: normal;
+}
+.state-tile:first-child {
+  border-left: 0;
+}
+.state-tile-label {
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+}
+.state-tile-label > span:first-child {
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: 0.3px;
+}
+.state-tile-label .badge {
+  margin-left: auto;
+}
+.state-tile-value {
+  font: 500 20px/1.3 var(--mono);
+  overflow-wrap: anywhere;
+}
+.state-tile > small {
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: auto;
+  padding-right: 12px;
+}
+.state-tile-link {
+  position: absolute;
+  bottom: 14px;
+  right: 12px;
+  color: var(--muted);
+}
+.state-tile.danger {
+  border-top: 2px solid var(--red);
+}
+.state-tile.danger .state-tile-value {
+  color: var(--red);
+}
+.state-tile.warning {
+  border-top: 2px solid var(--amber);
+}
+.state-tile.command .state-tile-value {
+  color: var(--command);
+}
+.signal-flow {
+  min-width: 0;
+  padding: 13px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.signal-flow-label {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-bottom: 12px;
+}
+.signal-flow-label > span {
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.6px;
+  font-weight: 600;
+}
+.signal-flow-label > small {
+  font-size: 12px;
+}
+.signal-flow-stages {
+  display: flex;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  gap: 0;
+}
+.signal-flow-stages > li {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  padding: 3px 14px 5px;
+  border-left: 1px solid var(--line);
+}
+.signal-flow-stages > li:first-child {
+  border-left: 0;
+  padding-left: 0;
+}
+.signal-flow-stages > li:last-child {
+  padding-right: 0;
+}
+.signal-stage-heading {
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 6px;
+  margin-bottom: 8px;
+}
+.signal-stage-heading > strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+.signal-stage-index {
+  color: var(--muted);
+  font: 12px var(--mono);
+}
+.signal-stage-heading .badge {
+  font-size: 12px;
+  padding: 2px 4px;
+}
+.signal-stage-value {
+  display: block;
+  font: 500 16px/1.5 var(--mono);
+  overflow-wrap: anywhere;
+}
+.signal-flow-stages > li > small {
+  display: block;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+}
+.signal-flow-stages > li.danger .signal-stage-value {
+  color: var(--red);
+}
+.pipeline-panel .signal-flow {
+  border: 0;
+  border-top: 1px solid var(--line);
+  padding: 15px 0;
+}
+.pipeline-panel .runtime-links {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.pipeline-input-note {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+.pipeline-input-note .eyebrow {
+  margin: 0;
+}
+.pipeline-input-note strong {
+  font: 500 15px var(--mono);
+}
+.pipeline-input-note > span:last-child {
+  color: var(--muted);
+}
+.instrument-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(280px, 1fr);
+  gap: 18px;
+  align-items: stretch;
+}
+.target-actual,
+.steering-arc {
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  padding: 17px 20px;
+  min-width: 0;
+}
+.paired-readings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  gap: 20px;
+  margin: 27px 0 25px;
+}
+.paired-readings > div > span {
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+.paired-readings i {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  background: currentColor;
+}
+.paired-readings .target-reading i {
+  background: none;
+  border: 2px solid var(--target);
+}
+.paired-readings .actual-reading i {
+  background: var(--command);
+}
+.paired-readings strong {
+  display: block;
+  font: 500 40px/1.5 var(--mono);
+  letter-spacing: -1px;
+  overflow-wrap: anywhere;
+}
+.paired-readings strong > small {
+  display: inline-block;
+  font: 12px var(--sans);
+  margin-left: 7px;
+  letter-spacing: 0;
+}
+.target-reading b,
+.target-reading > strong {
+  color: var(--target);
+}
+.actual-reading b,
+.actual-reading > strong {
+  color: var(--command);
+}
+.comparison-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 15px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.comparison-footer b {
+  font: 500 14px var(--mono);
+  color: var(--text);
+  margin-left: 6px;
+}
+.comparison-footer > small {
+  font-size: 12px;
+}
+.instrument-companion {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.7fr) minmax(0, 1.3fr);
+  border: 1px solid var(--line);
+  background: var(--surface-alt);
+  padding: 15px 0;
+  align-items: stretch;
+}
+.instrument-companion .metric {
+  padding: 0 14px;
+  display: flex;
+  flex-direction: column;
+}
+.instrument-companion .pedal-metric .linear-meter {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.instrument-companion .pedal-metric > p {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.instrument-companion .frame-card {
+  grid-template-columns: 1fr auto;
+  flex: 1;
+  align-content: center;
+}
+.instrument-companion .frame-card .badge {
+  grid-column: 2;
+  grid-row: 1;
+}
+.instrument-companion .frame-card .frame-age {
+  grid-column: 1 / -1;
+  text-align: left;
+}
+.instrument-companion .frame-summary {
+  border-left: 1px solid var(--line);
+}
+.linear-meter {
+  min-width: 0;
+  padding: 12px 0;
+}
+.linear-meter > div:first-child {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.linear-meter > div > span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.linear-meter strong {
+  font: 18px var(--mono);
+}
+.linear-meter strong small {
+  font-size: 12px;
+}
+.linear-meter-track {
+  height: 8px;
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface-alt);
+}
+.linear-meter-track > span {
+  display: block;
+  height: 100%;
+  background: var(--command);
+}
+.instrument-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+.steering-arc {
+  text-align: center;
+  padding-bottom: 12px;
+}
+.steering-arc .instrument-title {
+  display: flex;
+  text-align: left;
+}
+.steering-visuals {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(230px, 1fr);
+  gap: 18px;
+  align-items: stretch;
+  margin: 14px 0;
+}
+.steering-road-wheel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.steering-gauge {
+  display: block;
+  width: 100%;
+  max-width: 380px;
+  margin: auto;
+}
+.steering-wheel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-left: 1px solid var(--line);
+  padding-left: 18px;
+  color: var(--command);
+}
+.steering-wheel svg {
+  display: block;
+  width: 100%;
+  max-width: 185px;
+  margin: auto;
+}
+.steering-wheel .angle-readings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.wheel-guide {
+  fill: none;
+  stroke: var(--line);
+  stroke-dasharray: 3 5;
+}
+.wheel-rim,
+.wheel-spokes {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 12;
+  stroke-linecap: round;
+}
+.wheel-hub {
+  fill: var(--surface-alt);
+  stroke: var(--text);
+  stroke-width: 8;
+}
+.wheel-marker {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 7;
+  stroke-linecap: round;
+}
+.steering-wheel.unavailable svg {
+  opacity: 0.35;
+}
+.steering-wheel.unavailable .actual-reading b {
+  color: var(--muted);
+}
+.steering-arc svg text {
+  font: 12px var(--mono);
+  fill: var(--muted);
+}
+.angle-track {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 5;
+}
+.angle-tick {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+.angle-zero {
+  stroke: var(--text);
+  stroke-width: 2;
+}
+.angle-actual {
+  stroke: var(--command);
+  stroke-width: 2;
+  fill: var(--command);
+}
+.angle-target {
+  stroke: var(--target);
+  stroke-width: 2;
+  fill: var(--surface);
+}
+.angle-pivot {
+  fill: var(--text);
+}
+.angle-readings {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  font-size: 12px;
+}
+.angle-readings b {
+  display: block;
+  margin: 5px 0;
+  font: 500 21px var(--mono);
+}
+.angle-readings small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 20px;
+}
+.steering-arc > small {
+  display: block;
+  font-size: 12px;
+  margin-top: 10px;
+}
+.steering-charts {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@container workstation (max-width: 850px) {
+  .steering-charts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.instrument-pair .steering-summary {
+  padding: 17px;
+  background: var(--surface);
+}
+.instrument-pair .steering-summary .telemetry-group {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.instrument-pair .steering-state {
+  display: block;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+.instrument-pair .steering-state strong {
+  display: block;
+  font: 500 22px var(--mono);
+  margin-bottom: 5px;
+}
+.instrument-pair .steering-summary .fact > strong {
+  font: 18px var(--mono);
+}
+.instrument-pair .steering-summary .eyebrow {
+  font-size: 12px;
+}
+.safety-chain {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.6fr) minmax(0, 2.4fr);
+  gap: 30px;
+}
+.safety-inputs {
+  position: relative;
+  border-right: 2px solid var(--line-strong);
+  padding: 14px 20px 14px 0;
+}
+.safety-input {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+.safety-input strong {
+  font: 500 16px var(--mono);
+}
+.safety-input.danger {
+  color: var(--red);
+}
+.safety-inputs > small {
+  display: block;
+  font-size: 12px;
+  margin-top: 15px;
+}
+.safety-outputs {
+  min-width: 0;
+}
+.safety-outputs .state-rail {
+  margin-bottom: 14px;
+}
+.secondary-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.secondary-metrics .metric-number {
+  font: 500 23px/1.65 var(--mono);
+}
+.secondary-metrics .metrics-grid {
+  box-shadow: none;
+}
+.fault-overview {
+  padding: 17px 18px;
+  border: 1px solid var(--warning-line);
+  background: var(--surface);
+  border-top: 3px solid var(--amber);
+}
+.fault-overview .state-rail {
+  margin-top: 14px;
+  border-color: var(--line);
+}
+.fault-overview > p {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 12px;
+}
+.fault-control-panel .panel-heading {
+  border-top: 2px solid var(--warning-line);
+}
+.virtual-display-container .state-rail {
+  grid-template-columns: minmax(0, 1fr);
+}
+.virtual-display-container .state-tile {
+  border-left: 0;
+  border-bottom: 1px solid var(--line);
+}
+.virtual-display-container .state-tile:last-child {
+  border-bottom: 0;
+}
+.panel .detail-content {
+  font-size: 14px;
+  color: var(--muted);
+}
+.badge.command,
+.result-icon.command {
+  color: var(--command);
+  background: var(--command-bg);
+  border-color: var(--line-strong);
+}
+
+@container workstation (max-width: 900px) {
+  .state-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .state-tile:nth-child(n + 3) {
+    border-top: 1px solid var(--line);
+  }
+  .state-tile:nth-child(odd) {
+    border-left: 0;
+  }
+  .signal-flow-stages > li {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+  .signal-stage-value {
+    font-size: 14px;
+  }
+  .signal-stage-heading .badge {
+    margin: 0;
+  }
+  .instrument-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .instrument-companion {
+    grid-template-columns: 1fr 2fr;
+  }
+  .instrument-companion .frame-summary {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 20px;
+  }
+  .instrument-companion .frame-summary > span {
+    grid-column: 1 / -1;
+  }
+  .instrument-pair .steering-summary .telemetry-group {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .safety-chain {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+  }
+  .safety-inputs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    padding: 0 0 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .safety-inputs > .eyebrow,
+  .safety-inputs > small {
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+  .safety-input {
+    padding: 5px 0;
+    border: 0;
+    flex-wrap: wrap;
+  }
+}
+@container workstation (max-width: 650px) {
+  .steering-visuals {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .steering-wheel {
+    border-left: 0;
+    padding: 12px 0 0;
+    border-top: 1px solid var(--line);
+  }
+  .signal-flow-stages {
+    display: block;
+  }
+  .signal-flow-stages > li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 3px 12px;
+    padding: 10px 0;
+    border-left: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .signal-flow-stages > li:last-child {
+    border-bottom: 0;
+  }
+  .signal-stage-heading {
+    min-height: 24px;
+    margin: 0;
+  }
+  .signal-stage-value {
+    text-align: right;
+    align-self: center;
+  }
+  .signal-flow-stages > li > small {
+    grid-column: 1 / -1;
+    margin: 0;
+    padding-left: 23px;
+  }
+  .signal-flow-label {
+    margin-bottom: 4px;
+  }
+  .signal-stage-index {
+    color: var(--command);
+  }
+  .paired-readings {
+    gap: 10px;
+    margin: 19px 0;
+  }
+  .paired-readings strong {
+    font-size: 29px;
+  }
+  .paired-readings strong > small {
+    display: block;
+    margin: 0;
+  }
+  .state-tile,
+  button.state-tile {
+    padding: 11px 12px;
+  }
+  .state-tile-value {
+    font-size: 17px;
+  }
+  .state-tile-label .badge {
+    margin-left: 0;
+  }
+  .instrument-companion {
+    grid-template-columns: 1fr 1.4fr;
+  }
+  .instrument-companion .frame-summary {
+    display: block;
+  }
+  .instrument-pair .steering-summary .telemetry-group {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .fault-overview .instrument-title {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+}

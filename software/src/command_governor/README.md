@@ -59,7 +59,7 @@ HALTED로 정지한다.
 - 액추에이터 구동, CAN 통신
 - enable/disable 상태기계 (조향의 것은 lateral_ctrl에 있다)
 - 캘리브레이션, 각도 변환
-- 상태 판정·진단 합성 (visualization/diagnostics_publisher의 몫)
+- 상태 판정·진단 합성 (`vehicle_state_publisher/diagnostics_publisher`의 몫)
 - 하드 바운드 — 최종 한도는 액추에이터 쪽이 지킨다: 종방향은 STM_A 펌웨어
   (RPM 4500/−1500, AUTO/MANUAL 480 A), 횡방향은 lateral_ctrl
   (`command_count_limit` 3279 ≈ -27.83°..+25.92°, slew 60 deg/s). 거버너는 그 안에서
@@ -106,13 +106,13 @@ ros2 topic info -v /vehicle/command   # Publisher count: 1 (command_governor)
 
 위 단독 launch는 개발용이다. 실차에서는
 [`control_launch/vehicle.launch.py`](../control_launch/launch/vehicle.launch.py)가
-respawn과 함께 띄우고, HIL에서는 `kaiev26_hil`의 `hil.launch.py`가
-respawn 없이(크래시가 드러나도록) 띄운다.
+respawn과 함께 띄우고, HIL에서는 `vehicle_console/hil.launch.py`가
+`start_bench:=true`일 때 respawn 없이(크래시가 드러나도록) 띄운다.
 
 ## 관련 문서
 
 - 통신 계약: [`../../../docs/INTERFACES.md`](../../../docs/INTERFACES.md)
 - 시스템 구조: [`../../../docs/ARCHITECTURE.md`](../../../docs/ARCHITECTURE.md)
-- HIL 경로: [`../kaiev26_hil/README.md`](../kaiev26_hil/README.md)
+- HIL 경로: [`../vehicle_console/HIL_BACKEND.md`](../vehicle_console/HIL_BACKEND.md)
 - 실차 시험 입력: [`../vehicle_test_scenarios/README.md`](../vehicle_test_scenarios/README.md)
 - 횡방향 소비자: [`../lateral_ctrl/README.md`](../lateral_ctrl/README.md)

@@ -19,6 +19,8 @@
 #include <stdio.h>
 #include <string.h>
 #include "board_uart_protocol.h"
+#include "runtime_periodic.h"
+#include "runtime_stats_ros.h"
 #include "dashboard_can.h"
 #include "dashboard_can_protocol.h"
 #include "globals.h"
@@ -131,6 +133,7 @@ static volatile uint32_t s_last_command_tick = 0u;
 static volatile uint8_t s_command_received = 0u;
 
 /* entity별 생성 상태를 추적해 부분 초기화 실패와 반복 reconnect를 정리한다. */
+static RuntimeStatsRos s_runtime_ros;
 static rcl_allocator_t s_ros_allocator;
 static rclc_support_t s_ros_support;
 static rcl_node_t s_ros_node;
@@ -255,6 +258,13 @@ const osThreadAttr_t ATx_attributes = {
   .priority = (osPriority_t) osPriorityHigh,
   .stack_size = 256 * 4
 };
+/* Definitions for PerfMon */
+osThreadId_t PerfMonHandle;
+const osThreadAttr_t PerfMon_attributes = {
+  .name = "PerfMon",
+  .priority = (osPriority_t) osPriorityLow,
+  .stack_size = 256 * 4
+};
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
@@ -276,6 +286,7 @@ void StartuROS(void *argument);
 void StartDisplay(void *argument);
 void StartARx(void *argument);
 void StartATx(void *argument);
+void StartPerfMon(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -286,6 +297,7 @@ void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
   */
 void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN Init */
+  RuntimeMetrics_Init();
   /* USER CODE END Init */
 
   /* USER CODE BEGIN RTOS_MUTEX */
@@ -323,7 +335,18 @@ void MX_FREERTOS_Init(void) {
   /* creation of ATx */
   ATxHandle = osThreadNew(StartATx, NULL, &ATx_attributes);
 
+  /* creation of PerfMon */
+  PerfMonHandle = osThreadNew(StartPerfMon, NULL, &PerfMon_attributes);
+
   /* USER CODE BEGIN RTOS_THREADS */
+  RuntimeMetrics_Register(RM_BRAKE, (TaskHandle_t)BrakeHandle);
+  RuntimeMetrics_Register(RM_ESTOP, (TaskHandle_t)EStopHandle);
+  RuntimeMetrics_Register(RM_UROS, (TaskHandle_t)uROSHandle);
+  RuntimeMetrics_Register(RM_DISPLAY, (TaskHandle_t)DisplayHandle);
+  RuntimeMetrics_Register(RM_RX, (TaskHandle_t)ARxHandle);
+  RuntimeMetrics_Register(RM_TX, (TaskHandle_t)ATxHandle);
+  RuntimeMetrics_Register(RM_PERFMON, (TaskHandle_t)PerfMonHandle);
+
   /* add threads, ... */
   /* USER CODE END RTOS_THREADS */
 
@@ -357,6 +380,7 @@ void StartBrake(void *argument)
   }
 
   for (;;) {
+    RuntimeActivation activation = RuntimeMetrics_Begin(RM_BRAKE);
     uint8_t brake_requested = (BRAKE_REQUEST != 0u) ? 1u : 0u;
     BRAKE_COMMAND_APPLIED = brake_requested;
     uint16_t requested_pulse_us =
@@ -392,6 +416,7 @@ void StartBrake(void *argument)
             &htim2, TIM_CHANNEL_2, current_pulse_us);
       }
     }
+    RuntimeMetrics_End(RM_BRAKE, activation);
     osDelay(5);
   }
   /* USER CODE END StartBrake */
@@ -411,8 +436,12 @@ void StartEStop(void *argument)
   update_safety_state();
   for (;;) {
     (void)osThreadFlagsWait(ESTOP_EVENT_MASK, osFlagsWaitAny, 10u);
+    uint32_t dispatch_cycle = RuntimeMetrics_Now();
+    RuntimeMetrics_EStopDispatch(dispatch_cycle);
+    RuntimeActivation activation = RuntimeMetrics_Begin(RM_ESTOP);
     /* timeout 주기에도 다시 읽어 누락된 edge와 명령 브레이크 변경을 반영한다. */
     update_safety_state();
+    RuntimeMetrics_End(RM_ESTOP, activation);
   }
   /* USER CODE END StartEStop */
 }
@@ -445,6 +474,8 @@ void StartuROS(void *argument)
   last_status = HAL_GetTick();
 
   for (;;) {
+    RuntimeActivation activation = RuntimeMetrics_Begin(RM_UROS);
+    uint32_t delay_ticks = 0u;
     uint32_t now = HAL_GetTick();
 
     switch (state) {
@@ -456,7 +487,7 @@ void StartuROS(void *argument)
             state = ROS_STATE_CREATE_ENTITIES;
           }
         }
-        osDelay(10);
+        delay_ticks = 10u;
         break;
 
       case ROS_STATE_CREATE_ENTITIES:
@@ -519,7 +550,8 @@ void StartuROS(void *argument)
             break;
           }
         }
-        osDelay(5);
+        RuntimeStatsRos_PublishIfDue(&s_runtime_ros);
+        delay_ticks = 5u;
         break;
       }
 
@@ -530,6 +562,8 @@ void StartuROS(void *argument)
         state = ROS_STATE_WAIT_AGENT;
         break;
     }
+    RuntimeMetrics_End(RM_UROS, activation);
+    if (delay_ticks != 0u) osDelay(delay_ticks);
   }
   /* USER CODE END StartuROS */
 }
@@ -566,6 +600,7 @@ void StartARx(void *argument)
   uint32_t last_restart_ms = HAL_GetTick();
 
   for (;;) {
+    RuntimeActivation activation = RuntimeMetrics_Begin(RM_RX);
     uint8_t byte;
     while (usart1_rx_ring_pop(&byte) != 0u) {
       process_vehicle_rx_byte(byte);
@@ -590,6 +625,7 @@ void StartARx(void *argument)
         last_restart_ms = now;
       }
     }
+    RuntimeMetrics_End(RM_RX, activation);
     osDelay(1);
   }
   /* USER CODE END StartARx */
@@ -608,7 +644,10 @@ void StartATx(void *argument)
   extern UART_HandleTypeDef huart1;
   uint8_t sequence = 0u;
 
+  RuntimePeriodic periodic = RuntimePeriodic_Init(pdMS_TO_TICKS(SAFETY_TX_PERIOD_MS));
+
   for (;;) {
+    RuntimeActivation activation = RuntimePeriodic_Begin(RM_TX, &periodic);
     uint8_t frame[BOARD_UART_MAX_FRAME_SIZE];
     uint8_t payload[BOARD_UART_SAFETY_PAYLOAD_LEN];
     uint8_t stop_bits = (BRAKE_REQUEST != 0u) ? 0x01u : 0x00u;
@@ -624,9 +663,28 @@ void StartATx(void *argument)
       (void)HAL_UART_Transmit(
           &huart1, frame, (uint16_t)frame_size, 10u);
     }
-    osDelay(SAFETY_TX_PERIOD_MS);
+    RuntimePeriodic_Wait(RM_TX, &periodic, activation);
   }
   /* USER CODE END StartATx */
+}
+
+/* USER CODE BEGIN Header_StartPerfMon */
+/**
+* @brief Function implementing the PerfMon thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartPerfMon */
+void StartPerfMon(void *argument)
+{
+  /* USER CODE BEGIN StartPerfMon */
+  RuntimePeriodic periodic = RuntimePeriodic_Init(pdMS_TO_TICKS(1000u));
+  for (;;) {
+    RuntimeActivation activation = RuntimePeriodic_Begin(RM_PERFMON, &periodic);
+    RuntimeMetrics_Aggregate();
+    RuntimePeriodic_Wait(RM_PERFMON, &periodic, activation);
+  }
+  /* USER CODE END StartPerfMon */
 }
 
 /* Private application code --------------------------------------------------*/
@@ -733,6 +791,8 @@ static uint8_t create_ros_entities(void)
           ON_NEW_DATA) != RCL_RET_OK) {
     return 0u;
   }
+  RuntimeStatsRos_Init(&s_runtime_ros, &s_ros_node,
+      kaiev26_msgs__msg__RuntimeStats__BOARD_STM_B);
   return 1u;
 }
 
@@ -751,6 +811,7 @@ static void destroy_ros_entities(void)
     (void)rclc_executor_fini(&s_ros_executor);
     s_ros_executor_initialized = 0u;
   }
+  RuntimeStatsRos_Fini(&s_runtime_ros, &s_ros_node);
   if (s_ros_publisher_initialized != 0u) {
     const rcl_ret_t fini_result =
         rcl_publisher_fini(&s_ros_pub_brake_status, &s_ros_node);
@@ -964,6 +1025,7 @@ static void process_vehicle_rx_byte(uint8_t byte)
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
+  const uint32_t entry_cycle = RuntimeMetrics_Now();
   uint32_t event_flag;
 
   if (GPIO_Pin == ESTOP_DASH_Pin) {
@@ -979,6 +1041,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
   /* ISR에서는 상태를 계산하지 않고 EStop 태스크만 깨운다. */
   if ((EStopHandle != NULL) &&
       (xTaskGetSchedulerState() == taskSCHEDULER_RUNNING)) {
+    RuntimeMetrics_RecordEStopISR(entry_cycle);
     (void)osThreadFlagsSet(EStopHandle, event_flag);
   }
 }

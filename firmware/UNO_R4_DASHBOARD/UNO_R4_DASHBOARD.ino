@@ -9,7 +9,9 @@
 #include "src/include/dashboard_timing.h"
 #include "src/include/manual_tft_ui.h"
 #include "src/include/st7796_lcd.h"
+#include "ft6336_touch.h"
 #include "hil_display_report.h"
+#include "swipe_test.h"
 
 static constexpr uint8_t DASHBOARD_PROTOCOL_VERSION = 1U;
 static constexpr uint32_t DASHBOARD_STATUS_ID = 0x321U;
@@ -885,6 +887,7 @@ void setup()
       millis(), DashboardTiming::Page::Startup);
   ManualTftUi::playStartup();
   DashboardTiming::endSegment();
+  Ft6336Touch::begin();
   start_auto_snapshot(0U);
   latest_auto = auto_assembly.values;
   auto_assembly.active = false;
@@ -895,6 +898,7 @@ void setup()
   can_controller_ready = CAN.begin(CanBitRate::BR_250k);
 #endif
   (void)DashboardSerial::enqueue("LCD dashboard UI rendered");
+  SwipeTest::setEnabled(true);
 
   if (!can_controller_ready)
   {
@@ -968,6 +972,8 @@ void loop()
     try_reinitialize_can();
   }
 #endif
+  Ft6336Touch::poll(now);
+  SwipeTest::poll(now);
   DashboardUi::service(now);
 #if defined(DASHBOARD_BENCH_INPUT)
   service_bench_run();

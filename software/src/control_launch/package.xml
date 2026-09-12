@@ -17,8 +17,6 @@
   <exec_depend>kaiev26_description</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>xacro</exec_depend>
-  <!-- vehicle.launch.py가 diagnostics_publisher를 띄운다. -->
-  <exec_depend>visualization</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>

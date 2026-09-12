@@ -1,0 +1,35 @@
+name: estop_test
+# 전제조건(주입 전 정상 상태 확인)이 있는 구조다. 전제 없이 결과만 보면
+# 경로가 처음부터 죽어 있어도 통과하는 공허한 PASS가 된다 (2026-08-19
+# keya_can_timeout에서 실제 발생 — can0 어댑터가 죽어 있었는데 PASS).
+steps:
+  - at: 0.0
+    hil:
+      mode: AUTO
+      gear: FORWARD
+      estop_dashboard: false
+    command:
+      enabled: true
+      speed_target_mps: 2.0
+      steering_target_rad: 0.0
+      brake_engage: false
+  - at: 4.0
+    hil:
+      estop_dashboard: true
+expect:
+  # 전제: 주입 전에 브레이크가 풀려 있어야 한다 (부팅 engage에서 release 완료).
+  - topic: /brake/status
+    field: brake_commanded
+    equals: false
+    after: 1.0
+    within_ms: 2800
+  - topic: /brake/status
+    field: brake_commanded
+    equals: true
+    after: 4.0
+    within_ms: 500
+  - topic: /brake/status
+    field: stop_reason_bits
+    bitmask: 0x04
+    after: 4.0
+    within_ms: 500

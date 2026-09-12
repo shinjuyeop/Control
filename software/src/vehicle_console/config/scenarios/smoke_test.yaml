@@ -1,0 +1,32 @@
+name: smoke_test
+steps:
+  - at: 0.0
+    hil:
+      safe_state: true
+  - at: 1.0
+    hil:
+      mode: AUTO
+    command:
+      enabled: true
+      speed_target_mps: 3.0
+      steering_target_rad: 0.10
+      brake_engage: false
+  - at: 3.0
+    hil:
+      speed: 2.0
+expect:
+  - topic: /hil/status
+    field: ez_ok
+    equals: true
+    after: 1.0
+    within_ms: 1000
+  - topic: /drive/status
+    field: part1_valid
+    equals: true
+    after: 3.0
+    within_ms: 1000
+  - topic: /steering/status
+    field: communication_ok
+    equals: true
+    after: 1.0
+    within_ms: 2000

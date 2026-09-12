@@ -45,16 +45,37 @@ can0는 부팅 때 자동으로 준비되어 있다. 이 시점에는 차가 **�
 
 각각 별도 터미널에서 아래 블록을 그대로 붙여 넣으면 된다.
 
-디버그 대시보드 (화면 필요 — 모니터 직결이면 그대로, 원격이면 `ssh -Y`
-터미널에서):
+KAI Vehicle Console (브라우저에서 차량 상태만 관찰, 명령 발행 없음):
 
 ```zsh
 cd ~/KAI_ws
 humble
 source ~/KAI_ws/install/setup.zsh
 
-ros2 launch visualization vehicle_dashboard.launch.py
+ros2 launch vehicle_console vehicle.launch.py \
+  allowed_hosts:=100.112.72.27 \
+  web_python:=/home/kai/KAI_ws/src/Control/software/src/vehicle_console/.venv/bin/python
 ```
+
+연결할 주소:
+
+- **차량 PC 로컬 브라우저:** `http://127.0.0.1:8766/`
+- **Tailscale 원격 브라우저:** `http://100.112.72.27:8766/`
+
+Console은 기본 loopback에 바인딩하므로, 차량 PC에서 **Vehicle용 8766 포트 전달**을
+별도로 등록한다. HIL용 8767 전달만으로는 Vehicle Console에 접속할 수 없다.
+
+```zsh
+# 차량 PC에서 최초 1회 등록. Web launch는 별도로 실행되어 있어야 한다.
+tailscale serve --bg --tcp=8766 tcp://127.0.0.1:8766
+tailscale serve status
+```
+
+원격 PC도 Tailscale에 연결되어 있어야 한다. 공유받은 계정에서 차량 PC가 다른 IP로
+보이면 원격 PC의 `tailscale status`로 확인하고, 접속 URL과 `allowed_hosts`를 그 IP로
+맞춘다. 상세 설정과 공유 해제는
+[Console 원격 사용](../software/src/vehicle_console/README.md#원격-접속)을 따른다.
+Qt dashboard는 archive로 이동했다.
 
 Foxglove bridge — 팀 단위로 PC당 하나만 띄운다. 이미 떠 있으면 켜지 않고
 아래 접속만 한다 (`/diagnostics` 요약은 구동 스택이 이미 발행 중이라
@@ -65,13 +86,13 @@ cd ~/KAI_ws
 humble
 source ~/KAI_ws/install/setup.zsh
 
-ros2 launch visualization foxglove_bridge.launch.py
+ros2 launch foxglove foxglove_bridge.launch.py
 ```
 
-- **Foxglove 접속**: 노트북의 Foxglove 앱에서 `ws://100.112.72.26:8765`
+- **Foxglove 접속**: 노트북의 Foxglove 앱에서 `ws://100.112.72.27:8765`
   (Tailscale 기준. 이 PC가 스스로 보는 IP와 노트북에서 보이는 IP가 다르니,
   안 붙으면 노트북에서 `tailscale status`로 이 PC의 IP를 다시 확인한다).
-  레이아웃은 `software/src/visualization/control.json`을 import한다.
+  레이아웃은 `software/src/foxglove/control.json`을 import한다.
   Diagnostics 패널에서 문제 항목이 위로 정렬되어 뜬다
 - **bridge는 PC당 하나만 띄운다.** bridge 하나가 모든 파트의 토픽을
   서빙하고 노트북 여러 대가 동시에 접속할 수 있다. 각 파트의 launch에
@@ -320,7 +341,7 @@ serial은 장치 이름일 뿐 올라간 펌웨어가 어느 쪽인지는 별개
 node 이름으로 역할까지 대조한다.
 
 ```bash
-ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/stm_a -b 115200
+ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/stm_a -b 460800
 # 다른 터미널에서
 ros2 node list                              # /stm_a_node 가 보여야 함 (stm_b도 동일 요령)
 ```
@@ -328,14 +349,3 @@ ros2 node list                              # /stm_a_node 가 보여야 함 (stm
 끝나면 수정한 규칙 파일과
 [`../firmware/README.md`](../firmware/README.md#stm-보드-고정-장치-이름)의
 serial 표를 함께 커밋해 저장소와 실물이 어긋나지 않게 한다.
-
----
-
-## 아직 검증 안 된 것
-
-- 이 절차의 launch를 **실차 보드(`/dev/stm_a`·`stm_b`)로 실행한 적은 아직
-  없다** (HIL bench 보드로 동형 구조 검증됨). 첫 실행은 구동륜을 들어 올리고
-  2절 확인부터 통과시킨다
-- 조향 캘리브레이션(`steering_motor_calibration.yaml`)의 실차 실측 검증
-
-확인이 끝나면 이 절을 지우고 확인 날짜를 기록한다.

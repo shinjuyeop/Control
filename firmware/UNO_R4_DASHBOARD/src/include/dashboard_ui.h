@@ -24,6 +24,7 @@ const DashboardValues &displayedValues();
 const AutoDashboardValues &displayedAutoValues();
 bool canLost();
 const char *pageName();
+void showSwipeTest(char result);
 
 }  // namespace DashboardUi
 

@@ -3,7 +3,7 @@
 HIL을 준비하고 Web에서 연결 상태·입력·피드백·시나리오를 확인하는 절차다.
 일상 조작은 브라우저에서 하고, 터미널은 설치·빌드·실행·종료와 장치 복구에 사용한다.
 화면 구성, USB 표시 보고 계약과 상세 빌드는
-[Web Console](../software/src/kaiev26_hil/WEB_CONSOLE.md)을 따른다.
+[Web Console](../software/src/vehicle_console/HIL_WEB.md)을 따른다.
 
 이 문서는 실제 구동모터·조향모터·브레이크 서보와 분리된 HIL 벤치를 기준으로 한다.
 실제 액추에이터를 연결했다면 전원·기구·E-stop 상태를 별도로 확인해야 한다.
@@ -19,13 +19,16 @@ cd ~/KAI_ws
 humble
 source ~/KAI_ws/install/setup.zsh
 
-ros2 launch kaiev26_hil hil_web.launch.py \
+ros2 launch vehicle_console hil.launch.py \
   start_bench:=true steering:=true state:=true \
   dashboard_port:=/dev/arduino_hil \
-  web_python:=/home/kai/KAI_ws/src/Control/software/src/kaiev26_hil/.venv/bin/python
+  web_python:=/home/kai/KAI_ws/src/Control/software/src/vehicle_console/.venv/bin/python
 ```
 
-브라우저: **http://127.0.0.1:8765**
+로컬 브라우저: **http://127.0.0.1:8767/**
+
+Tailscale 원격 브라우저: **http://100.112.72.27:8767/**
+([원격 접속 준비](#3-원격-브라우저-접속) 필요).
 
 ## 1. 실행 구성
 
@@ -41,12 +44,12 @@ STM_A/B ── micro-ROS Agent ──> 구동·브레이크 상태
 STM_B ── Dashboard CAN ──> UNO ── 실제 LCD
 ```
 
-`hil_web.launch.py start_bench:=true` 하나가 Agent 두 개, STM_TEST bridge,
+`hil.launch.py start_bench:=true` 하나가 Agent 두 개, STM_TEST bridge,
 command generator, governor와 Web을 실행한다. `steering:=true`는 조향 제어기,
 `state:=true`는 차량 상태 통합, `dashboard_port:=/dev/arduino_hil`은 가상 LCD용
 UNO USB reader를 추가한다.
 
-기존 `hil.launch.py`, `hil_bench.launch.py`, PyQt GUI, 별도 Agent나 scenario runner와
+같은 HIL launch의 Web/headless 실행, 별도 Agent나 scenario runner와
 중복 실행하지 않는다. 실차용 `control_launch/vehicle.launch.py`도 함께 실행하지 않는다.
 
 ## 2. 호스트 최초 1회 준비
@@ -54,8 +57,8 @@ UNO USB reader를 추가한다.
 ### 2.1 런타임 패키지
 
 Ubuntu 22.04 / ROS 2 Humble 환경을 사용한다. Web Python 환경·Node.js·프론트엔드와
-LCD renderer 준비는 [Web Console 설치와 빌드](../software/src/kaiev26_hil/WEB_CONSOLE.md#설치와-빌드),
-[가상 LCD 연결](../software/src/kaiev26_hil/WEB_CONSOLE.md#가상-lcd-연결)을 따른다.
+LCD renderer 준비는 [Web Console 설치와 빌드](../software/src/vehicle_console/HIL_WEB.md#설치와-빌드),
+[가상 LCD 연결](../software/src/vehicle_console/HIL_WEB.md#가상-lcd-연결)을 따른다.
 Web 운용에는 X11 forwarding이 필요 없다.
 
 ### 2.2 serial 권한
@@ -111,16 +114,56 @@ STM 세 행은 ST-LINK VCP, Arduino 행은 native USB serial 매핑이다. SWD p
 
 ## 3. 원격 브라우저 접속
 
-HIL PC에서 브라우저를 쓰면 이 절을 건너뛴다. 다른 PC에서는 SSH 포트 전달로 접속한다.
-`CONTROL_PC_IP`는 실제 HIL PC 주소나 SSH alias로 바꾼다.
+### 3.1 Tailscale 직접 접속
+
+현재 HIL PC와 사용자 측 공유 장비 주소는 `100.112.72.27`로 통일했다.
+팀원은 Tailscale 연결 후 **http://100.112.72.27:8767/** 를 연다.
+SSH 연결이나 VS Code 자동 포트 전달은 필요 없으며, HIL launch는 서버에서 한 번만 실행한다.
+
+HIL 서버에서 최초 한 번 공유를 설정한다. 이미 설정돼 있으면 상태만 확인한다.
 
 ```bash
-ssh -L 8765:127.0.0.1:8765 kai@CONTROL_PC_IP
+sudo tailscale serve --bg --tcp=8767 tcp://127.0.0.1:8767
+tailscale serve status
 ```
 
-이 SSH 터미널에서 아래 환경 설정과 launch를 실행하고, 로컬 브라우저에서
-`http://127.0.0.1:8765`를 연다. 서버는 loopback에 바인딩하므로 HIL PC의 LAN IP로
-직접 접속하는 방식은 지원하지 않는다.
+이전 HIL용 8765 전달이 남아 있다면 새 8767 전달을 등록한 뒤 아래 명령으로 제거한다.
+Foxglove 기본 포트 8765, Vehicle Console 8766, HIL Console 8767을 사용한다.
+
+```bash
+sudo tailscale serve --tcp=8765 off
+```
+
+서버 자체는 `127.0.0.1:8767`에서 실행되고, Tailscale Serve가 원격 TCP 연결을 전달한다.
+`--bg` 설정은 터미널 종료 뒤에도 유지되지만 HIL 웹 서버는 별도로 실행 중이어야 한다.
+장비 공유 초대 수락 또는 같은 tailnet의 접근 권한과 서버 TCP 8767 접근 허용이 필요하다.
+접속자 PC의 수신 포트나 공유기 포트포워딩을 열 필요는 없다.
+접속자는 조작권 획득도 요청할 수 있으므로 HIL 조작을 맡길 팀원에게 접근을 허용한다.
+
+Tailscale 공유 장비는 사용자 네트워크마다 다른 IP로 보일 수 있다. 위 주소로 peer를
+찾지 못하면 **접속자 PC에서** `tailscale status`로 `kai`의 주소를 확인한다.
+서버에서 실행한 `tailscale ip -4`만으로 접속자의 주소를 판단하지 않는다.
+다른 주소를 사용한다면 웹 서버의 명시적 허용 Host에도 등록하고 빌드 후 웹을 재시작한다.
+Host·동일 Origin 검사를 제거하거나 전체 주소를 허용하지 않는다.
+상세 설정은 [Web Console Tailscale 공통 주소](../software/src/vehicle_console/HIL_WEB.md#tailscale-공통-주소)를 따른다.
+
+공유만 끄고 로컬 웹 서버를 유지하려면 HIL 서버에서 실행한다.
+
+```bash
+sudo tailscale serve --tcp=8767 off
+```
+
+### 3.2 SSH 포트 전달로 접속
+
+SSH 방식도 사용할 수 있다. 접속자 PC에서 실행하며 `CONTROL_PC_IP`는
+그 PC에서 확인된 HIL 주소나 SSH alias로 바꾼다.
+
+```bash
+ssh -N -L 8767:127.0.0.1:8767 kai@CONTROL_PC_IP
+```
+
+포트 전달을 유지한 상태에서 접속자 브라우저의 `http://127.0.0.1:8767/`를 연다.
+HIL 서버가 이미 실행 중이면 launch를 추가로 실행하지 않는다.
 
 ## 4. 공통 ROS 환경
 
@@ -147,13 +190,13 @@ source ~/KAI_ws/install/setup.zsh
 ## 5. 소프트웨어 빌드와 테스트
 
 처음 설치하거나 소스가 바뀌었을 때만 빌드한다. Web 프론트엔드와 native LCD renderer를
-[Web Console](../software/src/kaiev26_hil/WEB_CONSOLE.md)의 순서대로 빌드·설치한 뒤 실행한다.
+[Web Console](../software/src/vehicle_console/HIL_WEB.md)의 순서대로 빌드·설치한 뒤 실행한다.
 
 ```zsh
 cd ~/KAI_ws
 humble
 unset COLCON_CURRENT_PREFIX
-colcon build --symlink-install --packages-up-to kaiev26_hil
+colcon build --symlink-install --packages-up-to vehicle_console
 source ~/KAI_ws/install/setup.zsh
 ```
 
@@ -162,7 +205,7 @@ source ~/KAI_ws/install/setup.zsh
 ```bash
 cd ~/KAI_ws/src/Control
 ROS_DOMAIN_ID=191 ROS_LOCALHOST_ONLY=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
-  software/src/kaiev26_hil/.venv/bin/python -m pytest software/src/kaiev26_hil/test -q
+  software/src/vehicle_console/.venv/bin/python -m pytest software/src/vehicle_console/test/hil -q
 ```
 
 Web의 시나리오 시험과 위 개발용 테스트는 별개다. 평소 벤치 운용 중에는 테스트 명령을
@@ -216,13 +259,16 @@ cd ~/KAI_ws
 humble
 source ~/KAI_ws/install/setup.zsh
 
-ros2 launch kaiev26_hil hil_web.launch.py \
+ros2 launch vehicle_console hil.launch.py \
   start_bench:=true steering:=true state:=true \
   dashboard_port:=/dev/arduino_hil \
-  web_python:=/home/kai/KAI_ws/src/Control/software/src/kaiev26_hil/.venv/bin/python
+  web_python:=/home/kai/KAI_ws/src/Control/software/src/vehicle_console/.venv/bin/python
 ```
 
-브라우저: **http://127.0.0.1:8765**
+로컬 브라우저: **http://127.0.0.1:8767/**
+
+Tailscale 원격 브라우저: **http://100.112.72.27:8767/**
+([원격 접속 준비](#3-원격-브라우저-접속) 필요).
 
 - 조향/상태 통합을 사용하지 않을 때만 해당 옵션을 생략한다.
 - UNO를 연결하지 않을 때는 `dashboard_port`를 생략한다.
@@ -475,11 +521,27 @@ USB 보고 자체가 끊기면 마지막 이미지를 흐리게 표시한다.
 
 ### Web 페이지가 열리지 않음
 
-launch 터미널의 오류와 접속 주소를 먼저 확인한다. 원격 PC라면 SSH 포트 전달이
-유지되는지 확인한다. 서버의 실제 listen 상태가 필요할 때만 터미널에서 확인한다.
+launch 터미널의 오류와 접속 주소를 먼저 확인한다. Tailscale 직접 접속이라면
+접속자 PC의 일반 터미널에서 확인한다(VS Code의 원격 터미널이 아님).
 
 ```bash
-ss -ltnp 'sport = :8765'
+tailscale ping --c 3 100.112.72.27
+curl -v --connect-timeout 5 http://100.112.72.27:8767/api/health
+```
+
+- `no matching peer`: 해당 PC에서 장비가 다른 주소로 보이거나 공유·연결이 없는 상태다.
+  그 PC의 `tailscale status`로 실제 주소를 먼저 확인한다.
+- 연결 시간 초과: TCP 연결 경로, Tailscale 접근 정책, 방화벽과 서버 공유 상태를 확인한다.
+  ping 성공만으로 TCP 8767 접근이 허용됐다고 판단하지 않는다.
+- HTTP 400: 접속 주소가 웹 서버의 허용 Host에 있는지와 수정 후 재시작 여부를 확인한다.
+- HTTP 200이지만 실시간 연결 실패: WebSocket 오류와 Host·Origin을 확인한다.
+
+HIL 서버에서는 `tailscale serve status`로 공유 설정을 확인한다.
+SSH 포트 전달 방식이라면 해당 터널이 유지되는지 확인한다.
+서버의 실제 listen 상태가 필요할 때는 다음 명령을 사용한다.
+
+```bash
+ss -ltnp 'sport = :8767'
 ```
 
 화면은 새 버전인데 수신 Hz·주기·누적이 계속 `—`라면 기존 Web 백엔드가 남아 있을 수 있다.
@@ -543,7 +605,7 @@ ros2 topic info -v /planning/command
 **가상 LCD → 디스플레이 연결**에서 오류를 확인한다. launch에 `dashboard_port`를
 지정했는지, UNO가 상태 보고 지원 펌웨어인지, PC용 native renderer를 빌드·설치했는지
 확인한다. USB OPEN이지만 보고가 없으면 다른 ROS 값으로 정상 표시를 추정하지 않는다.
-빌드·프로토콜은 [Web Console 가상 LCD 연결](../software/src/kaiev26_hil/WEB_CONSOLE.md#가상-lcd-연결)을 따른다.
+빌드·프로토콜은 [Web Console 가상 LCD 연결](../software/src/vehicle_console/HIL_WEB.md#가상-lcd-연결)을 따른다.
 
 ## 15. 진행 상태와 남은 작업
 
@@ -594,7 +656,7 @@ E-stop 3종과 PWM, 브라우저 종료 시 명령 발행 해제를 확인했습
 Web ROS callback 처리 지연을 수정한 뒤 기존 판정 제한 그대로
 `smoke_test`, `estop_test`, `ez_can_timeout`, `keya_can_timeout`이 모두 PASS했습니다.
 UNO 상태 보고 추가판을 업로드하고 실제 USB 보고로 480×320 가상 LCD 표시까지 확인했습니다.
-세부 결과와 한계는 [Web Console 검증 기록](../software/src/kaiev26_hil/WEB_CONSOLE.md#검증)을 따릅니다.
+세부 결과와 한계는 [Web Console 검증 기록](../software/src/vehicle_console/HIL_WEB.md#검증)을 따릅니다.
 
 ### 남은 작업
 
@@ -622,3 +684,12 @@ strings -n 5 /tmp/target_read.bin | grep -E 'stm_a_node|stm_b_node|drive/status|
 
 node 이름과 토픽 문자열이 firmware에 그대로 박혀 있으므로 어느 보드인지 확정할 수
 있다. 2026-08-12 STM_A 플래시는 이 방법으로 target을 확인한 뒤 수행했다.
+
+### RuntimeStats firmware의 micro-ROS baud
+
+RuntimeStats를 발행하는 STM_A/B는 LPUART1 **460800 baud**입니다.
+`vehicle_console/hil.launch.py`와 `control_launch/vehicle.launch.py`의
+`agent_baud` 기본값도 460800입니다. 이전
+115200 firmware를 실행할 때만 `agent_baud:=115200`을 명시하십시오. 두 Agent를
+기존 속도로 둔 채 MCU만 새 firmware로 바꾸면 통신이 복구되지 않습니다.
+STM_TEST와 Arduino serial 및 STM_A↔STM_B USART1은 여전히 115200입니다.

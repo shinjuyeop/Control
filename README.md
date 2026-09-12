@@ -18,7 +18,11 @@
 - STM_B: 세 물리 E-stop 입력, 브레이크 서보, 최종 브레이크 요청 결정
 - Host / Control PC: 상위 ROS 2 제어 명령 전달, KEYA 조향 모터 제어, 상태 통합
 
-두 STM은 각각 LPUART1 115200 baud로 별도의 micro-ROS Agent에 연결되어 ROS 2
+Arduino UNO R4 Minima는 STM_B의 Dashboard CAN을 받아 LCD를 표시하고 local touch
+navigation을 처리하는 독립 HMI입니다. 차량 command consumer나 safety controller는
+아니며, HIL에서만 USB Virtual LCD/Touch에 연결됩니다.
+
+두 STM은 각각 LPUART1 460800 baud로 별도의 micro-ROS Agent에 연결되어 ROS 2
 graph에 참여합니다. 실차 없이 이 구성을 시험할 때는 STM_TEST 보드가 STM_A/B의
 물리 입출력과 EZkontrol·KEYA CAN을 대신합니다.
 
@@ -34,19 +38,18 @@ Control/
 │   ├── STM_A/                       # 구동 및 차량 입력 펌웨어
 │   ├── STM_B/                       # E-stop 및 브레이크 펌웨어
 │   ├── STM_TEST/                    # STM_A/B 입출력과 EZ/KEYA HIL emulator
+│   ├── UNO_R4_DASHBOARD/            # Dashboard CAN·LCD·FT6336U touch HMI
 │   ├── micro_ros_agent/             # vendored micro-ROS Agent
 │   └── tools/                       # micro-ROS 라이브러리 재생성 스크립트
 ├── software/
 │   └── src/
 │       ├── lateral_ctrl/            # KEYA 조향 액추에이터 제어
 │       ├── command_governor/        # /planning/command → /vehicle/command 단일 발행자
-│       ├── vehicle_state_publisher/ # status 3종을 /vehicle/state로 통합
+│       ├── vehicle_state_publisher/ # 차량 상태·wheel twist·diagnostics 발행
 │       ├── control_launch/          # 실차 구동 통합 launch (vehicle.launch.py)
-│       ├── kaiev26_hil/             # Web/PyQt HIL, Virtual LCD, scenario, vcan SIL
 │       ├── vehicle_test_scenarios/  # /planning/command 실차 시험 시나리오
-│       ├── control_gui_common/      # HIL/dashboard 공용 Qt runtime helper
-│       ├── visualization/           # read-only GUI, diagnostics, Foxglove bridge
-│       └── gazebo/                  # PID·SILS 시뮬레이션 자원
+│       ├── vehicle_console/         # 통합 Console: Vehicle 관측 / HIL 시험 / 공용 Web
+│       └── foxglove/                # Foxglove bridge와 engineering layout
 ├── host/                            # 차량 PC 호스트 설정 (can0 systemd-networkd)
 └── archive/                         # 과거 구현 보관소, 빌드 대상 아님
 ```
@@ -69,23 +72,28 @@ Control/
 |---|---|
 | `lateral_ctrl` | `/vehicle/command`와 STM 상태를 사용한 KEYA 조향 모터 제어 및 `/steering/status` |
 | `command_governor` | `/planning/command`를 정합성 게이트 후 `/vehicle/command`로 재발행하는 유일한 발행자. 현재 패스스루이며 형상(속도 상한·램프·축간 협조)은 이후 단계 |
-| `vehicle_state_publisher` | 액추에이터 status 3종을 `/vehicle/state`로 통합 |
+| `vehicle_state_publisher` | status 3종을 `/vehicle/state`, `/vehicle/wheel_twist`, `/diagnostics`로 변환 |
 | `control_launch` | 실차 구동 스택 통합 `vehicle.launch.py` (Agent 2개 + 거버너 + 조향 + 상태 통합) |
-| `kaiev26_hil` | STM_TEST bridge, React/PyQt HIL, UNO Virtual LCD, scenario, software-only `vcan` simulator |
 | `vehicle_test_scenarios` | production Planning 대신 `/planning/command`를 발행하는 실차 직진·조향·속도·제동 시험 시나리오 |
-| `control_gui_common` | HIL GUI와 vehicle dashboard가 공유하는 PyQt5/Qt runtime helper |
-| `visualization` | read-only 차량 상태 GUI, `/diagnostics` 요약과 Foxglove bridge launch |
-| `gazebo` | PID 및 SILS 관련 시뮬레이션 자원 |
+| `vehicle_console` | KAI Vehicle Console: 단일 frontend·공용 Web/ROS/runtime, Vehicle read-only 및 HIL backend |
+| `foxglove` | Foxglove bridge와 engineering layout |
 
-## Web HIL
+## KAI Vehicle Console
 
-브라우저의 전역 **Control Dock**로 Mode/Gear/Pedal/E-stop을 조작하면서
+HIL profile의 전역 **Control Dock**로 Mode/Gear/Pedal/E-stop을 조작하면서
 구동·조향·브레이크 관측 페이지를 전환할 수 있습니다. 벤치 개요, CAN 진단·수신 주기,
 시나리오 결과와 UNO의 **가상 LCD**도 제공합니다. 화면의 속도는 km/h,
-조향은 degree이며 ROS의 m/s·rad 계약은 유지합니다. 기존 PyQt GUI도 유지합니다.
+조향은 degree이며 ROS의 m/s·rad 계약은 유지합니다.
+
+`vehicle_console` 한 패키지 안에서 frontend와 공용 계층을 HIL과 Vehicle이 공유합니다. **Vehicle · READ ONLY**는 제어기나 HIL을
+초기화하지 않고 차량 토픽만 구독하며, 서버에서 명령 입력을 거부합니다.
+`ros2 launch vehicle_console vehicle.launch.py`로 시작합니다(기본 8766).
+HIL은 `ros2 launch vehicle_console hil.launch.py`를 사용합니다(8767).
+[Console 설치·운용](software/src/vehicle_console/README.md),
+[Qt 대체 및 archive 판단](software/src/vehicle_console/CONSOLE_PARITY.md)을 참고하십시오.
 
 Web 의존성 설치, 프론트엔드·공통 LCD renderer 빌드, 전체 벤치 실행은
-[Web Console 운용 문서](software/src/kaiev26_hil/WEB_CONSOLE.md)를 따릅니다.
+[Web Console 운용 문서](software/src/vehicle_console/HIL_WEB.md)를 따릅니다.
 기존 HIL launch와 Web 전체 벤치를 중복 실행하지 않습니다.
 
 ## 빠른 빌드
@@ -116,14 +124,14 @@ STM 펌웨어 빌드와 보드별 micro-ROS Agent 실행 절차는
 Planning은
 포함되지 않으며(별도 실행, `/planning/command` 발행), Planning이 없으면
 안전한 대기 상태(STM_A HALTED, 조향 WAIT_CMD)로 섭니다. 조향은 기본
-armed이므로 전원 인가 전에 배선과 E-stop을 먼저 확인하십시오. 관찰
-GUI(Foxglove·dashboard)는 별도로 켭니다. `/diagnostics` 요약은 구동 스택에
+armed이므로 전원 인가 전에 배선과 E-stop을 먼저 확인하십시오.
+관측 화면(Foxglove·Vehicle Console)은 별도로 켭니다. `/diagnostics` 요약은 구동 스택에
 포함되어 있습니다. production Planning 없이 실차 명령 경로를 시험할 때는
 `vehicle_test_scenarios`를 사용합니다.
 
 ```bash
 ros2 launch control_launch vehicle.launch.py            # 실차 구동 스택
-ros2 launch visualization foxglove_bridge.launch.py     # 관찰 (선택, 별도)
+ros2 launch foxglove foxglove_bridge.launch.py          # 관찰 (선택, 별도)
 ```
 
 can0는 launch 전에 올라와 있어야 합니다. `host/systemd/`의 networkd 설정을
@@ -159,7 +167,7 @@ bench([HIL runbook](docs/HIL_RUNBOOK.md)), 조향 단독
 | 문서 | 내용 |
 |---|---|
 | [Firmware](firmware/README.md) | 공통 STM 빌드, 고정 장치 이름과 micro-ROS Agent 실행 |
-| [HIL runbook](docs/HIL_RUNBOOK.md) | SSH/X11부터 Agent·GUI·시험·종료까지 전체 HIL 운용 절차 |
+| [HIL runbook](docs/HIL_RUNBOOK.md) | Web 접속부터 Agent·시험·종료까지 전체 HIL 운용 절차 |
 
 ### 구성요소별 상세
 
@@ -169,17 +177,18 @@ bench([HIL runbook](docs/HIL_RUNBOOK.md)), 조향 단독
 | [STM_B](firmware/STM_B/README.md) | STM_B 내부 구조 및 동작 |
 | [STM_TEST](firmware/STM_TEST/README.md) | HIL emulator의 pin map, UART protocol과 Plant |
 | [lateral_ctrl](software/src/lateral_ctrl/README.md) | KEYA 조향 패키지 사용법과 상태 머신 |
-| [kaiev26_hil](software/src/kaiev26_hil/README.md) | STM_TEST bridge, GUI, protocol과 scenario 상세 |
 | [vehicle_test_scenarios](software/src/vehicle_test_scenarios/README.md) | 실차 직진·조향 sweep·속도 step/ramp·제동 시험 입력 |
-| [control_gui_common](software/src/control_gui_common/README.md) | HIL GUI와 dashboard 공용 Qt runtime 처리 |
-| [visualization](software/src/visualization/README.md) | 관찰용 GUI와 Foxglove 사용법 |
+| [vehicle_console](software/src/vehicle_console/README.md) | 통합 Console, Vehicle READ ONLY, HIL, 원격 관측 |
+| [HIL backend](software/src/vehicle_console/HIL_BACKEND.md) | bridge, protocol, scenario와 vcan 상세 |
+| [vehicle_state_publisher](software/src/vehicle_state_publisher/README.md) | 차량 상태·wheel twist·diagnostics 발행 |
+| [foxglove](software/src/foxglove/README.md) | Foxglove bridge와 engineering layout |
 
 ## 개발 규칙
 
 ### 파일 배치
 
 - ROS 2 패키지는 `software/src/` 아래에 둡니다.
-- Gazebo 코드는 `software/src/gazebo/` 아래에 둡니다.
+- 구형 PID/Gazebo 실험 코드와 모델은 [`archive/software/gazebo`](archive/software/gazebo/README.md)에 보관하며 빌드에서 제외합니다.
 - 전체 제어 launch는 `software/src/control_launch/launch/` 아래에 둡니다.
 - 패키지 단독 시험 launch는 해당 패키지의 `launch/` 아래에 둡니다.
 - 주기·timeout·핀·통신 ID·안전 조건을 바꿀 때는 위 기준 문서를 함께 갱신합니다.

@@ -1,0 +1,46 @@
+.profile-label { display: block; margin-top: 4px; color: var(--command); font-size: 11px; letter-spacing: .5px; }
+.console-waiting { padding: 36px; }
+.vehicle-workstation { --remote: 0px; --bar: 78px; }
+.vehicle-workstation .global-bar { display: flex; justify-content: space-between; }
+.vehicle-workstation .wordmark span { display: block; }
+.vehicle-link-status { display: flex; gap: 8px; align-items: center; }
+.vehicle-overview { display: flex; flex-direction: column; gap: 14px; }
+.vehicle-overview .state-rail { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.overview-instruments { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.overview-instruments .panel { min-width: 0; }
+.overview-bottom { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.overview-bottom .panel { min-width: 0; }
+.overview-bottom .fact { padding: 5px 0; }
+.overview-bottom .source { font-size: 11px; }
+.vehicle-overview .panel-heading { padding-top: 9px; padding-bottom: 9px; margin-bottom: 10px; }
+.vehicle-overview .target-actual { padding: 12px; }
+.vehicle-overview .paired-readings { margin: 12px 0; }
+.vehicle-overview .paired-readings strong { font-size: 34px; }
+.vehicle-overview .source { margin-top: 10px; }
+@media (min-width: 1101px) and (max-width: 1450px) {
+  .vehicle-overview .state-rail { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.diagnostic-observations { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 20px; }
+.diagnostic-item h3 { display: flex; align-items: center; gap: 8px; }
+.source { flex-wrap: wrap; overflow-wrap: anywhere; }
+@media (max-width: 1100px) {
+  .vehicle-workstation { --nav: 170px; }
+  .overview-bottom { grid-template-columns: 1fr 1fr; }
+  .overview-bottom > :first-child { grid-column: 1 / -1; }
+  .vehicle-overview .state-rail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .workstation .wordmark span { display: block; font-size: 12px; }
+  .vehicle-workstation { --nav: 0px; --bar: 112px; }
+  .vehicle-workstation .global-bar { height: var(--bar); flex-wrap: wrap; gap: 9px; }
+  .vehicle-workstation .wordmark span { font-size: 11px; }
+  .vehicle-link-status { width: 100%; }
+  .vehicle-link-status .badge { flex: 1; text-align: center; }
+  .vehicle-workstation .navigation { position: sticky; top: var(--bar); width: 100%; visibility: visible; transform: none; padding: 0; bottom: auto; border: 0; border-bottom: 1px solid var(--line); z-index: 20; }
+  .vehicle-workstation .navigation nav { flex-direction: row; overflow-x: auto; }
+  .vehicle-workstation .navigation nav button { flex-shrink: 0; padding: 12px 10px; font-size: 13px; }
+  .vehicle-workstation .navigation nav button svg { display: none; }
+  .vehicle-workstation .nav-caption { display: none; }
+  .overview-instruments, .overview-bottom, .diagnostic-observations { grid-template-columns: minmax(0, 1fr); }
+  .overview-bottom > :first-child { grid-column: auto; }
+}

@@ -253,10 +253,12 @@ kaiev26_msgs/TargetSpeed.msg
 kaiev26_msgs/RoadFeature2D.msg
 kaiev26_msgs/TrafficLightObservationArray.msg
 kaiev26_msgs/ModuleStatus.msg
+kaiev26_msgs/RuntimeStats.msg
 kaiev26_msgs/VehicleState.msg
 kaiev26_msgs/PerceptionObject.msg
 kaiev26_msgs/RouteContext.msg
 kaiev26_msgs/SceneSummary.msg
+kaiev26_msgs/TaskRuntimeStats.msg
 kaiev26_msgs/TrafficLightAttributes.msg
 control_msgs/QueryCalibrationState.srv
 control_msgs/SetOdometry.srv

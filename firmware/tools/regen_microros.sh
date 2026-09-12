@@ -25,7 +25,10 @@ UTILS_COMMIT=${UTILS_COMMIT:-bd531b273c1bcd070b3143c5642128ec75a6f04e} # humble
 MSGS_REPO=${MSGS_REPO:-https://github.com/TeamKAI-DL/kaiev26_msgs.git}
 KAIEV26_MSGS_COMMIT=${KAIEV26_MSGS_COMMIT:-}
 DOCKER_IMAGE=microros/micro_ros_static_library_builder:humble
-MCU_CFLAGS="-mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -ffunction-sections -fdata-sections -Os -g0"
+# Ubuntu GCC 10's own stdint.h omits Newlib's __int64_t_defined. Select the
+# installed target libc headers together so inttypes.h exposes PRId64 regardless
+# of rcutils include order (notably the Humble time.h header cleanup).
+MCU_CFLAGS="-mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -ffunction-sections -fdata-sections -Os -g0 -isystem /usr/include/newlib"
 
 REPO_ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 # Control은 상위 저장소의 서브모듈이므로 kaiev26_msgs는 형제 경로에 있다.
@@ -71,6 +74,10 @@ import json, sys
 p = sys.argv[1]
 m = json.load(open(p))
 m["names"]["kaiev26_msgs"] = {"cmake-args": ["-DBUILD_TESTING=OFF"]}
+# RuntimeStats[9] is fixed-size but exceeds a 512-byte best-effort stream.
+# Configure the generator, never patch generated config headers by hand.
+m["names"].setdefault("microxrcedds_client", {}).setdefault("cmake-args", []).append(
+    "-DUCLIENT_CUSTOM_TRANSPORT_MTU=1024")
 json.dump(m, open(p, "w"), indent=4)
 PY
 printf 'print_cflags:\n\t@echo "%s"\n' "$MCU_CFLAGS" > "$WORK/project/Makefile"
@@ -104,6 +111,7 @@ micro_ros_stm32cubemx_utils=$UTILS_COMMIT
 kaiev26_msgs=$MSGS_COMMIT
 kaiev26_msgs_source=$MSGS_SOURCE
 mcu_cflags=$MCU_CFLAGS
+custom_transport_mtu=1024
 MANIFEST
 
 echo "완료. kaiev26_msgs $MSGS_COMMIT 으로 생성했다."

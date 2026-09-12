@@ -411,6 +411,6 @@ GPIO 출력 상태를 확인하십시오.
 - 상대 보드: [`../STM_A/README.md`](../STM_A/README.md),
   [`../STM_B/README.md`](../STM_B/README.md)
 - ROS bridge·topic·service와 GUI 계약:
-  [`../../software/src/kaiev26_hil/README.md`](../../software/src/kaiev26_hil/README.md)
+  [`../../software/src/vehicle_console/HIL_BACKEND.md`](../../software/src/vehicle_console/HIL_BACKEND.md)
 - HIL 전체 운용 절차: [`../../docs/HIL_RUNBOOK.md`](../../docs/HIL_RUNBOOK.md)
 - 통신 계약: [`../../docs/INTERFACES.md`](../../docs/INTERFACES.md)

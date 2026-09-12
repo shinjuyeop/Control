@@ -15,6 +15,8 @@ dist/
 
 # 가상환경
 .venv/
+node_modules/
+*.tsbuildinfo
 venv*/
 env/
 ENV/
@@ -40,13 +42,13 @@ logs/
 /software/bags/
 /software/test_results/
 **/rosbag2_*/
-software/src/gazebo/pid_gazebo/sils_bag_*/
-software/src/gazebo/pid_gazebo/analysis/*.csv
-software/src/gazebo/pid_gazebo/analysis_RUN*_backup/
-software/src/gazebo/pid_gazebo/analysis_run*_backup/
-software/src/gazebo/pid_gazebo/bags/
-software/src/gazebo/pid_gazebo/current_rpm.txt
-software/src/gazebo/pid_gazebo/plots/
+archive/software/gazebo/pid_gazebo/sils_bag_*/
+archive/software/gazebo/pid_gazebo/analysis/*.csv
+archive/software/gazebo/pid_gazebo/analysis_RUN*_backup/
+archive/software/gazebo/pid_gazebo/analysis_run*_backup/
+archive/software/gazebo/pid_gazebo/bags/
+archive/software/gazebo/pid_gazebo/current_rpm.txt
+archive/software/gazebo/pid_gazebo/plots/
 
 ##################################
 # 3) IDE · 편집기 설정
@@ -99,7 +101,3 @@ micro_ros_stm32cubemx_utils/
 *.csv
 *.local.yaml
 *.local.yml
-
-# 만약 pid_gazebo 폴더 안의 내용물을 통째로 제외하고 싶다면 (추천)
-pid_gazebo/analysis/
-pid_gazebo/bags/

@@ -47,3 +47,21 @@ extern "C" void render_dashboard(const int32_t *native_values,
     rgb[index * 3U + 2U] = uint8_t((color & 31U) * 255U / 31U);
   }
 }
+
+extern "C" void render_swipe_test(int result, uint8_t *rgb)
+{
+  DashboardHostRuntime::reset();
+  DashboardHostRuntime::setAllowedTimeUs(60000000U);
+  St7796Lcd::begin();
+  DashboardUi::showSwipeTest(result == 1 ? 'L' : result == 2 ? 'R' : '-');
+
+  std::array<uint16_t, St7796Lcd::WIDTH * St7796Lcd::HEIGHT> pixels{};
+  DashboardHostRuntime::copyFramebuffer(pixels.data());
+  for (std::size_t index = 0; index < pixels.size(); ++index)
+  {
+    const uint16_t color = pixels[index];
+    rgb[index * 3U] = uint8_t(((color >> 11U) & 31U) * 255U / 31U);
+    rgb[index * 3U + 1U] = uint8_t(((color >> 5U) & 63U) * 255U / 63U);
+    rgb[index * 3U + 2U] = uint8_t((color & 31U) * 255U / 31U);
+  }
+}

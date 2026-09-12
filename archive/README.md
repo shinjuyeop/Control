@@ -1,6 +1,7 @@
 # Control Stack - 자율주행 차량 통합 제어 시스템
 
 > 이 디렉터리는 현재 production build 대상이 아닌 과거 구현 보관소입니다.
+> 구형 PID/Gazebo SILS 실험과 모델은 [`software/gazebo`](software/gazebo/README.md)에 보관합니다.
 > 2026-09-02 이전 direct-SPI LCD STM_B는
 > [`firmware/STM_B_DIRECT_LCD`](firmware/STM_B_DIRECT_LCD)에 보관합니다.
 

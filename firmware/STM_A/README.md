@@ -60,12 +60,12 @@ STM_A는 STM32G474 기반의 차량 입력·종방향 구동 보드입니다. �
 |---|---|---|---|---|---|
 | `PA11` | `CN10-14` | `FDCAN1_RX` | EZkontrol CAN | Classic CAN, extended ID, 250 kbit/s | `Core/Src/fdcan.c` |
 | `PA12` | `CN10-12` | `FDCAN1_TX` | EZkontrol CAN | 동일 bus | `Core/Src/fdcan.c` |
-| `PA2` | `CN10-35` | `LPUART1_TX` | micro-ROS transport | 115200 8N1, DMA1 CH2 | `Core/Src/usart.c` |
-| `PA3` | `CN10-37` | `LPUART1_RX` | micro-ROS transport | 115200 8N1, DMA1 CH1 | `Core/Src/usart.c` |
+| `PA2` | `CN10-35` | `LPUART1_TX` | micro-ROS transport | 460800 8N1, DMA1 CH2 | `Core/Src/usart.c` |
+| `PA3` | `CN10-37` | `LPUART1_RX` | micro-ROS transport | 460800 8N1, DMA1 CH1 | `Core/Src/usart.c` |
 | `PC4` | `CN10-34` | `USART1_TX` | STM_B 보드 간 UART | 115200 8N1, DMA1 CH4 | `Core/Src/usart.c` |
 | `PC5` | `CN10-6` | `USART1_RX` | STM_B 보드 간 UART | Receive-to-Idle circular DMA, DMA1 CH3 | `Core/Src/usart.c` |
 
-`ADC1`은 DMA1 CH5를 사용합니다. FDCAN 핀은 반드시 CAN transceiver를 거쳐야 하며
+`ADC1`에는 DMA1 CH5가 설정돼 있지만 현재 Inputs는 polling으로 변환합니다. FDCAN 핀은 반드시 CAN transceiver를 거쳐야 하며
 MCU 핀을 CANH/CANL에 직접 연결하면 안 됩니다. `PA2`/`PA3`은 NUCLEO의 ST-LINK
 virtual COM port와 연결된 핀이므로 morpho 자리에 다른 신호를 물리면 micro-ROS
 transport와 충돌합니다.
@@ -115,16 +115,36 @@ Queue, semaphore, mutex, software timer는 생성하지 않습니다. ISR→Task
 
 ## 6. FreeRTOS Task
 
-| Task | 역할 | 주기/Trigger | 우선순위 | 관련 파일 |
-|---|---|---:|---|---|
-| `Control` | mode별 EZkontrol command와 HALTED 적용 | nominal 50 ms; handshake 대기는 10 ms | `Realtime` | `app_freertos.c` |
-| `Inputs` | 페달 8회 ADC 평균, mode·gear GPIO | blocking ADC 처리 후 50 ms delay | `High` | `app_freertos.c` |
-| `MotorRx` | 현재는 대기만 수행; 실제 RX는 FDCAN callback | 20 ms | `AboveNormal` | `app_freertos.c` |
-| `uROS` | Agent 연결 상태 머신, command callback, status publish | running loop 5 ms; status 50 ms | `Normal` | `app_freertos.c` |
-| `BRx` | STM_B safety frame parse와 timeout·stop 계산 | continuous loop, 1 ms delay | `High1` | `app_freertos.c` |
-| `BTx` | STM_B로 vehicle status 송신 | 20 ms | `Low` | `app_freertos.c` |
+| Task | 역할 | 주기/Trigger | 우선순위 (CMSIS 값) | Stack (words) |
+|---|---|---|---|---:|
+| `Control` | EZkontrol command / HALTED | absolute 50 ms; handshake 대기 10 ms | `Realtime` (48) | 512 |
+| `Inputs` | 페달 ADC 8회 평균, mode·gear GPIO | absolute 50 ms | `High` (40) | 256 |
+| `uROS` | Agent 상태, command 수신, status 발행 | 상태 머신; running 후 5 ms delay, status 목표 20 ms | `Normal` (24) | 1536 |
+| `BRx` | safety frame parse, timeout·stop 계산 | 작업 후 1 ms delay | `High1` (41) | 256 |
+| `BTx` | vehicle status / drive detail 송신 | absolute 20 ms / detail 100 ms | `Low` (8) | 256 |
+| `PerfMon` | runtime snapshot 집계 | 약 1 Hz | `Low` (8) | 256 |
 
-`osDelay()` 값은 nominal delay이며 Task 수행 시간은 별도로 더해집니다.
+모두 `.ioc` baseline의 Dynamic task이며 1 word는 4 bytes입니다. MotorRx는
+CubeMX에서 제거됐습니다. 실제 CAN RX는 기존 `HAL_FDCAN_RxFifo0Callback()`이
+그대로 담당하며 CAN 수신 기능은 바꾸지 않았습니다.
+
+Control/Inputs/BTx는 최초 scheduled release phase를 유지하는 `vTaskDelayUntil()`
+기반입니다. 늦게 시작하거나 작업이 길어져도 actual/completion에 re-anchor하지 않고,
+완료 tick 이하의 release를 period 단위로 건너뛰어 첫 미래 scheduled release를
+기다립니다. 밀린 release를 재실행하지 않습니다. 정상 EZkontrol 50 ms cadence와 safety UART
+100 ms / AUTO host 500 ms timeout 상수 및 판단 로직은 유지합니다.
+
+Inputs의 task-alive LED toggle은 제거했습니다. ADC는 software-trigger single
+conversion 8회 polling을 유지합니다. DMA1 CH5는 초기화·연결만 되어 있고,
+`HAL_ADC_Start_DMA()`를 호출하지 않습니다. 현재 sampling time은 247.5 cycles입니다.
+ADC 실패 시 기존 10 ms polling timeout이 8회 발생할 수 있으므로 observed wall time과
+miss를 확인해야 합니다. 페달 필터·실패 처리·DMA 수집 방식 재설계는 이번 범위에서
+수행하지 않았습니다.
+
+BRx 1 ms polling은 수신이 없어도 timeout/stop/restart를 평가합니다. BTx의 local
+frame buffer와 blocking UART TX(10 ms timeout)도 유지합니다. DMA/notification 전환
+판단과 계측 정의·snapshot API는 [공통 runtime metrics 문서](../common/README.md)를
+참고하십시오. PerfMon은 ROS publish를 하지 않습니다.
 
 ## 7. 외부 인터페이스
 
@@ -143,7 +163,7 @@ LPUART1(`PA2`/`PA3`) custom transport가 별도의 micro-ROS Agent에 연결됩�
 
 | Topic | Type | 주기 | 설명 |
 |---|---|---:|---|
-| `/drive/status` | `kaiev26_msgs/msg/DriveActuatorStatus` | 50 ms | mode·gear·속도, command·CAN status freshness와 진단 |
+| `/drive/status` | `kaiev26_msgs/msg/DriveActuatorStatus` | 목표 20 ms | mode·gear·속도, command·CAN status freshness와 진단 |
 
 ## 8. 동작 상세
 
@@ -222,7 +242,7 @@ sequenceDiagram
     Motor->>A: Status Part I / II
     A->>B: Vehicle status UART (20 ms)
     A->>B: Drive detail UART (100 ms)
-    A->>Host: /drive/status (50 ms)
+    A->>Host: /drive/status (목표 20 ms)
 ```
 
 AUTO 속도는 `speed_target_mps`를 타이어 지름 `0.47 m`, 감속비 `4.60`으로
@@ -270,7 +290,7 @@ Agent는 STM_A의 LPUART1 장치에 하나 붙입니다.
 ```bash
 source /opt/ros/humble/setup.bash
 source ~/KAI_ws/install/setup.bash
-ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/stm_a -b 115200
+ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/stm_a -b 460800
 ```
 
 > **경고:** STM_B와 혼동하지 않도록 보드, serial device와 연결된 액추에이터를
@@ -299,7 +319,6 @@ ros2 topic echo /drive/status
 - STM_A 자신의 FDCAN controller 상태를 알 수 없습니다. `part1_valid=false`는
   EZkontrol 전원이 나간 경우와 STM_A CAN이 오류 상태로 송신을 못 하는 경우에
   똑같이 나타납니다.
-- `MotorRx` Task는 실제 수신 작업을 하지 않으며 CAN callback이 처리합니다.
 - MCU independent watchdog 사용은 현재 코드에서 확인되지 않습니다.
 - pedal calibration 값은 코드 상수이고 별도 calibration metadata가 없습니다.
 - `SW_MODE`·`SW_GEAR`에 software debounce가 없습니다.
@@ -342,3 +361,22 @@ error-passive이고 상대가 돌아오면 자동 복구되는 것으로 확인�
 - 시스템 구조: [`../../docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md)
 - 통신 계약: [`../../docs/INTERFACES.md`](../../docs/INTERFACES.md)
 - 안전 설계: [`../../docs/SAFETY.md`](../../docs/SAFETY.md)
+
+## Runtime diagnostics ROS interface
+
+`/stm_a/runtime_stats`는 `kaiev26_msgs/msg/RuntimeStats`를 약 1 Hz,
+best-effort로 발행합니다. 기존 uROS task만 publisher를 소유하고 PerfMon은
+aggregate/snapshot만 수행합니다. 진단 실패는 safety fault나 연결 teardown 조건이
+아닙니다. 고정 `TaskRuntimeStats[9]`, board/task ID, µs/ms/bytes 단위와 누적값,
+1 ms jitter 해상도, CPU load 미지원 및 E-stop callback→task latency 경계는
+[공통 runtime 문서](../common/README.md#host-tests--ros-연결)를 따릅니다.
+
+```bash
+ros2 topic type /stm_a/runtime_stats
+ros2 topic hz /stm_a/runtime_stats
+ros2 topic echo /stm_a/runtime_stats --once --qos-reliability best_effort
+```
+
+RuntimeStats 적용 firmware의 LPUART1과 Agent는 모두 **460800 baud**를 사용합니다.
+이전 115200 firmware를 사용할 때만 launch에 `agent_baud:=115200`을 지정하십시오.
+보드 간 USART1과 STM_TEST/Arduino serial은 115200으로 유지합니다.

@@ -1,0 +1,30 @@
+name: ez_can_timeout
+# 전제조건(주입 전 정상 상태 확인)이 있는 구조다. estop_test.yaml 주석 참고.
+steps:
+  - at: 0.0
+    hil:
+      mode: AUTO
+      speed: 1.0
+    fault:
+      ez_drop_tx: false
+    command:
+      enabled: true
+      speed_target_mps: 2.0
+      steering_target_rad: 0.0
+      brake_engage: false
+  - at: 4.0
+    fault:
+      ez_drop_tx: true
+expect:
+  # 전제: 주입 전에 EZ status가 실제로 흐르고 있어야 한다.
+  - topic: /drive/status
+    field: part1_valid
+    equals: true
+    after: 1.0
+    within_ms: 2800
+  # STM_A currently exposes the 200 ms Part-I timeout as validity only.
+  - topic: /drive/status
+    field: part1_valid
+    equals: false
+    after: 4.0
+    within_ms: 500
