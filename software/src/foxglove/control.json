@@ -412,6 +412,410 @@
       ],
       "reverse": true
     },
+    "Plot!test_long_speed": {
+      "foxglovePanelTitle": "종방향 속도 추종  시험 입력 → 차량 명령 → 실측",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/planning/command.speed_target_mps",
+          "enabled": true,
+          "color": "#56CCF2",
+          "id": "long-speed-plan",
+          "label": "시험 입력"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/vehicle/command.speed_target_mps",
+          "enabled": true,
+          "color": "#B49AFF",
+          "id": "long-speed-command",
+          "label": "차량 명령"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.speed_mps",
+          "enabled": true,
+          "color": "#F2C879",
+          "id": "long-speed-actual",
+          "label": "실측 속도"
+        }
+      ],
+      "yAxisLabel": "m/s",
+      "showYAxisLabels": true,
+      "legendDisplay": "top",
+      "showPlotValuesInLegend": true,
+      "isSynced": true
+    },
+    "Plot!test_long_rpm": {
+      "foxglovePanelTitle": "구동 모터 RPM  지령 → 피드백",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.commanded_motor_rpm",
+          "enabled": true,
+          "color": "#56CCF2",
+          "id": "long-rpm-command",
+          "label": "RPM 지령"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.motor_rpm",
+          "enabled": true,
+          "color": "#F2C879",
+          "id": "long-rpm-actual",
+          "label": "RPM 피드백"
+        }
+      ],
+      "yAxisLabel": "rpm",
+      "showYAxisLabels": true,
+      "legendDisplay": "top",
+      "showPlotValuesInLegend": true,
+      "isSynced": true
+    },
+    "Plot!test_long_current": {
+      "foxglovePanelTitle": "구동 전류  제한 · 상전류 · DC 버스",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.commanded_phase_current_a",
+          "enabled": true,
+          "color": "#56CCF2",
+          "id": "long-current-limit",
+          "label": "상전류 제한"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.phase_current_a",
+          "enabled": true,
+          "color": "#F5774D",
+          "id": "long-current-phase",
+          "label": "모터 상전류"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.bus_current_a",
+          "enabled": true,
+          "color": "#67DDB4",
+          "id": "long-current-bus",
+          "label": "DC 버스 전류"
+        }
+      ],
+      "yAxisLabel": "A",
+      "showYAxisLabels": true,
+      "legendDisplay": "top",
+      "showPlotValuesInLegend": true,
+      "isSynced": true
+    },
+    "Plot!test_long_age": {
+      "foxglovePanelTitle": "종방향 데이터 age",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.command_age_ms",
+          "enabled": true,
+          "color": "#56CCF2",
+          "id": "long-age-command",
+          "label": "차량 명령"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.part1_age_ms",
+          "enabled": true,
+          "color": "#F2C879",
+          "id": "long-age-part1",
+          "label": "속도·전류"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.part2_age_ms",
+          "enabled": true,
+          "color": "#67DDB4",
+          "id": "long-age-part2",
+          "label": "RUN·고장"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/brake/status.command_age_ms",
+          "enabled": true,
+          "color": "#F5774D",
+          "id": "long-age-brake",
+          "label": "제동 명령"
+        }
+      ],
+      "yAxisLabel": "ms",
+      "showYAxisLabels": true,
+      "minYValue": 0,
+      "legendDisplay": "top",
+      "showPlotValuesInLegend": true,
+      "isSynced": true
+    },
+    "StateTransitions!test_long_state": {
+      "foxglovePanelTitle": "종방향 시험 상태 · 안전 이벤트",
+      "isSynced": true,
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/sysid/scinario.data",
+          "label": "시험 시나리오"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.mode",
+          "label": "주행 모드"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.gear",
+          "label": "기어"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.tractive_commanded",
+          "label": "RUN 지령"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.tractive_feedback",
+          "label": "RUN 피드백"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.stop_request",
+          "label": "구동 정지 요청"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.command_timeout",
+          "label": "명령 timeout"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/planning/command.brake_engage",
+          "label": "시험 제동 입력"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/vehicle/command.brake_engage",
+          "label": "차량 제동 명령"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/brake/status.brake_commanded",
+          "label": "브레이크"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/brake/status.stop_reason_bits",
+          "label": "정지 사유 bits"
+        }
+      ]
+    },
+    "Plot!test_steer_angle": {
+      "foxglovePanelTitle": "조향각 추종  시험 입력 → 차량 명령 → 모터 명령 → 실측",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/planning/command.steering_target_rad",
+          "enabled": true,
+          "color": "#56CCF2",
+          "id": "steer-angle-plan",
+          "label": "시험 입력"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/vehicle/command.steering_target_rad",
+          "enabled": true,
+          "color": "#B49AFF",
+          "id": "steer-angle-command",
+          "label": "차량 명령"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.commanded_wheel_angle_rad",
+          "enabled": true,
+          "color": "#67DDB4",
+          "id": "steer-angle-rate-limited",
+          "label": "변화율 제한"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.corrected_wheel_angle_rad",
+          "enabled": true,
+          "color": "#F2C879",
+          "id": "steer-angle-corrected",
+          "label": "최종 모터 명령"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.actual_wheel_angle_rad",
+          "enabled": true,
+          "color": "#F5774D",
+          "id": "steer-angle-actual",
+          "label": "실측 조향각"
+        }
+      ],
+      "yAxisLabel": "rad",
+      "showYAxisLabels": true,
+      "legendDisplay": "top",
+      "showPlotValuesInLegend": true,
+      "isSynced": true
+    },
+    "Plot!test_steer_tracking": {
+      "foxglovePanelTitle": "조향 추종 제어  오차 · 보정량",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.tracking_error_rad",
+          "enabled": true,
+          "color": "#F5774D",
+          "id": "steer-tracking-error",
+          "label": "추종 오차"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.tracking_correction_rad",
+          "enabled": true,
+          "color": "#B49AFF",
+          "id": "steer-tracking-correction",
+          "label": "PID 보정량"
+        }
+      ],
+      "yAxisLabel": "rad",
+      "showYAxisLabels": true,
+      "legendDisplay": "top",
+      "showPlotValuesInLegend": true,
+      "isSynced": true
+    },
+    "Plot!test_steer_current": {
+      "foxglovePanelTitle": "조향 모터 전류",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.motor_current_a",
+          "enabled": true,
+          "color": "#F2C879",
+          "id": "steer-motor-current",
+          "label": "모터 전류"
+        }
+      ],
+      "yAxisLabel": "A",
+      "showYAxisLabels": true,
+      "legendDisplay": "top",
+      "showPlotValuesInLegend": true,
+      "isSynced": true
+    },
+    "Plot!test_steer_vehicle_speed": {
+      "foxglovePanelTitle": "조향 시험 차량 속도",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/vehicle/command.speed_target_mps",
+          "enabled": true,
+          "color": "#56CCF2",
+          "id": "steer-speed-command",
+          "label": "목표 속도"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/drive/status.speed_mps",
+          "enabled": true,
+          "color": "#F2C879",
+          "id": "steer-speed-actual",
+          "label": "실측 속도"
+        }
+      ],
+      "yAxisLabel": "m/s",
+      "showYAxisLabels": true,
+      "legendDisplay": "top",
+      "showPlotValuesInLegend": true,
+      "isSynced": true
+    },
+    "Plot!test_steer_age": {
+      "foxglovePanelTitle": "조향 데이터 age",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.steer_command_age_ms",
+          "enabled": true,
+          "color": "#56CCF2",
+          "id": "steer-age-command",
+          "label": "조향 명령"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.feedback_age_ms",
+          "enabled": true,
+          "color": "#F2C879",
+          "id": "steer-age-feedback",
+          "label": "위치 피드백"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.mode_age_ms",
+          "enabled": true,
+          "color": "#67DDB4",
+          "id": "steer-age-mode",
+          "label": "주행 모드"
+        }
+      ],
+      "yAxisLabel": "ms",
+      "showYAxisLabels": true,
+      "minYValue": 0,
+      "legendDisplay": "top",
+      "showPlotValuesInLegend": true,
+      "isSynced": true
+    },
+    "StateTransitions!test_steer_state": {
+      "foxglovePanelTitle": "조향 시험 상태 · 안전 이벤트",
+      "isSynced": true,
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/sysid/scinario.data",
+          "label": "시험 시나리오"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.state",
+          "label": "조향 state"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.disable_reason",
+          "label": "비활성 원인"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.feedback_valid",
+          "label": "피드백 유효"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.movement_target_valid",
+          "label": "이동 목표 유효"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.tracking_error_warning",
+          "label": "추종 경고"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.tracking_error_fault",
+          "label": "추종 고장"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.steer_command_timeout",
+          "label": "명령 timeout"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.can_timeout",
+          "label": "CAN timeout"
+        }
+      ]
+    },
     "Tab!parts": {
       "activeTabIdx": 1,
       "tabs": [
@@ -441,6 +845,59 @@
             "second": "Tab!ctrl_detail",
             "direction": "row",
             "splitPercentage": 46
+          }
+        },
+        {
+          "title": "종방향 테스트",
+          "layout": {
+            "first": {
+              "first": "Plot!test_long_speed",
+              "second": "StateTransitions!test_long_state",
+              "direction": "row",
+              "splitPercentage": 68
+            },
+            "second": {
+              "first": "Plot!test_long_rpm",
+              "second": {
+                "first": "Plot!test_long_current",
+                "second": "Plot!test_long_age",
+                "direction": "row",
+                "splitPercentage": 62
+              },
+              "direction": "row",
+              "splitPercentage": 38
+            },
+            "direction": "column",
+            "splitPercentage": 62
+          }
+        },
+        {
+          "title": "조향 테스트",
+          "layout": {
+            "first": {
+              "first": "Plot!test_steer_angle",
+              "second": "StateTransitions!test_steer_state",
+              "direction": "row",
+              "splitPercentage": 68
+            },
+            "second": {
+              "first": "Plot!test_steer_tracking",
+            "second": {
+              "first": "Plot!test_steer_vehicle_speed",
+              "second": {
+                "first": "Plot!test_steer_current",
+                "second": "Plot!test_steer_age",
+                "direction": "row",
+                "splitPercentage": 50
+              },
+              "direction": "row",
+              "splitPercentage": 33.34
+            },
+            "direction": "row",
+            "splitPercentage": 34
+          },
+            "direction": "column",
+            "splitPercentage": 62
           }
         },
         {
