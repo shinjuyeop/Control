@@ -220,6 +220,20 @@ ros2 param set /vehicle_test_scenario_runner steering_period_sec 4.0
 ros2 param set /vehicle_test_scenario_runner scenario steering_sweep
 ```
 
+##### 직진 후 조향 sweep/슬라럼 — 5초 직진 후 3 km/h, ±3°, 4초 주기
+
+`initial_hold_sec` 동안은 조향 중앙(0°)에서 `cruise_speed_kph`로 직진하고, 그
+시간이 지나야 sweep이 시작된다. 진폭은 위와 동일하게 `3 deg`부터 시작한다.
+
+```bash
+ros2 param set /vehicle_test_scenario_runner cruise_speed_kph 3.0
+ros2 param set /vehicle_test_scenario_runner steering_center_deg 0.0
+ros2 param set /vehicle_test_scenario_runner steering_amplitude_deg 3.0
+ros2 param set /vehicle_test_scenario_runner steering_period_sec 4.0
+ros2 param set /vehicle_test_scenario_runner initial_hold_sec 5.0
+ros2 param set /vehicle_test_scenario_runner scenario steering_sweep
+```
+
 시나리오 세부 계약과 전체 파라미터는
 [`vehicle_test_scenarios/README.md`](../software/src/vehicle_test_scenarios/README.md)에
 있다.

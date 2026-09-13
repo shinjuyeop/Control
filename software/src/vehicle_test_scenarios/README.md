@@ -196,6 +196,13 @@ ros2 param set /vehicle_test_scenario_runner steering_amplitude_deg 10.0
 ros2 param set /vehicle_test_scenario_runner steering_period_sec 4.0
 ```
 
+`initial_hold_sec`를 함께 설정하면 그 시간 동안은 조향 중앙에서 직진하다가
+이후 sweep이 시작된다 (예: 5초 직진 후 슬라럼).
+
+```bash
+ros2 param set /vehicle_test_scenario_runner initial_hold_sec 5.0
+```
+
 시험을 중단할 때는 물리 E-stop/MANUAL을 우선하고, 소프트웨어에서는 다음처럼
 brake 명령을 계속 발행할 수 있다.
 
