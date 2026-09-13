@@ -59,6 +59,48 @@ def test_steering_step_returns_to_center_between_directions(
 
 
 @pytest.mark.parametrize(
+    ("elapsed_sec", "expected_deg"),
+    [
+        (0.0, -1.0),
+        (3.99, -1.0),
+        (4.0, -3.0),
+        (7.99, -3.0),
+        (8.0, -1.0),
+    ],
+)
+def test_steering_square_holds_each_side_for_half_a_period(
+    elapsed_sec, expected_deg
+):
+    config = ScenarioConfig(
+        scenario="steering_square",
+        cruise_speed_kph=3.6,
+        steering_center_deg=-2.0,
+        steering_amplitude_deg=1.0,
+        steering_period_sec=8.0,
+    )
+    output = scenario_setpoint(config, elapsed_sec)
+    assert output.speed_kph == 3.6
+    assert output.steering_deg == expected_deg
+
+
+def test_steering_square_keeps_motor_enabled_at_baseline():
+    config = ScenarioConfig(
+        scenario="steering_square",
+        steering_center_deg=-2.0,
+        steering_amplitude_deg=1.0,
+        steering_period_sec=8.0,
+        scenario_repetitions=2,
+    )
+    active, active_complete = scheduled_scenario_setpoint(config, 15.9)
+    finished, finished_complete = scheduled_scenario_setpoint(config, 16.0)
+    assert active.steering_deg == -3.0
+    assert not active_complete
+    assert finished.steering_deg == -2.0
+    assert finished.speed_kph == 0.0
+    assert finished_complete
+
+
+@pytest.mark.parametrize(
     ("elapsed_sec", "expected_kph"),
     [(0.0, 0.0), (1.99, 0.0), (2.0, 3.0), (3.99, 3.0), (4.0, 0.0)],
 )
