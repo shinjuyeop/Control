@@ -52,12 +52,11 @@ inline bool nextCommandBrakeState(
   return requested_brake || (current_brake && !stamp_fresh);
 }
 
-inline bool driveSpeedPermitsSteering(float speed_mps, bool feedback_valid)
+inline bool driveSpeedPermitsSteering(
+  float speed_mps, bool feedback_valid, float minimum_speed_mps)
 {
-  // DriveActuatorStatus uses float32; compare in the same representation at 1 km/h.
-  constexpr float kMinimumSpeedMps = 1.0F / 3.6F;
   return feedback_valid && std::isfinite(speed_mps) &&
-         std::abs(speed_mps) >= kMinimumSpeedMps;
+         std::abs(speed_mps) >= minimum_speed_mps;
 }
 
 inline SteeringDisableReason selectDisableReason(

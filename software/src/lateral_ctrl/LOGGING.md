@@ -2,7 +2,8 @@
 
 실험할 때마다 `ros2 bag record`를 손으로 치는 대신, 로깅 전용 launch 하나로 실차
 sysid에 필요한 토픽만 mcap으로 녹화하고 분석할 때 토픽당 CSV 1개로 변환하는 구성.
-압축 카메라 영상과 카메라 정보, Ouster LiDAR·IMU 패킷 및 메타데이터도 함께 녹화한다.
+압축 카메라 영상과 카메라 정보, `/lidar_points`, 그리고 호환성을 위해 남겨 둔
+Ouster LiDAR·IMU 패킷 및 메타데이터도 함께 녹화한다.
 
 - 녹화: `launch/mcap_logging.launch.py`
 - 변환: `scripts/mcap_to_csv.py` (`ros2 run`으로 실행)
@@ -16,6 +17,7 @@ sysid에 필요한 토픽만 mcap으로 녹화하고 분석할 때 토픽당 CSV
 ros2 topic info -v /steering/status
 ros2 topic info -v /imu/data
 ros2 topic info -v /gnss/fix
+ros2 topic info -v /lidar_points
 
 # 실차 제어컴 기본 경로는 /home/kai/KAI_ws/records다.
 ros2 launch lateral_ctrl mcap_logging.launch.py
@@ -28,9 +30,13 @@ ros2 launch lateral_ctrl mcap_logging.launch.py \
   require_external_storage:=true
 ```
 
-- `/vehicle/command`, actuator status, raw IMU/GNSS, ESKF, 좌우 hub IMU, TF와
-  diagnostics와 위 카메라·Ouster 토픽을 명시해 녹화한다. 발행되지 않는 선택 토픽은 recorder 경고만 남고,
+- `/vehicle/command`, actuator status, 주 IMU/GNSS, ESKF, TF, diagnostics와 위
+  카메라·LiDAR 토픽을 명시해 녹화한다. 발행되지 않는 선택 토픽은 recorder 경고만 남고,
   발행을 시작하면 discovery를 통해 구독한다.
+- HWJ Decision 통합 러너 `ros2 run kaiev26_decision decision_test`는 Run마다 자체
+  MCAP recorder를 실행하고 외부 recorder가 있으면 시작을 막는다. 이 launch를 통합
+  러너와 동시에 실행하지 않는다. Decision 노드만 `decision_test.launch.py`로 직접
+  실행할 때는 함께 쓸 수 있지만, Decision 전용 debug·인지 토픽 전체를 대신하지 않는다.
 - raw CAN은 같은 host에서 interface별 `candump -L`로 별도 기록한다.
 - 종료는 로깅 터미널에서 **Ctrl+C** — rosbag2가 SIGINT를 받아 mcap을 정상 마감하고
   `metadata.yaml`을 쓴다. 이게 없으면 변환 스크립트가 거부하니 강제 kill 금지.

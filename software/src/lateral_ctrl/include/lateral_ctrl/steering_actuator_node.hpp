@@ -74,9 +74,7 @@ private:
   double corrected_wheel_angle_deg_{0.0};
   double actual_wheel_angle_deg_{0.0};
   double max_steering_rate_deg_s_{60.0};
-  double tracking_error_warning_deg_{1.0};
-  double tracking_error_fault_deg_{3.0};
-  int tracking_error_fault_duration_ms_{500};
+  double minimum_steering_speed_mps_{1.0 / 3.6};
   int control_period_ms_{20};
   int can_timeout_ms_{500};
   int feedback_timeout_ms_{500};
@@ -90,7 +88,6 @@ private:
   std::chrono::steady_clock::time_point previous_tick_;
   std::chrono::steady_clock::time_point last_mode_time_{};
   std::chrono::steady_clock::time_point last_steer_command_time_{};
-  std::chrono::steady_clock::time_point tracking_fault_since_{};
 
   rclcpp::Subscription<kaiev26_msgs::msg::ActuatorCommand>::SharedPtr command_sub_;
   rclcpp::Subscription<kaiev26_msgs::msg::DriveActuatorStatus>::SharedPtr drive_status_sub_;

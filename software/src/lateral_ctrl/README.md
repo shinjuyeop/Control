@@ -91,6 +91,12 @@ ABI에 넣지 않은 최종 브레이크 명령입니다.
 | `/steering/enable_commanded` | `std_msgs/msg/Bool` | 노드가 KEYA에 명령한 Enable 상태 |
 | `/steering/enabled` | `std_msgs/msg/Bool` | KEYA 피드백으로 확인한 Enable 상태 |
 
+추종 오차에 따른 경고·고장 판정은 비활성화되어 있습니다.
+`tracking_error_warning_deg`, `tracking_error_fault_deg`,
+`tracking_error_fault_duration_ms` 파라미터는 더 이상 사용하지 않습니다.
+`/steering/status`의 `tracking_error_warning`과 `tracking_error_fault`는 항상
+`false`이며, 계측용 `tracking_error_rad`와 기존 조향 보정 제어는 유지합니다.
+
 ## 상태 머신
 
 | 값 | 상태 | 모터 | 의미 |
@@ -131,18 +137,9 @@ fresh한 header stamp를 가진 명령의 `brake_engage=false`만 기존 command
 해제합니다. 따라서 0 stamp나 오래된 명령은 걸려 있는 command brake를 해제하지
 못합니다. fresh한 명령이 `brake_engage=false`와 nonfinite 조향값을 함께 보내면
 조향 노드는 command brake는 해제하되 조향 명령은 거부하고 Disable 상태를
-유지합니다.
-
-## 좌우 바퀴 IMU 조향 계측
-
-좌우 EBIMU와 KEYA 피드백을 함께 기록할 때는 다음 계측 launch를 사용합니다.
-조향 actuator는 `can0`을 읽되 출력은 고정으로 비활성화합니다.
-
-```bash
-ros2 launch lateral_ctrl wheel_steering_measurement.launch.py
-```
-
-이 launch는 dual EBIMU 장치가 준비된 계측 세션 전용입니다.
+유지합니다. `minimum_steering_speed_kph`는 조향 허용 최저 속도이며 기본값은
+`1.0`입니다. `0.0`이면 유효하고 fresh한 `/drive/status`는 계속 요구하면서
+정지 상태 조향을 허용합니다.
 
 ## 빌드와 테스트
 
@@ -269,9 +266,8 @@ ros2 launch lateral_ctrl steering_bench_test.launch.py \
 
 count-to-angle 계수와 `counts_per_rev`는
 `config/steering_motor_calibration.yaml` 한 파일이 소유합니다. Control, active HIL,
-Gazebo CAN bridge가 같은 값을 사용합니다. 2026-08-21 dual wheel-hub IMU
-측정에서 얻은 full 5차 `k1..k5` nominal-centered shape이며 절대 toe나 IMU 장착
-yaw 보정값은 아닙니다.
+Gazebo CAN bridge가 같은 값을 사용합니다. 2026-08-21 조향 캘리브레이션 계측에서
+얻은 full 5차 `k1..k5` nominal-centered shape이며 절대 toe 보정값은 아닙니다.
 
 벤치 시퀀스의 기본값은 다음과 같습니다.
 

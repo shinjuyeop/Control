@@ -37,10 +37,9 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
   drive_status_timeout_ms_ = declare_parameter("drive_status_timeout_ms", 500);
   steer_command_timeout_ms_ = declare_parameter("steer_command_timeout_ms", 200);
   max_steering_rate_deg_s_ = declare_parameter("max_steering_rate_deg_s", 60.0);
-  tracking_error_warning_deg_ = declare_parameter("tracking_error_warning_deg", 1.0);
-  tracking_error_fault_deg_ = declare_parameter("tracking_error_fault_deg", 3.0);
-  tracking_error_fault_duration_ms_ =
-    declare_parameter("tracking_error_fault_duration_ms", 500);
+  const double minimum_steering_speed_kph =
+    declare_parameter("minimum_steering_speed_kph", 1.0);
+  minimum_steering_speed_mps_ = minimum_steering_speed_kph / 3.6;
   if (control_period_ms_ <= 0 || can_timeout_ms_ <= 0 || feedback_timeout_ms_ <= 0 ||
     mode_timeout_ms_ <= 0 || drive_status_timeout_ms_ <= 0 || steer_command_timeout_ms_ <= 0)
   {
@@ -49,11 +48,8 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
   if (!std::isfinite(max_steering_rate_deg_s_) || max_steering_rate_deg_s_ <= 0.0) {
     throw std::invalid_argument("max_steering_rate_deg_s must be finite and positive");
   }
-  if (!std::isfinite(tracking_error_warning_deg_) || tracking_error_warning_deg_ < 0.0 ||
-    !std::isfinite(tracking_error_fault_deg_) || tracking_error_fault_deg_ < 0.0 ||
-    tracking_error_fault_duration_ms_ < 0)
-  {
-    throw std::invalid_argument("steering tracking error limits must be finite and nonnegative");
+  if (!std::isfinite(minimum_steering_speed_kph) || minimum_steering_speed_kph < 0.0) {
+    throw std::invalid_argument("minimum_steering_speed_kph must be finite and nonnegative");
   }
   hardware_can_enabled_ = declare_parameter("hardware_can_enabled", false);
   actuator_output_enabled_ = declare_parameter("actuator_output_enabled", false);
@@ -219,7 +215,9 @@ void SteeringActuatorNode::onDriveStatus(
   // 물리 모드 스위치 상태는 STM_A의 drive status로 전달된다.
   applyMode(input->mode);
   drive_speed_permits_steering_ =
-    driveSpeedPermitsSteering(input->speed_mps, input->part1_valid);
+    driveSpeedPermitsSteering(
+    input->speed_mps, input->part1_valid,
+    static_cast<float>(minimum_steering_speed_mps_));
   if (!drive_speed_permits_steering_) {
     // Drop the old target and disable immediately, before the next CAN control tick.
     enterWaitCommand();
@@ -406,7 +404,8 @@ void SteeringActuatorNode::controlTick()
     if (steering_enabled_ && outputArmed()) {
       RCLCPP_WARN_THROTTLE(
         get_logger(), *get_clock(), 5000,
-        "Steering disabled: requires valid drive speed >= 1 km/h and fresh /drive/status");
+        "Steering disabled: requires valid drive speed >= %.3f km/h and fresh /drive/status",
+        minimum_steering_speed_mps_ * 3.6);
     }
   }
   if (disable_reason_ != SteeringDisableReason::NONE) {
@@ -493,22 +492,9 @@ void SteeringActuatorNode::publishState(
   status.enable_mismatch =
     motor.enabled_feedback_valid && enabled_commanded_ != motor.enabled_feedback;
   status.tracking_control_enabled = tracking_enabled_;
-  status.tracking_error_warning =
-    std::abs(tracking_controller_.errorDeg()) >= tracking_error_warning_deg_;
-  const bool fault_error_now =
-    std::abs(tracking_controller_.errorDeg()) >= tracking_error_fault_deg_;
-  if (!fault_error_now) {
-    tracking_fault_since_ = {};
-    status.tracking_error_fault = false;
-  } else {
-    const auto steady_now = std::chrono::steady_clock::now();
-    if (tracking_fault_since_.time_since_epoch().count() == 0) {
-      tracking_fault_since_ = steady_now;
-    }
-    status.tracking_error_fault =
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-        steady_now - tracking_fault_since_).count() >= tracking_error_fault_duration_ms_;
-  }
+  // Tracking error remains telemetry only; keep the status fields for consumers.
+  status.tracking_error_warning = false;
+  status.tracking_error_fault = false;
   constexpr double kDegToCanonicalRad = 3.14159265358979323846 / 180.0;
   status.target_wheel_angle_rad =
     static_cast<float>(target_wheel_angle_deg_ * kDegToCanonicalRad);
