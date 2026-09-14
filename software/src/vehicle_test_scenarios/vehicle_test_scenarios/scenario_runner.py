@@ -19,11 +19,13 @@ from .steering_control import SteeringControl
 SCENARIOS = {
     "straight",
     "steering_step",
+    "steering_square",
     "steering_sweep",
     "speed_step",
     "speed_ramp",
     "brake_test",
 }
+STEERING_SCENARIOS = ("steering_step", "steering_square", "steering_sweep")
 MAX_STEERING_DEG = 28.0
 STARTUP_ONLY_PARAMETERS = {
     "publish_rate_hz",
@@ -81,6 +83,19 @@ def scenario_setpoint(
         )
         return ScenarioSetpoint(config.cruise_speed_kph, steering_deg)
 
+    if config.scenario == "steering_square":
+        half_period_sec = 0.5 * config.steering_period_sec
+        phase = int(elapsed_sec / half_period_sec) % 2
+        steering_offset_deg = (
+            config.steering_amplitude_deg
+            if phase == 0
+            else -config.steering_amplitude_deg
+        )
+        return ScenarioSetpoint(
+            config.cruise_speed_kph,
+            config.steering_center_deg + steering_offset_deg,
+        )
+
     if config.scenario == "steering_step":
         phase = int(elapsed_sec / config.steering_step_interval_sec) % 4
         steering_offset_deg = (
@@ -120,7 +135,7 @@ def scenario_setpoint(
 
 
 def scenario_cycle_duration_sec(config: ScenarioConfig) -> float | None:
-    if config.scenario == "steering_sweep":
+    if config.scenario in ("steering_sweep", "steering_square"):
         return config.steering_period_sec
     if config.scenario == "steering_step":
         return 4.0 * config.steering_step_interval_sec
@@ -135,7 +150,7 @@ def zero_speed_baseline_setpoint(config: ScenarioConfig) -> ScenarioSetpoint:
     """Return a zero-speed target without engaging the brake command."""
     steering = (
         config.steering_center_deg
-        if config.scenario in ("steering_step", "steering_sweep") else None
+        if config.scenario in STEERING_SCENARIOS else None
     )
     return ScenarioSetpoint(0.0, steering)
 
@@ -182,7 +197,7 @@ def validate_config(config: ScenarioConfig, publish_rate_hz: float) -> None:
     steering_extent = (
         abs(config.steering_center_deg) + config.steering_amplitude_deg
     )
-    if config.scenario in ("steering_step", "steering_sweep") and steering_extent > MAX_STEERING_DEG:
+    if config.scenario in STEERING_SCENARIOS and steering_extent > MAX_STEERING_DEG:
         raise ValueError(
             "steering center plus amplitude must stay within +/-28 degrees"
         )
@@ -372,7 +387,7 @@ class VehicleTestScenarioRunner(Node):
         if not self._enabled:
             return
 
-        steering_enabled = self._config.scenario in ("steering_step", "steering_sweep")
+        steering_enabled = self._config.scenario in STEERING_SCENARIOS
         if not self._steering_control.ready(steering_enabled):
             self.get_logger().warning(self._steering_control.error, throttle_duration_sec=2.0)
             # Service startup must not consume the countdown or test input.

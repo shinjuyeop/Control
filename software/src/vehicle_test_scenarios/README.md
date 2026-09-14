@@ -102,11 +102,12 @@ vehicle_test_scenario_runner
 | `speed_ramp` | low→high→low 속도를 선형 ramp로 반복 |
 | `brake_test` | 일정 속도 명령 후 지정 시간에 brake를 걸고 계속 유지 |
 | `steering_sweep` | 일정 속도에서 중앙±진폭을 sine 파형으로 왕복 |
+| `steering_square` | 중앙+진폭과 중앙−진폭을 반주기씩 유지하는 square 파형 |
 
 기본값은 `straight`, `3 km/h`, 조향 모터 Disable이다.
 `straight`, `speed_step`, `speed_ramp`, `brake_test`는 중앙각과 관계없이
 조향 모터를 Disable한다. 대기·카운트다운·완료 후에도 동일하다.
-`steering_step`, `steering_sweep`는 기존 중앙각·진폭을 사용한다.
+`steering_step`, `steering_sweep`, `steering_square`는 기존 중앙각·진폭을 사용한다.
 조향 노드가 모터 설정을 수락한 뒤 20 Hz로 fresh한 `ActuatorCommand`를 발행한다.
 
 ## 주요 파라미터
@@ -119,10 +120,10 @@ vehicle_test_scenario_runner
 | `speed_low_kph` / `speed_high_kph` | `0.0` / `3.0` | step/ramp 양 끝 속도 |
 | `speed_step_interval_sec` | `2.0` | step 전환 간격 |
 | `speed_ramp_duration_sec` | `5.0` | low에서 high까지 걸리는 시간 |
-| `steering_center_deg` | `0.0` | 조향 step/sweep 전용 중앙 기준 절대 조향각. 직진 시험에서는 무시 |
-| `steering_amplitude_deg` | `10.0` | sweep 진폭 |
+| `steering_center_deg` | `0.0` | 조향 step/sweep/square 전용 중앙 기준 절대 조향각. 직진 시험에서는 무시 |
+| `steering_amplitude_deg` | `10.0` | sweep·square 진폭 |
 | `steering_step_interval_sec` | `5.0` | step의 center/좌/center/우 각 phase 시간 |
-| `steering_period_sec` | `4.0` | sweep 한 주기 |
+| `steering_period_sec` | `4.0` | sweep·square 한 주기. square는 반주기씩 좌·우 유지 |
 | `brake_delay_sec` | `3.0` | brake test에서 제동 전 주행 시간 |
 | `initial_hold_sec` | `0.0` | 반복 시나리오 시작 전 초기 setpoint 유지 시간 |
 | `scenario_repetitions` | `0` | 0이면 무한 반복. 유한 반복 완료 후 speed target 0·brake false 유지 |
@@ -203,6 +204,19 @@ ros2 param set /vehicle_test_scenario_runner steering_period_sec 4.0
 ros2 param set /vehicle_test_scenario_runner initial_hold_sec 5.0
 ```
 
+### 조향 square
+
+`steering_period_sec`의 절반 동안 `center+amplitude`, 나머지 절반 동안
+`center-amplitude`를 유지한다. center phase 없이 `t=0`에서 바로 좌측 진폭으로
+step한다.
+
+```bash
+ros2 param set /vehicle_test_scenario_runner scenario steering_square
+ros2 param set /vehicle_test_scenario_runner cruise_speed_kph 3.6
+ros2 param set /vehicle_test_scenario_runner steering_amplitude_deg 1.0
+ros2 param set /vehicle_test_scenario_runner steering_period_sec 8.0
+```
+
 시험을 중단할 때는 물리 E-stop/MANUAL을 우선하고, 소프트웨어에서는 다음처럼
 brake 명령을 계속 발행할 수 있다.
 
@@ -216,7 +230,7 @@ ros2 param set /vehicle_test_scenario_runner enabled false  # MANUAL 전환 후
 
 ## 2026-08-25 AUTO sysid 고정 launch
 
-다음 세 launch는 명령행 인자를 받지 않는다. 각 파일이 실차 `vehicle.launch.py`,
+다음 launch들은 명령행 인자를 받지 않는다. 각 파일이 실차 `vehicle.launch.py`,
 고정 YAML runner, MCAP logger를 한 번에 시작한다. MCAP은 launch 즉시 기록된다.
 `/drive/status`가 MANUAL에서 AUTO로 바뀌면 10초 동안 `/planning/command`에
 `speed_target_mps=0.0`, `brake_engage=false`를 발행하며 countdown을
@@ -228,6 +242,7 @@ ros2 param set /vehicle_test_scenario_runner enabled false  # MANUAL 전환 후
 ros2 launch vehicle_test_scenarios auto_longitudinal_speed_step.launch.py
 ros2 launch vehicle_test_scenarios auto_lateral_steering_step.launch.py
 ros2 launch vehicle_test_scenarios auto_lateral_steering_sine.launch.py
+ros2 launch vehicle_test_scenarios auto_lateral_steering_square.launch.py
 ```
 
 | Launch | 고정 조건 | MCAP session prefix |
@@ -235,8 +250,9 @@ ros2 launch vehicle_test_scenarios auto_lateral_steering_sine.launch.py
 | `auto_longitudinal_speed_step.launch.py` | 10 s zero baseline 후 0→1, 1↔2 m/s, 각 5 s, 4 cycle | `A02_speed_step_10_20` |
 | `auto_lateral_steering_step.launch.py` | 1 m/s, center/+1/center/-1°, 각 5 s, 3 cycle | `A11_steering_step_center_pm1` |
 | `auto_lateral_steering_sine.launch.py` | 1 m/s, center±1°, 8 s, 6 cycle | `A12_steering_sine_center_pm1_8s` |
+| `auto_lateral_steering_square.launch.py` | 1 m/s, center±1° square, 각 4 s 유지, 6 cycle | `A13_steering_square_center_pm1_8s` |
 
-두 횡방향 YAML의 `steering_center_deg: -2.0`은 2026-08-24 실차 데이터에서 얻은 얼라인먼트
+세 횡방향 YAML의 `steering_center_deg: -2.0`은 2026-08-24 실차 데이터에서 얻은 얼라인먼트
 변경 전 직진 추정값이다. 얼라인먼트를 바꿨다면 실행 전에 source YAML의 이 값만 새
 직진각으로 수정하고 다시 빌드한다. 종방향 YAML에는 센터각 설정이 필요 없다.
 각 run은 실차 제어컴의
