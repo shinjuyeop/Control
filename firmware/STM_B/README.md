@@ -21,7 +21,7 @@ micro-ROS 동작을 변경하지 않습니다. 이전 직접-SPI LCD 구현은
 - MANUAL/AUTO 정책에 따른 최종 `BRAKE_REQUEST` 계산
 - TIM2 brake servo PWM 및 engage/release ramp
 - STM_A USART1 vehicle/detail frame 수신과 safety frame 송신
-- LPUART1 micro-ROS `/vehicle/command`, `/gnss/fix` 구독과 `/brake/status` 발행
+- LPUART1 micro-ROS `/vehicle/command`, `/gnss/fix`, `/dashboard/auto_status` 구독과 `/brake/status` 발행
 - 기존 STM_B LCD가 사용한 값의 atomic snapshot 생성
 - 250 kbps Classical CAN dashboard protocol v1 송신
 - FDCAN automatic retransmission, bus-off 감시와 1초 backoff 재시작
@@ -106,7 +106,7 @@ OFF 상태에서 전체 bus의 CANH-CANL 합성 저항은 약 60 ohm이어야 �
 | 경로 | 책임 |
 |---|---|
 | `Core/Src/app_freertos.c` | brake, E-stop, micro-ROS, STM_A UART task |
-| `Core/Src/dashboard_can.c` | snapshot capture, frame scheduling, FDCAN health/recovery |
+| `Core/Src/dashboard_can.c` | native/AUTO snapshot capture, paired frame scheduling, FDCAN health/recovery |
 | `Core/Inc/dashboard_can_protocol.h` | ID, version, flag와 wire type 계약 |
 | `Core/Src/dashboard_can_protocol.c` | 명시적 little-endian packing |
 | `Core/Src/fdcan.c` | Classical CAN 250 kbps와 PA11/PA12 설정 |
@@ -123,7 +123,7 @@ OFF 상태에서 전체 bus의 CANH-CANL 합성 저항은 약 60 ohm이어야 �
 | `Brake` | `BRAKE_REQUEST`에 따른 PWM ramp | 기존 5 ms loop delay, 20 ms ramp step | `High1` (41) | 512 |
 | `EStop` | 물리 E-stop과 AUTO command brake 통합 | EXTI flags + 10 ms timeout 재확인 | `Realtime` (48) | 256 |
 | `uROS` | Agent 상태, command 수신, brake status 발행 | 상태 머신; running 후 5 ms delay | `Normal` (24) | 1280 |
-| `Display` | `DashboardCan_Task()` 실행 | 기존 absolute 10 ms slot / 50 ms snapshot | `Low` (8) | 512 |
+| `Display` | `DashboardCan_Task()` 실행 | absolute 10 ms slot, native+AUTO 각 1 frame / 50 ms snapshot | `Low` (8) | 512 |
 | `ARx` | vehicle/detail parse와 timeout | 작업 후 1 ms delay | `AboveNormal` (32) | 256 |
 | `ATx` | STM_A safety frame 송신 | absolute 20 ms | `High` (40) | 256 |
 | `PerfMon` | runtime snapshot 집계 | 약 1 Hz | `Low` (8) | 256 |
@@ -157,6 +157,7 @@ publish를 하지 않습니다.
 |---|---|---|
 | `/vehicle/command` | `kaiev26_msgs/msg/ActuatorCommand` | AUTO의 `brake_engage` |
 | `/gnss/fix` | `sensor_msgs/msg/NavSatFix` | `status.status`; 500 ms freshness |
+| `/dashboard/auto_status` | `std_msgs/msg/UInt8MultiArray` | PC가 실제 ROS 수신과 액추에이터 명령/응답을 합성한 고정 25-byte 표시 payload; 300 ms freshness |
 
 ### Publishers
 
@@ -172,9 +173,14 @@ publish를 하지 않습니다.
 | `0x322` | POWER | bus voltage, bus current, phase current |
 | `0x323` | THERMAL | controller와 motor temperature |
 | `0x324` | FAULT | motor fault low 24 bits |
+| `0x325` | AUTO HEALTH | GPS/LiDAR/camera/drive/steer/brake 상태, activity, 출력 요청·피드백, PC summary freshness |
+| `0x326` | AUTO MOTION | 현재/목표 방위, 목표 속도 |
+| `0x327` | AUTO STEER ACTUAL | KEYA 실제 motor position count, 조향 전류 |
+| `0x328` | AUTO STEER TARGET | equivalent target을 기존 converter로 역변환한 KEYA 목표 count |
 
 모든 frame은 standard ID, Classical CAN, DLC 8이고 byte 0은 protocol version `1`,
 byte 1은 같은 snapshot의 `uint8` alive입니다. Multi-byte 값은 little-endian입니다.
+0x321–0x324와 0x325–0x328은 UNO에서 각각 독립적으로 조립합니다.
 
 ## 8. 동작 상세
 
@@ -224,9 +230,12 @@ validity가 false인 값을 `--`로 표시하도록 flag를 CAN에 함께 보냅
 | motor fault | `motor_fault_bits` | low 24-bit bitmap |
 | E-stop/brake | `ESTOP_STATUS`, `BRAKE_REQUEST` | status bits |
 | GNSS | `/gnss/fix.status.status` | `uint8` dashboard GNSS state |
+| AUTO health/motion/steer | `/dashboard/auto_status` | 24 data byte + STM_B가 계산한 host-fresh bit |
 
-한 snapshot의 네 frame은 같은 alive를 사용합니다. 0/10/20/30 ms slot에서 frame을
-하나씩 enqueue하고 40 ms slot은 비워 다음 snapshot은 50 ms마다 시작합니다.
+한 snapshot의 native 네 frame과 AUTO 네 frame은 같은 alive를 사용합니다.
+0/10/20/30 ms slot마다 native와 AUTO frame을 하나씩 FIFO에 enqueue하고 40 ms slot은
+비워 다음 snapshot은 50 ms마다 시작합니다. 250 kbps에서 두 DLC8 frame을 한 slot에
+넣되 각 enqueue 전 FIFO 여유를 따로 확인합니다.
 
 #### `0x321` STATUS
 
@@ -272,6 +281,29 @@ STM_B는 `/gnss/fix`를 best-effort로 구독하고 수신 시각을 monotonic t
 | 2-4 | `uint24` LE | motor fault low 24 bits |
 | 5-7 | reserved | zero |
 
+#### `0x325`–`0x328` AUTO
+
+PC의 `vehicle_state_publisher/auto_dashboard_summary.py`는 다음 실제 입력을 arrival-time freshness와
+함께 요약합니다.
+
+- `/gnss/status.fix_mode`, `/ouster/points`, 좌/우 compressed camera
+- `/drive/status`, `/steering/status`, `/brake/status`
+- `/localization/odometry`, `/planning/route_context`, `/planning/target_speed`,
+  `/planning/behavior_decision`
+- `/steering/target_motor_position_count`
+
+ROS payload는 version 1 byte 뒤에 CAN data 6 byte씩 네 묶음입니다. `0x325`는 health
+nibble과 activity/output/feedback을, `0x326`은 current/target heading 0.01 deg와 target
+speed 0.01 km/h를, `0x327`은 actual motor count와 current 0.1 A를, `0x328`은 target
+motor count를 담습니다. 없는 heading은 `uint16 0xFFFF`, 없는 signed 값은 각 type의
+최솟값입니다. STM_B는 payload의 내용을 safety 판단에 쓰지 않고, 마지막 유효 ROS
+수신이 300 ms 이내인지 나타내는 `HOST_VALID`만 `0x325` byte 7 bit 7에 더합니다.
+
+Actual/target은 모두 `int32` KEYA count입니다. actual은
+`/steering/status.motor_position_count`, target은 lateral_ctrl가 기존
+`equivalentDegToCount()`로 만든 값입니다. UNO가 둘 다 `count * 360 / 10000`으로
+표시하므로 motor-axis 영점·부호·회전수를 전송 단계에서 줄이지 않습니다.
+
 Repository의 standard ID `0x20`-`0x22` battery 계획과 겹치지 않습니다. EZkontrol과
 KEYA가 사용하는 ID는 extended frame입니다.
 
@@ -288,11 +320,11 @@ KEYA가 사용하는 ID는 extended frame입니다.
 
 ### 8.7 Arduino와 LCD
 
-[`../UNO_R4_DASHBOARD`](../UNO_R4_DASHBOARD)는 네 frame의 version/alive가 일치해야
-snapshot을 완성합니다. 새 alive의 완전한 snapshot이 300 ms 없으면 `CAN LOST`를
-표시하고, 1초마다 CAN controller를 재초기화합니다. Fresh snapshot이 오면
+[`../UNO_R4_DASHBOARD`](../UNO_R4_DASHBOARD)는 native 네 frame과 AUTO 네 frame의
+version/alive를 별도로 조립합니다. 새 native alive의 완전한 snapshot이 300 ms 없으면
+`CAN LOST`를 표시하고, 1초마다 CAN controller를 재초기화합니다. Fresh snapshot이 오면
 `CAN RECOVERED` 후 UI 갱신을 재개합니다. Arduino -> STM heartbeat나 safety feedback은
-없습니다.
+없습니다. AUTO frame/PC summary가 stale이어도 native E-stop은 계속 표시됩니다.
 
 ### 8.8 모드별 동작
 
@@ -315,8 +347,8 @@ cmake --build src/Control/firmware/STM_B/build/Release --clean-first
 ```
 
 결과물은 `src/Control/firmware/STM_B/build/Release/STM_B.elf`입니다.
-2026-09-04 GNSS dashboard build 결과는 Flash 99,664 byte(19.01%), RAM 96,040
-byte(73.27%)였습니다. `_gettimeofday` linker warning은 현재 사용하지 않는 syscall에 대한
+2026-09-07 AUTO summary bridge build 결과는 Flash 102,928 byte(19.63%), RAM 96,720
+byte(73.79%)였습니다. `_gettimeofday` linker warning은 현재 사용하지 않는 syscall에 대한
 기존 non-fatal warning입니다.
 
 Protocol packing test:
@@ -376,7 +408,7 @@ Debugger에서 확인 가능한 dashboard 진단값:
 | `DASHBOARD_CAN_LAST_HAL_STATUS` | 마지막 start/enqueue/recovery HAL status |
 | `DASHBOARD_CAN_ALIVE` | 다음 snapshot alive |
 
-정상 CAN에서는 `TX_COUNT`가 `SNAPSHOT_COUNT`의 약 네 배로 증가하고 error/bus-off/
+정상 CAN에서는 `TX_COUNT`가 `SNAPSHOT_COUNT`의 약 여덟 배로 증가하고 error/bus-off/
 recovery counter는 증가하지 않습니다. Arduino Serial의 `complete`는 증가하고
 `ignored`, `duplicate`와 `reinit`은 안정 상태에서 증가하지 않아야 합니다.
 

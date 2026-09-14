@@ -35,13 +35,15 @@ CAN, Dashboard CAN, Arduino LCD/touch와 HIL UNO USB의 데이터 계약과
 | STM_A | Host·조향·상태·진단 | ROS 2 | `/drive/status` | `DriveActuatorStatus` | 20 ms | 조향에서 1500 ms | mode·gear·구동 진단 |
 | STM_B | Host·조향·상태·진단 | ROS 2 | `/brake/status` | `BrakeActuatorStatus` | 50 ms 및 원인 변경 시 | 조향에서 별도 timeout 없음 | brake·E-stop 원인 |
 | 조향 노드 | Host·상태·진단 | ROS 2 | `/steering/status` | `SteeringActuatorStatus` | 20 ms | 상태 통합에서 별도 timeout 없음 | 조향 상태·진단 |
+| 조향 노드 | AUTO dashboard summary | ROS 2 | `/steering/target_motor_position_count` | `std_msgs/Int32` | 20 ms | summary에서 300 ms | 기존 equivalent-angle→KEYA count 변환 결과 |
+| AUTO dashboard summary | STM_B | ROS 2 | `/dashboard/auto_status` | `std_msgs/UInt8MultiArray`, 고정 25 byte | 100 ms | STM_B에서 300 ms | health·방위·목표속도·조향 표시 전용 |
 | `vehicle_state_publisher_node` | ROS 2 consumers | ROS 2 | `/vehicle/state` | `VehicleState` | 50 ms | 없음 | 세 status의 마지막 값 합성 |
 | `vehicle_state_publisher_node` | ESKF·기록 | ROS 2 | `/vehicle/wheel_twist` | `TwistWithCovarianceStamped` | 최대 50 ms | 자체 timeout 없음 | valid 구동·조향 관측의 Ackermann 근사 |
 | `diagnostics_publisher` | Console·Foxglove·기록 | ROS 2 | `/diagnostics` | `DiagnosticArray` | 1 s | 입력 status 1 s | 링크·상태·제동 진단 요약 |
 | STM_A | STM_B | USART1 | type `0x01` | mode, gear, speed | 20 ms | STM_B에서 200 ms | vehicle status |
 | STM_A | STM_B | USART1 | type `0x03` | 구동 bus·온도·fault·command 상태 | 100 ms | STM_B에서 300 ms | dashboard drive detail |
 | STM_B | STM_A | USART1 | type `0x02` | final brake request | 20 ms | STM_A에서 100 ms | safety status |
-| STM_B | UNO R4 | Classical CAN | `0x321`~`0x324` | status·power·thermal·fault snapshot | 50 ms | UNO에서 300 ms | 표시 전용 |
+| STM_B | UNO R4 | Classical CAN | `0x321`~`0x328` | native status 4 frame + AUTO summary 4 frame | 50 ms | UNO에서 300 ms | 표시 전용 |
 | UNO R4 | ST7796S LCD | SPI | MSP4030/MSP4031 | logical 480×320 화면 | 적용 상태 변경 시 | 없음 | local display output |
 | FT6336U | UNO R4 | I2C | address `0x38` | 최대 2점 raw touch | 20 ms polling | read 실패 시 1 s 재시도 | local navigation input |
 | HIL Console | UNO R4 | USB Serial | newline ASCII, 115200 | `HIL_LCD`, `HIL_TOUCH`, `VT D/M/U/C` | 보고 200/100 ms | Virtual Touch 1 s | HIL-only virtual HMI |
@@ -81,9 +83,10 @@ ros2 topic info -v /vehicle/wheel_twist
 ros2 topic info -v /diagnostics
 ```
 
-`vehicle_state_publisher` package는 두 독립 노드를 제공합니다. 상태 합성 노드는
+`vehicle_state_publisher` package는 세 독립 노드를 제공합니다. 상태 합성 노드는
 `/vehicle/state`와 `/vehicle/wheel_twist`를 발행하고, `diagnostics_publisher`는
-status 3종을 1 Hz `DiagnosticArray`로 요약합니다. `/diagnostics`에는 STM_TEST,
+status 3종을 1 Hz `DiagnosticArray`로 요약합니다. `auto_dashboard_summary`는
+센서·차량·planning 입력으로 `/dashboard/auto_status`를 10 Hz로 발행합니다. `/diagnostics`에는 STM_TEST,
 INS 등 다른 publisher도 함께 쓸 수 있으므로 consumer는 배열 하나를 전체 시스템
 상태로 간주하지 않고 `hardware_id`와 `name`으로 항목을 구분합니다.
 
@@ -325,22 +328,19 @@ Part I과 Part II는 마지막 수신 후 200 ms 미만일 때 각각 valid입�
 
 ## 7. STM_B → UNO R4 Dashboard CAN
 
-STM_B는 250 kbit/s Classical CAN standard frame 네 개로 Dashboard snapshot을
-송신합니다. Arduino UNO R4 Minima는 RA4M1 internal CAN controller와 external
-TJA1050 transceiver를 통해 이 frame을 수신합니다.
+STM_B는 250 kbit/s Classical CAN standard frame 여덟 개로 표시 snapshot을
+전송합니다. 각 frame은 protocol version과 같은 `alive` 값을 포함합니다. UNO는
+`0x321` STATUS, `0x322` POWER, `0x323` THERMAL, `0x324` FAULT의 native 그룹과
+`0x325` AUTO HEALTH, `0x326` AUTO MOTION, `0x327` STEER ACTUAL,
+`0x328` STEER TARGET 그룹을 따로 조립합니다. snapshot 주기는 50 ms이고 fresh
+native complete snapshot이 300 ms 없으면 UNO가 `CAN LOST`를 표시합니다.
 
-| ID | 역할 |
-|---:|---|
-| `0x321` | STATUS |
-| `0x322` | POWER |
-| `0x323` | THERMAL |
-| `0x324` | FAULT |
+AUTO 그룹은 PC의 `/dashboard/auto_status`를 STM_B가 표시용으로 중계합니다. PC
+summary가 300 ms stale이면 STM_B가 `HOST_VALID`를 내리지만 native E-stop frame은
+계속 보냅니다. 따라서 UNO의 `AUTO DATA LOST`는 STM_B↔UNO CAN 단절과 다릅니다.
 
-각 frame은 protocol version과 같은 `alive`를 포함합니다. UNO는 네 ID가 모두
-도착하고 version/alive가 일치하는 complete snapshot만 적용합니다. nominal snapshot
-주기는 50 ms이며 fresh complete snapshot이 300 ms 없으면 `CAN LOST`를 표시합니다.
-세부 byte layout, scale, signed type과 recovery 절차의 canonical source는
-[`../firmware/STM_B/README.md`](../firmware/STM_B/README.md#85-dashboard-snapshot과-wire-단위)입니다.
+세부 byte layout, scale, signed type과 recovery 절차는
+[`STM_B README`](../firmware/STM_B/README.md#85-dashboard-snapshot과-wire-단위)를 따릅니다.
 
 Dashboard CAN은 STM_B에서 UNO로 차량 상태를 보내는 단방향 표시 경로입니다.
 Arduino는 LCD 출력과 physical/HIL touch navigation을 처리하는 local HMI이며 차량

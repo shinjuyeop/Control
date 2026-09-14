@@ -61,7 +61,7 @@ HALTED로 정지한다.
 - 캘리브레이션, 각도 변환
 - 상태 판정·진단 합성 (`vehicle_state_publisher/diagnostics_publisher`의 몫)
 - 하드 바운드 — 최종 한도는 액추에이터 쪽이 지킨다: 종방향은 STM_A 펌웨어
-  (RPM 4500/−1500, MANUAL 175 A), 횡방향은 lateral_ctrl
+  (RPM 4500/−1500, AUTO/MANUAL 480 A), 횡방향은 lateral_ctrl
   (`command_count_limit` 3279 ≈ -27.83°..+25.92°, slew 60 deg/s). 거버너는 그 안에서
   형상을 만든다.
 

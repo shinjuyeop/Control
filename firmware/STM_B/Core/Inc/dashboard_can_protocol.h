@@ -6,6 +6,7 @@ extern "C" {
 #endif
 
 #include <stdint.h>
+#include <stddef.h>
 
 #define DASHBOARD_CAN_PROTOCOL_VERSION 1U
 #define DASHBOARD_CAN_DLC 8U
@@ -14,8 +15,19 @@ extern "C" {
 #define DASHBOARD_CAN_POWER_ID   0x322U
 #define DASHBOARD_CAN_THERMAL_ID 0x323U
 #define DASHBOARD_CAN_FAULT_ID   0x324U
+#define DASHBOARD_CAN_AUTO_HEALTH_ID 0x325U
+#define DASHBOARD_CAN_AUTO_MOTION_ID 0x326U
+#define DASHBOARD_CAN_AUTO_ACTUAL_ID 0x327U
+#define DASHBOARD_CAN_AUTO_TARGET_ID 0x328U
 
-#define DASHBOARD_CAN_FRAME_COUNT 4U
+#define DASHBOARD_CAN_NATIVE_FRAME_COUNT 4U
+#define DASHBOARD_CAN_AUTO_FRAME_COUNT 4U
+#define DASHBOARD_CAN_FRAME_COUNT 8U
+
+#define DASHBOARD_AUTO_ROS_VERSION 1U
+#define DASHBOARD_AUTO_ROS_PAYLOAD_SIZE 25U
+#define DASHBOARD_AUTO_DATA_SIZE 24U
+#define DASHBOARD_AUTO_HOST_VALID (1U << 7)
 
 #define DASHBOARD_STATUS_VEHICLE_VALID (1U << 0)
 #define DASHBOARD_STATUS_DETAIL_VALID  (1U << 1)
@@ -50,6 +62,8 @@ typedef struct
   int16_t controller_temperature_decic;
   int16_t motor_temperature_decic;
   uint32_t motor_fault_bits;
+  uint8_t auto_data[DASHBOARD_AUTO_DATA_SIZE];
+  uint8_t auto_host_valid;
 } DashboardCanSnapshot_t;
 
 void DashboardCanProtocol_PackStatus(
@@ -66,6 +80,11 @@ void DashboardCanProtocol_PackThermal(
 
 void DashboardCanProtocol_PackFault(
     const DashboardCanSnapshot_t *snapshot,
+    uint8_t payload[DASHBOARD_CAN_DLC]);
+
+void DashboardCanProtocol_PackAuto(
+    const DashboardCanSnapshot_t *snapshot,
+    uint8_t frame_index,
     uint8_t payload[DASHBOARD_CAN_DLC]);
 
 #ifdef __cplusplus

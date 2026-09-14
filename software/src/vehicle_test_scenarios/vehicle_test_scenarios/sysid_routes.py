@@ -21,7 +21,7 @@ class RouteProcesses:
             localization = Path(get_package_share_directory('eskf_localization'))
             route_path = decision / 'waypoints' / settings.route_filename
             route = yaml.safe_load(route_path.read_text())
-            gnss = yaml.safe_load((localization / 'config/kcity_gnss_only.yaml').read_text())[
+            gnss = yaml.safe_load((localization / 'config/kcity_gnss.yaml').read_text())[
                 'eskf_localization']['ros__parameters']
             projection = yaml.safe_load((decision / 'config/decision_pipeline.yaml').read_text())[
                 'kaiev26_route_zone_manager']['ros__parameters']

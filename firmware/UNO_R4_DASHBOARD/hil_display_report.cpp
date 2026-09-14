@@ -1,5 +1,15 @@
 #include "hil_display_report.h"
-#include "dashboard_ui.h"
+
+#if defined(DASHBOARD_HOST)
+
+namespace HilDisplayReport {
+bool enabled() { return false; }
+void poll(uint32_t, uint32_t, int32_t) {}
+}  // namespace HilDisplayReport
+
+#else
+
+#include "src/include/dashboard_ui.h"
 #include "ft6336_touch.h"
 #include "swipe_test.h"
 #include <Arduino.h>
@@ -12,7 +22,7 @@ bool touch_active=false;
 char input[16]{};
 uint8_t input_size=0;
 bool input_overflow=false;
-char report[512]{};
+char report[640]{};
 size_t report_size=0, report_sent=0;
 uint32_t last_report_ms=0;
 }
@@ -69,15 +79,23 @@ void poll(uint32_t now_ms,uint32_t snapshots,int32_t can_age_ms) {
         (unsigned long)snapshots,(long)can_age_ms);
     } else {
     const DashboardValues &v=DashboardUi::displayedValues();
+    const AutoDashboardValues &a=DashboardUi::displayedAutoValues();
     written=snprintf(report,sizeof(report),
       "HIL_LCD {\"v\":1,\"uptime_ms\":%lu,\"seq\":%lu,\"can_lost\":%s,\"can_age_ms\":%ld,"
       "\"page\":\"%s\",\"values\":[%u,%u,%u,%u,%d,%u,%d,%d,%d,%d,%lu],"
+      "\"auto\":[%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%d,%ld,%ld,%d],"
       "\"vtouch\":1,\"touch_errors\":%lu}\n",
       (unsigned long)now_ms,(unsigned long)snapshots,DashboardUi::canLost()?"true":"false",
       (long)can_age_ms,DashboardUi::pageName(),v.status_flags,v.drive_flags,v.pedal_percent,
       v.gnss_state,v.speed_centi_mps,v.bus_voltage_decivolt,v.bus_current_deciamp,
       v.phase_current_deciamp,v.controller_temperature_decic,v.motor_temperature_decic,
-      (unsigned long)v.motor_fault_bits,(unsigned long)Ft6336Touch::state().errors);
+      (unsigned long)v.motor_fault_bits,
+      a.gps_state,a.lidar_state,a.camera_left_state,a.camera_right_state,
+      a.drive_state,a.steer_state,a.brake_state,a.activity,a.output_state,
+      a.feedback_state,a.host_valid,a.heading_centideg,a.target_heading_centideg,
+      a.target_speed_centi_kmh,(long)a.actual_motor_count,(long)a.target_motor_count,
+      a.steering_current_deciamp,
+      (unsigned long)Ft6336Touch::state().errors);
     }
     report_size=(written>0 && size_t(written)<sizeof(report))?size_t(written):0;
     report_sent=0;last_report_ms=now_ms;
@@ -91,3 +109,5 @@ void poll(uint32_t now_ms,uint32_t snapshots,int32_t can_age_ms) {
   }
 }
 }
+
+#endif

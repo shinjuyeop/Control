@@ -3,11 +3,16 @@
 <package format="3">
   <name>control_launch</name>
   <version>0.0.0</version>
-  <description>Launch files for Control vehicle stacks.</description>
+  <description>Control vehicle launch files and joystick command publisher.</description>
   <maintainer email="shinjp02@gmail.com">shinjuyeop</maintainer>
   <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>rclcpp</depend>
+  <depend>rcl_interfaces</depend>
+  <depend>sensor_msgs</depend>
+  <depend>kaiev26_msgs</depend>
+  <exec_depend>joy</exec_depend>
 
   <!-- vehicle.launch.py가 띄우는 패키지들 -->
   <exec_depend>micro_ros_agent</exec_depend>

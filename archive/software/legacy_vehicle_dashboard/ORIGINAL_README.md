@@ -2,7 +2,8 @@
 
 `visualization`은 현재 차량의 canonical ROS 2 명령과 액추에이터 상태를
 관찰하는 패키지다. 개발자용 read-only Qt 디버깅 GUI, 상태를 요약하는
-diagnostics publisher, ROS graph를 전달하는 Foxglove bridge launch를 제공한다.
+diagnostics publisher, STM_B dashboard용 AUTO 요약 producer와 ROS graph를
+전달하는 Foxglove bridge launch를 제공한다.
 
 ## 이 패키지가 하지 않는 일
 
@@ -66,6 +67,30 @@ status 3종(`/drive/status`, `/brake/status`, `/steering/status`)을 판정해
 발행되어 bag에 남는다. 단독 실행은 `ros2 run visualization
 diagnostics_publisher`. 구독하는 status가 없으면 STALE로 표시되므로, 조향
 없는 최소 HIL bench에는 포함하지 않는다.
+
+## auto_dashboard_summary
+
+`auto_dashboard_summary`는 차량을 제어하지 않는 headless 표시 producer다. 다음
+입력의 실제 local receive time과 액추에이터가 제공한 validity/timeout/fault를 합쳐
+10 Hz `/dashboard/auto_status`(`std_msgs/msg/UInt8MultiArray`)로 발행한다.
+
+- `/gnss/status.fix_mode`, `/ouster/points`, 좌/우 compressed camera
+- `/drive/status`, `/steering/status`, `/brake/status`
+- `/localization/odometry`, `/planning/route_context`, `/planning/target_speed`,
+  `/planning/behavior_decision`
+- lateral_ctrl의 `/steering/target_motor_position_count`
+
+GPS는 `RTK_FIXED`, `RTK_FLOAT`, `DGNSS/GNSS`, `NO_GNSS`를 서로 다른 상태로
+보존합니다. DRIVE는 command와 Part I/II/fault/RUN feedback의 관계를, STEER는
+status/command/mode freshness와 KEYA communication/position/tracking/fault를
+판정합니다. BRAKE는 `brake_commanded` 출력 요청만 표시하며 실제 제동 완료로
+해석하지 않습니다. LiDAR와 camera는 메시지 수신만 뜻하고 인지 정확도는 판정하지
+않습니다.
+
+ROS payload는 STM_B firmware와 합의한 고정 25 byte versioned contract입니다.
+STM_B가 수신 freshness를 다시 계산해 0x325–0x328 CAN frame으로 중계합니다.
+단독 실행은 `ros2 run visualization auto_dashboard_summary`입니다. 실차 통합
+launch에서는 `control_launch/vehicle.launch.py`가 시작합니다.
 
 ## 빌드
 

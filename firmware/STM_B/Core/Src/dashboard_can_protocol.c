@@ -57,3 +57,26 @@ void DashboardCanProtocol_PackFault(
   payload[3] = (uint8_t)((snapshot->motor_fault_bits >> 8) & 0xFFU);
   payload[4] = (uint8_t)((snapshot->motor_fault_bits >> 16) & 0xFFU);
 }
+
+void DashboardCanProtocol_PackAuto(
+    const DashboardCanSnapshot_t *snapshot,
+    uint8_t frame_index,
+    uint8_t payload[DASHBOARD_CAN_DLC])
+{
+  begin_payload(snapshot, payload);
+  if (frame_index >= DASHBOARD_CAN_AUTO_FRAME_COUNT)
+  {
+    return;
+  }
+  memcpy(&payload[2],
+         &snapshot->auto_data[(size_t)frame_index * 6U],
+         6U);
+  if (frame_index == 0U)
+  {
+    payload[7] &= (uint8_t)~DASHBOARD_AUTO_HOST_VALID;
+    if (snapshot->auto_host_valid != 0U)
+    {
+      payload[7] |= DASHBOARD_AUTO_HOST_VALID;
+    }
+  }
+}

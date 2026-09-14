@@ -7,6 +7,17 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(rcl_interfaces REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(kaiev26_msgs REQUIRED)
+
+add_executable(joystick_teleop_node src/joystick_teleop_node.cpp)
+target_compile_features(joystick_teleop_node PUBLIC cxx_std_17)
+ament_target_dependencies(joystick_teleop_node
+  rclcpp rcl_interfaces sensor_msgs kaiev26_msgs)
+
+install(TARGETS joystick_teleop_node DESTINATION lib/${PROJECT_NAME})
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/launch")
   install(
@@ -14,6 +25,8 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/launch")
     DESTINATION share/${PROJECT_NAME}
   )
 endif()
+
+install(FILES README.md DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

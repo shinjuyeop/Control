@@ -1,6 +1,7 @@
 # ============================================================================
 # mcap_logging.launch.py
-#   실차 sysid, 압축 카메라 영상, Ouster 원시 패킷을 MCAP으로 녹화한다.
+#   실차 sysid, 압축 카메라 영상, LiDAR point cloud와 선택적 Ouster 원시 패킷을
+#   MCAP으로 녹화한다.
 #
 #   ros2 launch lateral_ctrl mcap_logging.launch.py
 #
@@ -25,7 +26,7 @@ SYSID_TOPICS = (
     "/planning/target_path",
     "/planning/target_speed",
     "/vehicle/command",
-    "/sysid/scinario",
+    "/sysid/scenario",
     "/steering/status",
     "/steering/angle",
     "/drive/status",
@@ -45,6 +46,7 @@ SYSID_TOPICS = (
     "/perception/camera/left/source/camera_info",
     "/perception/camera/right/source/image_raw/compressed",
     "/perception/camera/right/source/camera_info",
+    "/lidar_points",
     "/ouster/lidar_packets",
     "/ouster/imu_packets",
     "/ouster/metadata",

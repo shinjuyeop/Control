@@ -5,6 +5,7 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "FreeRTOS.h"
 #include "board_uart_protocol.h"
@@ -27,6 +28,9 @@ volatile uint8_t DASHBOARD_CAN_ALIVE = 0U;
 static volatile int8_t s_gnss_navsat_status = -1;
 static volatile uint32_t s_gnss_last_rx_ms = 0U;
 static volatile uint8_t s_gnss_received = 0U;
+static uint8_t s_auto_data[DASHBOARD_AUTO_DATA_SIZE];
+static volatile uint32_t s_auto_last_rx_ms = 0U;
+static volatile uint8_t s_auto_received = 0U;
 
 static int16_t speed_to_centi_mps(float speed_mps)
 {
@@ -59,6 +63,20 @@ void DashboardCan_ObserveGnssFix(int8_t navsat_status)
   taskEXIT_CRITICAL();
 }
 
+void DashboardCan_ObserveAutoStatus(const uint8_t *payload, size_t size)
+{
+  if (payload == NULL || size != DASHBOARD_AUTO_ROS_PAYLOAD_SIZE ||
+      payload[0] != DASHBOARD_AUTO_ROS_VERSION)
+  {
+    return;
+  }
+  taskENTER_CRITICAL();
+  memcpy(s_auto_data, &payload[1], DASHBOARD_AUTO_DATA_SIZE);
+  s_auto_last_rx_ms = HAL_GetTick();
+  s_auto_received = 1U;
+  taskEXIT_CRITICAL();
+}
+
 static void capture_snapshot(DashboardCanSnapshot_t *snapshot, uint8_t alive)
 {
   BoardUartDriveDetail_t detail;
@@ -72,6 +90,8 @@ static void capture_snapshot(DashboardCanSnapshot_t *snapshot, uint8_t alive)
   int8_t gnss_navsat_status;
   uint32_t gnss_last_rx_ms;
   uint8_t gnss_received;
+  uint32_t auto_last_rx_ms;
+  uint8_t auto_received;
   const uint32_t now = HAL_GetTick();
 
   taskENTER_CRITICAL();
@@ -86,6 +106,9 @@ static void capture_snapshot(DashboardCanSnapshot_t *snapshot, uint8_t alive)
   gnss_navsat_status = s_gnss_navsat_status;
   gnss_last_rx_ms = s_gnss_last_rx_ms;
   gnss_received = s_gnss_received;
+  memcpy(snapshot->auto_data, s_auto_data, sizeof(snapshot->auto_data));
+  auto_last_rx_ms = s_auto_last_rx_ms;
+  auto_received = s_auto_received;
   taskEXIT_CRITICAL();
 
   snapshot->alive = alive;
@@ -101,6 +124,9 @@ static void capture_snapshot(DashboardCanSnapshot_t *snapshot, uint8_t alive)
       detail.controller_temperature_dc;
   snapshot->motor_temperature_decic = detail.motor_temperature_dc;
   snapshot->motor_fault_bits = detail.motor_fault_bits;
+  snapshot->auto_host_valid =
+      (auto_received != 0U) &&
+      ((uint32_t)(now - auto_last_rx_ms) < DASHBOARD_CAN_AUTO_TIMEOUT_MS);
 
   if ((gnss_received != 0U) &&
       ((uint32_t)(now - gnss_last_rx_ms) < DASHBOARD_CAN_GNSS_TIMEOUT_MS))
@@ -158,9 +184,9 @@ static void capture_snapshot(DashboardCanSnapshot_t *snapshot, uint8_t alive)
   }
 }
 
-static uint32_t pack_frame(uint8_t frame_index,
-                           const DashboardCanSnapshot_t *snapshot,
-                           uint8_t payload[DASHBOARD_CAN_DLC])
+static uint32_t pack_native_frame(uint8_t frame_index,
+                                  const DashboardCanSnapshot_t *snapshot,
+                                  uint8_t payload[DASHBOARD_CAN_DLC])
 {
   switch (frame_index)
   {
@@ -176,6 +202,49 @@ static uint32_t pack_frame(uint8_t frame_index,
     default:
       DashboardCanProtocol_PackFault(snapshot, payload);
       return DASHBOARD_CAN_FAULT_ID;
+  }
+}
+
+static uint32_t pack_auto_frame(uint8_t frame_index,
+                                const DashboardCanSnapshot_t *snapshot,
+                                uint8_t payload[DASHBOARD_CAN_DLC])
+{
+  static const uint32_t identifiers[DASHBOARD_CAN_AUTO_FRAME_COUNT] = {
+      DASHBOARD_CAN_AUTO_HEALTH_ID,
+      DASHBOARD_CAN_AUTO_MOTION_ID,
+      DASHBOARD_CAN_AUTO_ACTUAL_ID,
+      DASHBOARD_CAN_AUTO_TARGET_ID};
+  DashboardCanProtocol_PackAuto(snapshot, frame_index, payload);
+  return identifiers[frame_index];
+}
+
+static void enqueue_frame(FDCAN_TxHeaderTypeDef *header,
+                          uint32_t identifier,
+                          uint8_t payload[DASHBOARD_CAN_DLC],
+                          bool fdcan_started)
+{
+  if (!fdcan_started)
+  {
+    DASHBOARD_CAN_TX_ERROR_COUNT++;
+    return;
+  }
+  if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan1) == 0U)
+  {
+    DASHBOARD_CAN_TX_FIFO_FULL_COUNT++;
+    DASHBOARD_CAN_TX_ERROR_COUNT++;
+    return;
+  }
+  header->Identifier = identifier;
+  const HAL_StatusTypeDef status =
+      HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, header, payload);
+  DASHBOARD_CAN_LAST_HAL_STATUS = (uint32_t)status;
+  if (status == HAL_OK)
+  {
+    DASHBOARD_CAN_TX_COUNT++;
+  }
+  else
+  {
+    DASHBOARD_CAN_TX_ERROR_COUNT++;
   }
 }
 
@@ -286,34 +355,18 @@ void DashboardCan_Task(void *argument)
       DASHBOARD_CAN_SNAPSHOT_COUNT++;
     }
 
-    if (slot < DASHBOARD_CAN_FRAME_COUNT)
+    if (slot < DASHBOARD_CAN_NATIVE_FRAME_COUNT)
     {
-      uint8_t payload[DASHBOARD_CAN_DLC];
-      header.Identifier = pack_frame(slot, &snapshot, payload);
-
-      if (!fdcan_started)
-      {
-        DASHBOARD_CAN_TX_ERROR_COUNT++;
-      }
-      else if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan1) == 0U)
-      {
-        DASHBOARD_CAN_TX_FIFO_FULL_COUNT++;
-        DASHBOARD_CAN_TX_ERROR_COUNT++;
-      }
-      else
-      {
-        status = HAL_FDCAN_AddMessageToTxFifoQ(
-            &hfdcan1, &header, payload);
-        DASHBOARD_CAN_LAST_HAL_STATUS = (uint32_t)status;
-        if (status == HAL_OK)
-        {
-          DASHBOARD_CAN_TX_COUNT++;
-        }
-        else
-        {
-          DASHBOARD_CAN_TX_ERROR_COUNT++;
-        }
-      }
+      uint8_t native_payload[DASHBOARD_CAN_DLC];
+      uint8_t auto_payload[DASHBOARD_CAN_DLC];
+      enqueue_frame(&header,
+                    pack_native_frame(slot, &snapshot, native_payload),
+                    native_payload,
+                    fdcan_started);
+      enqueue_frame(&header,
+                    pack_auto_frame(slot, &snapshot, auto_payload),
+                    auto_payload,
+                    fdcan_started);
     }
 
     slot++;

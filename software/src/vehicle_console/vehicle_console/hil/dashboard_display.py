@@ -32,6 +32,29 @@ VALUE_FIELDS = (
     ("motor_temperature_decic", -32768, 32767),
     ("motor_fault_bits", 0, 0xFFFFFF),
 )
+AUTO_VALUE_FIELDS = (
+    ("gps_state", 0, 4),
+    ("lidar_state", 0, 2),
+    ("camera_left_state", 0, 2),
+    ("camera_right_state", 0, 2),
+    ("drive_state", 0, 8),
+    ("steer_state", 0, 12),
+    ("brake_state", 0, 4),
+    ("activity", 0, 8),
+    ("output_state", 0, 2),
+    ("feedback_state", 0, 2),
+    ("host_valid", 0, 1),
+    ("heading_centideg", 0, 0xFFFF),
+    ("target_heading_centideg", 0, 0xFFFF),
+    ("target_speed_centi_kmh", -0x8000, 0x7FFF),
+    ("actual_motor_count", -0x80000000, 0x7FFFFFFF),
+    ("target_motor_count", -0x80000000, 0x7FFFFFFF),
+    ("steering_current_deciamp", -0x8000, 0x7FFF),
+)
+LEGACY_AUTO_VALUES = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0xFFFF, 0xFFFF, -0x8000, -0x80000000, -0x80000000, -0x8000,
+]
 
 
 def decode_display_report(line: bytes):
@@ -42,7 +65,10 @@ def decode_display_report(line: bytes):
     if not isinstance(raw, dict) or raw.get("v") != 1:
         raise ValueError("지원하지 않는 UNO LCD report protocol")
     page = raw.get("page")
-    if page not in ("MANUAL_TFT", "AUTO_BASELINE", "SWIPE_WAIT", "SWIPE_L", "SWIPE_R"):
+    if page not in (
+        "MANUAL_TFT", "AUTO_BASELINE", "AUTO_GT3",
+        "SWIPE_WAIT", "SWIPE_L", "SWIPE_R",
+    ):
         raise ValueError("지원하지 않는 UNO 화면")
     values = raw.get("values")
     if not isinstance(values, list) or len(values) < len(VALUE_FIELDS):
@@ -52,6 +78,14 @@ def decode_display_report(line: bytes):
         if type(value) is not int or not minimum <= value <= maximum:
             raise ValueError(f"UNO {name} 값이 범위를 벗어났습니다")
         data[name] = value
+    auto_values = raw.get("auto", LEGACY_AUTO_VALUES)
+    if not isinstance(auto_values, list) or len(auto_values) < len(AUTO_VALUE_FIELDS):
+        raise ValueError("UNO AUTO 표시값이 불완전합니다")
+    auto_data = {}
+    for (name, minimum, maximum), value in zip(AUTO_VALUE_FIELDS, auto_values):
+        if type(value) is not int or not minimum <= value <= maximum:
+            raise ValueError(f"UNO AUTO {name} 값이 범위를 벗어났습니다")
+        auto_data[name] = value
     if type(raw.get("can_lost")) is not bool:
         raise ValueError("UNO can_lost 값이 boolean이 아닙니다")
     for name, minimum in (("uptime_ms", 0), ("seq", 0), ("can_age_ms", -1)):
@@ -69,6 +103,7 @@ def decode_display_report(line: bytes):
         uptime_ms=raw["uptime_ms"],
         seq=raw["seq"],
         values=data,
+        auto_values=auto_data,
         vtouch=type(raw.get("vtouch")) is int and raw["vtouch"] == 1,
         touch_errors=touch_errors,
     )
@@ -77,9 +112,11 @@ def decode_display_report(line: bytes):
 class NativeDashboardRenderer:
     def __init__(self, library: str | Path):
         self.library = ctypes.CDLL(str(library))
-        self.render_function = self.library.render_dashboard
+        self.render_function = self.library.render_auto_dashboard
         self.render_function.argtypes = [
             ctypes.POINTER(ctypes.c_int32),
+            ctypes.POINTER(ctypes.c_int32),
+            ctypes.c_int,
             ctypes.c_int,
             ctypes.POINTER(ctypes.c_uint8),
         ]
@@ -95,11 +132,17 @@ class NativeDashboardRenderer:
         values = (ctypes.c_int32 * len(VALUE_FIELDS))(
             *(report["values"][name] for name, _, _ in VALUE_FIELDS)
         )
+        auto_values = (ctypes.c_int32 * len(AUTO_VALUE_FIELDS))(
+            *(report["auto_values"][name] for name, _, _ in AUTO_VALUE_FIELDS)
+        )
         if report["page"].startswith("SWIPE_"):
             direction = {"SWIPE_WAIT": 0, "SWIPE_L": 1, "SWIPE_R": 2}[report["page"]]
             self.swipe_render_function(direction, self.rgb)
         else:
-            self.render_function(values, int(report["can_lost"]), self.rgb)
+            self.render_function(
+                values, auto_values, int(report["can_lost"]),
+                int(report["page"] in ("AUTO_GT3", "AUTO_BASELINE")), self.rgb
+            )
         output = BytesIO()
         Image.frombytes("RGB", (WIDTH, HEIGHT), bytes(self.rgb)).save(
             output, format="PNG"

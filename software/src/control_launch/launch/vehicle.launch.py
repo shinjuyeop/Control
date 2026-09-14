@@ -2,8 +2,8 @@
 실차 구동 스택 통합 launch.
 
 구동에 필요한 것만 띄운다: 차량·INS 기준 정적 TF, STM_A/B micro-ROS Agent,
-command_governor, steering_actuator, vehicle_state_publisher, 그리고 같은 상태 package의
-diagnostics_publisher를 실행한다. 두 상태 노드는 headless 구동 스택 소속이다.
+command_governor, steering_actuator와 vehicle_state_publisher package의 상태 합성,
+diagnostics_publisher, auto_dashboard_summary를 실행한다.
 관측 화면은 별도 실행한다: `ros2 launch vehicle_console vehicle.launch.py` 또는
 `ros2 launch foxglove foxglove_bridge.launch.py`.
 
@@ -143,5 +143,13 @@ def generate_launch_description():
             executable="diagnostics_publisher",
             name="diagnostics_publisher",
             output="screen",
+        ),
+        # 실제 수신 freshness와 액추에이터 명령/응답 관계를 display 전용
+        # 고정 payload로 요약한다. STM_B가 /dashboard/auto_status를 CAN에 중계한다.
+        Node(
+            package='vehicle_state_publisher',
+            executable='auto_dashboard_summary',
+            name='auto_dashboard_summary',
+            output='screen',
         ),
     ])
