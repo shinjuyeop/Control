@@ -214,6 +214,10 @@ false가 되고, traction command 송신은 계속됩니다. CAN TX 실패 시 �
 
 ### 9.2 KEYA 조향
 
+기본 `actuation_mode=position`은 아래 기존 보호를 사용한다. startup에서 `torque`를
+선택하면 동일 state machine에 §9.3의 보호를 추가한다. KEYA 내부 mode는 별도 설정이며
+position=0020=3, torque=0020=2다. Host가 자동 변경하거나 확인하지 않는다.
+
 다음 조건은 조향 motor Disable 원인입니다.
 
 - SocketCAN open 실패 또는 마지막 CAN frame age > 500 ms
@@ -224,6 +228,39 @@ false가 되고, traction command 송신은 계속됩니다. CAN TX 실패 시 �
 old/pending command를 폐기합니다. 다만 Disable 상태가 유지되는 동안 들어오는
 command는 다시 pending으로 저장할 수 있습니다. CAN write 실패 자체는 별도 fault
 flag로 latch되지 않지만, feedback이 끊기면 timeout 경로로 Disable됩니다.
+
+### 9.3 외부 Torque 조향
+
+- 외부 calibrated wheel-angle PD는 Ki=0, direct target step을 사용한다. saturation은
+  정상이며 damping과 별개로 hard rate ceiling을 검사한다.
+- 출력 arm이 허용된 경우, ACTIVE 진입은 **torque0→Enable** 후 새로운 위치 샘플로
+  rate가 준비되어야 비영 torque를 보낸다. 모든 ACTIVE 종료는 **torque0→Disable**,
+  제어 이력·과거 목표 폐기다. 읽기 전용에서는 이 frame들도 보내지 않는다.
+- E-stop/MANUAL/brake/steering disabled/무효 drive speed는 기존 즉시 차단 callback을
+  사용한다. command 200 ms, CAN500 ms, torque 위치100 ms가 기본값이다. command는
+  원래 header stamp 만료시각을 넘어 사용하지 않는다. future/nonfinite 명령은 거부한다.
+- Control tick 간격이100 ms를 초과하면 큐에서 fresh 위치가 나와도 safety stop한다.
+  kernel 수신 timestamp를 사용하므로 오래된 수신 큐를 읽어 freshness를 갱신하지 않는다.
+- 현재 calibration `±3279 count`는 검증된 측정 범위다. mechanical end-stop으로
+  단정하지 않는다. 기본 soft margin1°만큼 목표를 안쪽으로 제한하고, 끝부분의 바깥
+  방향 torque는 taper/차단한다. 안쪽 recovery는 허용하되 hard 범위 초과 시 Disable한다.
+- Filtered/unfiltered actual rate 중 하나라도120 deg/s 초과, calibrated 범위 초과,
+  nonfinite controller input, control stall/과도한 위치 샘플 간격은 latched FAULT다. ABI 변경 없이 기존
+  `REASON_MOTOR_FAULT`를 쓰고 `/steering/torque_safety`에서 원인을 구분한다.
+  원인 해결 후 `steering_enabled=false→true`와 새 command가 필요하다.
+- Torque TX 실패 시 zero와 Disable을 시도하고 `CAN_LOST`로 이동한다. stop frame이
+  실패하면 다음 tick에서 재시도하며 성공 전에는 재Enable하지 않는다. 버스 단절 시
+  실제 zero/Disable 수신은 보장할 수 없다. 이 보호는 하드웨어 차단을 대체하지 않는다.
+- Peak raw2000, sustained raw1000, peak 누적200 ms가 기본이다. 지속 peak 사용 후
+  sustained로 제한하며, sustained50% 이하로2초 유지해야 peak 예산이 회복된다.
+  반전·새 목표·짧은 disable·gain 변경으로 예산을 초기화하지 않는다. raw/time 제한은
+  전류/열 모델이 아니며 continuous10 A/peak20 A를 Host가 보장한다는 뜻이 아니다.
+- Gain/limit runtime 변경은 전체 batch 검증 후 zero→Disable하고 적용한다.
+  새로운 command·rate 이력으로 재시작한다. mode·방향·주기는 startup-only다.
+
+초기 sign/전류·온도/step 검증 절차와 전체 기본값은
+[`TORQUE_CONTROL.md`](../software/src/lateral_ctrl/TORQUE_CONTROL.md)에 있다.
+기존 `/brake/status` timeout 부재 등 §14의 한계와 hardware E-stop 요구는 유지된다.
 
 ## 10. MANUAL / AUTO별 동작
 
@@ -250,7 +287,8 @@ flag로 latch되지 않지만, feedback이 끊기면 timeout 경로로 Disable�
 | KEYA CAN·feedback·fault 복구 | CAN·position valid, fault 해제, AUTO와 safety 정상 | fault가 처음 감지된 뒤 수신한 fresh pending command가 필요; 복구 후 수신일 필요는 없음 |
 | MCU reboot | RTOS와 peripheral 재초기화 | STM_A는 safety frame 전 stop; STM_B는 engage에서 시작 후 입력 재계산 |
 
-물리 E-stop과 fault에는 software latch나 별도 reset command가 없습니다.
+물리 E-stop과 KEYA가 보고한 motor fault에는 software latch나 별도 reset command가
+없습니다. §9.3의 Host torque safety fault에는 별도 latch가 적용됩니다.
 STM_A는 E-stop 중에도 fresh non-brake AUTO speed command를 저장할 수 있고,
 조향도 Disable 사건 뒤 들어온 command를 pending으로 저장할 수 있습니다.
 따라서 E-stop 해제만으로 MANUAL pedal이 다시 적용되거나, inhibited 상태 중 받은

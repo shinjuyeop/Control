@@ -28,11 +28,14 @@ ros2 run vehicle_state_publisher diagnostics_publisher
 - `/diagnostics`: 구동 링크·구동 상태·조향 링크·조향 상태·브레이크 요약과
   source별 상세. sensor/bridge 등 다른 publisher의 진단도 같은 토픽에 공존한다.
 
-[`control.json`](control.json)은 다음 다섯 탭을 제공한다. 모든 탭 아래에는
+[`control.json`](control.json)은 다음 여섯 탭을 제공한다. 모든 탭 아래에는
 기어·모드·E-stop·브레이크·페달 공통 상태 바가 계속 보인다.
 
 - **공통**: 속도와 명령 age, ROS 파라미터
 - **Control**: 속도·조향 추종과 전원·상태·고장 상세
+- **조향 Torque**: 요청·soft-limit 목표·actual·error, P/D·unsaturated·KEYA raw,
+  filtered/unfiltered wheel rate, current/speed, saturation·peak·settle, mode/safety.
+  단위·튜닝 순서는 [TORQUE_CONTROL.md](../lateral_ctrl/TORQUE_CONTROL.md)를 따른다.
 - **종방향 테스트**: `/planning/command`부터 `/vehicle/command`, 실제 속도까지의
   추종 관계와 모터 RPM, 상전류·버스 전류, 통신 age, 안전 이벤트
 - **조향 테스트**: 시험 입력부터 변화율 제한·PID 보정·실측 조향각까지의 명령 체인과

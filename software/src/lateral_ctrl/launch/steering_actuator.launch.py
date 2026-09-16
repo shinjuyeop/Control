@@ -1,6 +1,6 @@
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 import os
@@ -33,6 +33,37 @@ def load_steering_motor_calibration(path):
     return parameters
 
 
+def _make_actuator(context, calibration_parameters):
+    # An omitted CLI override must preserve the operator's selected params_file.
+    optional_parameters = {}
+    for name in ('actuation_mode', 'steering_enabled'):
+        value = LaunchConfiguration(name).perform(context)
+        if value:
+            optional_parameters[name] = LaunchConfiguration(name)
+    return [
+        Node(
+            package='lateral_ctrl',
+            executable='steering_actuator_node',
+            name='steering_actuator_node',
+            output='screen',
+            parameters=[
+                LaunchConfiguration('params_file'),
+                calibration_parameters,
+                {
+                    **optional_parameters,
+                    'can_interface': LaunchConfiguration('can_interface'),
+                    'hardware_can_enabled': LaunchConfiguration('hardware_can_enabled'),
+                    'actuator_output_enabled': LaunchConfiguration('actuator_output_enabled'),
+                    'test_input_injection_enabled': LaunchConfiguration(
+                        'test_input_injection_enabled'),
+                    'use_sim_time': LaunchConfiguration('use_sim_time'),
+                    'tracking_control_enabled': False,
+                },
+            ],
+        ),
+    ]
+
+
 def generate_launch_description():
     share = get_package_share_directory("lateral_ctrl")
     config = os.path.join(share, "config", "steering_actuator.yaml")
@@ -44,27 +75,17 @@ def generate_launch_description():
     )
     return LaunchDescription([
         DeclareLaunchArgument('can_interface', default_value='can0'),
+        DeclareLaunchArgument('params_file', default_value=config),
+        DeclareLaunchArgument(
+            'actuation_mode', default_value='', choices=['', 'position', 'torque'],
+            description='Empty follows params_file; otherwise overrides its actuation mode.'),
+        DeclareLaunchArgument('steering_enabled', default_value=''),
         DeclareLaunchArgument('hardware_can_enabled', default_value='true'),
         DeclareLaunchArgument('actuator_output_enabled', default_value='true'),
         DeclareLaunchArgument('test_input_injection_enabled', default_value='false'),
         DeclareLaunchArgument('use_sim_time', default_value='false'),
-        Node(
-            package='lateral_ctrl',
-            executable='steering_actuator_node',
-            name='steering_actuator_node',
-            output='screen',
-            parameters=[
-                config,
-                calibration_parameters,
-                {
-                    'can_interface': LaunchConfiguration('can_interface'),
-                    'hardware_can_enabled': LaunchConfiguration('hardware_can_enabled'),
-                    'actuator_output_enabled': LaunchConfiguration('actuator_output_enabled'),
-                    'test_input_injection_enabled': LaunchConfiguration(
-                        'test_input_injection_enabled'),
-                    'use_sim_time': LaunchConfiguration('use_sim_time'),
-                    'tracking_control_enabled': False,
-                },
-            ],
+        OpaqueFunction(
+            function=_make_actuator,
+            kwargs={'calibration_parameters': calibration_parameters},
         ),
     ])

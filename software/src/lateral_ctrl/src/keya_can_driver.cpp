@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include <utility>
+#include <stdexcept>
 
 namespace lateral_ctrl
 {
@@ -85,6 +86,11 @@ bool KeyaCanDriver::open()
   close();
   socket_fd_ = socket(PF_CAN, SOCK_RAW, CAN_RAW);
   if (socket_fd_ < 0) return false;
+  const int timestamping = 1;
+  if (setsockopt(socket_fd_, SOL_SOCKET, SO_TIMESTAMPNS, &timestamping, sizeof(timestamping)) < 0) {
+    close();
+    return false;
+  }
   const can_filter filters[] = {
     {feedback_id_ | CAN_EFF_FLAG, CAN_EFF_FLAG | CAN_EFF_MASK},
     {heartbeat_id_ | CAN_EFF_FLAG, CAN_EFF_FLAG | CAN_EFF_MASK}
@@ -131,6 +137,16 @@ std::array<uint8_t, 8> KeyaCanDriver::positionPayload(int32_t count)
     static_cast<uint8_t>(value >> 16), static_cast<uint8_t>(value >> 8),
     static_cast<uint8_t>(value)};
 }
+std::array<uint8_t, 8> KeyaCanDriver::torquePayload(int32_t command)
+{
+  if (command < -10000 || command > 10000) {
+    throw std::out_of_range("KEYA torque command must be in [-10000, 10000]");
+  }
+  const auto value = static_cast<uint32_t>(command);
+  return {0x23, 0x01, 0x20, 0x01, static_cast<uint8_t>(value >> 24),
+    static_cast<uint8_t>(value >> 16), static_cast<uint8_t>(value >> 8),
+    static_cast<uint8_t>(value)};
+}
 bool KeyaCanDriver::send(const std::array<uint8_t, 8> & data)
 {
   if (socket_fd_ < 0) return false;
@@ -143,6 +159,11 @@ bool KeyaCanDriver::send(const std::array<uint8_t, 8> & data)
 bool KeyaCanDriver::sendEnable() { return send(enablePayload()); }
 bool KeyaCanDriver::sendDisable() { return send(disablePayload()); }
 bool KeyaCanDriver::sendPositionCount(int32_t count) { return send(positionPayload(count)); }
+bool KeyaCanDriver::sendTorqueCommand(int32_t command)
+{
+  if (command < -10000 || command > 10000) return false;
+  return send(torquePayload(command));
+}
 bool KeyaCanDriver::requestEncoderPosition()
 {
   return send({0x40, 0x04, 0x21, 0x02, 0, 0, 0, 0});
@@ -171,11 +192,38 @@ bool KeyaCanDriver::requestDriverTemperature()
 void KeyaCanDriver::receiveAvailableFrames()
 {
   if (socket_fd_ < 0) return;
-  can_frame frame{};
-  while (read(socket_fd_, &frame, sizeof(frame)) == static_cast<ssize_t>(sizeof(frame))) {
+  while (true) {
+    can_frame frame{};
+    iovec iov{&frame, sizeof(frame)};
+    alignas(cmsghdr) char control[CMSG_SPACE(sizeof(timespec))]{};
+    msghdr message{};
+    message.msg_iov = &iov;
+    message.msg_iovlen = 1;
+    message.msg_control = control;
+    message.msg_controllen = sizeof(control);
+    if (recvmsg(socket_fd_, &message, MSG_DONTWAIT) != static_cast<ssize_t>(sizeof(frame))) break;
+    if (!(frame.can_id & CAN_EFF_FLAG) || (frame.can_id & (CAN_RTR_FLAG | CAN_ERR_FLAG))) continue;
+    // Timestamp arrival, not queue-drain time: queued feedback must not look fresh,
+    // and the wheel derivative must follow real sample intervals.
+    auto received_at = std::chrono::steady_clock::time_point{};
+    for (auto * cmsg = CMSG_FIRSTHDR(&message); cmsg; cmsg = CMSG_NXTHDR(&message, cmsg)) {
+      if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SO_TIMESTAMPNS &&
+        cmsg->cmsg_len >= CMSG_LEN(sizeof(timespec)))
+      {
+        timespec stamp{};
+        std::memcpy(&stamp, CMSG_DATA(cmsg), sizeof(stamp));
+        const auto arrival = std::chrono::system_clock::time_point(
+          std::chrono::seconds(stamp.tv_sec) + std::chrono::nanoseconds(stamp.tv_nsec));
+        const auto age = std::chrono::system_clock::now() - arrival;
+        if (age < std::chrono::system_clock::duration::zero()) break;
+        received_at = std::chrono::steady_clock::now() -
+          std::chrono::duration_cast<std::chrono::steady_clock::duration>(age);
+      }
+    }
+    if (received_at.time_since_epoch().count() == 0) continue;
     detail::applyKeyaCanFrame(
       state_, feedback_id_, heartbeat_id_, frame.can_id & CAN_EFF_MASK,
-      frame.can_dlc, frame.data, std::chrono::steady_clock::now());
+      frame.can_dlc, frame.data, received_at);
   }
 }
 }  // namespace lateral_ctrl

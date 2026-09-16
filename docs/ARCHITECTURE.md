@@ -170,6 +170,13 @@ pinout·전압·renderer 세부사항은
 `software/src/lateral_ctrl`의 `steering_actuator_node`가 `/vehicle/command`,
 `/drive/status`, `/brake/status`를 받아 KEYA 조향 모터를 제어합니다.
 
+Startup-only `actuation_mode`는 `position`(기존 count 명령) 또는 `torque`(외부
+calibrated wheel-angle PD)를 선택합니다. `TorqueSteeringController`는 ROS/CAN과
+독립적인 제어·rate 추정·raw/time envelope를 소유하고, 노드는 CAN과 기존 안전 상태
+머신을 계속 소유합니다. runtime mode 전환은 없으며 KEYA 0020은 운영자가
+position=3/torque=2로 맞춥니다. [Torque 운용 계약](../software/src/lateral_ctrl/TORQUE_CONTROL.md)을
+참고하십시오. 기존 HIL position 모델을 torque 응답 검증으로 간주하지 않습니다.
+
 - AUTO, 유효한 mode·position·CAN feedback, E-stop 해제, command brake 해제
   조건에서만 새 조향 명령을 활성화합니다.
 - MANUAL, E-stop, command brake, 통신 timeout 또는 모터 fault에서 KEYA를
