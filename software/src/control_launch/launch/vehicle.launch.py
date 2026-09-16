@@ -71,6 +71,7 @@ def _robot_state_publisher():
                     FindExecutable(name="xacro"),
                     " ", vehicle_xacro,
                     " lidar_output_mode:=none",
+                    " lidar_frame_model:=hesai",
                     " debug_driver_camera_enabled:=false",
                 ]),
                 value_type=str,
