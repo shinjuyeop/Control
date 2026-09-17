@@ -98,19 +98,14 @@ Keep Last 10 QoS를 사용합니다.
 
 ## 토크 조향 P·D
 
-`vehicle.launch.py`에서 조향 torque 게인을 인자로 줄 수 있다. 빈 값(기본)이면
-`lateral_ctrl/config/steering_actuator.yaml`을 따른다.
+실차 조향 시험은 `vehicle.launch.py`를 그대로 띄운 뒤 `ros2 param set`으로 제어 파라미터를
+정한다. 절차·파라미터 표는 [`docs/Experiment_RUNBOOK.md`](../../../docs/Experiment_RUNBOOK.md) T3.
 
 ```bash
-ros2 launch control_launch vehicle.launch.py torque_full_scale_error_deg:=0.5 torque_kd:=0.0
+ros2 launch control_launch vehicle.launch.py
+ros2 param set /steering_actuator_node torque_full_scale_error_deg 5.0   # P (작을수록 P↑)
+ros2 param set /steering_actuator_node torque_kd 1500.0                   # D
 ```
 
-| 인자 | YAML 파라미터 | 의미 |
-|---|---|---|
-| `torque_full_scale_error_deg` | 같음 | P. 이 오차(deg)에서 토크가 peak에 닿는다. 작을수록 P↑, `Kp[raw/deg] = peak / 값` |
-| `torque_kd` | 같음 | D, raw/(rad/s). 0은 감쇠 없음 |
-| `torque_peak_limit_raw`, `torque_sustained_limit_raw` | 같음 | 토크 한계 raw. sustained ≤ peak |
-| `actuation_mode`, `steering_enabled` | 같음 | 기존 인자 |
-
-실행 중에는 `ros2 param set /steering_actuator_node torque_kd 300.0`처럼 바꿀 수 있다
-(double 값은 소수점 표기). 절차는 [`docs/Experiment_RUNBOOK.md`](../../../docs/Experiment_RUNBOOK.md).
+같은 이름의 launch 인자(`torque_full_scale_error_deg`, `torque_kd`, `torque_peak_limit_raw`,
+`torque_sustained_limit_raw`)도 있으며 빈 값(기본)이면 `steering_actuator.yaml`을 따른다.
