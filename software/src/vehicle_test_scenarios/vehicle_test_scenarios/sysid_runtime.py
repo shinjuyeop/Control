@@ -112,26 +112,7 @@ class SysidNode(Node):
         self.subscriptions_owned.append(self.create_subscription(
             ActuatorCommand, '/vehicle/command',
             lambda message: self._receive('/vehicle/command', message), qos_profile_sensor_data))
-        # position/torque decides whether the menu P/D can be applied to the steering node.
-        self.actuation_mode = None
-        self.subscriptions_owned.append(self.create_subscription(
-            String, '/steering/actuation_mode', self._receive_actuation_mode,
-            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)))
         self.create_timer(0.05, self._tick)
-
-    def _receive_actuation_mode(self, message):
-        with self.lock:
-            self.actuation_mode = message.data
-
-    def _steering_ready(self):
-        enabled = self.settings.steering_enabled
-        gains = self.settings.torque_gains
-        if gains is None or self.actuation_mode == 'position':
-            return self.steering_control.ready(enabled)
-        if self.actuation_mode != 'torque':
-            self.steering_control.error = '조향 actuation_mode 수신 대기 (P/D 적용 전)'
-            return False
-        return self.steering_control.ready(enabled, gains)
 
     @property
     def busy(self):
@@ -332,10 +313,7 @@ class SysidNode(Node):
                 self.state = 'RECORD_START'
                 self.phase_started = now
                 self.process_actions.put(('record', value))
-                self.steering_control.invalidate()
                 self.log(f'{value.name} · {value.description()}')
-                if value.torque_gains and self.actuation_mode == 'position':
-                    self.log('조향 position 모드: 메뉴의 P/D는 적용하지 않음')
             elif action == 'stop':
                 if self.state in ('TAIL', 'CLOSING'):
                     self.output = baseline(True, settings=self.settings)
@@ -382,7 +360,8 @@ class SysidNode(Node):
         with self.lock:
             now = self.clock()
             self._actions(now)
-            steering_ready = not self.output_active or self._steering_ready()
+            steering_ready = not self.output_active or self.steering_control.ready(
+                self.settings.steering_enabled)
             if not steering_ready and not self.output.brake_engage:
                 # Freeze preparation until the actuator accepts the motor setting.
                 # If it disappears during motion, use the existing stop path.

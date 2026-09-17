@@ -96,13 +96,21 @@ Joy 메시지를 받을 때마다 현재 ROS 시각을 기록해 명령을 발�
 반복 발행은 `joy_node`의 60 Hz autorepeat를 사용합니다. 두 토픽 모두 Reliable,
 Keep Last 10 QoS를 사용합니다.
 
-## 토크 조향 시험 스택
+## 토크 조향 P·D
+
+`vehicle.launch.py`에서 조향 torque 게인을 인자로 줄 수 있다. 빈 값(기본)이면
+`lateral_ctrl/config/steering_actuator.yaml`을 따른다.
 
 ```bash
-ros2 launch control_launch torque_test.launch.py [torque_peak_limit_raw:=2000] [torque_sustained_limit_raw:=1000]
+ros2 launch control_launch vehicle.launch.py torque_full_scale_error_deg:=0.5 torque_kd:=0.0
 ```
 
-`vehicle.launch.py`를 `actuation_mode=torque`, `steering_enabled=false`, bring-up 토크
-한계로 띄운다. 다음은 `ros2 run vehicle_test_scenarios vehicle_test_scenario_runner`(TUI)다.
-절차는 [`docs/Experiment_RUNBOOK.md`](../../../docs/Experiment_RUNBOOK.md) T3를 따른다.
-`vehicle.launch.py`에도 같은 두 인자가 있으며 빈 값이면 `steering_actuator.yaml`을 따른다.
+| 인자 | YAML 파라미터 | 의미 |
+|---|---|---|
+| `torque_full_scale_error_deg` | 같음 | P. 이 오차(deg)에서 토크가 peak에 닿는다. 작을수록 P↑, `Kp[raw/deg] = peak / 값` |
+| `torque_kd` | 같음 | D, raw/(rad/s). 0은 감쇠 없음 |
+| `torque_peak_limit_raw`, `torque_sustained_limit_raw` | 같음 | 토크 한계 raw. sustained ≤ peak |
+| `actuation_mode`, `steering_enabled` | 같음 | 기존 인자 |
+
+실행 중에는 `ros2 param set /steering_actuator_node torque_kd 300.0`처럼 바꿀 수 있다
+(double 값은 소수점 표기). 절차는 [`docs/Experiment_RUNBOOK.md`](../../../docs/Experiment_RUNBOOK.md).

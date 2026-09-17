@@ -40,12 +40,7 @@ GO/NO-GO 원인을 표시한다.
 | `S` / `Space` | 정지·브레이크 요청 |
 | `Q` | 안전 정리 후 종료 |
 
-선택한 시험에서 실제 사용하는 파라미터만 표시한다. 조향 Step·Sine·Chirp에는
-torque 조향 게인 `P · full-scale 오차`(`torque_full_scale_error_deg`, 작을수록 P↑,
-Kp = peak / 값)와 `D 게인`(`torque_kd`)이 있다. `R` 때 `steering_enabled`와 함께
-`/steering_actuator_node/set_parameters_atomically`로 한 번에 적용하며, 노드가 거부하면
-Run을 시작하지 않고 이유를 표시한다. 조향 노드가 position 모드면 P·D는 적용하지 않는다.
-`/steering/actuation_mode`를 받기 전에는 조향 시험을 시작하지 않는다. 완성된 설정은 `R` 시점에
+선택한 시험에서 실제 사용하는 파라미터만 표시한다. 완성된 설정은 `R` 시점에
 한 번에 고정하며 실행·저장 중에는 수정하지 못한다. TUI를 열기만 해서는 명령이나
 녹화를 시작하지 않는다.
 

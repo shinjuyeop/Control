@@ -38,12 +38,12 @@ e = θ_target − θ_actual,  ω = 각속도,  α_ff = 목표 각가속도
 | T0 부호 | `ros2 launch lateral_ctrl torque_sysid_bench.launch.py test:=t0 direction:=1` (이후 `direction:=-1`) | — | 측정 로그 확인 후 Ctrl+C |
 | T1 마찰 | `ros2 launch lateral_ctrl torque_sysid_bench.launch.py test:=t1 direction:=1` (이후 `-1`) | — | `SWEEP COMPLETE`/`ANGLE LIMIT ABORT` 후 Ctrl+C |
 | T2 관성 | `ros2 launch lateral_ctrl torque_sysid_bench.launch.py test:=t2 level:=300` (500, 800, 1200 반복) | — | 로그에 멈춤 표시 후 Ctrl+C |
-| T3 PD·마찰·FF | `ros2 launch control_launch torque_test.launch.py` | `ros2 run vehicle_test_scenarios vehicle_test_scenario_runner` | TUI `S` → `Q`, 터미널 1 Ctrl+C |
+| T3 조향 시험 | `ros2 launch control_launch vehicle.launch.py actuation_mode:=torque torque_full_scale_error_deg:=<P> torque_kd:=<D>` | `ros2 run vehicle_test_scenarios vehicle_test_scenario_runner` | TUI `S` → `Q`, 터미널 1 Ctrl+C |
 
 - T0–T2 launch는 읽기 전용 조향 노드 + 측정 노드(시험별 설정 내장) + MCAP 녹화를 함께 띄운다.
   launch 약 3초 뒤 첫 각도를 받으면 **토크가 자동으로 걸린다.**
-- T3 launch는 구동 스택을 torque 모드·조향 비활성·bring-up 한계(peak 2000/sustained 1000)로
-  띄운다. P·D는 TUI 메뉴에서 고르고 `R`을 누르면 그 값이 적용되고 MCAP이 녹화된다.
+- T3는 기존 `vehicle.launch.py` 그대로다. P·D는 launch 인자로 주고(생략하면 YAML 값),
+  실행 중에는 `ros2 param set`으로 바꾼다. 시험 입력·MCAP은 TUI가 담당한다.
 - 기록은 모두 `~/KAI_ws/records/<시간>_<시험>/`에 쌓인다.
 
 ---
@@ -106,18 +106,23 @@ source ~/KAI_ws/install/setup.zsh
 | 실험 | launch | 안에서 뜨는 것 | 토크 송신원 |
 |---|---|---|---|
 | T0–T2 | `lateral_ctrl torque_sysid_bench.launch.py` | 읽기 전용 `steering_actuator_node` + `deadzone_measure_node` + MCAP | `deadzone_measure_node` |
-| T3, 6절 | `control_launch torque_test.launch.py` | `vehicle.launch.py`(STM Agent·governor·조향 torque armed·상태) | `steering_actuator_node` |
+| T3, 6절 | `control_launch vehicle.launch.py actuation_mode:=torque` | STM Agent·governor·조향(armed)·상태 | `steering_actuator_node` |
 
-`vehicle.launch.py`(와 `torque_test.launch.py`)는 조향을 armed로 띄우므로 T0–T2 launch와
-동시에 실행하면 한 모터에 송신원이 둘이 된다. can0는 부팅 시 자동 준비된다.
+`vehicle.launch.py`는 조향을 armed로 띄우므로 T0–T2 launch와 동시에 실행하면 한 모터에
+송신원이 둘이 된다. can0는 부팅 시 자동 준비된다.
 
-`torque_test.launch.py` 인자(기본값):
+`vehicle.launch.py` 조향 torque 인자(모두 빈 값이 기본 = `steering_actuator.yaml` 값):
 
-| 인자 | 기본 | 의미 |
+| 인자 | YAML 현재값 | 의미 |
 |---|---|---|
-| `torque_peak_limit_raw` | 2000 | bring-up peak. 실험 중 8000 이하 |
-| `torque_sustained_limit_raw` | 1000 | peak 이하 |
-| `can_interface` | can0 | KEYA SocketCAN |
+| `actuation_mode` | torque | `position`(0020=3) / `torque`(0020=2) |
+| `torque_full_scale_error_deg` | 0.5 | **P.** 이 오차(deg)에서 토크가 peak에 닿는다. 작을수록 P↑, `Kp[raw/deg] = peak / 값` |
+| `torque_kd` | 0.0 | **D**, raw/(rad/s). 0은 감쇠 없음 |
+| `torque_peak_limit_raw` | 10000 | 토크 peak 한계. 실험 중 8000 이하 권장 |
+| `torque_sustained_limit_raw` | 5000 | 지속 한계, peak 이하 |
+| `steering_enabled` | (true) | 기존 인자 |
+
+예: `ros2 launch control_launch vehicle.launch.py actuation_mode:=torque torque_full_scale_error_deg:=5.0 torque_kd:=1500 torque_peak_limit_raw:=2000 torque_sustained_limit_raw:=1000`
 
 관측(선택, 별도 터미널): Foxglove bridge는 PC당 하나만.
 
@@ -331,26 +336,35 @@ ros2 run lateral_ctrl torque_sysid_metrics.py inertia \
 
 ### T3 — 방법 A 제어 (`steering_actuator_node`, torque 모드)
 
-측정 launch를 **종료**하고 두 개만 띄운다.
+측정 launch를 **종료**하고 기존 실차 구조 그대로 두 개를 띄운다.
 
 ```zsh
-# 터미널 1 — 구동 스택 (torque, 조향 비활성, peak 2000/sustained 1000)
-ros2 launch control_launch torque_test.launch.py
+# 터미널 1 — 구동 스택. P·D·한계는 인자로 (생략하면 YAML)
+ros2 launch control_launch vehicle.launch.py actuation_mode:=torque \
+  torque_full_scale_error_deg:=5.0 torque_kd:=1500 \
+  torque_peak_limit_raw:=2000 torque_sustained_limit_raw:=1000
 
 # 터미널 2 — 실차 시험 TUI
 ros2 run vehicle_test_scenarios vehicle_test_scenario_runner
 ```
 
-TUI가 `R` 때 조향 노드에 `steering_enabled`와 **메뉴의 P·D**를 한 번에 적용하고 MCAP을
-녹화한다. 물리 AUTO, E-stop 해제, 신선한 STM 상태가 모두 필요하다. 현재 YAML의
+실행 중 P·D 변경(다음 run부터 반영, 값은 소수점 표기):
+
+```zsh
+ros2 param set /steering_actuator_node torque_full_scale_error_deg 3.0
+ros2 param set /steering_actuator_node torque_kd 2500.0
+```
+
+TUI가 `R` 때 시험 종류에 맞춰 `steering_enabled`를 켜고 MCAP을 녹화한다. 물리 AUTO,
+E-stop 해제, 신선한 STM 상태가 모두 필요하다. 현재 YAML의
 `minimum_steering_speed_kph: 0.0`(정지 조향 허용)을 확인한다.
 
 방법 A 파라미터(모두 `/steering_actuator_node`, 런타임 변경 가능):
 
 | 설계 기호 | ROS 파라미터 | 타입·단위 | 기본 |
 |---|---|---|---|
-| Kp | `torque_peak_limit_raw` / `torque_full_scale_error_deg` | int / double deg → raw/deg | 2000 / 0.5 |
-| Kd | `torque_kd` | double raw/(rad/s) | 1500.0 |
+| Kp | `torque_peak_limit_raw` / `torque_full_scale_error_deg` | int / double deg → raw/deg | YAML 10000 / 0.5 |
+| Kd | `torque_kd` | double raw/(rad/s) | YAML 0.0 |
 | J_ff | `torque_inertia_ff` | double raw/(rad/s²) | 0.0 |
 | — | `torque_feedforward_limit_raw` | int, \|J·α\| 상한 | 1000 |
 | — | `torque_feedforward_filter_hz` | double, α LPF | 5.0 |
@@ -381,7 +395,7 @@ TUI가 `R` 때 조향 노드에 `steering_enabled`와 **메뉴의 P·D**를 한 
 |---|---|
 | `↑`/`↓`, `←`/`→`, `Enter` | 시험 선택, 파라미터 이동·편집 |
 | `M` | MCAP 녹화 ON/OFF (기본 ON) |
-| `R` | 설정 고정 → P·D 적용 → MCAP 시작 → AUTO 대기 → 5초 카운트다운 → 입력 |
+| `R` | 설정 고정 → MCAP 시작 → AUTO 대기 → 5초 카운트다운 → 입력 |
 | `S` / `Space` | 정지·브레이크 요청 후 기록 종료 |
 | `Q` | 안전 정리 후 종료 |
 
@@ -393,26 +407,21 @@ TUI가 `R` 때 조향 노드에 `steering_enabled`와 **메뉴의 P·D**를 한 
 | 센터각, 조향 진폭 | 중앙 절댓값 + 진폭 ≤ 28° | 0, 시험별 |
 | 구간 유지시간 / 파형 주기 / Chirp 주파수 | 입력 모양 | 시험별 |
 | 반복 횟수 | 1 이상이면 끝나고 2초 뒤 자동 저장, 0은 `S`까지 | 1–3 |
-| **P · full-scale 오차** | `torque_full_scale_error_deg`. 작을수록 P↑, `Kp[raw/deg] = peak / 값` | 시작 5.0 |
-| **D 게인** | `torque_kd` raw/(rad/s). 0은 감쇠 없음 | 시작 1500 |
 
-- P·D의 기준은 **메뉴 값**이다. `R`마다 조향 노드에 다시 적용되므로 `ros2 param set`으로
-  바꾼 P·D는 다음 Run에서 메뉴 값으로 덮인다. 노드가 거부하면(예: P가 settle 각 0.05° 이하)
-  Run이 시작되지 않고 화면에 이유가 뜬다.
-- position 모드 조향 노드면 P·D는 적용하지 않고 로그에 표시만 한다.
-- 메뉴에 없는 값(마찰 `torque_friction_raw`, 데드밴드, `torque_inertia_ff`, 토크 한계)은
-  run 사이에 `ros2 param set /steering_actuator_node ...`로 바꾼다.
+- P·D는 TUI 메뉴가 아니라 launch 인자 / `ros2 param set`으로 정한다. run 사이(TUI 대기 중)에
+  바꾼다. run 중에 바꾸면 조향이 잠깐 Disable됐다가 재진입하고 그 구간은 분석에서 끊긴다.
+- 마찰 `torque_friction_raw`, 데드밴드, `torque_inertia_ff`도 같은 방식으로 바꾼다.
 - 저장: `~/KAI_ws/records/<시간>_<시험>_v<속도>/` 아래 `rosbag/`, `scenario.yaml`,
-  `console.log`. `scenario.yaml`의 `parameters`에 메뉴 값, `steering_parameters`에
-  run 종료 시점의 조향 게인 전체(마찰·FF·한계 포함)가 남는다.
+  `console.log`. `scenario.yaml`의 `steering_parameters`에 Run 시점의 조향 게인 전체
+  (P·D·마찰·FF·한계 포함)가 남는다.
 - TUI 명령 발행률은 20 Hz 고정이다. 50 Hz가 필요하면 아래 headless 경로를 쓴다.
 
 #### (1) 순수 PD — 큰 각 step
 
 TUI: **조향 양방향 Step** → `주행속도 0`, `센터각 0`, `조향 진폭 15`, `구간 유지시간 5`,
-`반복 횟수 2`, `P 5.0`, `D 1500` → `R`.
+`반복 횟수 2` → `R`. (launch에서 P 5.0, D 1500으로 시작)
 
-run마다 P·D만 메뉴에서 바꿔 반복한다(예: P 5.0 → 3.0 → 2.0, OS가 크면 D↑).
+run 사이에 `ros2 param set`으로 P·D를 바꿔 반복한다(예: P 5.0 → 3.0 → 2.0, OS가 크면 D↑).
 목표: 진폭 15°·18°에서 OS 7–8%(ζ≈0.64).
 
 `/steering/torque_safety`가 `rate_limit`이면 과속 latched FAULT다. ceiling
@@ -422,7 +431,7 @@ run마다 P·D만 메뉴에서 바꿔 반복한다(예: P 5.0 → 3.0 → 2.0, O
 
 #### (2) 마찰 보상 — 작은 각 step
 
-TUI: 같은 Step에서 `조향 진폭 3`(이후 5), P·D는 (1)의 확정값.
+TUI: 같은 Step에서 `조향 진폭 3`(이후 5), P·D는 (1)의 확정값 유지.
 
 ```zsh
 ros2 param set /steering_actuator_node torque_friction_raw 110   # T1 값 (int)
@@ -442,7 +451,7 @@ ros2 param set /steering_actuator_node torque_friction_deadband_deg 0.2
 #### (4) 관성 피드포워드 — Sine / Chirp
 
 TUI: **조향 Sine · 고정 주기** → `주행속도 0`, `센터각 0`, `조향 진폭 10`, `파형 주기 2`,
-`초기 직진시간 2`, `반복 횟수 5`, P·D 확정값 → `R`. 빠른 입력은 **조향 Chirp**
+`초기 직진시간 2`, `반복 횟수 5` → `R`. 빠른 입력은 **조향 Chirp**
 (`시작 주파수 0.2` → `종료 주파수 1.0`).
 
 ```zsh
@@ -456,7 +465,7 @@ ros2 param set /steering_actuator_node torque_feedforward_limit_raw 1000
 
 #### (대안) headless 명령원 — 발행률 변경·스크립트 실행
 
-TUI 대신 파라미터로 제어한다. 이때는 P·D를 `ros2 param set`으로 직접 주고 MCAP을 따로 녹화한다.
+TUI 대신 파라미터로 제어한다. 이때는 MCAP을 따로 녹화한다.
 
 ```zsh
 ros2 run vehicle_test_scenarios vehicle_test_scenario_node --ros-args -p publish_rate_hz:=50.0
@@ -581,13 +590,13 @@ label: `T3g_pd_fric_ff_amp<deg>_v<speed>`
 | 항목 | 상태 | 위치 |
 |---|---|---|
 | T0–T2 실행 | `torque_sysid_bench.launch.py test:=t0` / `t1` / `t2` 한 줄(읽기 전용 조향 + 측정 노드 프리셋 + MCAP). 측정 노드 `auto_start`는 첫 유효 각도 수신 후 시작 | `lateral_ctrl/launch/`, `deadzone_measure_node.cpp` |
-| T3 스택 | `torque_test.launch.py`(torque·조향 비활성·bring-up 한계). 한계는 `vehicle.launch.py`/`steering_actuator.launch.py` 인자로 전달 | `control_launch/launch/` |
+| T3 스택 | 기존 `vehicle.launch.py`. P(`torque_full_scale_error_deg`)·D(`torque_kd`)·토크 한계를 launch 인자로 전달(빈 값은 YAML) | `control_launch/launch/`, `lateral_ctrl/launch/steering_actuator.launch.py` |
 | 노드 배선(0020=2 경로, torque0→Enable, 매 tick 송신, 부호) | 완료 | `steering_actuator_node` `actuation_mode=torque` |
 | 마찰 보상 `F_c·sign(e)` + 데드밴드 | 완료 | `TorqueSteeringController::update`, `torque_friction_*` |
 | 관성 피드포워드 `J·α_ff` (명령 timestamp 미분 + LPF + 상한) | 완료 | `TargetAccelerationEstimator`, `torque_inertia_ff`, `torque_feedforward_*` |
 | 속도 스케줄 `F_c(v)` (구간 선형 보간) | 완료 | `TorqueSteeringConfig::frictionRawAt`, `torque_friction_schedule` |
 | 진단 토픽 | `/steering/torque_ff_raw`, `/steering/torque_friction_raw`, `/steering/target_accel` 추가 | MCAP launch, Foxglove 조향 Torque 탭 |
-| step/sine/chirp 명령원 + MCAP 자동 녹화 | 실차 시험 TUI(`vehicle_test_scenario_runner`). 메뉴 P·D를 Run 때 `steering_enabled`와 원자적으로 적용. torque 진단 토픽·`/parameter_events` 녹화, Run 시점 조향 게인을 `scenario.yaml`에 기록(run 종료 시점). headless는 `vehicle_test_scenario_node` | `vehicle_test_scenarios` |
+| step/sine/chirp 명령원 + MCAP 자동 녹화 | 실차 시험 TUI(`vehicle_test_scenario_runner`). torque 진단 토픽·`/parameter_events` 녹화, Run 시점 조향 게인을 `scenario.yaml`에 기록. headless는 `vehicle_test_scenario_node` | `vehicle_test_scenarios` |
 | 후처리 | `torque_sysid_metrics.py step`(%OS/ζ/상승·정착/정착오차), `inertia`(α fit, J·F 회귀) | `lateral_ctrl/scripts/` |
 | 오차 크기별 F_c 스케줄 | 미구현(설계상 선택 항목). 속도 스케줄 결과를 보고 판단 | — |
 | 실차 응답 검증 | **미수행.** T0부터 이 문서대로 진행 | — |

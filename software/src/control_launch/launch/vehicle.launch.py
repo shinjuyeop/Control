@@ -104,6 +104,14 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument("actuation_mode", default_value="", choices=["", "position", "torque"]),
         DeclareLaunchArgument("steering_enabled", default_value=""),
+        DeclareLaunchArgument(
+            "torque_full_scale_error_deg", default_value="",
+            description="조향 torque P: 이 오차(deg)에서 peak. 작을수록 P↑. 빈 값은 YAML",
+        ),
+        DeclareLaunchArgument(
+            "torque_kd", default_value="",
+            description="조향 torque D raw/(rad/s). 빈 값은 YAML",
+        ),
         DeclareLaunchArgument("torque_peak_limit_raw", default_value=""),
         DeclareLaunchArgument("torque_sustained_limit_raw", default_value=""),
         DeclareLaunchArgument(
@@ -132,6 +140,8 @@ def generate_launch_description():
                 "can_interface": LaunchConfiguration("can_interface"),
                 "actuation_mode": LaunchConfiguration("actuation_mode"),
                 "steering_enabled": LaunchConfiguration("steering_enabled"),
+                "torque_full_scale_error_deg": LaunchConfiguration("torque_full_scale_error_deg"),
+                "torque_kd": LaunchConfiguration("torque_kd"),
                 "torque_peak_limit_raw": LaunchConfiguration("torque_peak_limit_raw"),
                 "torque_sustained_limit_raw": LaunchConfiguration("torque_sustained_limit_raw"),
                 "hardware_can_enabled": "true",

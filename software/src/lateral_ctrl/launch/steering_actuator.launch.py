@@ -20,10 +20,15 @@ CALIBRATION_PARAMETER_NAMES = (
 
 
 # Empty launch argument keeps the params_file value; a value overrides it.
-OPTIONAL_PARAMETER_NAMES = (
-    'actuation_mode', 'steering_enabled',
-    'torque_peak_limit_raw', 'torque_sustained_limit_raw',
-)
+# Types are explicit: a bare "0" would otherwise reach a double parameter as an integer.
+OPTIONAL_PARAMETER_TYPES = {
+    'actuation_mode': str,
+    'steering_enabled': None,  # launch_ros parses true/false
+    'torque_full_scale_error_deg': float,
+    'torque_kd': float,
+    'torque_peak_limit_raw': int,
+    'torque_sustained_limit_raw': int,
+}
 
 
 def load_steering_motor_calibration(path):
@@ -43,10 +48,11 @@ def load_steering_motor_calibration(path):
 def _make_actuator(context, calibration_parameters):
     # An omitted CLI override must preserve the operator's selected params_file.
     optional_parameters = {}
-    for name in OPTIONAL_PARAMETER_NAMES:
+    for name, kind in OPTIONAL_PARAMETER_TYPES.items():
         value = LaunchConfiguration(name).perform(context)
         if value:
-            optional_parameters[name] = LaunchConfiguration(name)
+            optional_parameters[name] = (
+                LaunchConfiguration(name) if kind is None else kind(value))
     return [
         Node(
             package='lateral_ctrl',
@@ -87,6 +93,10 @@ def generate_launch_description():
             'actuation_mode', default_value='', choices=['', 'position', 'torque'],
             description='Empty follows params_file; otherwise overrides its actuation mode.'),
         DeclareLaunchArgument('steering_enabled', default_value=''),
+        DeclareLaunchArgument('torque_full_scale_error_deg', default_value='',
+                              description='P: error deg where torque reaches peak. Empty follows params_file.'),
+        DeclareLaunchArgument('torque_kd', default_value='',
+                              description='D raw/(rad/s). Empty follows params_file.'),
         DeclareLaunchArgument('torque_peak_limit_raw', default_value='',
                               description='Empty follows params_file.'),
         DeclareLaunchArgument('torque_sustained_limit_raw', default_value='',
