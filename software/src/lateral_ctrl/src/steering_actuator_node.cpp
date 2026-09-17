@@ -13,6 +13,7 @@ namespace lateral_ctrl
 namespace
 {
 constexpr double kDegToRad = 3.14159265358979323846 / 180.0;
+constexpr double kKeyaTorqueCurrentFraction = 0.8;
 double seconds(std::chrono::steady_clock::time_point time)
 {
   return std::chrono::duration<double>(time.time_since_epoch()).count();
@@ -57,6 +58,11 @@ SteeringActuatorNode::SteeringActuatorNode(
     };
   torque_direction_sign_ = integer_parameter("torque_direction_sign", 1, -1, 1, startup_only);
   keyaTorqueCommand(0, torque_direction_sign_);
+  keya_protection_current_a_ =
+    declare_parameter("keya_protection_current_a", 20.0, startup_only);
+  if (!std::isfinite(keya_protection_current_a_) || keya_protection_current_a_ <= 0.0) {
+    throw std::invalid_argument("keya_protection_current_a must be finite and positive");
+  }
   TorqueSteeringConfig torque;
   torque.full_scale_error_rad = declare_parameter("torque_full_scale_error_deg", 0.5) * kDegToRad;
   torque.kd = declare_parameter("torque_kd", 1500.0);
@@ -165,6 +171,8 @@ SteeringActuatorNode::SteeringActuatorNode(
     torque_p_pub_ = create_publisher<std_msgs::msg::Float32>("/steering/torque_p_raw", 10);
     torque_d_pub_ = create_publisher<std_msgs::msg::Float32>("/steering/torque_d_raw", 10);
     torque_unsaturated_pub_ = create_publisher<std_msgs::msg::Float32>("/steering/torque_unsaturated_raw", 10);
+    torque_current_limit_command_pub_ = create_publisher<std_msgs::msg::Float32>(
+      "/steering/torque_current_limit_command_a", 10);
     torque_saturated_pub_ = create_publisher<std_msgs::msg::Bool>("/steering/torque_saturated", 10);
     torque_settled_pub_ = create_publisher<std_msgs::msg::Bool>("/steering/torque_settled", 10);
     torque_peak_limited_pub_ = create_publisher<std_msgs::msg::Bool>("/steering/torque_peak_limited", 10);
@@ -756,6 +764,7 @@ void SteeringActuatorNode::publishTorqueState()
   publish_float(torque_p_pub_, torque_output_.p_raw);
   publish_float(torque_d_pub_, torque_output_.d_raw);
   publish_float(torque_unsaturated_pub_, torque_output_.unsaturated_raw);
+  publish_float(torque_current_limit_command_pub_, torqueCurrentLimitCommandA());
   publish_bool(torque_saturated_pub_, torque_output_.saturated);
   publish_bool(torque_settled_pub_, torque_output_.settled);
   publish_bool(torque_peak_limited_pub_, torque_output_.peak_limited);
@@ -763,5 +772,13 @@ void SteeringActuatorNode::publishTorqueState()
   std_msgs::msg::String safety;
   safety.data = torqueSafetyFaultName(torque_fault_latched_);
   torque_safety_pub_->publish(safety);
+}
+
+double SteeringActuatorNode::torqueCurrentLimitCommandA() const
+{
+  // KEYA manual §4.3.3.2: command permyriad * preset current * 80%.
+  // This is a signed command limit, not measured supply or motor current.
+  return static_cast<double>(sent_torque_raw_) / 10000.0 *
+         keya_protection_current_a_ * kKeyaTorqueCurrentFraction;
 }
 }  // namespace lateral_ctrl

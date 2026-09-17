@@ -38,6 +38,7 @@ SYSID_TOPICS = (
     "/steering/torque_d_raw",
     "/steering/torque_unsaturated_raw",
     "/steering/torque_command_raw",
+    "/steering/torque_current_limit_command_a",
     "/steering/torque_limit_raw",
     "/steering/torque_saturated",
     "/steering/torque_peak_limited",

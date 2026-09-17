@@ -75,6 +75,7 @@ fault는 5 tick, voltage/temperature는 25 tick 주기이며 heartbeat도 speed/
 |---|---:|---|
 | `actuation_mode` | position | startup-only |
 | `torque_direction_sign` | +1 | startup-only, ±1 |
+| `keya_protection_current_a` | 20.0 | startup-only, 표시 변환용; KEYA Parameter 0003과 일치 |
 | `torque_control_period_ms` | 20 | startup-only, 10..50 ms |
 | `torque_feedback_timeout_ms` | 100 | startup-only, 2 tick 이상·200 ms 이하 |
 | `torque_full_scale_error_deg` | 0.5 | P만으로 peak 도달하는 오차 |
@@ -214,13 +215,15 @@ filtered/unfiltered rate, current/speed, mode/safety를 함께 확인한다.
 | `/steering/torque_p_raw`, `/steering/torque_d_raw` | Float32 | canonical raw 기여 |
 | `/steering/torque_unsaturated_raw` | Float32 | canonical P+D |
 | `/steering/torque_command_raw` | Int32 | sign 적용 후 KEYA에 요청한 raw; 실제 torque 측정 아님 |
+| `/steering/torque_current_limit_command_a` | Float32 | `raw/10000×Parameter 0003×0.8`; signed 명령 전류 제한값 A |
 | `/steering/torque_limit_raw` | Int32 | 현재 peak/sustained cap |
 | `/steering/torque_saturated`, `/steering/torque_peak_limited` | Bool | clipping·peak 예산 상태 |
 | `/steering/torque_settled`, `/steering/torque_rate_ready` | Bool | settle·rate 준비 |
 | `/steering/torque_safety` | String | none/angle_limit/rate_limit/invalid_input/feedback_timeout |
 | `/steering/status.motor_current_a`, `.motor_speed_rpm` | 기존 status | A/rpm, 진단용 |
 
-Motor current는 정수 A 해상도다. Host 전류 제어의 feedback으로 사용하지 않는다.
+명령 전류 제한값은 실제 입력/모터 전류나 torque 측정값이 아니다. Motor current는
+KEYA가 보고한 정수 A 해상도 진단값이며 Host 전류 제어의 feedback으로 사용하지 않는다.
 torque 진단 토픽은 torque mode에서만 발행한다. 정지 시 제어 기여/출력 진단은0으로
 reset되며 actual/current/speed는 기존 status에서 계속 관측한다.
 

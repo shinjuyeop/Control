@@ -1279,15 +1279,23 @@
       "showPlotValuesInLegend": true
     },
     "Plot!torque_current": {
-      "foxglovePanelTitle": "KEYA 전류 (정수 A 진단)",
+      "foxglovePanelTitle": "KEYA 명령 전류 제한 / 진단",
       "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/torque_current_limit_command_a.data",
+          "enabled": true,
+          "color": "#f5774d",
+          "id": "Plot!torque_current-0",
+          "label": "명령 전류 제한 (signed)"
+        },
         {
           "timestampMethod": "receiveTime",
           "value": "/steering/status.motor_current_a",
           "enabled": true,
           "color": "#4e98e2",
-          "id": "Plot!torque_current-0",
-          "label": "current"
+          "id": "Plot!torque_current-1",
+          "label": "KEYA 전류 진단 (magnitude)"
         }
       ],
       "yAxisLabel": "A",

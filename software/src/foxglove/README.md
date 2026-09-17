@@ -34,7 +34,8 @@ ros2 run vehicle_state_publisher diagnostics_publisher
 - **공통**: 속도와 명령 age, ROS 파라미터
 - **Control**: 속도·조향 추종과 전원·상태·고장 상세
 - **조향 Torque**: 요청·soft-limit 목표·actual·error, P/D·unsaturated·KEYA raw,
-  filtered/unfiltered wheel rate, current/speed, saturation·peak·settle, mode/safety.
+  명령 전류 제한·KEYA 전류 진단, filtered/unfiltered wheel rate, speed,
+  saturation·peak·settle, mode/safety.
   단위·튜닝 순서는 [TORQUE_CONTROL.md](../lateral_ctrl/TORQUE_CONTROL.md)를 따른다.
 - **종방향 테스트**: `/planning/command`부터 `/vehicle/command`, 실제 속도까지의
   추종 관계와 모터 RPM, 상전류·버스 전류, 통신 age, 안전 이벤트

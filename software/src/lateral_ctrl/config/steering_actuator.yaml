@@ -6,6 +6,8 @@ steering_actuator_node:
     # Host never sets the KEYA work mode. Verify Direction=0 and LEFT sign unloaded.
     actuation_mode: "torque"  # "position" | "torque"
     torque_direction_sign: 1
+    # Display-only conversion for KEYA manual §4.3.3.2; must match Parameter 0003.
+    keya_protection_current_a: 20.0
     torque_control_period_ms: 20
     torque_feedback_timeout_ms: 100
     # High stiffness: P reaches peak at 0.5 deg. Raw limits are NOT an Amp conversion.

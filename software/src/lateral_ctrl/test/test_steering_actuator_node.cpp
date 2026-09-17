@@ -69,6 +69,9 @@ public:
     n.previous_tick_ = std::chrono::steady_clock::now() - std::chrono::milliseconds(150);
   }
   static double kd(const SteeringActuatorNode & n) { return n.torque_controller_.config().kd; }
+  static double currentLimitCommandA(const SteeringActuatorNode & n) {
+    return n.torqueCurrentLimitCommandA();
+  }
 };
 }  // namespace lateral_ctrl
 
@@ -141,6 +144,15 @@ TEST_F(SteeringNodeTest, ActiveEntryZeroBeforeEnableThenFreshTickProducesTorque)
   output();
   EXPECT_GT(can->frames.back().second, 0);
   for (const auto & frame : can->frames) EXPECT_NE(frame.first, "position");
+}
+
+TEST_F(SteeringNodeTest, CurrentLimitCommandUsesWireSignAndConfiguredProtectionCurrent)
+{
+  create("torque", true, -1, {{"keya_protection_current_a", 20.0}});
+  activate();
+  output();
+  ASSERT_EQ(can->frames.back(), std::make_pair(std::string("torque"), int32_t{-2000}));
+  EXPECT_DOUBLE_EQ(Peer::currentLimitCommandA(*node), -3.2);
 }
 
 TEST_F(SteeringNodeTest, ShutdownSendsZeroThenDisable)

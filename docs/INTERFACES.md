@@ -488,7 +488,9 @@ ACTIVE 진입은 torque0→Enable, 종료는 torque0→Disable이며 position fr
 `/steering/actuation_mode`는 String/transient-local(두 mode 공통)이고, torque mode에서
 `/steering/requested_angle`, `/steering/angle_error`(rad), `/steering/rate`,
 `/steering/unfiltered_rate`(rad/s), `/steering/torque_p_raw`, `/steering/torque_d_raw`,
-`/steering/torque_unsaturated_raw`는 Float32다. `/steering/torque_command_raw`와
+`/steering/torque_unsaturated_raw`와 `/steering/torque_current_limit_command_a`는
+Float32다. 후자는 KEYA Parameter 0003과 매뉴얼의 80% 식으로 계산한 signed 명령
+전류 제한값이며 실제 입력/모터 전류가 아니다. `/steering/torque_command_raw`와
 `/steering/torque_limit_raw`는 Int32, `torque_saturated`, `torque_peak_limited`,
 `torque_settled`, `torque_rate_ready`는 같은 prefix의 Bool이다.
 `/steering/torque_safety`(String)는 Host torque safety latch 원인을 보고한다.

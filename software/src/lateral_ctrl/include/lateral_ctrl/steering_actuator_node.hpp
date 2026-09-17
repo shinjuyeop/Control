@@ -36,6 +36,7 @@ private:
   void torqueFault(TorqueSafetyFault fault);
   rcl_interfaces::msg::SetParametersResult onParameters(
     const std::vector<rclcpp::Parameter> & parameters);
+  double torqueCurrentLimitCommandA() const;
   void publishTorqueState();
   void onCommand(const kaiev26_msgs::msg::ActuatorCommand::SharedPtr msg);
   void onDriveStatus(const kaiev26_msgs::msg::DriveActuatorStatus::SharedPtr msg);
@@ -64,6 +65,7 @@ private:
   bool torqueMode() const { return actuation_mode_ == "torque"; }
   int torque_direction_sign_{1};
   int32_t sent_torque_raw_{0};
+  double keya_protection_current_a_{20.0};
   bool stop_pending_{false};
   TorqueSafetyFault torque_fault_latched_{TorqueSafetyFault::NONE};
   DriveMode drive_mode_{DriveMode::UNKNOWN};
@@ -121,6 +123,7 @@ private:
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr requested_angle_pub_, angle_error_pub_;
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr rate_pub_, raw_rate_pub_, torque_p_pub_;
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr torque_d_pub_, torque_unsaturated_pub_;
+  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr torque_current_limit_command_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr torque_saturated_pub_, torque_settled_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr torque_peak_limited_pub_, torque_rate_ready_pub_;
   rclcpp::TimerBase::SharedPtr control_timer_;
