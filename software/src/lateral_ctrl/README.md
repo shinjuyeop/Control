@@ -22,6 +22,10 @@ Torque는 LEFT-positive road-wheel target을 직접 받고, `P=peak/error_full_s
 예산, calibrated 위치 한계·바깥 방향 차단, 실제 과속·freshness 보호는 별도로 적용한다.
 정수 A인 current telemetry는 진단용이다. saturation은 fault가 아니다.
 
+토크 SYSID T0–T2(부호·마찰·관성)는
+`ros2 launch lateral_ctrl torque_sysid_bench.launch.py test:=t0|t1|t2` 한 줄로 읽기 전용
+조향 노드·측정 노드·MCAP을 함께 띄운다([`docs/Experiment_RUNBOOK.md`](../../../docs/Experiment_RUNBOOK.md)).
+
 실차에서 바로 사용할 **전체 parameter/default 표, 부호 검증, 최초 raw200 bring-up,
 1°→5° step과 지면 부하 튜닝, 긴급 정지 및 Foxglove 토픽**은
 [TORQUE_CONTROL.md](TORQUE_CONTROL.md)를 따른다. Torque 운용 중에는 아래 기존

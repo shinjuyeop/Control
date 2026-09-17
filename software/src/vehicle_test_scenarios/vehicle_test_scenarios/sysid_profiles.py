@@ -14,6 +14,9 @@ from .scenario_runner import (
 
 CENTER_DEG = -0.56
 AMPLITUDE_DEG = 1.0
+# steering_actuator.yaml torque 운용값. Run 때 steering_actuator_node에 적용한다(torque 모드만).
+TORQUE_P_FULL_SCALE_DEG = 0.5
+TORQUE_D_GAIN = 0.0
 COUNTDOWN_SEC = 5.0
 TAIL_SEC = 2.0
 ROUTE_FINISH_DISTANCE_M = 1.0
@@ -40,6 +43,16 @@ class ScenarioSpec:
 
 
 P = ParameterSpec
+# P는 "이 오차(deg)에서 토크가 peak에 닿는다" 형식이다: Kp[raw/deg] = peak / 값. 작을수록 P가 세다.
+TORQUE_GAIN_FIELDS = (
+    P('torque_full_scale_error_deg', 'P · full-scale 오차(작을수록 P↑)', 'deg',
+      note='Kp = torque_peak_limit_raw / 값 · torque 모드만 적용'),
+    P('torque_kd', 'D 게인 raw/(rad/s)', 'raw', note='0은 감쇠 없음 · torque 모드만 적용'),
+)
+TORQUE_GAIN_DEFAULTS = (
+    ('torque_full_scale_error_deg', TORQUE_P_FULL_SCALE_DEG),
+    ('torque_kd', TORQUE_D_GAIN),
+)
 SCENARIO_SPECS = (
     ScenarioSpec(
         'straight', '일정 속도 직진', '입력 응답 시험', '종방향 입력',
@@ -93,12 +106,13 @@ SCENARIO_SPECS = (
             P('steering_step_interval_sec', '구간 유지시간', 'sec'),
             P('initial_hold_sec', '초기 직진시간', 'sec'),
             P('scenario_repetitions', '반복 횟수', '회', True, '0은 수동 정지까지 반복'),
+            *TORQUE_GAIN_FIELDS,
         ),
         (
             ('cruise_speed_kph', 3.0), ('steering_center_deg', CENTER_DEG),
             ('steering_amplitude_deg', AMPLITUDE_DEG),
             ('steering_step_interval_sec', 5.0), ('initial_hold_sec', 0.0),
-            ('scenario_repetitions', 3),
+            ('scenario_repetitions', 3), *TORQUE_GAIN_DEFAULTS,
         ),
     ),
     ScenarioSpec(
@@ -110,12 +124,13 @@ SCENARIO_SPECS = (
             P('steering_period_sec', '파형 주기', 'sec'),
             P('initial_hold_sec', '초기 직진시간', 'sec'),
             P('scenario_repetitions', '반복 횟수', '회', True, '0은 수동 정지까지 반복'),
+            *TORQUE_GAIN_FIELDS,
         ),
         (
             ('cruise_speed_kph', 3.0), ('steering_center_deg', CENTER_DEG),
             ('steering_amplitude_deg', AMPLITUDE_DEG),
             ('steering_period_sec', 8.0), ('initial_hold_sec', 5.0),
-            ('scenario_repetitions', 6),
+            ('scenario_repetitions', 6), *TORQUE_GAIN_DEFAULTS,
         ),
     ),
     ScenarioSpec(
@@ -129,13 +144,14 @@ SCENARIO_SPECS = (
             P('chirp_duration_sec', 'Sweep 시간', 'sec'),
             P('initial_hold_sec', '초기 직진시간', 'sec'),
             P('scenario_repetitions', '반복 횟수', '회', True, '0은 수동 정지까지 반복'),
+            *TORQUE_GAIN_FIELDS,
         ),
         (
             ('cruise_speed_kph', 3.0), ('steering_center_deg', CENTER_DEG),
             ('steering_amplitude_deg', AMPLITUDE_DEG),
             ('chirp_start_hz', 0.2), ('chirp_end_hz', 1.0),
             ('chirp_duration_sec', 10.0), ('initial_hold_sec', 5.0),
-            ('scenario_repetitions', 1),
+            ('scenario_repetitions', 1), *TORQUE_GAIN_DEFAULTS,
         ),
     ),
     ScenarioSpec(
@@ -171,11 +187,18 @@ class RunSettings:
     chirp_start_hz: float = 0.2
     chirp_end_hz: float = 1.0
     chirp_duration_sec: float = 10.0
+    torque_full_scale_error_deg: float = TORQUE_P_FULL_SCALE_DEG
+    torque_kd: float = TORQUE_D_GAIN
     record_mcap: bool = True
 
     def __post_init__(self):
         if self.scenario not in SCENARIO_BY_KEY:
             raise ValueError(f'지원하지 않는 시나리오입니다: {self.scenario}')
+        if (not math.isfinite(self.torque_full_scale_error_deg)
+                or self.torque_full_scale_error_deg <= 0.0):
+            raise ValueError('P full-scale 오차는 0보다 큰 유한한 값이어야 합니다')
+        if not math.isfinite(self.torque_kd) or self.torque_kd < 0.0:
+            raise ValueError('D 게인은 0 이상의 유한한 값이어야 합니다')
         if self.follows_route:
             if not math.isfinite(self.cruise_speed_kph) or self.cruise_speed_kph <= 0:
                 raise ValueError('최고 목표속도는 0보다 큰 유한한 값이어야 합니다')
@@ -204,6 +227,17 @@ class RunSettings:
     @property
     def steering_enabled(self):
         return self.follows_route or self.scenario.startswith('steering_')
+
+    @property
+    def torque_gains(self):
+        """P/D for steering_actuator_node when this test exposes them, else None."""
+        names = {field.name for field in TORQUE_GAIN_FIELDS}
+        if not names.issubset(field.name for field in self.spec.fields):
+            return None
+        return {
+            'torque_full_scale_error_deg': float(self.torque_full_scale_error_deg),
+            'torque_kd': float(self.torque_kd),
+        }
 
     @property
     def needs_cruise(self):
@@ -266,19 +300,21 @@ class RunSettings:
             )
         if self.scenario == 'brake_test':
             return f'{self.cruise_speed_kph:g} km/h · {self.brake_delay_sec:g}초 후 브레이크 유지'
+        gains = (f' · P {self.torque_full_scale_error_deg:g}° D {self.torque_kd:g}'
+                 if self.torque_gains else '')
         if self.scenario == 'steering_step':
             return (
                 f'{self.cruise_speed_kph:g} km/h · 센터/좌/센터/우 · '
-                f'진폭 ±{self.steering_amplitude_deg:g}°'
+                f'진폭 ±{self.steering_amplitude_deg:g}°{gains}'
             )
         if self.scenario == 'steering_sine':
             return (
                 f'{self.cruise_speed_kph:g} km/h · ±{self.steering_amplitude_deg:g}° · '
-                f'{self.steering_period_sec:g}초 고정 주기'
+                f'{self.steering_period_sec:g}초 고정 주기{gains}'
             )
         return (
             f'{self.cruise_speed_kph:g} km/h · ±{self.steering_amplitude_deg:g}° · '
-            f'{self.chirp_start_hz:g}→{self.chirp_end_hz:g} Hz'
+            f'{self.chirp_start_hz:g}→{self.chirp_end_hz:g} Hz{gains}'
         )
 
     def document(self):

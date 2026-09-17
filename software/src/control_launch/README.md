@@ -95,3 +95,14 @@ ros2 launch control_launch joystick_teleop.launch.py \
 Joy 메시지를 받을 때마다 현재 ROS 시각을 기록해 명령을 발행합니다. 유지 중 입력의
 반복 발행은 `joy_node`의 60 Hz autorepeat를 사용합니다. 두 토픽 모두 Reliable,
 Keep Last 10 QoS를 사용합니다.
+
+## 토크 조향 시험 스택
+
+```bash
+ros2 launch control_launch torque_test.launch.py [torque_peak_limit_raw:=2000] [torque_sustained_limit_raw:=1000]
+```
+
+`vehicle.launch.py`를 `actuation_mode=torque`, `steering_enabled=false`, bring-up 토크
+한계로 띄운다. 다음은 `ros2 run vehicle_test_scenarios vehicle_test_scenario_runner`(TUI)다.
+절차는 [`docs/Experiment_RUNBOOK.md`](../../../docs/Experiment_RUNBOOK.md) T3를 따른다.
+`vehicle.launch.py`에도 같은 두 인자가 있으며 빈 값이면 `steering_actuator.yaml`을 따른다.

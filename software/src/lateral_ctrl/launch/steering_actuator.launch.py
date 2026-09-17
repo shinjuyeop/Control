@@ -19,6 +19,13 @@ CALIBRATION_PARAMETER_NAMES = (
 )
 
 
+# Empty launch argument keeps the params_file value; a value overrides it.
+OPTIONAL_PARAMETER_NAMES = (
+    'actuation_mode', 'steering_enabled',
+    'torque_peak_limit_raw', 'torque_sustained_limit_raw',
+)
+
+
 def load_steering_motor_calibration(path):
     with open(path, "r", encoding="utf-8") as stream:
         document = yaml.safe_load(stream)
@@ -36,7 +43,7 @@ def load_steering_motor_calibration(path):
 def _make_actuator(context, calibration_parameters):
     # An omitted CLI override must preserve the operator's selected params_file.
     optional_parameters = {}
-    for name in ('actuation_mode', 'steering_enabled'):
+    for name in OPTIONAL_PARAMETER_NAMES:
         value = LaunchConfiguration(name).perform(context)
         if value:
             optional_parameters[name] = LaunchConfiguration(name)
@@ -80,6 +87,10 @@ def generate_launch_description():
             'actuation_mode', default_value='', choices=['', 'position', 'torque'],
             description='Empty follows params_file; otherwise overrides its actuation mode.'),
         DeclareLaunchArgument('steering_enabled', default_value=''),
+        DeclareLaunchArgument('torque_peak_limit_raw', default_value='',
+                              description='Empty follows params_file.'),
+        DeclareLaunchArgument('torque_sustained_limit_raw', default_value='',
+                              description='Empty follows params_file; must not exceed peak.'),
         DeclareLaunchArgument('hardware_can_enabled', default_value='true'),
         DeclareLaunchArgument('actuator_output_enabled', default_value='true'),
         DeclareLaunchArgument('test_input_injection_enabled', default_value='false'),

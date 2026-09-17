@@ -164,10 +164,9 @@ public:
         // 드라이버 Enable (시작 시 1회만; 이후 재전송 없음 — torque 명령이 watchdog 유지)
         enable_motor();
 
-        if (auto_start_)
-        {
-            start_ramp();
-        }
+        // auto_start는 첫 유효 각도를 받은 뒤 시작한다. 생성자 시점에는 각도가 없어
+        // max_angle_delta 기준각이 0으로 잡히므로 여기서 바로 시작하면 안 된다.
+        auto_start_pending_ = auto_start_;
 
         // ── 램프 타이머 (keep-alive 겸용)
         ramp_timer_ = create_wall_timer(
@@ -404,6 +403,13 @@ private:
         if (!msg->feedback_valid) return;
         latest_angle_ = msg->motor_angle_deg;
         has_angle_ = true;
+        if (auto_start_pending_)
+        {
+            auto_start_pending_ = false;
+            RCLCPP_WARN(get_logger(), "auto_start: first valid angle %.3f deg received, starting ramp",
+                        latest_angle_);
+            start_ramp();
+        }
     }
 
     // ── 런타임 파라미터 변경 콜백
@@ -487,6 +493,7 @@ private:
     int ramp_direction_{1};
     int torque_limit_{2000};
     bool auto_start_{false};
+    bool auto_start_pending_{false};
     std::string status_topic_{"/steering/status"};
     bool sweep_mode_{false};
     int start_cmd_{0};

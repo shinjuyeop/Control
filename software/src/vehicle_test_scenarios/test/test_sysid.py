@@ -20,6 +20,9 @@ from vehicle_test_scenarios.sysid_profiles import (
     input_setpoint,
 )
 from vehicle_test_scenarios.sysid_runtime import SysidNode, TOPICS, FOLLOW_TOPICS
+from vehicle_test_scenarios.steering_control import SteeringControl
+from rcl_interfaces.msg import SetParametersResult
+from rcl_interfaces.srv import SetParametersAtomically
 from vehicle_test_scenarios import sysid_processes
 from vehicle_test_scenarios.sysid_tui import (
     MenuState, handle_key, read_key,
@@ -178,6 +181,7 @@ def controlled():
     clock = [100.0]
     node = SysidNode(clock=lambda: clock[0])
     node.steering_control.ready = Mock(return_value=True)
+    node.actuation_mode = 'torque'
     data = telemetry()
     node.graph_errors = []
 
@@ -590,3 +594,62 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path, record_mcap):
         rclpy.shutdown()
         if governor is not None:
             assert not sysid_processes.group_members(governor.pgid)
+
+
+def test_torque_gain_fields_only_on_steering_input_tests():
+    assert default_run_settings('steering_step').torque_gains == {
+        'torque_full_scale_error_deg': 0.5, 'torque_kd': 0.0}
+    assert default_run_settings('steering_sine').torque_gains is not None
+    assert default_run_settings('steering_chirp').torque_gains is not None
+    assert default_run_settings('speed_step').torque_gains is None
+    assert default_run_settings('route_quali').torque_gains is None
+    with pytest.raises(ValueError):
+        replace(default_run_settings('steering_step'), torque_kd=-1.0)
+    with pytest.raises(ValueError):
+        replace(default_run_settings('steering_step'), torque_full_scale_error_deg=0.0)
+
+
+def test_menu_p_d_apply_with_steering_enable_only_in_torque_mode(controlled):
+    node, tick, _ = controlled
+    settings = replace(settings_with_speed('steering_step', 0.0),
+                       torque_full_scale_error_deg=2.0, torque_kd=300.0)
+    node.request_run(settings)
+    tick()
+    node.steering_control.ready.assert_called_with(
+        True, {'torque_full_scale_error_deg': 2.0, 'torque_kd': 300.0})
+    node.actuation_mode = 'position'
+    tick()
+    node.steering_control.ready.assert_called_with(True)
+    # Unknown mode must not enable steering without the requested gains.
+    node.actuation_mode = None
+    node.steering_control.ready.reset_mock()
+    tick()
+    node.steering_control.ready.assert_not_called()
+
+
+def test_steering_control_sends_enable_and_gains_atomically():
+    clients = {}
+    node = Mock()
+    node.create_client.side_effect = lambda kind, name: clients.setdefault(name, Mock())
+    control = SteeringControl(node)
+    atomic = clients['/steering_actuator_node/set_parameters_atomically']
+    gains = {'torque_kd': 300.0, 'torque_full_scale_error_deg': 2.0}
+    assert not control.ready(True, gains)
+    request = atomic.call_async.call_args.args[0]
+    assert [p.name for p in request.parameters] == [
+        'steering_enabled', 'torque_full_scale_error_deg', 'torque_kd']
+    future = atomic.call_async.return_value
+    future.done.return_value = True
+    future.result.return_value = SetParametersAtomically.Response(
+        result=SetParametersResult(successful=True))
+    assert control.ready(True, gains)
+    assert atomic.call_async.call_count == 1
+    changed = {**gains, 'torque_kd': 400.0}
+    future.result.return_value = SetParametersAtomically.Response(
+        result=SetParametersResult(successful=False, reason='bad gain'))
+    assert not control.ready(True, changed)
+    assert atomic.call_async.call_count == 2
+    assert not control.ready(True, changed)  # rejected: stays not ready, reason kept
+    assert control.error == '조향 모터 설정 실패: bad gain'
+    control.invalidate()
+    assert not control.ready(True, gains)  # a Run re-applies even previously accepted gains

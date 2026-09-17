@@ -225,12 +225,6 @@ class ProcessManager:
             'started_at': datetime.now(ZoneInfo('Asia/Seoul')).isoformat(),
             'topics': list(RECORD_TOPICS),
         })
-        try:
-            self.run_document['steering_parameters'] = self._steering_parameter_snapshot()
-        except Exception as error:
-            # Tuning context only; never block a run on it.
-            self.run_document['steering_parameters_error'] = str(error)
-            self.node.log(f'조향 파라미터 기록 실패: {error}')
         self._save_document()
         self.subscribers_before_recording = {
             topic: {bytes(info.endpoint_gid) for info in
@@ -247,7 +241,7 @@ class ProcessManager:
         self.node.commands.put(('record_started', str(self.run_dir)))
 
     def _steering_parameter_snapshot(self, timeout=1.0):
-        """Gains in effect at Run, so each MCAP folder states the torque tuning it used."""
+        """Gains at the end of the run, so each MCAP folder states the torque tuning it used."""
         if not self.steering_parameters.wait_for_service(timeout_sec=timeout):
             raise RuntimeError('steering_actuator_node 파라미터 서비스 없음')
         future = self.steering_parameters.call_async(
@@ -284,6 +278,13 @@ class ProcessManager:
         child, self.recorder = self.recorder, None
         self.recorder_ready = False
         code = child.stop()
+        # After the run, so the menu P/D applied during preparation are what gets recorded.
+        try:
+            self.run_document['steering_parameters'] = self._steering_parameter_snapshot()
+        except Exception as error:
+            # Tuning context only; never fail a recording on it.
+            self.run_document['steering_parameters_error'] = str(error)
+            self.node.log(f'조향 파라미터 기록 실패: {error}')
         self.run_document.update({
             'finished_at': datetime.now(ZoneInfo('Asia/Seoul')).isoformat(),
             'finish_reason': reason, 'recorder_exit_code': code,

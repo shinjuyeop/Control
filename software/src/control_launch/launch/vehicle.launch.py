@@ -104,6 +104,8 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument("actuation_mode", default_value="", choices=["", "position", "torque"]),
         DeclareLaunchArgument("steering_enabled", default_value=""),
+        DeclareLaunchArgument("torque_peak_limit_raw", default_value=""),
+        DeclareLaunchArgument("torque_sustained_limit_raw", default_value=""),
         DeclareLaunchArgument(
             "can_interface", default_value="can0",
             description="KEYA SocketCAN 인터페이스.",
@@ -130,6 +132,8 @@ def generate_launch_description():
                 "can_interface": LaunchConfiguration("can_interface"),
                 "actuation_mode": LaunchConfiguration("actuation_mode"),
                 "steering_enabled": LaunchConfiguration("steering_enabled"),
+                "torque_peak_limit_raw": LaunchConfiguration("torque_peak_limit_raw"),
+                "torque_sustained_limit_raw": LaunchConfiguration("torque_sustained_limit_raw"),
                 "hardware_can_enabled": "true",
                 "actuator_output_enabled": "true",
             }.items(),
