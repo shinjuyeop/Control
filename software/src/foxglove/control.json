@@ -940,6 +940,15 @@
           }
         },
         {
+          "title": "Torque_Control",
+          "layout": {
+            "first": "Plot!torque_ctrl_effort",
+            "second": "Plot!torque_ctrl_angle",
+            "direction": "column",
+            "splitPercentage": 50
+          }
+        },
+        {
           "title": "Diagnostics",
           "layout": {
             "first": "DiagnosticSummary!ctrl_diag",
@@ -1392,6 +1401,58 @@
       "diffTopicPath": "",
       "showFullMessageForDiff": false,
       "topicPath": "/steering/torque_safety"
+    },
+    "Plot!torque_ctrl_effort": {
+      "foxglovePanelTitle": "인가 토크(전류 환산) / 실측 전류",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/torque_current_limit_command_a.data",
+          "enabled": true,
+          "color": "#F5774D",
+          "id": "Plot!torque_ctrl_effort-0",
+          "label": "인가 토크 → 전류 환산 A = raw/10000 × 0003 Max Current(20 A) × 0.8"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.motor_current_a",
+          "enabled": true,
+          "color": "#4E98E2",
+          "id": "Plot!torque_ctrl_effort-1",
+          "label": "실측 전류 A (KEYA, magnitude)"
+        }
+      ],
+      "yAxisLabel": "A",
+      "showYAxisLabels": true,
+      "legendDisplay": "top",
+      "showPlotValuesInLegend": true,
+      "isSynced": true
+    },
+    "Plot!torque_ctrl_angle": {
+      "foxglovePanelTitle": "조향 요청 / 응답",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/vehicle/command.steering_target_rad",
+          "enabled": true,
+          "color": "#B49AFF",
+          "id": "Plot!torque_ctrl_angle-0",
+          "label": "요청 (LEFT+)"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.actual_wheel_angle_rad",
+          "enabled": true,
+          "color": "#67DDB4",
+          "id": "Plot!torque_ctrl_angle-1",
+          "label": "응답 실측 (LEFT+)"
+        }
+      ],
+      "yAxisLabel": "rad",
+      "showYAxisLabels": true,
+      "legendDisplay": "top",
+      "showPlotValuesInLegend": true,
+      "isSynced": true
     }
   },
   "globalVariables": {},

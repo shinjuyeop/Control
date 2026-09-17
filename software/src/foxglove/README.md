@@ -28,7 +28,7 @@ ros2 run vehicle_state_publisher diagnostics_publisher
 - `/diagnostics`: 구동 링크·구동 상태·조향 링크·조향 상태·브레이크 요약과
   source별 상세. sensor/bridge 등 다른 publisher의 진단도 같은 토픽에 공존한다.
 
-[`control.json`](control.json)은 다음 여섯 탭을 제공한다. 모든 탭 아래에는
+[`control.json`](control.json)은 다음 일곱 탭을 제공한다. 모든 탭 아래에는
 기어·모드·E-stop·브레이크·페달 공통 상태 바가 계속 보인다.
 
 - **공통**: 속도와 명령 age, ROS 파라미터
@@ -37,6 +37,10 @@ ros2 run vehicle_state_publisher diagnostics_publisher
   명령 전류 제한·KEYA 전류 진단, filtered/unfiltered wheel rate, speed,
   saturation·peak·settle, mode/safety.
   단위·튜닝 순서는 [TORQUE_CONTROL.md](../lateral_ctrl/TORQUE_CONTROL.md)를 따른다.
+- **Torque_Control**: 위는 인가 토크를 KEYA 매뉴얼 §4.3.3.2 전류 환산식
+  `A = raw/10000 × Parameter 0003(keya_protection_current_a, 20 A) × 0.8`로 바꾼
+  `/steering/torque_current_limit_command_a`와 KEYA 실측 전류(정수 A magnitude)를 같은
+  A 축에 비교한다. 아래는 조향 요청(`/vehicle/command`)과 응답(실측 바퀴각).
 - **종방향 테스트**: `/planning/command`부터 `/vehicle/command`, 실제 속도까지의
   추종 관계와 모터 RPM, 상전류·버스 전류, 통신 age, 안전 이벤트
 - **조향 테스트**: 시험 입력부터 변화율 제한·PID 보정·실측 조향각까지의 명령 체인과
