@@ -159,6 +159,33 @@ def test_initial_hold_precedes_sine_repetitions():
     assert finished_complete
 
 
+def test_chirp_frequency_increases_and_finite_run_returns_to_center():
+    config = ScenarioConfig(
+        scenario="steering_chirp",
+        steering_center_deg=-2.0,
+        steering_amplitude_deg=1.0,
+        chirp_start_hz=0.2,
+        chirp_end_hz=1.0,
+        chirp_duration_sec=10.0,
+        scenario_repetitions=1,
+    )
+    crossings = []
+    previous = 0.0
+    for index in range(1, 10000):
+        elapsed = index / 1000.0
+        value = scenario_setpoint(config, elapsed).steering_deg + 2.0
+        if previous < 0.0 <= value:
+            crossings.append(elapsed)
+        previous = value
+    periods = [right - left for left, right in zip(crossings, crossings[1:])]
+    assert len(periods) >= 3
+    assert all(left > right for left, right in zip(periods, periods[1:]))
+    finished, complete = scheduled_scenario_setpoint(config, 10.0)
+    assert complete
+    assert finished.steering_deg == -2.0
+    assert finished.speed_kph == 0.0
+
+
 def test_zero_speed_baseline_does_not_engage_brake():
     output = zero_speed_baseline_setpoint(
         ScenarioConfig(steering_center_deg=-2.0)
@@ -302,6 +329,8 @@ def test_auto_mode_transition_starts_and_resets_scenario_timeline():
         ("speed_low_kph", 4.0),
         ("steering_step_interval_sec", 0.0),
         ("steering_period_sec", 0.0),
+        ("chirp_start_hz", 0.0),
+        ("chirp_duration_sec", 0.0),
         ("initial_hold_sec", -0.1),
         ("scenario_repetitions", -1),
         ("brake_delay_sec", math.nan),

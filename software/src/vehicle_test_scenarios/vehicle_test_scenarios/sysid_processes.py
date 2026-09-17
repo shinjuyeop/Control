@@ -179,14 +179,20 @@ class ProcessManager:
     def _start_recording(self, settings):
         if self.recorder is not None:
             return
+        self.run_dir = None
         self.record_topics_required = self.node.required_topics_for(settings.follows_route) + (
             '/planning/command', '/vehicle/command')
         if settings.follows_route:
             from .sysid_routes import RouteProcesses
             self.route = RouteProcesses(self.node, settings)
+        if not settings.record_mcap:
+            self.node.commands.put(('record_ready', None))
+            return
         stamp = datetime.now(ZoneInfo('Asia/Seoul')).strftime('%Y%m%d_%H%M%S_%f')
         speed = f'{settings.max_speed_kph:g}'.replace('.', 'p')
-        self.run_dir = self.records_root / f'{stamp}_scenario_{settings.scenario:02d}_v{speed}'
+        self.run_dir = self.records_root / (
+            f'{stamp}_{settings.record_slug}_v{speed}'
+        )
         self.run_dir.mkdir(parents=True, exist_ok=False)
         self.run_log = (self.run_dir / 'console.log').open('a', buffering=1)
         self.run_document = settings.document()
@@ -216,6 +222,7 @@ class ProcessManager:
     def _finish_recording(self, reason):
         if self.recorder is None:
             self._close_route()
+            self.node.commands.put(('record_closed', ''))
             return
         child, self.recorder = self.recorder, None
         self.recorder_ready = False
