@@ -2,6 +2,35 @@ steering_actuator_node:
   ros__parameters:
     can_interface: "can0"
     node_id: 1
+    # Startup-only: position requires KEYA 0020=3; torque requires 0020=2.
+    # Host never sets the KEYA work mode. Verify Direction=0 and LEFT sign unloaded.
+    actuation_mode: "torque"  # "position" | "torque"
+    torque_direction_sign: 1
+    # Display-only conversion for KEYA manual §4.3.3.2; must match Parameter 0003.
+    keya_protection_current_a: 20.0
+    torque_control_period_ms: 20
+    torque_feedback_timeout_ms: 100
+    # High stiffness: P reaches peak at 0.5 deg. Raw limits are NOT an Amp conversion.
+    torque_full_scale_error_deg: 0.5  # P: Kp = torque_peak_limit_raw / this [raw/deg]
+    torque_kd: 0.0  # D, raw / (rad/s); minimum (no damping) for initial P-only check
+    torque_peak_limit_raw: 10000
+    torque_sustained_limit_raw: 5000
+    torque_peak_duration_ms: 5000
+    torque_peak_recovery_ms: 5000
+    torque_settle_angle_deg: 0.05
+    torque_settle_rate_deg_s: 0.5
+    torque_rate_filter_hz: 10.0
+    torque_soft_limit_margin_deg: 1.0
+    torque_hard_rate_limit_deg_s: 120.0
+    # Method A (docs/torque_steering_overview.md): u = J_ff*alpha_ff + P + D + F_c*sign(e).
+    # 0 disables a term. Fill from docs/Experiment_RUNBOOK.md T1 (F_c) and T2 (J_ff).
+    torque_inertia_ff: 0.0              # raw / (rad/s^2)
+    torque_feedforward_limit_raw: 1000  # |J_ff*alpha_ff| cap
+    torque_feedforward_filter_hz: 5.0   # alpha_ff LPF at command timestamps
+    torque_friction_raw: 0              # F_c; bench breakaway ~106 at 8 s hold
+    torque_friction_deadband_deg: 0.1   # F_c off while |e| <= this
+    # Optional F_c(v) as [speed_mps, raw, ...]; replaces torque_friction_raw when set.
+    # torque_friction_schedule: [0.0, 106.0, 2.0, 80.0]
     control_period_ms: 20
     can_timeout_ms: 500
     feedback_timeout_ms: 500

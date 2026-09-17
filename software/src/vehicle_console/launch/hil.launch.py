@@ -87,8 +87,12 @@ def _launch_actions(context):
                 output="screen", parameters=[{"scenario_file": scenario_file, "results_dir": results_dir}],
             ))
         if IfCondition(LaunchConfiguration("steering")).evaluate(context):
-            actions.append(IncludeLaunchDescription(PythonLaunchDescriptionSource(os.path.join(
-                get_package_share_directory("lateral_ctrl"), "launch", "steering_actuator.launch.py"))))
+            # The existing HIL plant models position commands, not torque dynamics.
+            actions.append(IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(os.path.join(
+                    get_package_share_directory("lateral_ctrl"), "launch",
+                    "steering_actuator.launch.py")),
+                launch_arguments={"actuation_mode": "position"}.items()))
         if IfCondition(LaunchConfiguration("state")).evaluate(context):
             actions.append(Node(
                 package="vehicle_state_publisher", executable="vehicle_state_publisher_node",

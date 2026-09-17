@@ -24,6 +24,8 @@ def generate_launch_description():
         ),
         launch_arguments={
             'can_interface': LaunchConfiguration('can_interface'),
+            'actuation_mode': LaunchConfiguration('actuation_mode'),
+            'steering_enabled': LaunchConfiguration('steering_enabled'),
             'hardware_can_enabled': LaunchConfiguration('hardware_can_enabled'),
             'actuator_output_enabled': LaunchConfiguration('actuator_output_enabled'),
             'test_input_injection_enabled': LaunchConfiguration(
@@ -49,6 +51,8 @@ def generate_launch_description():
     )
     return LaunchDescription([
         DeclareLaunchArgument('can_interface', default_value='can0'),
+        DeclareLaunchArgument('actuation_mode', default_value='', choices=['', 'position', 'torque']),
+        DeclareLaunchArgument('steering_enabled', default_value=''),
         DeclareLaunchArgument('hardware_can_enabled', default_value='true'),
         DeclareLaunchArgument('actuator_output_enabled', default_value='true'),
         DeclareLaunchArgument('drive_mode_publish_enabled', default_value='true'),

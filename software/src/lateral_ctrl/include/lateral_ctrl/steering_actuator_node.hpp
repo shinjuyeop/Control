@@ -8,12 +8,14 @@
 #include "lateral_ctrl/steering_angle_converter.hpp"
 #include "lateral_ctrl/steering_types.hpp"
 #include "lateral_ctrl/wheel_angle_tracking_controller.hpp"
+#include "lateral_ctrl/torque_steering_controller.hpp"
 
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/float32.hpp>
 #include <std_msgs/msg/int32.hpp>
 #include <std_msgs/msg/u_int8.hpp>
+#include <std_msgs/msg/string.hpp>
 
 #include <memory>
 #include <string>
@@ -23,10 +25,19 @@ namespace lateral_ctrl
 class SteeringActuatorNode : public rclcpp::Node
 {
 public:
-  explicit SteeringActuatorNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  explicit SteeringActuatorNode(
+    const rclcpp::NodeOptions & options = rclcpp::NodeOptions(),
+    std::unique_ptr<KeyaCanDriver> driver = nullptr);
   ~SteeringActuatorNode() override;
 
 private:
+  friend class SteeringActuatorNodeTestPeer;
+  void stopMotor();
+  void torqueFault(TorqueSafetyFault fault);
+  rcl_interfaces::msg::SetParametersResult onParameters(
+    const std::vector<rclcpp::Parameter> & parameters);
+  double torqueCurrentLimitCommandA() const;
+  void publishTorqueState();
   void onCommand(const kaiev26_msgs::msg::ActuatorCommand::SharedPtr msg);
   void onDriveStatus(const kaiev26_msgs::msg::DriveActuatorStatus::SharedPtr msg);
   void onBrakeStatus(const kaiev26_msgs::msg::BrakeActuatorStatus::SharedPtr msg);
@@ -48,6 +59,17 @@ private:
   std::unique_ptr<KeyaCanDriver> can_driver_;
   SteeringAngleConverter converter_;
   WheelAngleTrackingController tracking_controller_;
+  TorqueSteeringController torque_controller_;
+  TorqueSteeringOutput torque_output_;
+  TargetAccelerationEstimator target_accel_estimator_;
+  double vehicle_speed_mps_{0.0};
+  std::string actuation_mode_{"position"};
+  bool torqueMode() const { return actuation_mode_ == "torque"; }
+  int torque_direction_sign_{1};
+  int32_t sent_torque_raw_{0};
+  double keya_protection_current_a_{20.0};
+  bool stop_pending_{false};
+  TorqueSafetyFault torque_fault_latched_{TorqueSafetyFault::NONE};
   DriveMode drive_mode_{DriveMode::UNKNOWN};
   SteeringState state_{SteeringState::INIT};
   SteeringDisableReason disable_reason_{SteeringDisableReason::MODE_NOT_RECEIVED};
@@ -88,6 +110,7 @@ private:
   std::chrono::steady_clock::time_point previous_tick_;
   std::chrono::steady_clock::time_point last_mode_time_{};
   std::chrono::steady_clock::time_point last_steer_command_time_{};
+  std::chrono::steady_clock::time_point torque_command_deadline_{};
 
   rclcpp::Subscription<kaiev26_msgs::msg::ActuatorCommand>::SharedPtr command_sub_;
   rclcpp::Subscription<kaiev26_msgs::msg::DriveActuatorStatus>::SharedPtr drive_status_sub_;
@@ -97,6 +120,16 @@ private:
   rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr target_motor_count_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr enable_commanded_pub_, enabled_pub_;
   rclcpp::Publisher<kaiev26_msgs::msg::SteeringActuatorStatus>::SharedPtr status_pub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr actuation_mode_pub_, torque_safety_pub_;
+  rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr torque_command_pub_, torque_limit_pub_;
+  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr requested_angle_pub_, angle_error_pub_;
+  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr rate_pub_, raw_rate_pub_, torque_p_pub_;
+  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr torque_d_pub_, torque_unsaturated_pub_;
+  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr torque_ff_pub_, torque_friction_pub_;
+  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr target_accel_pub_;
+  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr torque_current_limit_command_pub_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr torque_saturated_pub_, torque_settled_pub_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr torque_peak_limited_pub_, torque_rate_ready_pub_;
   rclcpp::TimerBase::SharedPtr control_timer_;
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr parameter_callback_;
 };

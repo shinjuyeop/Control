@@ -4,6 +4,29 @@ TeamKAI-DL 차량의 KEYA 조향 액추에이터를 제어하는 ROS 2 Humble �
 `steering_actuator_node` 하나만 SocketCAN 인터페이스를 열고 조향 모터를 제어해야
 합니다.
 
+## Position / Torque 선택
+
+코드 기본 `actuation_mode=position`은 기존 absolute-position 동작이다.
+`actuation_mode=torque`는 같은 노드와 안전 상태 머신에서 reusable
+`TorqueSteeringController`로 calibrated wheel-angle 외부 PD loop를 닫는다.
+두 모드는 startup-only이며 KEYA utility의 **position: 0020=3 / torque: 0020=2**
+설정을 Host가 자동 변경하거나 검증하지 않는다.
+
+Launch 인자를 생략하면 `params_file`의 mode를 따른다. 현재 작업 YAML은 운영자가
+선택한 `torque`를 유지하며, 명시적 `actuation_mode:=position`/`torque`가 YAML보다
+우선한다. 기존 HIL은 position 모델에 맞춰 position을 명시한다.
+
+Torque는 LEFT-positive road-wheel target을 직접 받고, `P=peak/error_full_scale*error`,
+`D=-Kd*measured_rate`를 계산한다. Ki=0, 기본 full-scale-error=0.5°로 작은 오차에도
+높은 torque를 사용하며, 실제각 차분의 LPF로 damping한다. raw peak/sustained와 시간
+예산, calibrated 위치 한계·바깥 방향 차단, 실제 과속·freshness 보호는 별도로 적용한다.
+정수 A인 current telemetry는 진단용이다. saturation은 fault가 아니다.
+
+실차에서 바로 사용할 **전체 parameter/default 표, 부호 검증, 최초 raw200 bring-up,
+1°→5° step과 지면 부하 튜닝, 긴급 정지 및 Foxglove 토픽**은
+[TORQUE_CONTROL.md](TORQUE_CONTROL.md)를 따른다. Torque 운용 중에는 아래 기존
+position 전용 rate-limiter/position frame 설명 대신 해당 문서가 적용된다.
+
 ## 실차 실행 전 주의
 
 `steering_actuator.launch.py`는 `hardware_can_enabled=true`와
@@ -109,7 +132,7 @@ ABI에 넣지 않은 최종 브레이크 명령입니다.
 | 5 | `BRAKE` | Disable | `/vehicle/command.brake_engage=true` |
 | 6 | `CAN_LOST` | Disable | KEYA CAN 통신 timeout |
 | 7 | `FEEDBACK_LOST` | Disable | position feedback timeout |
-| 8 | `FAULT` | Disable | KEYA fault |
+| 8 | `FAULT` | Disable | KEYA fault 또는 Host torque safety fault |
 
 모터가 Enable될 수 있는 상태는 `ACTIVE`뿐입니다. 안전 입력, MANUAL 전환, CAN
 손실, 모터 fault 또는 명령 timeout이 발생하면 노드는 과거 target과 pending

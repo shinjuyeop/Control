@@ -49,7 +49,7 @@ CAN, Dashboard CAN, Arduino LCD/touch와 HIL UNO USB의 데이터 계약과
 | HIL Console | UNO R4 | USB Serial | newline ASCII, 115200 | `HIL_LCD`, `HIL_TOUCH`, `VT D/M/U/C` | 보고 200/100 ms | Virtual Touch 1 s | HIL-only virtual HMI |
 | STM_A | EZkontrol | FDCAN1 | `0x0C01EFD0` | handshake ACK 또는 command | 50 ms command | 명시적 TX timeout 없음 | AUTO speed / MANUAL torque |
 | EZkontrol | STM_A | FDCAN1 | `0x1801D0EF`, `0x1802D0EF` | Part I/II status | 외부 장치 설정 | 200 ms validity | 진단 validity에만 사용 |
-| 조향 노드 | KEYA | SocketCAN | `0x06000001` | enable/disable/position/query | position 20 ms | 500 ms | node ID 기본값 1 |
+| 조향 노드 | KEYA | SocketCAN | `0x06000001` | enable/disable/position/torque/query | 기본 20 ms | position 500 ms / torque 위치 100 ms | node ID 기본값 1 |
 | KEYA | 조향 노드 | SocketCAN | `0x05800001`, `0x07000001` | query response, heartbeat | 외부 장치 설정 | CAN·position 각 500 ms | ID는 node ID에 따라 변함 |
 | Host Agent | 각 STM | LPUART1 serial, 460800 8N1 | micro-ROS XRCE-DDS | ROS 2 serialization | event-driven | Agent ping 500/100 ms | 보드별 Agent 1개 |
 
@@ -439,6 +439,7 @@ bus-off에서는 `down` 후 `up`으로 수동 복구합니다.
 | Enable | `23 0D 20 01 00 00 00 00` |
 | Disable | `23 0C 20 01 00 00 00 00` |
 | Position | `23 02 20 01 <count, big-endian 4 bytes>` |
+| Torque | `23 01 20 01 <signed int32, big-endian 4 bytes>`, -10000..10000 |
 | Encoder position query | `40 04 21 02 00 00 00 00` |
 | Motor speed query | `40 03 21 01 00 00 00 00` |
 | Motor current query | `40 00 21 01 00 00 00 00` |
@@ -469,11 +470,33 @@ bus voltage·driver temperature는 500 ms 간격으로 번갈아 조회합니다
 - KEYA 매뉴얼은 speed·torque command 간격이 1000 ms를 넘으면 CAN disconnect
   error가 발생하고 재시작 시 Enable을 다시 보내야 한다고 규정. 현재 통합 경로의
   position command에도 같은 watchdog과 출력 차단이 적용되는지는 미확인
-- 제어 mode: 현재 통합 경로는 position command만 사용
+- startup-only `actuation_mode=position`은 KEYA 0020=3, `torque`는 0020=2가 필요.
+  Host는 KEYA 내부 mode를 설정하거나 검증하지 않음
 - motor-axis diagnostic scaling: `10000 count/rev`
 - 조향 calibration은 raw KEYA count를 중앙 등가각으로 직접 환산하며
   `software/src/lateral_ctrl/config/steering_motor_calibration.yaml`이 소유
 - 명령 범위: `-3279..3279 count`(nominal 약 `-27.83..25.92 deg`), feedback은 클램프하지 않음
+
+Torque mode는 같은 canonical `/vehicle/command.steering_target_rad`를 직접 PD에
+전달한다. `torque_control_period_ms` 기본20 ms, 위치 timeout은
+`min(feedback_timeout_ms, torque_feedback_timeout_ms)` 기본100 ms다.
+Driver는 kernel 수신 timestamp로 freshness와 위치 차분 간격을 계산한다.
+ACTIVE 진입은 torque0→Enable, 종료는 torque0→Disable이며 position frame을 보내지
+않는다. peak/sustained raw envelope는 Amp 변환이 아니다.
+
+`kaiev26_msgs` ABI 변경 없이 torque 관측값을 `std_msgs` 보조 토픽에 제공한다.
+`/steering/actuation_mode`는 String/transient-local(두 mode 공통)이고, torque mode에서
+`/steering/requested_angle`, `/steering/angle_error`(rad), `/steering/rate`,
+`/steering/unfiltered_rate`(rad/s), `/steering/torque_p_raw`, `/steering/torque_d_raw`,
+방법 A 기여 `/steering/torque_ff_raw`, `/steering/torque_friction_raw`, 명령 stamp로 추정한
+`/steering/target_accel`(rad/s²), `/steering/torque_unsaturated_raw`와 `/steering/torque_current_limit_command_a`는
+Float32다. 후자는 KEYA Parameter 0003과 매뉴얼의 80% 식으로 계산한 signed 명령
+전류 제한값이며 실제 입력/모터 전류가 아니다. `/steering/torque_command_raw`와
+`/steering/torque_limit_raw`는 Int32, `torque_saturated`, `torque_peak_limited`,
+`torque_settled`, `torque_rate_ready`는 같은 prefix의 Bool이다.
+`/steering/torque_safety`(String)는 Host torque safety latch 원인을 보고한다.
+상세 unit·설정·튜닝 계약은
+[`TORQUE_CONTROL.md`](../software/src/lateral_ctrl/TORQUE_CONTROL.md)를 따른다.
 
 구현 위치:
 
@@ -502,6 +525,8 @@ bus voltage·driver temperature는 500 ms 간격으로 번갈아 조회합니다
 | 조향 command timeout | 200 ms | `steer_command_timeout_ms` | `steering_actuator.yaml` |
 | 조향 CAN timeout | 500 ms | `can_timeout_ms` | `steering_actuator.yaml` |
 | 조향 position timeout | 500 ms | `feedback_timeout_ms` | `steering_actuator.yaml` |
+| Torque control/status | 20 ms | `torque_control_period_ms` | `steering_actuator.yaml` |
+| Torque position timeout | 100 ms | `torque_feedback_timeout_ms` (기존 timeout과 작은 값) | `steering_actuator.yaml` |
 | 조향 mode timeout | 1500 ms | `mode_timeout_ms` | `steering_actuator.yaml` |
 | 거버너 입력 나이 게이트 | 200 ms | `input_timeout_ms` | `command_governor.yaml` |
 | `/vehicle/state` publish | 50 ms | `publish_rate_hz=20.0` | vehicle state publisher |

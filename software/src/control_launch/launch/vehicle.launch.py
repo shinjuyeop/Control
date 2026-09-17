@@ -102,6 +102,8 @@ def generate_launch_description():
             "steering", default_value="true",
             description="KEYA 조향 스택을 함께 띄운다. 조향 없이 종방향만 시험할 때 false.",
         ),
+        DeclareLaunchArgument("actuation_mode", default_value="", choices=["", "position", "torque"]),
+        DeclareLaunchArgument("steering_enabled", default_value=""),
         DeclareLaunchArgument(
             "can_interface", default_value="can0",
             description="KEYA SocketCAN 인터페이스.",
@@ -126,6 +128,8 @@ def generate_launch_description():
             PythonLaunchDescriptionSource(steering_launch),
             launch_arguments={
                 "can_interface": LaunchConfiguration("can_interface"),
+                "actuation_mode": LaunchConfiguration("actuation_mode"),
+                "steering_enabled": LaunchConfiguration("steering_enabled"),
                 "hardware_can_enabled": "true",
                 "actuator_output_enabled": "true",
             }.items(),

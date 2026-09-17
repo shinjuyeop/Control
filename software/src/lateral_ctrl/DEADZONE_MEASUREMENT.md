@@ -3,6 +3,12 @@
 KEYA KY170DJD01005-08G-V1 스티어링 모터를 Torque control 모드로 두고, "얼마나 작은 torque 명령부터
 휠이 실제로 움직이기 시작하는지"(정지 마찰 breakaway 문턱)를 측정한 기록.
 
+Production 외부 wheel-angle torque 제어는 이제 `steering_actuator_node`의
+`actuation_mode=torque`로 실행한다. [TORQUE_CONTROL.md](TORQUE_CONTROL.md)에
+mode·부호·envelope·튜닝 절차가 있다. 아래 측정 기록은 당시 진단 축과 조건을
+유지하며, 표의 raw 비율로 계산했던 전류값은 현재 설정의 검증된 raw→A 변환이 아니다.
+측정 노드와 production은 `KeyaCanDriver::torquePayload()`를 공유한다.
+
 ## 사용 노드
 
 - `steering_actuator_node`(읽기 전용) — `hardware_can_enabled:=true`,

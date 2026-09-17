@@ -7,10 +7,35 @@
 #include <functional>
 #include <limits>
 #include <stdexcept>
+#include <vector>
 
 namespace lateral_ctrl
 {
-SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
+namespace
+{
+constexpr double kDegToRad = 3.14159265358979323846 / 180.0;
+constexpr double kKeyaTorqueCurrentFraction = 0.8;
+double seconds(std::chrono::steady_clock::time_point time)
+{
+  return std::chrono::duration<double>(time.time_since_epoch()).count();
+}
+// One flat [speed_mps, raw, speed_mps, raw, ...] parameter keeps a schedule edit a single set.
+void setFrictionSchedule(TorqueSteeringConfig & config, const std::vector<double> & pairs)
+{
+  if (pairs.size() % 2 != 0) {
+    throw std::invalid_argument("torque_friction_schedule must hold [speed_mps, raw] pairs");
+  }
+  config.friction_schedule_speed_mps.clear();
+  config.friction_schedule_raw.clear();
+  for (std::size_t i = 0; i < pairs.size(); i += 2) {
+    config.friction_schedule_speed_mps.push_back(pairs[i]);
+    config.friction_schedule_raw.push_back(pairs[i + 1]);
+  }
+}
+}
+
+SteeringActuatorNode::SteeringActuatorNode(
+  const rclcpp::NodeOptions & options, std::unique_ptr<KeyaCanDriver> driver)
 : Node("steering_actuator_node", options),
   converter_(
     declare_parameter<double>("count_scale"),
@@ -29,8 +54,63 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
     declare_parameter("tracking_integral_limit", 1.0),
     declare_parameter("tracking_correction_limit_deg", 0.5))
 {
+  rcl_interfaces::msg::ParameterDescriptor startup_only;
+  startup_only.read_only = true;
+  startup_only.description = "Startup only; restart the node to change this parameter.";
+  actuation_mode_ = declare_parameter("actuation_mode", std::string("position"), startup_only);
+  if (actuation_mode_ != "position" && actuation_mode_ != "torque") {
+    throw std::invalid_argument("actuation_mode must be position or torque");
+  }
+  const auto integer_parameter = [this](const char * name, int initial, int minimum, int maximum,
+      const rcl_interfaces::msg::ParameterDescriptor & descriptor =
+      rcl_interfaces::msg::ParameterDescriptor{}) {
+      const auto value = declare_parameter<int64_t>(name, initial, descriptor);
+      if (value < minimum || value > maximum) {
+        throw std::invalid_argument(std::string(name) + " is outside its supported range");
+      }
+      return static_cast<int>(value);
+    };
+  torque_direction_sign_ = integer_parameter("torque_direction_sign", 1, -1, 1, startup_only);
+  keyaTorqueCommand(0, torque_direction_sign_);
+  keya_protection_current_a_ =
+    declare_parameter("keya_protection_current_a", 20.0, startup_only);
+  if (!std::isfinite(keya_protection_current_a_) || keya_protection_current_a_ <= 0.0) {
+    throw std::invalid_argument("keya_protection_current_a must be finite and positive");
+  }
+  TorqueSteeringConfig torque;
+  torque.full_scale_error_rad = declare_parameter("torque_full_scale_error_deg", 0.5) * kDegToRad;
+  torque.kd = declare_parameter("torque_kd", 1500.0);
+  torque.peak_limit_raw = integer_parameter("torque_peak_limit_raw", 2000, 1, 10000);
+  torque.sustained_limit_raw = integer_parameter("torque_sustained_limit_raw", 1000, 1, 10000);
+  torque.peak_duration_sec = integer_parameter("torque_peak_duration_ms", 200, 10, 5000) / 1000.0;
+  torque.peak_recovery_sec =
+    declare_parameter<int64_t>("torque_peak_recovery_ms", 2000) / 1000.0;
+  torque.settle_angle_rad = declare_parameter("torque_settle_angle_deg", 0.05) * kDegToRad;
+  torque.settle_rate_rad_s = declare_parameter("torque_settle_rate_deg_s", 0.5) * kDegToRad;
+  torque.rate_filter_hz = declare_parameter("torque_rate_filter_hz", 10.0);
+  torque.soft_limit_margin_rad = declare_parameter("torque_soft_limit_margin_deg", 1.0) * kDegToRad;
+  torque.hard_rate_limit_rad_s = declare_parameter("torque_hard_rate_limit_deg_s", 120.0) * kDegToRad;
+  torque.feedback_timeout_sec =
+    integer_parameter("torque_feedback_timeout_ms", 100, 1, 200, startup_only) / 1000.0;
+  const int torque_period_ms = integer_parameter("torque_control_period_ms", 20, 10, 50, startup_only);
+  torque.control_period_sec = torque_period_ms / 1000.0;
+  torque.inertia_ff = declare_parameter("torque_inertia_ff", 0.0);
+  torque.feedforward_limit_raw = integer_parameter("torque_feedforward_limit_raw", 1000, 0, 10000);
+  torque.feedforward_filter_hz = declare_parameter("torque_feedforward_filter_hz", 5.0);
+  torque.friction_raw = integer_parameter("torque_friction_raw", 0, 0, 10000);
+  torque.friction_deadband_rad = declare_parameter("torque_friction_deadband_deg", 0.1) * kDegToRad;
+  setFrictionSchedule(torque, declare_parameter("torque_friction_schedule", std::vector<double>{}));
+  torque.min_angle_rad = converter_.countToEquivalentDeg(-converter_.commandCountLimit()) * kDegToRad;
+  torque.max_angle_rad = converter_.countToEquivalentDeg(converter_.commandCountLimit()) * kDegToRad;
+  torque_controller_.configure(torque);
+  RCLCPP_WARN(get_logger(),
+    "actuation_mode=%s REQUIRES KEYA parameter 0020=%d, Control Ways=CAN (0019=2). "
+    "Host does NOT set or verify 0020. Burn settings before operation. "
+    "Torque direction sign=%+d: verify +target produces LEFT and increasing calibrated angle.",
+    actuation_mode_.c_str(), torqueMode() ? 2 : 3, torque_direction_sign_);
   tracking_enabled_ = get_parameter("tracking_control_enabled").as_bool();
   control_period_ms_ = declare_parameter("control_period_ms", 20);
+  if (torqueMode()) control_period_ms_ = torque_period_ms;
   can_timeout_ms_ = declare_parameter("can_timeout_ms", 500);
   feedback_timeout_ms_ = declare_parameter("feedback_timeout_ms", 500);
   mode_timeout_ms_ = declare_parameter("mode_timeout_ms", 1500);
@@ -99,8 +179,32 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
   status_pub_ = create_publisher<kaiev26_msgs::msg::SteeringActuatorStatus>(status_topic, 10);
   enable_commanded_pub_ = create_publisher<std_msgs::msg::Bool>(enable_commanded_topic, 10);
   enabled_pub_ = create_publisher<std_msgs::msg::Bool>(enabled_topic, 10);
+  actuation_mode_pub_ = create_publisher<std_msgs::msg::String>(
+    "/steering/actuation_mode", rclcpp::QoS(1).transient_local());
+  if (torqueMode()) {
+    torque_command_pub_ = create_publisher<std_msgs::msg::Int32>("/steering/torque_command_raw", 10);
+    torque_limit_pub_ = create_publisher<std_msgs::msg::Int32>("/steering/torque_limit_raw", 10);
+    requested_angle_pub_ = create_publisher<std_msgs::msg::Float32>("/steering/requested_angle", 10);
+    angle_error_pub_ = create_publisher<std_msgs::msg::Float32>("/steering/angle_error", 10);
+    rate_pub_ = create_publisher<std_msgs::msg::Float32>("/steering/rate", 10);
+    raw_rate_pub_ = create_publisher<std_msgs::msg::Float32>("/steering/unfiltered_rate", 10);
+    torque_p_pub_ = create_publisher<std_msgs::msg::Float32>("/steering/torque_p_raw", 10);
+    torque_d_pub_ = create_publisher<std_msgs::msg::Float32>("/steering/torque_d_raw", 10);
+    torque_unsaturated_pub_ = create_publisher<std_msgs::msg::Float32>("/steering/torque_unsaturated_raw", 10);
+    torque_ff_pub_ = create_publisher<std_msgs::msg::Float32>("/steering/torque_ff_raw", 10);
+    torque_friction_pub_ = create_publisher<std_msgs::msg::Float32>("/steering/torque_friction_raw", 10);
+    target_accel_pub_ = create_publisher<std_msgs::msg::Float32>("/steering/target_accel", 10);
+    torque_current_limit_command_pub_ = create_publisher<std_msgs::msg::Float32>(
+      "/steering/torque_current_limit_command_a", 10);
+    torque_saturated_pub_ = create_publisher<std_msgs::msg::Bool>("/steering/torque_saturated", 10);
+    torque_settled_pub_ = create_publisher<std_msgs::msg::Bool>("/steering/torque_settled", 10);
+    torque_peak_limited_pub_ = create_publisher<std_msgs::msg::Bool>("/steering/torque_peak_limited", 10);
+    torque_rate_ready_pub_ = create_publisher<std_msgs::msg::Bool>("/steering/torque_rate_ready", 10);
+    torque_safety_pub_ = create_publisher<std_msgs::msg::String>("/steering/torque_safety", 10);
+  }
 
-  can_driver_ = std::make_unique<KeyaCanDriver>(can_interface, static_cast<uint8_t>(node_id));
+  can_driver_ = driver ? std::move(driver) :
+    std::make_unique<KeyaCanDriver>(can_interface, static_cast<uint8_t>(node_id));
   if (!canLinkEnabled()) {
     RCLCPP_WARN(
       get_logger(),
@@ -109,7 +213,7 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
   } else if (!can_driver_->open()) {
     RCLCPP_ERROR(get_logger(), "Failed to open SocketCAN interface '%s'", can_interface.c_str());
   } else if (outputArmed()) {
-    can_driver_->sendDisable();
+    stopMotor();
     RCLCPP_WARN(
       get_logger(),
       "HARDWARE OUTPUT ARMED: hardware_can_enabled and actuator_output_enabled are both true");
@@ -117,32 +221,10 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
     RCLCPP_WARN(
       get_logger(),
       "READ-ONLY: polling the motor and publishing status only. No enable, disable or "
-      "position frame is sent. Set actuator_output_enabled=true to permit CAN actuation.");
+      "position/torque frame is sent. Set actuator_output_enabled=true to permit CAN actuation.");
   }
   parameter_callback_ = add_on_set_parameters_callback(
-    [this](const std::vector<rclcpp::Parameter> & parameters) {
-      rcl_interfaces::msg::SetParametersResult result;
-      result.successful = true;
-      for (const auto & parameter : parameters) {
-        if (parameter.get_name() != "steering_enabled") continue;
-        if (parameter.get_type() != rclcpp::ParameterType::PARAMETER_BOOL) {
-          result.successful = false;
-          result.reason = "steering_enabled must be a bool";
-          return result;
-        }
-        const bool enabled = parameter.as_bool();
-        if (enabled != steering_enabled_) {
-          // Disable before acknowledging the setting; re-enabling still requires
-          // a new command and all existing AUTO/safety/output-arming conditions.
-          if (!enabled && outputArmed() && can_driver_->isOpen()) {
-            can_driver_->sendDisable();
-          }
-          steering_enabled_ = enabled;
-          enterWaitCommand();
-        }
-      }
-      return result;
-    });
+    std::bind(&SteeringActuatorNode::onParameters, this, std::placeholders::_1));
   previous_tick_ = std::chrono::steady_clock::now();
   control_timer_ = create_wall_timer(
     std::chrono::milliseconds(std::max(1, control_period_ms_)),
@@ -151,8 +233,93 @@ SteeringActuatorNode::SteeringActuatorNode(const rclcpp::NodeOptions & options)
 
 SteeringActuatorNode::~SteeringActuatorNode()
 {
+  stopMotor();
   discardAllSteeringCommands();
-  if (outputArmed() && can_driver_ && can_driver_->isOpen()) can_driver_->sendDisable();
+}
+
+void SteeringActuatorNode::stopMotor()
+{
+  if (!outputArmed() || !can_driver_ || !can_driver_->isOpen()) return;
+  // Always attempt Disable, even if the preceding zero frame fails.
+  const bool zero_ok = !torqueMode() || can_driver_->sendTorqueCommand(0);
+  const bool disable_ok = can_driver_->sendDisable();
+  sent_torque_raw_ = 0;
+  if (torqueMode()) {
+    stop_pending_ = !zero_ok || !disable_ok;
+    torque_controller_.reset(seconds(std::chrono::steady_clock::now()));
+    torque_output_ = {};
+  }
+}
+
+void SteeringActuatorNode::torqueFault(TorqueSafetyFault fault)
+{
+  if (torque_fault_latched_ == TorqueSafetyFault::NONE) {
+    RCLCPP_ERROR(get_logger(),
+      "Torque safety stop: %s. Inspect cause, set steering_enabled=false then true to reset.",
+      torqueSafetyFaultName(fault));
+  }
+  torque_fault_latched_ = fault;
+  requestImmediateDisable(SteeringDisableReason::MOTOR_FAULT);
+  disable_reason_ = SteeringDisableReason::MOTOR_FAULT;
+  state_ = SteeringState::FAULT;
+}
+
+rcl_interfaces::msg::SetParametersResult SteeringActuatorNode::onParameters(
+  const std::vector<rclcpp::Parameter> & parameters)
+{
+  rcl_interfaces::msg::SetParametersResult result;
+  auto candidate = torque_controller_.config();
+  bool enabled = steering_enabled_;
+  bool tuning_changed = false;
+  try {
+    for (const auto & p : parameters) {
+      const auto & name = p.get_name();
+      // These were historically read once. Reject misleading runtime writes.
+      if (name == "steering_enabled") {
+        enabled = p.as_bool();
+        continue;
+      }
+      if (name == "use_sim_time") continue;
+      if (!torqueMode()) throw std::invalid_argument(name + " is startup-only in position mode");
+      if (name == "torque_full_scale_error_deg") candidate.full_scale_error_rad = p.as_double() * kDegToRad;
+      else if (name == "torque_kd") candidate.kd = p.as_double();
+      else if (name == "torque_peak_limit_raw" || name == "torque_sustained_limit_raw") {
+        const auto value = p.as_int();
+        if (value < 1 || value > 10000) throw std::invalid_argument("torque raw limit must be 1..10000");
+        if (name == "torque_peak_limit_raw") candidate.peak_limit_raw = static_cast<int32_t>(value);
+        else candidate.sustained_limit_raw = static_cast<int32_t>(value);
+      } else if (name == "torque_peak_duration_ms") candidate.peak_duration_sec = p.as_int() / 1000.0;
+      else if (name == "torque_peak_recovery_ms") candidate.peak_recovery_sec = p.as_int() / 1000.0;
+      else if (name == "torque_settle_angle_deg") candidate.settle_angle_rad = p.as_double() * kDegToRad;
+      else if (name == "torque_settle_rate_deg_s") candidate.settle_rate_rad_s = p.as_double() * kDegToRad;
+      else if (name == "torque_rate_filter_hz") candidate.rate_filter_hz = p.as_double();
+      else if (name == "torque_soft_limit_margin_deg") candidate.soft_limit_margin_rad = p.as_double() * kDegToRad;
+      else if (name == "torque_hard_rate_limit_deg_s") candidate.hard_rate_limit_rad_s = p.as_double() * kDegToRad;
+      else if (name == "torque_inertia_ff") candidate.inertia_ff = p.as_double();
+      else if (name == "torque_feedforward_limit_raw") candidate.feedforward_limit_raw = p.as_int();
+      else if (name == "torque_feedforward_filter_hz") candidate.feedforward_filter_hz = p.as_double();
+      else if (name == "torque_friction_raw") candidate.friction_raw = p.as_int();
+      else if (name == "torque_friction_deadband_deg") candidate.friction_deadband_rad = p.as_double() * kDegToRad;
+      else if (name == "torque_friction_schedule") setFrictionSchedule(candidate, p.as_double_array());
+      else throw std::invalid_argument(name + " is startup-only");
+      tuning_changed = true;
+    }
+    candidate.validate();
+  } catch (const std::exception & error) {
+    result.successful = false;
+    result.reason = error.what();
+    return result;
+  }
+  // Validate the entire batch before any output/state mutation.
+  if (tuning_changed || enabled != steering_enabled_) {
+    stopMotor();
+    if (tuning_changed) torque_controller_.configure(candidate);
+    steering_enabled_ = enabled;
+    if (!enabled) torque_fault_latched_ = TorqueSafetyFault::NONE;
+    enterWaitCommand();
+  }
+  result.successful = true;
+  return result;
 }
 
 void SteeringActuatorNode::onCommand(const kaiev26_msgs::msg::ActuatorCommand::SharedPtr input)
@@ -164,6 +331,7 @@ void SteeringActuatorNode::onCommand(const kaiev26_msgs::msg::ActuatorCommand::S
     std::numeric_limits<double>::infinity();
   const bool stamp_fresh =
     std::isfinite(stamp_age_ms) &&
+    (!torqueMode() || stamp_age_ms >= 0.0) &&
     stamp_age_ms <= static_cast<double>(steer_command_timeout_ms_);
   const bool brake_activated = !safety_.command_brake && input->brake_engage;
   safety_.command_brake = nextCommandBrakeState(
@@ -186,8 +354,16 @@ void SteeringActuatorNode::onCommand(const kaiev26_msgs::msg::ActuatorCommand::S
   constexpr double kCanonicalRadToDeg = 180.0 / 3.14159265358979323846;
   pending_target_wheel_angle_deg_ =
     converter_.clampEquivalentDeg(input->steering_target_rad * kCanonicalRadToDeg);
+  if (torqueMode()) {
+    target_accel_estimator_.observe(pending_target_wheel_angle_deg_ / kCanonicalRadToDeg,
+      stamp.seconds(), torque_controller_.config().feedforward_filter_hz,
+      steer_command_timeout_ms_ / 1000.0);
+  }
   pending_command_valid_ = true;
   last_steer_command_time_ = std::chrono::steady_clock::now();
+  torque_command_deadline_ = last_steer_command_time_ +
+    std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+    std::chrono::duration<double, std::milli>(steer_command_timeout_ms_ - stamp_age_ms));
   pending_command_generation_ = ++steer_command_generation_;
 }
 
@@ -218,6 +394,9 @@ void SteeringActuatorNode::onDriveStatus(
     driveSpeedPermitsSteering(
     input->speed_mps, input->part1_valid,
     static_cast<float>(minimum_steering_speed_mps_));
+  // Invalid speed already blocks steering; keep the friction schedule input finite regardless.
+  vehicle_speed_mps_ = input->part1_valid && std::isfinite(input->speed_mps) ?
+    std::abs(static_cast<double>(input->speed_mps)) : 0.0;
   if (!drive_speed_permits_steering_) {
     // Drop the old target and disable immediately, before the next CAN control tick.
     enterWaitCommand();
@@ -246,8 +425,8 @@ void SteeringActuatorNode::setEstop(bool active, bool test_input)
 
 void SteeringActuatorNode::requestImmediateDisable(SteeringDisableReason reason)
 {
+  if (enabled_commanded_ || torqueMode()) stopMotor();
   discardAllSteeringCommands();
-  if (enabled_commanded_ && can_driver_->isOpen()) can_driver_->sendDisable();
   enabled_commanded_ = false;
   requested_disable_reason_ = reason;
 }
@@ -264,12 +443,17 @@ void SteeringActuatorNode::discardAllSteeringCommands()
   minimum_accepted_command_generation_ = steer_command_generation_ + 1;
   last_steer_command_time_ = {};
   tracking_controller_.reset();
+  if (torqueMode()) {
+    torque_controller_.reset(seconds(std::chrono::steady_clock::now()));
+    target_accel_estimator_.reset();
+    torque_output_ = {};
+  }
 }
 
 void SteeringActuatorNode::enterWaitCommand(SteeringDisableReason reason)
 {
+  if (enabled_commanded_) stopMotor();
   discardAllSteeringCommands();
-  if (enabled_commanded_ && can_driver_->isOpen()) can_driver_->sendDisable();
   enabled_commanded_ = false;
   disable_reason_ = reason;
   state_ = SteeringState::WAIT_CMD;
@@ -280,14 +464,14 @@ bool SteeringActuatorNode::tryEnterActiveFromPendingCommand(
 {
   const bool fresh = last_steer_command_time_.time_since_epoch().count() != 0 &&
     std::chrono::duration<double, std::milli>(now - last_steer_command_time_).count() <=
-    steer_command_timeout_ms_;
+    steer_command_timeout_ms_ && (!torqueMode() || now <= torque_command_deadline_);
   if (!pendingCommandIsEligible(
       pending_command_valid_, pending_command_generation_,
       minimum_accepted_command_generation_, fresh))
   {
     return false;
   }
-  if (!outputArmed()) {
+  if (!outputArmed() || stop_pending_) {
     // 읽기 전용에서는 ACTIVE로 올라가지 않는다. 받아들일 만한 명령이 와 있는데도
     // 출력이 잠겨 있다는 사실만 알리고, 명령은 pending으로 남겨 status에 드러낸다.
     RCLCPP_WARN_THROTTLE(
@@ -304,11 +488,22 @@ bool SteeringActuatorNode::tryEnterActiveFromPendingCommand(
     return false;
   }
   const int32_t actual_count = can_driver_->motorState().motor_position_count;
-  if (!can_driver_->sendPositionCount(actual_count)) {
+  if (torqueMode()) {
+    torque_controller_.reset(seconds(now));
+    torque_controller_.observeFeedback(actual_wheel_angle_deg_ * kDegToRad,
+      seconds(can_driver_->motorState().last_position_feedback));
+    torque_output_ = {};
+    sent_torque_raw_ = 0;
+  }
+  if (!(torqueMode() ? can_driver_->sendTorqueCommand(0) :
+    can_driver_->sendPositionCount(actual_count)))
+  {
+    if (torqueMode()) stopMotor();
     discardAllSteeringCommands();
     return false;
   }
   if (!can_driver_->sendEnable()) {
+    if (torqueMode()) stopMotor();
     discardAllSteeringCommands();
     return false;
   }
@@ -323,12 +518,13 @@ void SteeringActuatorNode::transitionTo(SteeringState next)
 {
   if (next == state_) return;
   if (!shouldMotorBeEnabled(next)) {
+    if (enabled_commanded_ || torqueMode()) stopMotor();
+    if (torqueMode()) discardAllSteeringCommands();
     target_wheel_angle_deg_ = actual_wheel_angle_deg_;
     commanded_wheel_angle_deg_ = actual_wheel_angle_deg_;
     corrected_wheel_angle_deg_ = actual_wheel_angle_deg_;
     movement_target_valid_ = false;
     tracking_controller_.reset();
-    if (enabled_commanded_ && can_driver_->isOpen()) can_driver_->sendDisable();
     enabled_commanded_ = false;
   }
   state_ = next;
@@ -340,6 +536,7 @@ void SteeringActuatorNode::controlTick()
   double dt = std::chrono::duration<double>(now - previous_tick_).count();
   previous_tick_ = now;
   if (!std::isfinite(dt) || dt <= 0.0) dt = control_period_ms_ / 1000.0;
+  if (torqueMode() && stop_pending_) stopMotor();
 
   if (can_driver_->isOpen()) {
     can_driver_->receiveAvailableFrames();
@@ -385,11 +582,32 @@ void SteeringActuatorNode::controlTick()
   if (motor.position_valid) {
     actual_wheel_angle_deg_ = converter_.countToEquivalentDeg(motor.motor_position_count);
   }
-  feedback_timeout_ = !motor.position_valid || position_age_ms > feedback_timeout_ms_;
+  const double position_timeout_ms = torqueMode() ? std::min(
+    static_cast<double>(feedback_timeout_ms_),
+    torque_controller_.config().feedback_timeout_sec * 1000.0) : feedback_timeout_ms_;
+  feedback_timeout_ = !motor.position_valid || position_age_ms > position_timeout_ms ||
+    !std::isfinite(actual_wheel_angle_deg_);
   const bool feedback_valid = !feedback_timeout_ && !can_timeout_;
-  const bool motor_fault = (motor.fault_bits & static_cast<uint16_t>(~uint16_t{1})) != 0;
+  if (torqueMode() && feedback_valid) {
+    const bool count_out_of_range =
+      motor.motor_position_count < -converter_.commandCountLimit() ||
+      motor.motor_position_count > converter_.commandCountLimit();
+    const auto fault = count_out_of_range ? TorqueSafetyFault::ANGLE_LIMIT :
+      torque_controller_.observeFeedback(
+      actual_wheel_angle_deg_ * kDegToRad, seconds(motor.last_position_feedback));
+    if (fault != TorqueSafetyFault::NONE && steering_enabled_) torqueFault(fault);
+  }
+  // Even freshly queued feedback must not conceal an outer-loop scheduling stall.
+  if (torqueMode() && state_ == SteeringState::ACTIVE &&
+    dt > torque_controller_.config().feedback_timeout_sec)
+  {
+    torqueFault(TorqueSafetyFault::FEEDBACK_TIMEOUT);
+  }
+  const bool motor_fault = (motor.fault_bits & static_cast<uint16_t>(~uint16_t{1})) != 0 ||
+    (torqueMode() && torque_fault_latched_ != TorqueSafetyFault::NONE);
   steer_command_timeout_ = state_ == SteeringState::ACTIVE &&
-    (!std::isfinite(steer_age_ms) || steer_age_ms > steer_command_timeout_ms_);
+    (!std::isfinite(steer_age_ms) || steer_age_ms > steer_command_timeout_ms_ ||
+    (torqueMode() && age_now > torque_command_deadline_));
   disable_reason_ = selectDisableReason(
     mode_received_, mode_timeout_, drive_mode_, safety_, motor_fault, can_timeout_,
     feedback_valid, steer_command_timeout_);
@@ -430,22 +648,48 @@ void SteeringActuatorNode::controlTick()
   }
 
   if (state_ == SteeringState::ACTIVE && movement_target_valid_ && !entered_active_this_tick) {
-    commanded_wheel_angle_deg_ = rateLimit(
-      commanded_wheel_angle_deg_, target_wheel_angle_deg_, max_steering_rate_deg_s_, dt);
-    corrected_wheel_angle_deg_ = converter_.clampEquivalentDeg(
-      tracking_controller_.update(
-        commanded_wheel_angle_deg_, actual_wheel_angle_deg_, dt));
-    if (enabled_commanded_) {
-      can_driver_->sendPositionCount(
-        converter_.equivalentDegToCount(corrected_wheel_angle_deg_));
+    if (torqueMode()) {
+      // Direct target step; the 60 deg/s position shaper does not sit in this path.
+      commanded_wheel_angle_deg_ = target_wheel_angle_deg_;
+      corrected_wheel_angle_deg_ = target_wheel_angle_deg_;
+      // No target-rate D kick on a step; alpha_ff comes from command timestamps instead.
+      torque_output_ = torque_controller_.update(target_wheel_angle_deg_ * kDegToRad, 0.0,
+        target_accel_estimator_.acceleration(), vehicle_speed_mps_, seconds(age_now));
+      if (torque_output_.fault != TorqueSafetyFault::NONE) {
+        torqueFault(torque_output_.fault);
+      } else if (enabled_commanded_) {
+        const auto raw = keyaTorqueCommand(torque_output_.command_raw, torque_direction_sign_);
+        if (can_driver_->sendTorqueCommand(raw)) {
+          sent_torque_raw_ = raw;
+          corrected_wheel_angle_deg_ = torque_output_.target_rad / kDegToRad;
+        } else {
+          requestImmediateDisable(SteeringDisableReason::CAN_TIMEOUT);
+          disable_reason_ = SteeringDisableReason::CAN_TIMEOUT;
+          state_ = SteeringState::CAN_LOST;
+        }
+      }
+    } else {
+      commanded_wheel_angle_deg_ = rateLimit(
+        commanded_wheel_angle_deg_, target_wheel_angle_deg_, max_steering_rate_deg_s_, dt);
+      corrected_wheel_angle_deg_ = converter_.clampEquivalentDeg(
+        tracking_controller_.update(
+          commanded_wheel_angle_deg_, actual_wheel_angle_deg_, dt));
+      if (enabled_commanded_) {
+        can_driver_->sendPositionCount(
+          converter_.equivalentDegToCount(corrected_wheel_angle_deg_));
+      }
     }
   } else {
     tracking_controller_.reset();
-    if (steering_enabled_ && drive_speed_allowed && outputArmed() && feedback_valid &&
+    if (!torqueMode() && steering_enabled_ && drive_speed_allowed && outputArmed() && feedback_valid &&
       can_driver_->isOpen())
     {
       can_driver_->sendPositionCount(motor.motor_position_count);
     }
+  }
+  if (torqueMode() && state_ != SteeringState::ACTIVE) {
+    torque_controller_.idle(seconds(age_now));
+    torque_output_ = {};
   }
   if (state_ != SteeringState::ACTIVE) enabled_commanded_ = false;
   publishState(position_age_ms, mode_age_ms, steer_age_ms);
@@ -505,7 +749,8 @@ void SteeringActuatorNode::publishState(
   status.actual_wheel_angle_rad =
     static_cast<float>(actual_wheel_angle_deg_ * kDegToCanonicalRad);
   status.tracking_error_rad =
-    static_cast<float>(tracking_controller_.errorDeg() * kDegToCanonicalRad);
+    static_cast<float>(torqueMode() ? torque_output_.error_rad :
+    tracking_controller_.errorDeg() * kDegToCanonicalRad);
   status.tracking_correction_rad =
     static_cast<float>(tracking_controller_.correctionDeg() * kDegToCanonicalRad);
   status.motor_position_count = motor.motor_position_count;
@@ -528,19 +773,54 @@ void SteeringActuatorNode::publishState(
   status.pending_command_valid = pending_command_valid_;
   status.movement_target_valid = movement_target_valid_;
   status_pub_->publish(status);
+  std_msgs::msg::String mode;
+  mode.data = actuation_mode_;
+  actuation_mode_pub_->publish(mode);
+  if (torqueMode()) publishTorqueState();
+}
+
+void SteeringActuatorNode::publishTorqueState()
+{
+  const auto publish_float = [](const auto & publisher, double value) {
+      std_msgs::msg::Float32 msg;
+      msg.data = static_cast<float>(value);
+      publisher->publish(msg);
+    };
+  const auto publish_bool = [](const auto & publisher, bool value) {
+      std_msgs::msg::Bool msg;
+      msg.data = value;
+      publisher->publish(msg);
+    };
+  std_msgs::msg::Int32 raw;
+  raw.data = sent_torque_raw_;
+  torque_command_pub_->publish(raw);
+  raw.data = torque_output_.limit_raw;
+  torque_limit_pub_->publish(raw);
+  publish_float(requested_angle_pub_, target_wheel_angle_deg_ * kDegToRad);
+  publish_float(angle_error_pub_, torque_output_.error_rad);
+  publish_float(rate_pub_, torque_output_.rate_rad_s);
+  publish_float(raw_rate_pub_, torque_output_.unfiltered_rate_rad_s);
+  publish_float(torque_p_pub_, torque_output_.p_raw);
+  publish_float(torque_d_pub_, torque_output_.d_raw);
+  publish_float(torque_ff_pub_, torque_output_.ff_raw);
+  publish_float(torque_friction_pub_, torque_output_.friction_raw);
+  publish_float(target_accel_pub_, torque_output_.target_accel_rad_s2);
+  publish_float(torque_unsaturated_pub_, torque_output_.unsaturated_raw);
+  publish_float(torque_current_limit_command_pub_, torqueCurrentLimitCommandA());
+  publish_bool(torque_saturated_pub_, torque_output_.saturated);
+  publish_bool(torque_settled_pub_, torque_output_.settled);
+  publish_bool(torque_peak_limited_pub_, torque_output_.peak_limited);
+  publish_bool(torque_rate_ready_pub_, torque_output_.rate_ready);
+  std_msgs::msg::String safety;
+  safety.data = torqueSafetyFaultName(torque_fault_latched_);
+  torque_safety_pub_->publish(safety);
+}
+
+double SteeringActuatorNode::torqueCurrentLimitCommandA() const
+{
+  // KEYA manual §4.3.3.2: command permyriad * preset current * 80%.
+  // This is a signed command limit, not measured supply or motor current.
+  return static_cast<double>(sent_torque_raw_) / 10000.0 *
+         keya_protection_current_a_ * kKeyaTorqueCurrentFraction;
 }
 }  // namespace lateral_ctrl
-
-int main(int argc, char ** argv)
-{
-  rclcpp::init(argc, argv);
-  try {
-    rclcpp::spin(std::make_shared<lateral_ctrl::SteeringActuatorNode>());
-  } catch (const std::exception & error) {
-    RCLCPP_FATAL(rclcpp::get_logger("steering_actuator_node"), "%s", error.what());
-    rclcpp::shutdown();
-    return 1;
-  }
-  rclcpp::shutdown();
-  return 0;
-}

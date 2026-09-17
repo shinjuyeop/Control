@@ -12,8 +12,10 @@
 //   motor_angle_deg는 legacy 프로토콜의 Encoder count value query 응답
 //   (10000 count/turn = 0.036°/count)을 그대로 각도로 옮긴 값이라
 //   heartbeat(360 count/turn)보다 약 28배 촘촘하다. 캘리브레이션 다항식과
-//   중앙 등가각 환산을 거치지 않은 모터축 원시값이므로, ramp_direction과 각도
-//   증감의 부호 관계는 바퀴 각도 기준과 반대로 나타난다.
+//   중앙 등가각 환산을 거치지 않은 모터축 원시값이지만 부호는 raw count와 같고,
+//   현재 calibration은 +count = +바퀴각 = LEFT다. 따라서 각도 증감 방향은 바퀴
+//   각도(actual_wheel_angle_rad)와 같다. 부호를 뒤집었던 옛 /ctrl/steer_handle_hires
+//   기록과는 반대로 보인다.
 //
 // 사용 시나리오
 //   1. steering_actuator_node를 읽기 전용(hardware_can_enabled:=true,
@@ -32,10 +34,9 @@
 //      반복 측정한다.
 //
 // 안전
-//   - torque_limit은 소스 코드 하드 상한 8000(정격의 80%)으로 항상 클램프된다.
-//     이유: torque 모드에서 phase current가 정격 80%에 도달하면 드라이버가
-//     5초 후 출력을 정지시키는 보호 로직이 있기 때문에 그 이전에 반드시 멈춰야
-//     한다.
+//   - 측정용 torque_limit의 기존 raw 상한 8000은 유지한다. 매뉴얼에는 raw
+//     8000/10000에서 설정 전류에 따른 5초 정지 예제가 있으나, 이 상한 자체가
+//     실제 전류나 지속 운전 안전성을 보장하지는 않는다. raw→A 관계는 별도 검증한다.
 //   - torque 명령은 1000ms 이내에 연속 전송되지 않으면 드라이버가 CAN
 //     단선으로 판단해 보호 동작에 들어간다(재-enable 필요). 그래서 램프
 //     타이머가 활성/비활성 여부와 무관하게 매 틱(ramp_period_ms)마다
@@ -46,6 +47,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "kaiev26_msgs/msg/steering_actuator_status.hpp"
 #include "std_msgs/msg/u_int8.hpp"
+#include "lateral_ctrl/keya_can_driver.hpp"
 
 #include <rcl_interfaces/msg/set_parameters_result.hpp>
 
@@ -64,6 +66,7 @@
 #include <string>
 #include <cmath>
 #include <vector>
+#include <algorithm>
 
 class DeadzoneMeasureNode : public rclcpp::Node
 {
@@ -180,8 +183,7 @@ public:
     }
 
 private:
-    // 안전 하드 상한: torque 모드에서 phase current가 정격 80% 도달 시 5초 후
-    // 출력 정지 보호가 걸리므로, 파라미터로 그 이상이 들어와도 여기서 막는다.
+    // 기존 오프라인 측정용 raw cap. 전류 A 또는 열 보호 한계로 해석하지 않는다.
     static constexpr int kHardTorqueLimit = 8000;
 
     static int normalize_direction(int v) { return (v >= 0) ? 1 : -1; }
@@ -202,20 +204,13 @@ private:
     // ── CAN 전송: Torque control (Keya 데이터시트 4.3.2, subindex 0x01)
     void send_torque(int32_t torque_cmd)
     {
-        uint8_t data[8];
-        data[0] = 0x23;
-        data[1] = 0x01;
-        data[2] = 0x20;
-        data[3] = 0x01;
-        data[4] = (torque_cmd >> 24) & 0xFF;
-        data[5] = (torque_cmd >> 16) & 0xFF;
-        data[6] = (torque_cmd >> 8) & 0xFF;
-        data[7] = torque_cmd & 0xFF;
+        const auto data = lateral_ctrl::KeyaCanDriver::torquePayload(
+            std::clamp(torque_cmd, -kHardTorqueLimit, kHardTorqueLimit));
 
         struct can_frame frame{};
         frame.can_id = 0x06000001 | CAN_EFF_FLAG;
         frame.can_dlc = 8;
-        std::memcpy(frame.data, data, 8);
+        std::memcpy(frame.data, data.data(), data.size());
 
         const int sent = write(can_socket_, &frame, sizeof(frame));
         if (sent != (int)sizeof(frame))

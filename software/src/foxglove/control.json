@@ -882,22 +882,61 @@
             },
             "second": {
               "first": "Plot!test_steer_tracking",
-            "second": {
-              "first": "Plot!test_steer_vehicle_speed",
               "second": {
-                "first": "Plot!test_steer_current",
-                "second": "Plot!test_steer_age",
+                "first": "Plot!test_steer_vehicle_speed",
+                "second": {
+                  "first": "Plot!test_steer_current",
+                  "second": "Plot!test_steer_age",
+                  "direction": "row",
+                  "splitPercentage": 50
+                },
                 "direction": "row",
-                "splitPercentage": 50
+                "splitPercentage": 33.34
               },
               "direction": "row",
-              "splitPercentage": 33.34
+              "splitPercentage": 34
             },
-            "direction": "row",
-            "splitPercentage": 34
-          },
             "direction": "column",
             "splitPercentage": 62
+          }
+        },
+        {
+          "title": "조향 Torque",
+          "layout": {
+            "first": {
+              "first": "Plot!torque_angle",
+              "second": "Plot!torque_effort",
+              "direction": "column",
+              "splitPercentage": 50
+            },
+            "second": {
+              "first": {
+                "first": "Plot!torque_rate",
+                "second": "Plot!torque_flags",
+                "direction": "column",
+                "splitPercentage": 50
+              },
+              "second": {
+                "first": {
+                  "first": "Plot!torque_current",
+                  "second": "Plot!torque_speed",
+                  "direction": "row",
+                  "splitPercentage": 50
+                },
+                "second": {
+                  "first": "RawMessages!torque_mode",
+                  "second": "RawMessages!torque_safety",
+                  "direction": "row",
+                  "splitPercentage": 50
+                },
+                "direction": "column",
+                "splitPercentage": 50
+              },
+              "direction": "column",
+              "splitPercentage": 50
+            },
+            "direction": "row",
+            "splitPercentage": 50
           }
         },
         {
@@ -1123,6 +1162,236 @@
       "selectedHardwareId": "",
       "selectedName": "",
       "splitFraction": 0.5
+    },
+    "Plot!torque_angle": {
+      "foxglovePanelTitle": "Torque 목표 / 실측 / 오차",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/requested_angle.data",
+          "enabled": true,
+          "color": "#4e98e2",
+          "id": "Plot!torque_angle-0",
+          "label": "요청"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.corrected_wheel_angle_rad",
+          "enabled": true,
+          "color": "#f5774d",
+          "id": "Plot!torque_angle-1",
+          "label": "soft-limit 목표"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.actual_wheel_angle_rad",
+          "enabled": true,
+          "color": "#a5d76e",
+          "id": "Plot!torque_angle-2",
+          "label": "실측"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/angle_error.data",
+          "enabled": true,
+          "color": "#d978e8",
+          "id": "Plot!torque_angle-3",
+          "label": "오차"
+        }
+      ],
+      "yAxisLabel": "rad",
+      "showYAxisLabels": true,
+      "legendDisplay": "top",
+      "showPlotValuesInLegend": true
+    },
+    "Plot!torque_effort": {
+      "foxglovePanelTitle": "P / D / FF / 마찰 / 토크 명령",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/torque_p_raw.data",
+          "enabled": true,
+          "color": "#4e98e2",
+          "id": "Plot!torque_effort-0",
+          "label": "P (LEFT+)"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/torque_d_raw.data",
+          "enabled": true,
+          "color": "#f5774d",
+          "id": "Plot!torque_effort-1",
+          "label": "D (LEFT+)"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/torque_ff_raw.data",
+          "enabled": true,
+          "color": "#5cd6c0",
+          "id": "Plot!torque_effort-5",
+          "label": "J·α_ff (LEFT+)"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/torque_friction_raw.data",
+          "enabled": true,
+          "color": "#e8a0bf",
+          "id": "Plot!torque_effort-6",
+          "label": "F_c·sign(e) (LEFT+)"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/torque_unsaturated_raw.data",
+          "enabled": true,
+          "color": "#a5d76e",
+          "id": "Plot!torque_effort-2",
+          "label": "합계 (LEFT+)"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/torque_command_raw.data",
+          "enabled": true,
+          "color": "#d978e8",
+          "id": "Plot!torque_effort-3",
+          "label": "KEYA 송신 축"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/torque_limit_raw.data",
+          "enabled": true,
+          "color": "#f7cf58",
+          "id": "Plot!torque_effort-4",
+          "label": "envelope 한계"
+        }
+      ],
+      "yAxisLabel": "raw",
+      "showYAxisLabels": true,
+      "legendDisplay": "top",
+      "showPlotValuesInLegend": true
+    },
+    "Plot!torque_rate": {
+      "foxglovePanelTitle": "Wheel rate",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/rate.data",
+          "enabled": true,
+          "color": "#4e98e2",
+          "id": "Plot!torque_rate-0",
+          "label": "filtered"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/unfiltered_rate.data",
+          "enabled": true,
+          "color": "#f5774d",
+          "id": "Plot!torque_rate-1",
+          "label": "unfiltered"
+        }
+      ],
+      "yAxisLabel": "rad/s",
+      "showYAxisLabels": true,
+      "legendDisplay": "top",
+      "showPlotValuesInLegend": true
+    },
+    "Plot!torque_current": {
+      "foxglovePanelTitle": "KEYA 명령 전류 제한 / 진단",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/torque_current_limit_command_a.data",
+          "enabled": true,
+          "color": "#f5774d",
+          "id": "Plot!torque_current-0",
+          "label": "명령 전류 제한 (signed)"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.motor_current_a",
+          "enabled": true,
+          "color": "#4e98e2",
+          "id": "Plot!torque_current-1",
+          "label": "KEYA 전류 진단 (magnitude)"
+        }
+      ],
+      "yAxisLabel": "A",
+      "showYAxisLabels": true,
+      "legendDisplay": "top",
+      "showPlotValuesInLegend": true
+    },
+    "Plot!torque_speed": {
+      "foxglovePanelTitle": "KEYA 모터 속도",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/status.motor_speed_rpm",
+          "enabled": true,
+          "color": "#4e98e2",
+          "id": "Plot!torque_speed-0",
+          "label": "speed"
+        }
+      ],
+      "yAxisLabel": "rpm",
+      "showYAxisLabels": true,
+      "legendDisplay": "top",
+      "showPlotValuesInLegend": true
+    },
+    "Plot!torque_flags": {
+      "foxglovePanelTitle": "Torque 제어 상태",
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/torque_saturated.data",
+          "enabled": true,
+          "color": "#4e98e2",
+          "id": "Plot!torque_flags-0",
+          "label": "saturation"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/torque_peak_limited.data",
+          "enabled": true,
+          "color": "#f5774d",
+          "id": "Plot!torque_flags-1",
+          "label": "sustained cap"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/torque_settled.data",
+          "enabled": true,
+          "color": "#a5d76e",
+          "id": "Plot!torque_flags-2",
+          "label": "settled"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/steering/torque_rate_ready.data",
+          "enabled": true,
+          "color": "#d978e8",
+          "id": "Plot!torque_flags-3",
+          "label": "rate ready"
+        }
+      ],
+      "yAxisLabel": "bool",
+      "showYAxisLabels": true,
+      "legendDisplay": "top",
+      "showPlotValuesInLegend": true
+    },
+    "RawMessages!torque_mode": {
+      "foxglovePanelTitle": "actuation mode",
+      "diffEnabled": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "showFullMessageForDiff": false,
+      "topicPath": "/steering/actuation_mode"
+    },
+    "RawMessages!torque_safety": {
+      "foxglovePanelTitle": "Torque safety latch",
+      "diffEnabled": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "showFullMessageForDiff": false,
+      "topicPath": "/steering/torque_safety"
     }
   },
   "globalVariables": {},
