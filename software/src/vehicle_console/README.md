@@ -141,7 +141,7 @@ tailnet에서 보이는 IP가 서버 자체 IP와 다를 수 있다. 예시 주�
 
 ```bash
 ros2 launch vehicle_console vehicle.launch.py allowed_hosts:=100.112.72.27
-tailscale serve --bg --tcp=8766 tcp://127.0.0.1:8766
+sudo tailscale serve --bg --yes --tcp=8766 tcp://127.0.0.1:8766
 tailscale serve status
 # 공유 해제
 tailscale serve --tcp=8766 off

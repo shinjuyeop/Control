@@ -42,7 +42,7 @@ import { VirtualDisplay } from "../pages/VirtualDisplayPage";
 const pages = [
   {
     id: "bench",
-    name: "벤치",
+    name: "Bench",
     label: "BENCH OVERVIEW",
     icon: LayoutDashboard,
     description: "연결 상태와 주요 입력 → 응답",
@@ -50,7 +50,7 @@ const pages = [
   },
   {
     id: "drive",
-    name: "구동",
+    name: "Drive",
     label: "DRIVE",
     icon: Gauge,
     description: "주행 목표 · EZ command · 모터 피드백",
@@ -58,7 +58,7 @@ const pages = [
   },
   {
     id: "steering",
-    name: "조향",
+    name: "Steering",
     label: "STEERING",
     icon: CircleGauge,
     description: "로드휠 명령 · KEYA 모터축 응답",
@@ -66,7 +66,7 @@ const pages = [
   },
   {
     id: "safety",
-    name: "브레이크 · 안전",
+    name: "Safety / Brake",
     label: "BRAKE & SAFETY",
     icon: ShieldCheck,
     description: "제동 요청 · PWM · 구동 차단 관련 관측",
@@ -74,7 +74,7 @@ const pages = [
   },
   {
     id: "display",
-    name: "가상 LCD",
+    name: "Virtual LCD",
     label: "VIRTUAL DISPLAY",
     icon: Monitor,
     description: "UNO가 적용한 표시 상태",
@@ -82,7 +82,7 @@ const pages = [
   },
   {
     id: "faults",
-    name: "고장 주입",
+    name: "Fault Injection",
     label: "FAULT INJECTION",
     icon: Zap,
     description: "CAN enable · TX DROP · controller fault",
@@ -90,7 +90,7 @@ const pages = [
   },
   {
     id: "scenarios",
-    name: "시나리오",
+    name: "Scenarios",
     label: "SCENARIO",
     icon: FlaskConical,
     description: "시험 단계와 실제 관측 결과",
@@ -98,7 +98,7 @@ const pages = [
   },
   {
     id: "diagnostics",
-    name: "진단 · 로그",
+    name: "Diagnostics",
     label: "DIAGNOSTICS",
     icon: Terminal,
     description: "수신 주기 · CAN diagnostics · 원본 명령 로그",
@@ -106,7 +106,7 @@ const pages = [
   },
   {
     id: "runtime",
-    name: "ECU 상태",
+    name: "ECU Runtime",
     label: "ECU RUNTIME",
     icon: Cpu,
     description: "STM_A / STM_B · 실행 타이밍과 메모리 여유",
