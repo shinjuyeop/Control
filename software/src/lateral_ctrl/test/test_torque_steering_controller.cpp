@@ -158,6 +158,30 @@ TEST(TorqueSteeringController, PeakBudgetSurvivesReverseResetAndReconfigure)
   EXPECT_EQ(c.update(rad, 0.0, 3.13).command_raw, 2000);
 }
 
+TEST(TorqueSteeringController, FiveSecondOperatingEnvelopeDropsToSustainedLimit)
+{
+  TorqueSteeringConfig cfg;
+  cfg.peak_limit_raw = 10000;
+  cfg.sustained_limit_raw = 5000;
+  cfg.peak_duration_sec = 5.0;
+  cfg.peak_recovery_sec = 5.0;
+  TorqueSteeringController c(cfg);
+  seed(c);
+
+  for (int tick = 0; tick < 250; ++tick) {
+    const double time = 1.02 + tick * 0.02;
+    c.observeFeedback(0.0, time);
+    const auto out = c.update(rad, 0.0, time);
+    EXPECT_EQ(out.command_raw, 10000) << "tick=" << tick;
+    EXPECT_FALSE(out.peak_limited) << "tick=" << tick;
+  }
+
+  c.observeFeedback(0.0, 6.02);
+  const auto limited = c.update(rad, 0.0, 6.02);
+  EXPECT_EQ(limited.command_raw, 5000);
+  EXPECT_TRUE(limited.peak_limited);
+}
+
 TEST(TorqueSteeringController, ContinuousSaturationNeverRestoresPeak)
 {
   TorqueSteeringController c;
@@ -202,6 +226,13 @@ TEST(TorqueSteeringController, InvalidConfigurationIsRejected)
   EXPECT_THROW(cfg.validate(), std::invalid_argument);
   cfg = {};
   cfg.feedback_timeout_sec = 0.01;
+  EXPECT_THROW(cfg.validate(), std::invalid_argument);
+  cfg = {};
+  cfg.peak_duration_sec = 5.0;
+  cfg.peak_recovery_sec = 5.0;
+  EXPECT_NO_THROW(cfg.validate());
+  cfg.peak_duration_sec = 5.001;
+  cfg.peak_recovery_sec = 5.001;
   EXPECT_THROW(cfg.validate(), std::invalid_argument);
 }
 

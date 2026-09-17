@@ -251,8 +251,9 @@ flag로 latch되지 않지만, feedback이 끊기면 timeout 경로로 Disable�
 - Torque TX 실패 시 zero와 Disable을 시도하고 `CAN_LOST`로 이동한다. stop frame이
   실패하면 다음 tick에서 재시도하며 성공 전에는 재Enable하지 않는다. 버스 단절 시
   실제 zero/Disable 수신은 보장할 수 없다. 이 보호는 하드웨어 차단을 대체하지 않는다.
-- Peak raw2000, sustained raw1000, peak 누적200 ms가 기본이다. 지속 peak 사용 후
-  sustained로 제한하며, sustained50% 이하로2초 유지해야 peak 예산이 회복된다.
+- 코드 기본은 peak raw2000, sustained raw1000, peak 누적200 ms다. 현재 실차 YAML은
+  peak raw10000을 최대5초 허용한 뒤 sustained raw5000으로 제한하며,
+  sustained50% 이하로5초 유지해야 peak 예산이 회복된다.
   반전·새 목표·짧은 disable·gain 변경으로 예산을 초기화하지 않는다. raw/time 제한은
   전류/열 모델이 아니며 continuous10 A/peak20 A를 Host가 보장한다는 뜻이 아니다.
 - Gain/limit runtime 변경은 전체 batch 검증 후 zero→Disable하고 적용한다.

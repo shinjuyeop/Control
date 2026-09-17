@@ -25,7 +25,7 @@ void TorqueSteeringConfig::validate() const
     settle_angle_rad >= full_scale_error_rad || settle_rate_rad_s >= hard_rate_limit_rad_s ||
     control_period_sec < 0.01 || control_period_sec > 0.05 ||
     feedback_timeout_sec < 2.0 * control_period_sec || feedback_timeout_sec > 0.2 ||
-    peak_duration_sec < control_period_sec || peak_duration_sec > 1.0 ||
+    peak_duration_sec < control_period_sec || peak_duration_sec > 5.0 ||
     peak_recovery_sec < peak_duration_sec || rate_filter_hz > 0.5 / control_period_sec)
   {
     throw std::invalid_argument("inconsistent torque gains, raw limits, timing or calibrated envelope");

@@ -62,7 +62,7 @@ SteeringActuatorNode::SteeringActuatorNode(
   torque.kd = declare_parameter("torque_kd", 1500.0);
   torque.peak_limit_raw = integer_parameter("torque_peak_limit_raw", 2000, 1, 10000);
   torque.sustained_limit_raw = integer_parameter("torque_sustained_limit_raw", 1000, 1, 10000);
-  torque.peak_duration_sec = integer_parameter("torque_peak_duration_ms", 200, 10, 1000) / 1000.0;
+  torque.peak_duration_sec = integer_parameter("torque_peak_duration_ms", 200, 10, 5000) / 1000.0;
   torque.peak_recovery_sec =
     declare_parameter<int64_t>("torque_peak_recovery_ms", 2000) / 1000.0;
   torque.settle_angle_rad = declare_parameter("torque_settle_angle_deg", 0.05) * kDegToRad;

@@ -81,7 +81,7 @@ fault는 5 tick, voltage/temperature는 25 tick 주기이며 heartbeat도 speed/
 | `torque_kd` | 1500.0 | raw/(rad/s); 검증 전 초기 damping |
 | `torque_peak_limit_raw` | 2000 | 1..10000 |
 | `torque_sustained_limit_raw` | 1000 | 1..peak |
-| `torque_peak_duration_ms` | 200 | 1 tick 이상·1000 ms 이하 |
+| `torque_peak_duration_ms` | 200 | 1 tick 이상·5000 ms 이하 |
 | `torque_peak_recovery_ms` | 2000 | peak 재허용 저부하 대기, duration 이상 |
 | `torque_settle_angle_deg` | 0.05 | full-scale-error 미만; 0.05..0.15°부터 튜닝 |
 | `torque_settle_rate_deg_s` | 0.5 | raw·filtered rate 모두 이 값 미만일 때 settle |
@@ -104,10 +104,11 @@ Max Current=20 A의 raw→A 전달함수를 확정할 수 없다. 과거 데드�
 측정은 무부하·긴 관측 창 결과이며 전류가 정수 A라 0 A로 보였던 데이터다.
 기존 측정 노드의 raw8000 cap 역시 보장된 전류 보호 한계가 아니다.
 
-기본 peak2000/sustained1000/200 ms는 bring-up용 초기 envelope이며 성능 최종값이나
-열적 안전 인증값이 아니다. 최초 sign 시험은 아래 raw200으로 더 낮춘다. 검증 후
-peak를10000까지 키울 수 있다. sustained도 독립적으로 설정하되 전류·온도·부하
-시험에 근거해 정한다.
+코드 기본 peak2000/sustained1000/200 ms는 bring-up용 초기 envelope이며 성능 최종값이나
+열적 안전 인증값이 아니다. 최초 sign 시험은 아래 raw200으로 더 낮춘다. 현재 운용
+YAML은 peak10000/sustained5000/5000 ms와 저출력 회복5000 ms를 선택한다. 이는
+KEYA의 연속10 A/peak20 A 사양에서 5초 사용이 안전하다는 인증이 아니므로, 실제
+전류·온도·부하를 기록해 유지 여부를 판단한다.
 
 직전 실제 요청 torque가 sustained를 넘었던 **누적 시간**을 계산한다. 다음 한
 tick을 예약할 예산이 없으면 sustained로 제한한다. 방향 반전·목표 변경·controller
