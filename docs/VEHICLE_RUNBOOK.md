@@ -24,15 +24,17 @@ Planning ─ /planning/command → command_governor ─ /vehicle/command → STM
 
 ### ② 구동 스택
 
-이 PC의 새 zsh는 Humble과 `ROS_DOMAIN_ID=0`을 자동 적용한다. workspace root에서
-`si`를 실행하면 `install/setup.zsh`를 source하고 ROS 2 자동완성도 다시 등록한다.
-이미 활성화된 셸에서 domain을 변경했다면 `export ROS_DOMAIN_ID=0`으로 복구한다.
-`si`가 없는 다른 PC는 [HIL runbook 공통 ROS 환경](HIL_RUNBOOK.md#4-공통-ros-환경)의
-portable fallback을 사용한다.
+새 zsh 터미널마다 아래 형식으로 ROS 환경을 잡는다. 이 PC의 `humble` 함수가
+Humble 환경과 `ROS_DOMAIN_ID=0`을 설정하므로 별도 export는 필요 없다.
+이미 활성화된 셸에서 domain을 변경한 경우에는 `humble`이 이를 되돌리지 않는다.
+그때만 `export ROS_DOMAIN_ID=0`으로 복구한다. 다른 PC의 셋업은
+[HIL runbook 공통 ROS 환경](HIL_RUNBOOK.md#4-공통-ros-환경)을 따른다.
 
 ```zsh
 cd ~/KAI_ws
-si
+humble
+source ~/KAI_ws/install/setup.zsh
+
 ros2 launch control_launch vehicle.launch.py
 ```
 
@@ -47,7 +49,9 @@ KAI Vehicle Console (브라우저에서 차량 상태만 관찰, 명령 발행 �
 
 ```zsh
 cd ~/KAI_ws
-si
+humble
+source ~/KAI_ws/install/setup.zsh
+
 ros2 launch vehicle_console vehicle.launch.py \
   allowed_hosts:=100.112.72.27 \
   web_python:=/home/kai/KAI_ws/src/Control/software/src/vehicle_console/.venv/bin/python
@@ -58,10 +62,19 @@ ros2 launch vehicle_console vehicle.launch.py \
 - **차량 PC 로컬 브라우저:** `http://127.0.0.1:8766/`
 - **Tailscale 원격 브라우저:** `http://100.112.72.27:8766/`
 
-차량 PC에는 8766 Tailscale Serve가 백그라운드로 등록되어 있다. 재등록·해제나
-SSH 방식이 필요하면
-[Console 원격 사용](../software/src/vehicle_console/README.md#원격-접속)을 따른다.
+Console은 기본 loopback에 바인딩하므로, 차량 PC에서 **Vehicle용 8766 포트 전달**을
+별도로 등록한다. HIL용 8767 전달만으로는 Vehicle Console에 접속할 수 없다.
 
+```zsh
+# 차량 PC에서 최초 1회 등록. Web launch는 별도로 실행되어 있어야 한다.
+tailscale serve --bg --tcp=8766 tcp://127.0.0.1:8766
+tailscale serve status
+```
+
+원격 PC도 Tailscale에 연결되어 있어야 한다. 공유받은 계정에서 차량 PC가 다른 IP로
+보이면 원격 PC의 `tailscale status`로 확인하고, 접속 URL과 `allowed_hosts`를 그 IP로
+맞춘다. 상세 설정과 공유 해제는
+[Console 원격 사용](../software/src/vehicle_console/README.md#원격-접속)을 따른다.
 Qt dashboard는 archive로 이동했다.
 
 Foxglove bridge — 팀 단위로 PC당 하나만 띄운다. 이미 떠 있으면 켜지 않고
@@ -70,7 +83,9 @@ bridge만 켜면 된다):
 
 ```zsh
 cd ~/KAI_ws
-si
+humble
+source ~/KAI_ws/install/setup.zsh
+
 ros2 launch foxglove foxglove_bridge.launch.py
 ```
 
@@ -89,73 +104,176 @@ ros2 launch foxglove foxglove_bridge.launch.py
 #### 실제 Planning (판단팀)
 
 판단 노드가 `/planning/command`(`kaiev26_msgs/ActuatorCommand`)를 **20 Hz
-이상, `header.stamp` 필수**로 발행하면 명령 경로가 완성된다. 출발은 차량의 물리
-모드 스위치를 AUTO로 올려 시작하며 host에서 모드를 바꾸지 않는다.
+이상, `header.stamp` 필수**로 발행하면 명령 경로가 완성된다.
 
 #### 실차 테스트 시나리오
 
-Planning 없이 실차 동작을 확인할 때는 `vehicle_test_scenarios`의 TUI runner를
-쓴다. HIL 전용 `hil_command_generator`는 실차에서 사용하지 않는다.
+Planning 없이 실차 동작을 확인할 때는 `vehicle_test_scenarios`의 시험 runner를
+쓴다. HIL 전용 `hil_command_generator`는 실차에서 사용하지 않는다. 새
+터미널에서 실행한다.
+
+**터미널 1 — scenario runner 실행:**
 
 ```zsh
 cd ~/KAI_ws
-si
-ros2 run vehicle_test_scenarios vehicle_test_scenario_runner
+humble
+source ~/KAI_ws/install/setup.zsh
+
+ros2 run vehicle_test_scenarios vehicle_test_scenario_node
 ```
 
-TUI를 열기만 하면 `/planning/command`를 발행하지 않고 MCAP도 시작하지 않는다.
-화면에서 현재 토픽·명령 발행자의 GO/NO-GO 원인을 먼저
-확인한다. 실제 Planning이나 다른 시험 명령원이 있으면 Run은 NO-GO다.
+> `vehicle_test_scenario_runner`를 터미널에서 그대로 실행하면 메뉴형 TUI가 열린다.
+> 아래 `ros2 param set` 방식은 headless 실행 파일 `vehicle_test_scenario_node`를 쓴다
+> (노드 이름은 동일하게 `/vehicle_test_scenario_runner`). TUI 사용법은
+> [`vehicle_test_scenarios/README.md`](../software/src/vehicle_test_scenarios/README.md)와
+> [`Experiment_RUNBOOK.md`](Experiment_RUNBOOK.md) T3에 있다.
 
-시험은 다음처럼 분류한다.
+runner는 `enabled=false`로 시작하므로 이 시점에는 명령 메시지를 발행하지 않는다.
+다른 터미널에서 실제 Planning이나 다른 시험 명령원이 없는지 먼저 확인한다.
 
-| 상위 분류 | 하위 분류 | 시험 |
-| --- | --- | --- |
-| 입력 응답 시험 | 종방향 입력 | 일정 속도 직진, 속도 Step, 속도 Ramp, 제동 입력 |
-| 입력 응답 시험 | 횡방향 입력 | 조향 양방향 Step, 고정 주기 Sine, Chirp 주파수 Sweep |
-| 경로 추종 시험 | — | K-City 예선 경로, K-City 본선 경로 |
+**터미널 2 — 상태 확인 및 파라미터 설정:**
 
-`↑/↓`로 항목을 이동하고 Enter로 선택한다. `←/→`로 시험 목록과 파라미터 영역을
-오가며, 파라미터에서 Enter를 누르면 값을 직접 수정할 수 있다. 단위는 화면에
-`km/h`, `deg`, `sec`, `Hz`로 표시된다. 조향각은 중앙 등가 앞바퀴 각도다.
+```zsh
+cd ~/KAI_ws
+humble
+source ~/KAI_ws/install/setup.zsh
 
-| 키 | 동작 |
-| --- | --- |
-| `↑` / `↓` | 시험 또는 파라미터 이동 |
-| `←` / `→` | 시험 목록·파라미터 영역 이동 |
-| `Enter` | 시험 선택, 값 편집·확정 |
-| `Esc` | 값 편집 취소 |
-| `M` | MCAP 녹화 ON/OFF 전환 (기본 ON, 실행 중 변경 불가) |
-| `R` | 설정 고정, 선택한 경우 MCAP 시작, AUTO 대기 |
-| `S` / `Space` | 속도 0·브레이크 요청 후 기록 종료 |
-| `Q` | 안전 정리 후 TUI 종료 |
+ros2 topic info /planning/command
+# Publisher count: 1 (vehicle_test_scenario_runner 하나)이어야 함
 
-종방향 입력은 조향 모터를 Disable하며, 횡방향 입력은 설정된 센터각·진폭을
-사용한다. 조향 입력은 목표속도 부근에서 1초 동안 안정된 뒤 시작한다. Square는
-일반 TUI에서 제외했지만 기존 headless `steering_square`와 고정 YAML launch는
-과거 시험 재현용으로 유지한다.
-
-TUI가 실행되는 동안에는 이전 셸 명령과 로그를 숨기고 종료 시 원래 화면을 복원한다.
-상단 상태, 모든 RUN 조건, 전체 시험·파라미터, 하단 키 안내는 항상 같은 순서와
-개수로 렌더링한다. 터미널보다 길면 마우스 휠 또는 `PgUp/PgDn`으로 TUI 전체를
-위아래로 스크롤한다. `↑/↓`는 기존처럼 시험·파라미터 선택에만 사용한다.
-
-`R`을 누르면 설정을 고정하고 실행 중 편집을 잠근다. 파라미터 마지막의
-`MCAP 녹화` 항목에서 Enter 또는 `M`으로 녹화 여부를 선택한다. ON이면 기존
-workspace 기록 경로에 저장하며 외장 SSD 마운트를 요구하지 않는다.
-
-```text
-~/KAI_ws/records/<시간>_<scenario>_v<최고속도>/
+ros2 param set /vehicle_test_scenario_runner enabled false
+ros2 param set /vehicle_test_scenario_runner brake_override false
+# 시나리오 설정 전 준비 상태: 명령 발행 중지 + software brake override 해제
 ```
 
-녹화 OFF이면 파일과 recorder를 생성하지 않고 시험한다. 경로 시험의 위치추정·
-추종 프로세스는 녹화 여부와 관계없이 실행하고 종료 시 정리한다.
-ON이면 MCAP 연결 후, OFF이면 시험 준비 후 AUTO를 기다린다.
-`R`을 누른 뒤 차량의 물리 모드 스위치를 AUTO로 올린다. TUI가 AUTO를 확인하면
-5초를 카운트다운한 뒤 입력을 시작한다. 이미 AUTO여도 `R` 이후 새로 5초를 센다.
-MANUAL 전환만으로 자동 재시작하지 않는다. 설정과 기록 위치, 세부 계약은
+두 파라미터의 `true`/`false` 의미는 다음과 같다. 각 쌍에서 필요한 명령 하나만
+실행한다.
+
+`enabled` — `/planning/command` 발행 여부:
+
+```bash
+# true: 선택한 시나리오를 20 Hz로 발행해 주행/조향 명령을 시작
+ros2 param set /vehicle_test_scenario_runner enabled true
+```
+
+```bash
+# false: /planning/command 발행 중지. brake 명령을 보내는 것은 아님
+ros2 param set /vehicle_test_scenario_runner enabled false
+```
+
+`brake_override` — 활성 시나리오를 software brake 명령으로 덮어쓸지 여부:
+
+```bash
+# true: enabled=true일 때 speed 0 + steer 0 + brake_engage true를 계속 발행
+ros2 param set /vehicle_test_scenario_runner brake_override true
+```
+
+```bash
+# false: software brake override 해제. enabled=true면 선택한 시나리오가 다시 발행됨
+# 물리 E-stop 상태를 바꾸는 명령은 아님
+ros2 param set /vehicle_test_scenario_runner brake_override false
+```
+
+아래 블록 중 **시험할 시나리오 하나만** 설정한다. 파라미터 단위는 속도
+`km/h`, 조향 중앙 등가각 `deg`, 시간 `sec`다.
+일정 속도 직진·속도 step/ramp·제동 시험은 조향 모터를 Disable한다.
+이 시험들은 대기·카운트다운·완료 후에도 `steering_center_deg`를 사용하지 않는다.
+조향 sweep/slalom·square와 별도 조향 step 시험에서만 센터각을 설정한다.
+
+##### 일정 속도 직진 — 기본 3 km/h
+
+```bash
+ros2 param set /vehicle_test_scenario_runner cruise_speed_kph 3.0
+ros2 param set /vehicle_test_scenario_runner scenario straight
+```
+
+##### 속도 step — 1↔3 km/h, 2초 간격
+
+```bash
+ros2 param set /vehicle_test_scenario_runner speed_low_kph 1.0
+ros2 param set /vehicle_test_scenario_runner speed_high_kph 3.0
+ros2 param set /vehicle_test_scenario_runner speed_step_interval_sec 2.0
+ros2 param set /vehicle_test_scenario_runner scenario speed_step
+```
+
+##### 속도 ramp — 0→3→0 km/h, 편도 5초
+
+```bash
+ros2 param set /vehicle_test_scenario_runner speed_low_kph 0.0
+ros2 param set /vehicle_test_scenario_runner speed_high_kph 3.0
+ros2 param set /vehicle_test_scenario_runner speed_ramp_duration_sec 5.0
+ros2 param set /vehicle_test_scenario_runner scenario speed_ramp
+```
+
+##### 제동 시험 — 3 km/h 명령 3초 후 brake 유지
+
+```bash
+ros2 param set /vehicle_test_scenario_runner cruise_speed_kph 3.0
+ros2 param set /vehicle_test_scenario_runner brake_delay_sec 3.0
+ros2 param set /vehicle_test_scenario_runner scenario brake_test
+```
+
+##### 조향 sweep/slalom — 3 km/h, ±3°, 4초 주기
+
+첫 실차 시험은 `3 deg`부터 시작한다. 방향과 tracking을 확인한 뒤에만 진폭을
+단계적으로 올린다.
+
+```bash
+ros2 param set /vehicle_test_scenario_runner cruise_speed_kph 3.0
+ros2 param set /vehicle_test_scenario_runner steering_center_deg 0.0
+ros2 param set /vehicle_test_scenario_runner steering_amplitude_deg 3.0
+ros2 param set /vehicle_test_scenario_runner steering_period_sec 4.0
+ros2 param set /vehicle_test_scenario_runner scenario steering_sweep
+```
+
+##### 직진 후 조향 sweep/슬라럼 — 5초 직진 후 3 km/h, ±3°, 4초 주기
+
+`initial_hold_sec` 동안은 조향 중앙(0°)에서 `cruise_speed_kph`로 직진하고, 그
+시간이 지나야 sweep이 시작된다. 진폭은 위와 동일하게 `3 deg`부터 시작한다.
+
+```bash
+ros2 param set /vehicle_test_scenario_runner cruise_speed_kph 3.0
+ros2 param set /vehicle_test_scenario_runner steering_center_deg 0.0
+ros2 param set /vehicle_test_scenario_runner steering_amplitude_deg 3.0
+ros2 param set /vehicle_test_scenario_runner steering_period_sec 4.0
+ros2 param set /vehicle_test_scenario_runner initial_hold_sec 5.0
+ros2 param set /vehicle_test_scenario_runner scenario steering_sweep
+```
+
+##### 조향 square — 3 km/h, ±3°, 8초 주기 (한쪽 4초 유지)
+
+`steering_period_sec`의 절반 동안 `center+amplitude`를, 나머지 절반 동안
+`center-amplitude`를 유지한다. center를 거치지 않고 `t=0`에서 바로 좌측
+진폭으로 step하므로 sweep으로 방향을 확인한 뒤에만 사용한다.
+
+```bash
+ros2 param set /vehicle_test_scenario_runner cruise_speed_kph 3.0
+ros2 param set /vehicle_test_scenario_runner steering_center_deg 0.0
+ros2 param set /vehicle_test_scenario_runner steering_amplitude_deg 3.0
+ros2 param set /vehicle_test_scenario_runner steering_period_sec 8.0
+ros2 param set /vehicle_test_scenario_runner scenario steering_square
+```
+
+시나리오 세부 계약과 전체 파라미터는
 [`vehicle_test_scenarios/README.md`](../software/src/vehicle_test_scenarios/README.md)에
 있다.
+
+### ⑤ 모드 스위치 AUTO
+
+차량의 물리 모드 스위치를 AUTO로 올리면 자율주행이 시작된다. host에서는
+모드를 바꿀 수 없다 — 스위치가 유일한 기준이다. 실제 Planning 대신 ④의 시험
+runner를 쓴다면 AUTO가 확인된 뒤 마지막에 발행을 활성화한다.
+
+```bash
+ros2 topic echo --once /drive/status   # mode: 1, stop_request: false 확인
+ros2 param set /vehicle_test_scenario_runner enabled true
+ros2 topic echo --once /planning/command
+```
+
+활성화 이후 시나리오나 동작 파라미터를 바꾸면 해당 시나리오의 경과 시간이
+0으로 초기화되어 처음부터 다시 시작한다.
+
+MANUAL 주행은 Planning 없이도 된다(페달·기어가 보드 직결).
 
 ---
 
@@ -180,11 +298,12 @@ ros2 topic echo --once /vehicle/state # 나오면 상태 3종 전부 정상
 |---|---|
 | **비상 정지** | 물리 E-stop — launch·소프트웨어와 무관하게 항상 동작한다 |
 | 자율주행만 중단 | 모드 스위치 MANUAL |
-| 시험 명령으로 제동 | TUI에서 `S` 또는 `Space` — speed 0 + brake를 발행하고 MCAP을 마감 |
-| 정상 종료 | TUI `S` → 기록 저장 확인 → 모드 MANUAL → `Q` → Planning/launch 종료 |
+| 시험 명령으로 제동 | `ros2 param set /vehicle_test_scenario_runner brake_override true` — speed/steer 0 + brake를 계속 발행 |
+| 정상 종료 | 모드 MANUAL → 시험 runner `enabled false` → runner `Ctrl-C` → Planning/launch 종료 |
 
-비상 상황에서는 TUI보다 물리 E-stop과 MANUAL 전환을 우선한다. `S` 이후 화면에서
-MCAP 저장 완료(녹화 OFF이면 시험 정리 완료)를 확인하고 다음 시험을 선택한다.
+다음 시험 전에 `brake_override false`를 다시 설정한다. `enabled=false`만 먼저
+주면 명령 발행이 즉시 끊기고 STM_A 500 ms·조향 200 ms timeout으로 정지한다.
+계획된 종료는 물리 MANUAL을 먼저 사용한다.
 
 ---
 
@@ -194,7 +313,7 @@ MCAP 저장 완료(녹화 OFF이면 시험 정리 완료)를 확인하고 다음
 |---|---|---|
 | `/dev/stm_a`(또는 `stm_b`)가 없음 | `ls -l /dev/stm_*` | 보드 전원·USB 확인. 보드를 교체했다면 [5절](#5-보드-교체-시-고정-이름-갱신) |
 | 조향 노드가 CAN 오류 로그 | `ip link show can0` | USB-CAN 재연결(자동 재설정됨) 후 **launch 재시작** — 조향은 CAN을 시작 때 한 번만 연다 |
-| `/planning/command` publisher가 2개 이상 | `ros2 topic info -v /planning/command` | 실제 Planning·TUI `/auto_sysid`·headless runner·`hil_command_generator` 중복 — 하나만 남기고 종료 |
+| `/planning/command` publisher가 2개 이상 | `ros2 topic info -v /planning/command` | 실제 Planning·`vehicle_test_scenario_runner`·`hil_command_generator` 중복 — 하나만 남기고 종료 |
 | `/vehicle/command` publisher가 2개 이상 | `ros2 topic info -v /vehicle/command` | governor를 우회하는 `steering_bench_test_node` 중복 — 실차에서는 종료 |
 | AUTO인데 안 움직임 | `/drive/status`의 `command_received` | `false`면 Planning 미발행/stamp 누락. `stop_request: true`면 E-stop·브레이크 원인 확인 |
 | 조향이 Enable 안 됨 | `/steering/status`의 `disable_reason` | MANUAL 모드, E-stop, 명령 끊김(200 ms), mode 미수신이 흔한 원인 |
