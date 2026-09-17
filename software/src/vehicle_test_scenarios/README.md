@@ -1,88 +1,96 @@
 # vehicle_test_scenarios
 
-## 현장 SYSID TUI
+## 현장 실차 시험 TUI
 
-이 패키지 디렉터리에서 다음 명령 하나로 실행한다.
+ROS 환경과 workspace overlay를 source한 터미널에서 다음 명령 하나로 실행한다.
 
-    python3 auto_sysid.py
+```bash
+ros2 run vehicle_test_scenarios vehicle_test_scenario_runner
+```
 
-차량 TF, STM A/B Agent, 명령 중계, 조향, 차량 상태, GNSS와 IMU 드라이버는
-별도로 실행한다. TUI는 ROS 환경과 작업공간 overlay를 읽어 외부 드라이버와
-토픽 수신 상태를 표시한다. 드라이버 실행·재시작·종료는 외부에서 관리한다.
-필수 조건은 한 화면에서 GO/NO-GO와 원인을 확인할 수 있다.
-일반 시나리오 1–4에서는 GNSS와 IMU가 없어도 실행할 수 있다. GNSS 위치를 실제
-제어 입력으로 쓰는 경로 추종 시나리오 5·6에서만 GNSS Fix·속도·TF가 필수다.
+직접 실행하면 TUI가 열린다. 기존 YAML launch는 명시적인
+`vehicle_test_scenario_node` headless entrypoint를 사용한다. 이전처럼
+`vehicle_test_scenario_runner --ros-args ...`를 호출해도 headless 호환 경로로
+동작한다. 차량 TF, STM A/B Agent,
+`command_governor`, 조향, 차량 상태, GNSS와 IMU 드라이버는 별도로 관리한다.
+TUI는 이 프로세스들을 임의로 재시작하지 않고 실제 토픽과 ROS graph를 바탕으로
+GO/NO-GO 원인을 표시한다.
 
-메뉴는 1–6으로 시나리오 선택, V로 최고 목표속도 입력, R로 Run,
-S 또는 Space로 Stop, Q로 종료한다. 사용자가 정하는 수치는 최고 목표속도뿐이며
-기본값은 5 km/h이며 고정된 최대 한도는 없다. 0보다 큰 유한한 값을 입력한다.
-실제 차속과 순간적인 초과 응답은 기록한다.
+시험 메뉴는 확장 가능한 카탈로그로 구성한다.
 
-| 번호 | 입력 |
+| 상위 분류 | 하위 분류 | 시험 |
+| --- | --- | --- |
+| 입력 응답 시험 | 종방향 입력 | 일정 속도 직진, 속도 Step, 속도 Ramp, 제동 입력 |
+| 입력 응답 시험 | 횡방향 입력 | 조향 양방향 Step, 고정 주기 Sine, Chirp 주파수 Sweep |
+| 경로 추종 시험 | — | K-City 예선 경로, K-City 본선 경로 |
+
+조향 Square는 일반 TUI 목록에서 제외했다. 기존 `steering_square` headless 파라미터와
+`auto_lateral_steering_square.launch.py`는 기존 시험 재현을 위해 유지한다.
+
+화살표로 시험과 파라미터를 이동하며 Enter로 선택·수정한다.
+
+| 키 | 동작 |
 | --- | --- |
-| 1 | 짧은 가속·유지·0속도·추가 상승·부분 하강 조합, 20초 |
-| 2 | 3초 상승·3초 유지·4초 하강·0속도 3초, 13초 |
-| 3 | 정속 준비 후 중앙/좌/중앙/우/중앙 각 1초, 4초 감속·0속도 3초 |
-| 4 | 정속 준비 후 좌우 조향 0.2→1.0 Hz를 10초, 4초 감속·0속도 3초 |
-| 5 | 기록된 K-City 예선 경로 GNSS-only 추종, 종료점 감속·정지 |
-| 6 | 기록된 K-City 본선 경로 GNSS-only 추종, 종료점 감속·정지 |
+| `↑` / `↓` | 시험 또는 파라미터 이동 |
+| `←` / `→` | 시험 목록과 파라미터 영역 전환 |
+| `Enter` | 시험 선택, 파라미터 편집·확정 |
+| `Esc` | 편집 취소 또는 시험 목록으로 이동 |
+| `M` | MCAP 녹화 ON/OFF 전환 (기본 ON) |
+| `R` | 현재 설정으로 Run 요청, 녹화 ON이면 MCAP 시작 |
+| `S` / `Space` | 정지·브레이크 요청 |
+| `Q` | 안전 정리 후 종료 |
 
-5·6은 Decision 패키지의 `kcity_quali_route.yaml`, `kcity_final_route.yaml`을
-사용한다. GNSS Fix+속도로 위치·진행방향을 계산하고 기존 waypoint planner와
-motion controller로 추종한다. `V`의 최고 목표속도를 공통으로 사용한다.
-GNSS-only 위치추정과 추종 프로세스는 Run 동안 TUI가 관리하며,
-출력과 동적 TF는 `/sysid/*`에 발행한다. `/planning/command`는 TUI가 발행하여
-카운트다운·Stop·MANUAL 전환을 모든 시험에 동일하게 적용한다.
-경로 추종 데이터가 끊기거나 경로 위치를 확인할 수 없으면 정지한다.
-종료점에서는 브레이크를 유지한다. 신호·장애물 판단은 이 경로 추종에 포함되지 않는다.
+선택한 시험에서 실제 사용하는 파라미터만 표시한다. 완성된 설정은 `R` 시점에
+한 번에 고정하며 실행·저장 중에는 수정하지 못한다. TUI를 열기만 해서는 명령이나
+녹화를 시작하지 않는다.
 
-시나리오 1·2는 대기·카운트다운·시험·완료 후 모두 조향 모터를 Disable하고
-센터각을 사용하지 않는다. 화면에는 목표각 대신 `모터 DISABLE 요청`을 표시한다.
-시나리오 3·4의 중앙 조향은 2026-09-05 직선 기록에서 선택한 임시값 −0.56°,
-좌우 진폭은 앞바퀴 등가각 ±1°다. 설정과 실제 실행 구간은 기록 폴더에 저장한다.
-조향 입력은 실제 차속이 목표의 ±0.5 km/h 범위를 1초 유지한 뒤 시작한다.
-15초 안에 정속에 도달하지 못하면 화면과 로그에 정속 판정 실패를
-표시하고, Run을 중단하지 않고 조향 입력을 시작해 끝까지 수행한다.
+파라미터 마지막 `MCAP 녹화` 항목에서 Enter를 눌러도 ON/OFF를 바꿀 수 있다.
+녹화 선택은 시나리오를 이동해도 유지되며 실행 중에는 변경할 수 없다.
+TUI는 alternate screen을 사용하므로 실행 중에는 이전 셸 명령과 로그가 보이지 않고,
+종료하면 원래 화면이 복원된다. 상단 상태, 모든 NO-GO 항목, 전체 시험·파라미터,
+하단 키 안내는 항상 같은 순서와 개수로 렌더링한다. 터미널보다 길면 마우스 휠 또는
+`PgUp/PgDn`으로 TUI 전체를 위아래로 스크롤한다. `↑/↓`는 시험·파라미터 선택에만
+사용한다.
 
-Run은 MCAP 연결 후 AUTO를 기다린다. AUTO 확인부터 5초를 카운트다운하고
-시험을 시작한다. 이미 AUTO인 경우도 Run을 누른 뒤 5초를 센다.
-카운트다운·시험 중 MANUAL 전환은 해당 Run을 종료한다.
-다시 AUTO로 올리는 것만으로 시험을 재시작하지 않는다.
+`R`은 GO 조건을 확인하고, 녹화 ON이면 MCAP recorder를 연결한 뒤 AUTO를 기다린다.
+OFF이면 파일과 recorder를 만들지 않고 시험 준비 후 AUTO를 기다린다.
+AUTO 확인부터 5초를 카운트다운하고 입력을 시작한다. 카운트다운·시험 중 MANUAL
+전환, 필수 통신 단절, 녹화 실패에는 Run을 끝내며 필요한 경우 브레이크를 요청한다.
+조향 입력 시험은 실제 차속이 목표의 ±0.5 km/h 범위를 1초 유지한 뒤 시작한다.
+15초 안에 정속 판정이 되지 않으면 경고를 남기고 시험 입력을 계속한다.
 
-정상 완료 후에는 목표속도 0을 유지한다. 조향은 1·2에서 Disable,
-3·4에서 중앙 조향을 유지한다.
-Stop, 활성 시험의 필수 통신 단절, 녹화 실패에는 브레이크를 요청한다.
-EZkontrol Part I/II가 STM_A의 200 ms freshness 기준을 벗어난 뒤에도 invalid 상태가
-500 ms 연속 지속될 때 제동하며, 그 전에 정상화되면 지속시간 판정을 초기화한다.
-Q/Ctrl+C 종료 시에는 명령을 발행했던 경우 정지 요청을 먼저 전달한 뒤
-진행 중인 녹화를 저장하고 종료한다.
-5·6의 위치추정·추종 프로세스도 기록 종료 시 함께 정리한다.
-터미널 연결이 끊어지는 경우에도 같은 정리 절차를 수행한다.
+K-City 경로 시험은 Decision의 `kcity_quali_route.yaml` 또는
+`kcity_final_route.yaml`을 사용한다. Run 동안 GNSS-only 위치추정과 경로 추종
+프로세스를 TUI가 소유하고 `/sysid/*` 전용 토픽으로 연결한다. GNSS Fix·속도·TF와
+경로 입력이 끊기면 정지한다. 신호·장애물 판단은 포함하지 않는다.
 
-MCAP과 실행 설정·로그는 다음 위치에 저장된다.
+녹화 ON일 때 MCAP과 실행 설정·로그는 기존 workspace의 `records/`에 저장한다.
 
-    <workspace>/records/<YYYYMMDD_HHMMSS_microseconds>_scenario_<번호>_v<최고속도>/
-      rosbag/
-      scenario.yaml
-      console.log
+```text
+~/KAI_ws/records/
+  <시간>_<scenario>_v<최고속도>/
+    rosbag/
+    scenario.yaml
+    console.log
+```
 
-녹화는 Run부터 시작해 정상 완료 후 2초까지 포함한다. 모든 토픽은 같은
-목록에 수신 상태를 표시한다. 필수 수신 조건에 포함되지 않은 토픽은
-데이터가 없으면 `없음 · 실행 가능`으로 표시한다. 화면의 MANUAL,
-조향 비활성, 입력 대기는 상황에 따라 정상 상태다. 센서/제어 상태의 실제
-수신과 유효성, 명령 발행자 충돌을 별도로 확인한다.
+외장 SSD 마운트는 Run 조건이 아니다. 녹화는 `R`부터 시작해 정상 완료 후
+2초까지 포함한다. OFF이면 후행 녹화 대기 없이 시험을 정리한다. 경로 시험의
+위치추정·추종 프로세스는 녹화 여부와 관계없이 Run 동안 관리한다. 기본
+제어·상태·GNSS·IMU·TF, 압축 카메라, Ouster packet·metadata를 기록한다.
+torque 조향 튜닝용으로 `/steering/torque_*`·`/steering/angle_error`·`/steering/rate`·
+`/steering/target_accel` 등 진단 토픽과 실행 중 게인 변경(`/parameter_events`)도
+기록하고, Run 시점의 `steering_actuator_node` 조향 파라미터(`actuation_mode`,
+`torque_*`, `minimum_steering_speed_kph`)를 `scenario.yaml`의 `steering_parameters`에
+남긴다. position 모드에서는 torque 토픽이 비어 있을 뿐 Run 조건이 아니다.
 
-MCAP에는 기본 제어·상태·GNSS·IMU·TF 토픽과 함께 좌·우 카메라의
-`camera_info`, `image_raw/compressed`, Ouster의 `imu_packets`, `lidar_packets`,
-`metadata`를 기록한다. 비압축 카메라 영상과 Ouster points는 기록하지 않는다.
-
-## 기존 ROS 시나리오 노드
+## Headless ROS 시나리오 노드
 
 실차 `vehicle.launch.py`를 유지한 채 production Planning 자리에 통제된 시험
 명령을 넣는 시나리오 패키지다.
 
 ```text
-vehicle_test_scenario_runner
+vehicle_test_scenario_node
   -> /planning/command
   -> command_governor
   -> /vehicle/command
@@ -102,12 +110,14 @@ vehicle_test_scenario_runner
 | `speed_ramp` | low→high→low 속도를 선형 ramp로 반복 |
 | `brake_test` | 일정 속도 명령 후 지정 시간에 brake를 걸고 계속 유지 |
 | `steering_sweep` | 일정 속도에서 중앙±진폭을 sine 파형으로 왕복 |
+| `steering_chirp` | 일정 속도에서 시작→종료 주파수로 sine 주파수를 선형 변화 |
 | `steering_square` | 중앙+진폭과 중앙−진폭을 반주기씩 유지하는 square 파형 |
 
 기본값은 `straight`, `3 km/h`, 조향 모터 Disable이다.
 `straight`, `speed_step`, `speed_ramp`, `brake_test`는 중앙각과 관계없이
 조향 모터를 Disable한다. 대기·카운트다운·완료 후에도 동일하다.
-`steering_step`, `steering_sweep`, `steering_square`는 기존 중앙각·진폭을 사용한다.
+`steering_step`, `steering_sweep`, `steering_chirp`, `steering_square`는 기존
+중앙각·진폭을 사용한다.
 조향 노드가 모터 설정을 수락한 뒤 20 Hz로 fresh한 `ActuatorCommand`를 발행한다.
 
 ## 주요 파라미터
@@ -124,6 +134,8 @@ vehicle_test_scenario_runner
 | `steering_amplitude_deg` | `10.0` | sweep·square 진폭 |
 | `steering_step_interval_sec` | `5.0` | step의 center/좌/center/우 각 phase 시간 |
 | `steering_period_sec` | `4.0` | sweep·square 한 주기. square는 반주기씩 좌·우 유지 |
+| `chirp_start_hz` / `chirp_end_hz` | `0.2` / `1.0` | chirp 시작·종료 주파수 |
+| `chirp_duration_sec` | `10.0` | 한 번의 chirp 입력 시간 |
 | `brake_delay_sec` | `3.0` | brake test에서 제동 전 주행 시간 |
 | `initial_hold_sec` | `0.0` | 반복 시나리오 시작 전 초기 setpoint 유지 시간 |
 | `scenario_repetitions` | `0` | 0이면 무한 반복. 유한 반복 완료 후 speed target 0·brake false 유지 |
@@ -156,7 +168,7 @@ source /opt/ros/humble/setup.zsh
 colcon build --packages-up-to vehicle_test_scenarios --symlink-install
 source install/setup.zsh
 
-ros2 run vehicle_test_scenarios vehicle_test_scenario_runner
+ros2 run vehicle_test_scenarios vehicle_test_scenario_node
 ```
 
 다른 터미널에서 `/planning/command` publisher가 이 노드 하나인지 확인한 후

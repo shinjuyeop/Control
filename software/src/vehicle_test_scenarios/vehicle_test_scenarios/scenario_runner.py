@@ -21,11 +21,14 @@ SCENARIOS = {
     "steering_step",
     "steering_square",
     "steering_sweep",
+    "steering_chirp",
     "speed_step",
     "speed_ramp",
     "brake_test",
 }
-STEERING_SCENARIOS = ("steering_step", "steering_square", "steering_sweep")
+STEERING_SCENARIOS = (
+    "steering_step", "steering_square", "steering_sweep", "steering_chirp",
+)
 MAX_STEERING_DEG = 28.0
 STARTUP_ONLY_PARAMETERS = {
     "publish_rate_hz",
@@ -50,6 +53,9 @@ class ScenarioConfig:
     steering_amplitude_deg: float = 10.0
     steering_step_interval_sec: float = 5.0
     steering_period_sec: float = 4.0
+    chirp_start_hz: float = 0.2
+    chirp_end_hz: float = 1.0
+    chirp_duration_sec: float = 10.0
     brake_delay_sec: float = 3.0
     initial_hold_sec: float = 0.0
     scenario_repetitions: int = 0
@@ -96,6 +102,21 @@ def scenario_setpoint(
             config.steering_center_deg + steering_offset_deg,
         )
 
+    if config.scenario == "steering_chirp":
+        local_time = elapsed_sec % config.chirp_duration_sec
+        frequency_slope = (
+            config.chirp_end_hz - config.chirp_start_hz
+        ) / config.chirp_duration_sec
+        phase = 2.0 * math.pi * (
+            config.chirp_start_hz * local_time
+            + 0.5 * frequency_slope * local_time**2
+        )
+        return ScenarioSetpoint(
+            config.cruise_speed_kph,
+            config.steering_center_deg
+            + config.steering_amplitude_deg * math.sin(phase),
+        )
+
     if config.scenario == "steering_step":
         phase = int(elapsed_sec / config.steering_step_interval_sec) % 4
         steering_offset_deg = (
@@ -137,6 +158,8 @@ def scenario_setpoint(
 def scenario_cycle_duration_sec(config: ScenarioConfig) -> float | None:
     if config.scenario in ("steering_sweep", "steering_square"):
         return config.steering_period_sec
+    if config.scenario == "steering_chirp":
+        return config.chirp_duration_sec
     if config.scenario == "steering_step":
         return 4.0 * config.steering_step_interval_sec
     if config.scenario == "speed_step":
@@ -209,6 +232,9 @@ def validate_config(config: ScenarioConfig, publish_rate_hz: float) -> None:
         "speed_ramp_duration_sec": config.speed_ramp_duration_sec,
         "steering_step_interval_sec": config.steering_step_interval_sec,
         "steering_period_sec": config.steering_period_sec,
+        "chirp_start_hz": config.chirp_start_hz,
+        "chirp_end_hz": config.chirp_end_hz,
+        "chirp_duration_sec": config.chirp_duration_sec,
         "brake_delay_sec": config.brake_delay_sec,
     }
     for name, value in positive_parameters.items():

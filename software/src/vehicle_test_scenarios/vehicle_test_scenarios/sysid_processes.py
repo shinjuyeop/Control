@@ -14,6 +14,8 @@ import threading
 import time
 from zoneinfo import ZoneInfo
 
+from rcl_interfaces.srv import GetParameters
+from rclpy.parameter import parameter_value_to_python
 import yaml
 
 
@@ -38,6 +40,27 @@ RECORD_TOPICS = (
     '/sysid/odometry', '/sysid/odometry_gnss', '/sysid/route_context',
     '/sysid/target_path', '/sysid/target_speed', '/sysid/route_command',
     '/sysid/route_enabled', '/sysid/tf',
+    # Torque steering diagnostics (lateral_ctrl TORQUE_CONTROL.md). Absent in position mode.
+    '/steering/actuation_mode', '/steering/requested_angle', '/steering/angle_error',
+    '/steering/rate', '/steering/unfiltered_rate',
+    '/steering/torque_p_raw', '/steering/torque_d_raw', '/steering/torque_ff_raw',
+    '/steering/torque_friction_raw', '/steering/target_accel',
+    '/steering/torque_unsaturated_raw', '/steering/torque_command_raw',
+    '/steering/torque_current_limit_command_a', '/steering/torque_limit_raw',
+    '/steering/torque_saturated', '/steering/torque_peak_limited',
+    '/steering/torque_settled', '/steering/torque_rate_ready', '/steering/torque_safety',
+    # Runtime gain changes during a run; the starting values go into scenario.yaml.
+    '/parameter_events',
+)
+STEERING_PARAMETERS = (
+    'actuation_mode', 'torque_direction_sign', 'minimum_steering_speed_kph',
+    'torque_full_scale_error_deg', 'torque_kd',
+    'torque_peak_limit_raw', 'torque_sustained_limit_raw',
+    'torque_peak_duration_ms', 'torque_peak_recovery_ms',
+    'torque_settle_angle_deg', 'torque_settle_rate_deg_s', 'torque_rate_filter_hz',
+    'torque_soft_limit_margin_deg', 'torque_hard_rate_limit_deg_s',
+    'torque_inertia_ff', 'torque_feedforward_limit_raw', 'torque_feedforward_filter_hz',
+    'torque_friction_raw', 'torque_friction_deadband_deg', 'torque_friction_schedule',
 )
 RECORDER_CODE = """
 import sys, json
@@ -143,6 +166,8 @@ class ProcessManager:
         self.cleanup_errors = []
         self.record_started_at = 0.0
         self.subscribers_before_recording = {}
+        self.steering_parameters = node.create_client(
+            GetParameters, '/steering_actuator_node/get_parameters')
         self.stop_event = threading.Event()
         self.thread = threading.Thread(target=self._work, name='sysid-processes')
 
@@ -179,14 +204,20 @@ class ProcessManager:
     def _start_recording(self, settings):
         if self.recorder is not None:
             return
+        self.run_dir = None
         self.record_topics_required = self.node.required_topics_for(settings.follows_route) + (
             '/planning/command', '/vehicle/command')
         if settings.follows_route:
             from .sysid_routes import RouteProcesses
             self.route = RouteProcesses(self.node, settings)
+        if not settings.record_mcap:
+            self.node.commands.put(('record_ready', None))
+            return
         stamp = datetime.now(ZoneInfo('Asia/Seoul')).strftime('%Y%m%d_%H%M%S_%f')
         speed = f'{settings.max_speed_kph:g}'.replace('.', 'p')
-        self.run_dir = self.records_root / f'{stamp}_scenario_{settings.scenario:02d}_v{speed}'
+        self.run_dir = self.records_root / (
+            f'{stamp}_{settings.record_slug}_v{speed}'
+        )
         self.run_dir.mkdir(parents=True, exist_ok=False)
         self.run_log = (self.run_dir / 'console.log').open('a', buffering=1)
         self.run_document = settings.document()
@@ -194,6 +225,12 @@ class ProcessManager:
             'started_at': datetime.now(ZoneInfo('Asia/Seoul')).isoformat(),
             'topics': list(RECORD_TOPICS),
         })
+        try:
+            self.run_document['steering_parameters'] = self._steering_parameter_snapshot()
+        except Exception as error:
+            # Tuning context only; never block a run on it.
+            self.run_document['steering_parameters_error'] = str(error)
+            self.node.log(f'조향 파라미터 기록 실패: {error}')
         self._save_document()
         self.subscribers_before_recording = {
             topic: {bytes(info.endpoint_gid) for info in
@@ -209,6 +246,32 @@ class ProcessManager:
         self.recorder_ready = False
         self.node.commands.put(('record_started', str(self.run_dir)))
 
+    def _steering_parameter_snapshot(self, timeout=1.0):
+        """Gains in effect at Run, so each MCAP folder states the torque tuning it used."""
+        if not self.steering_parameters.wait_for_service(timeout_sec=timeout):
+            raise RuntimeError('steering_actuator_node 파라미터 서비스 없음')
+        future = self.steering_parameters.call_async(
+            GetParameters.Request(names=list(STEERING_PARAMETERS)))
+        deadline = time.monotonic() + timeout
+        while not future.done():
+            if time.monotonic() > deadline:
+                self.steering_parameters.remove_pending_request(future)
+                raise RuntimeError('steering_actuator_node 파라미터 응답 시간 초과')
+            time.sleep(0.01)
+        values = future.result().values
+        if len(values) != len(STEERING_PARAMETERS):
+            # rclcpp answers with no values at all when any requested name is undeclared.
+            raise RuntimeError('steering_actuator_node에 없는 파라미터가 있습니다')
+        snapshot = {}
+        for name, value in zip(STEERING_PARAMETERS, values):
+            python_value = parameter_value_to_python(value)
+            if python_value is None:
+                continue  # NOT_SET: parameter absent on this node version
+            # Array values arrive as array.array, which yaml.safe_dump cannot write.
+            snapshot[name] = list(python_value) if hasattr(python_value, 'tolist') \
+                or isinstance(python_value, tuple) else python_value
+        return snapshot
+
     def _save_document(self):
         (self.run_dir / 'scenario.yaml').write_text(
             yaml.safe_dump(self.run_document, sort_keys=False, allow_unicode=True))
@@ -216,6 +279,7 @@ class ProcessManager:
     def _finish_recording(self, reason):
         if self.recorder is None:
             self._close_route()
+            self.node.commands.put(('record_closed', ''))
             return
         child, self.recorder = self.recorder, None
         self.recorder_ready = False

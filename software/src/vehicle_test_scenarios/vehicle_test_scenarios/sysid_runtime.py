@@ -22,8 +22,8 @@ from tf2_msgs.msg import TFMessage
 from .scenario_runner import ScenarioSetpoint
 from .steering_control import SteeringControl
 from .sysid_profiles import (
-    COUNTDOWN_SEC, CENTER_DEG, TAIL_SEC, ROUTE_FINISH_DISTANCE_M, ROUTE_STOP_SPEED_MPS,
-    RunSettings, baseline, evaluate, segments,
+    COUNTDOWN_SEC, TAIL_SEC, ROUTE_FINISH_DISTANCE_M, ROUTE_STOP_SPEED_MPS,
+    RunSettings, baseline, default_run_settings, input_setpoint,
 )
 
 
@@ -83,9 +83,8 @@ class SysidNode(Node):
         self.graph_errors = ['ROS 그래프 확인 중']
         self.manager_ok = True
         self.state = 'IDLE'
-        self.settings = RunSettings()
-        self.schedule = segments(self.settings)
-        self.output = baseline()
+        self.settings = default_run_settings()
+        self.output = baseline(settings=self.settings)
         self.output_active = False
         self.run_dir = ''
         self.finish_reason = ''
@@ -98,6 +97,7 @@ class SysidNode(Node):
         self.countdown = None
         self.auto_seen = False
         self.record_open = False
+        self.session_open = False
         self.record_error = ''
         self.command_publisher = self.create_publisher(ActuatorCommand, '/planning/command', 10)
         self.steering_control = SteeringControl(self)
@@ -270,9 +270,15 @@ class SysidNode(Node):
         if self.terminal_state != 'ERROR':
             self.finish_reason = reason
             self.terminal_state = terminal
-        self.output = baseline(brake, steering_enabled=self.settings.steering_enabled)
+        self.output = baseline(brake, settings=self.settings)
         self.output_active = True
-        self.state = 'TAIL' if self.record_open else self.terminal_state
+        if self.record_open:
+            self.state = 'TAIL'
+        elif self.session_open:
+            self.state = 'CLOSING'
+            self.process_actions.put(('close', reason))
+        else:
+            self.state = self.terminal_state
         self.phase_started = now
         self.log(reason)
 
@@ -292,8 +298,7 @@ class SysidNode(Node):
                     self.received.pop(topic, None)
                     self.sensor_errors.pop(topic, None)
                     self.arrivals[topic].clear()
-                self.schedule = segments(value)
-                self.output = baseline(steering_enabled=value.steering_enabled)
+                self.output = baseline(settings=value)
                 self.output_active = True
                 self.auto_seen = False
                 self.countdown = None
@@ -301,16 +306,17 @@ class SysidNode(Node):
                 self.run_dir = ''
                 self.finish_reason = ''
                 self.run_warning = ''
-                self.record_open = True
+                self.record_open = value.record_mcap
+                self.session_open = True
                 self.record_error = ''
                 self.terminal_state = 'COMPLETE'
                 self.state = 'RECORD_START'
                 self.phase_started = now
                 self.process_actions.put(('record', value))
-                self.log(f'{value.name} · 최고 목표속도 {value.max_speed_kph:g} km/h')
+                self.log(f'{value.name} · {value.description()}')
             elif action == 'stop':
                 if self.state in ('TAIL', 'CLOSING'):
-                    self.output = baseline(True, steering_enabled=self.settings.steering_enabled)
+                    self.output = baseline(True, settings=self.settings)
                     if self.terminal_state != 'ERROR':
                         self.terminal_state = 'ABORTED'
                         self.finish_reason = '사용자 Stop'
@@ -321,22 +327,26 @@ class SysidNode(Node):
                 self.log(f'MCAP: {value}')
             elif action == 'record_ready' and self.state == 'RECORD_START':
                 self.state = 'WAIT_AUTO'
-                self.log('녹화 연결 완료 · AUTO 대기')
+                self.log(('녹화 연결 완료' if self.settings.record_mcap else '녹화 OFF')
+                         + ' · AUTO 대기')
             elif action == 'record_closed':
                 self.record_open = False
+                self.session_open = False
                 self.state = self.terminal_state
                 if self.record_error:
                     self.log(f'MCAP 오류로 종료: {self.record_error}')
-                else:
+                elif self.settings.record_mcap:
                     self.log(f'MCAP 저장 완료: {value}')
+                else:
+                    self.log('시험 정리 완료 · 녹화 OFF')
             elif action == 'record_failed':
-                message = f'MCAP 오류: {value}'
+                message = ('MCAP 오류: ' if self.settings.record_mcap else '시험 준비 오류: ') + str(value)
                 if not self.record_error:
                     self.record_error = str(value)
                 if self.terminal_state != 'ERROR':
                     self.finish_reason = message
                 self.terminal_state = 'ERROR'
-                self.output = baseline(True, steering_enabled=self.settings.steering_enabled)
+                self.output = baseline(True, settings=self.settings)
                 self.output_active = True
                 self.state = 'CLOSING'
                 self.log(message)
@@ -409,7 +419,10 @@ class SysidNode(Node):
                     self.log('시험 입력 시작')
             if self.state == 'CRUISE':
                 speed = self.received['/drive/status'][1].speed_mps * 3.6
-                self.output = ScenarioSetpoint(self.settings.max_speed_kph, CENTER_DEG)
+                self.output = ScenarioSetpoint(
+                    self.settings.max_speed_kph,
+                    self.settings.steering_center_deg,
+                )
                 if abs(speed - self.settings.max_speed_kph) <= 0.5:
                     if self.stable_since is None:
                         self.stable_since = now
@@ -439,11 +452,8 @@ class SysidNode(Node):
                         self._finish('경로 종료점 도착', now, brake=True)
                 else:
                     elapsed = now - self.input_started
-                    self.output, segment = evaluate(self.schedule, elapsed)
-                    if segment != self.segment:
-                        self.segment = segment
-                        self.log(f'입력 구간 {segment}/{len(self.schedule)}')
-                    if elapsed >= self.settings.duration:
+                    self.output, complete = input_setpoint(self.settings, elapsed)
+                    if complete:
                         self._finish('시험 입력 완료 · 목표속도 0 유지', now)
             if self.state == 'TAIL' and now - self.phase_started >= TAIL_SEC:
                 self.state = 'CLOSING'
@@ -462,7 +472,10 @@ class SysidNode(Node):
                 message.brake_engage = self.output.brake_engage
                 self.command_publisher.publish(message)
                 self.label_publisher.publish(String(
-                    data=f'scenario_{self.settings.scenario:02d}_v{self.settings.max_speed_kph:g}'))
+                    data=(
+                        f'{self.settings.record_slug}'
+                        f'_v{self.settings.max_speed_kph:g}'
+                    )))
 
     def snapshot(self):
         with self.lock:
@@ -494,12 +507,17 @@ class SysidNode(Node):
                     'AUTO' if drive[1].mode == DriveActuatorStatus.MODE_AUTO else 'MANUAL')
             command_flow = self.state in {'ROUTE_ARMING', 'CRUISE', 'RUNNING'}
             return {
-                'state': self.state, 'label': STATE_LABELS[self.state], 'mode': mode,
+                'state': self.state, 'label': (
+                    '시험 준비 중' if self.state == 'RECORD_START' and not self.settings.record_mcap
+                    else '시험 정리 중' if self.state == 'CLOSING' and not self.settings.record_mcap
+                    else STATE_LABELS[self.state]
+                ), 'mode': mode, 'busy': self.busy,
                 'speed': drive[1].speed_mps * 3.6 if drive else None,
                 'rpm': drive[1].motor_rpm if drive else None,
                 'current': drive[1].phase_current_a if drive else None,
                 'steering': math.degrees(steering[1].actual_wheel_angle_rad) if steering else None,
                 'output': self.output, 'rows': rows, 'drivers': list(self.driver_rows),
+                'optional_topics': set(topics) - set(self.required_topics_for(route_input)),
                 'issues': self.issues(now) + (
                     [self.steering_control.error]
                     if self.output_active and self.steering_control.error else []),

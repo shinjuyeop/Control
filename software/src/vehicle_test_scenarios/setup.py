@@ -31,6 +31,8 @@ setup(
     entry_points={
         "console_scripts": [
             "vehicle_test_scenario_runner = "
+            "vehicle_test_scenarios.entrypoint:main",
+            "vehicle_test_scenario_node = "
             "vehicle_test_scenarios.scenario_runner:main",
         ],
     },
