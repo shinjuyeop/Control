@@ -14,6 +14,10 @@ namespace {
 constexpr uint8_t kSdaPin = 6;
 constexpr uint8_t kSclPin = 7;
 constexpr uint32_t kI2cClockHz = 400000;
+// XIAO D6/GPIO0 -> STM_B RX, D7/GPIO1 <- STM_B TX.
+constexpr uint8_t kGaugeUartTxPin = 0;
+constexpr uint8_t kGaugeUartRxPin = 1;
+constexpr uint32_t kGaugeUartBaud = 115200;
 
 // INA228 supports 16 address combinations selected by A1/A0.
 constexpr uint8_t kFirstInaAddress = 0x40;
@@ -471,6 +475,8 @@ Reading last_reading{};
 
 uint8_t usb_rx_buffer[kProtocolMaxFrame * 2];
 size_t usb_rx_length = 0;
+uint8_t uart_rx_buffer[kProtocolMaxFrame * 2];
+size_t uart_rx_length = 0;
 uint32_t tx_sequence = 0;
 
 bool readJournalRecord(File& file, PersistentState& state) {
@@ -945,49 +951,48 @@ void handleCommand(const CommandPayload& command) {
   sendStatus();
 }
 
-void consumeUsbFrames() {
-  while (usb_rx_length >= kProtocolHeaderBytes) {
+void consumeFrames(uint8_t* rx_buffer, size_t& rx_length) {
+  while (rx_length >= kProtocolHeaderBytes) {
     size_t start = 0;
-    while (start + 1U < usb_rx_length &&
-           !(usb_rx_buffer[start] == 0xA5U &&
-             usb_rx_buffer[start + 1U] == 0x5AU)) {
+    while (start + 1U < rx_length &&
+           !(rx_buffer[start] == 0xA5U &&
+             rx_buffer[start + 1U] == 0x5AU)) {
       ++start;
     }
     if (start > 0U) {
-      memmove(usb_rx_buffer, usb_rx_buffer + start, usb_rx_length - start);
-      usb_rx_length -= start;
+      memmove(rx_buffer, rx_buffer + start, rx_length - start);
+      rx_length -= start;
     }
-    if (usb_rx_length < kProtocolHeaderBytes) {
+    if (rx_length < kProtocolHeaderBytes) {
       return;
     }
 
-    const uint8_t version = usb_rx_buffer[2];
-    const uint8_t message_type = usb_rx_buffer[3];
-    const uint16_t payload_size = getU16Le(&usb_rx_buffer[4]);
+    const uint8_t version = rx_buffer[2];
+    const uint8_t message_type = rx_buffer[3];
+    const uint16_t payload_size = getU16Le(&rx_buffer[4]);
     if (payload_size > kProtocolMaxPayload) {
-      memmove(usb_rx_buffer, usb_rx_buffer + 1, --usb_rx_length);
+      memmove(rx_buffer, rx_buffer + 1, --rx_length);
       continue;
     }
     const size_t frame_size =
         kProtocolHeaderBytes + payload_size + kProtocolCrcBytes;
-    if (usb_rx_length < frame_size) {
+    if (rx_length < frame_size) {
       return;
     }
-    const uint32_t received_crc = getU32Le(&usb_rx_buffer[10U + payload_size]);
-    const uint32_t expected_crc = crc32(&usb_rx_buffer[2], 8U + payload_size);
+    const uint32_t received_crc = getU32Le(&rx_buffer[10U + payload_size]);
+    const uint32_t expected_crc = crc32(&rx_buffer[2], 8U + payload_size);
     if (version != 1U || received_crc != expected_crc) {
-      memmove(usb_rx_buffer, usb_rx_buffer + 1, --usb_rx_length);
+      memmove(rx_buffer, rx_buffer + 1, --rx_length);
       continue;
     }
     if (message_type == kMessageCommand &&
         payload_size == sizeof(CommandPayload)) {
       CommandPayload command{};
-      memcpy(&command, &usb_rx_buffer[10], sizeof(command));
+      memcpy(&command, &rx_buffer[10], sizeof(command));
       handleCommand(command);
     }
-    memmove(usb_rx_buffer, usb_rx_buffer + frame_size,
-            usb_rx_length - frame_size);
-    usb_rx_length -= frame_size;
+    memmove(rx_buffer, rx_buffer + frame_size, rx_length - frame_size);
+    rx_length -= frame_size;
   }
 }
 
@@ -1002,7 +1007,21 @@ void processUsb() {
     }
     usb_rx_buffer[usb_rx_length++] = static_cast<uint8_t>(value);
   }
-  consumeUsbFrames();
+  consumeFrames(usb_rx_buffer, usb_rx_length);
+}
+
+void processGaugeUart() {
+  while (Serial1.available() > 0) {
+    const int value = Serial1.read();
+    if (value < 0) {
+      break;
+    }
+    if (uart_rx_length >= sizeof(uart_rx_buffer)) {
+      uart_rx_length = 0;
+    }
+    uart_rx_buffer[uart_rx_length++] = static_cast<uint8_t>(value);
+  }
+  consumeFrames(uart_rx_buffer, uart_rx_length);
 }
 
 bool recheckIna228Configuration(uint32_t now_ms) {
@@ -1207,10 +1226,14 @@ bool sendFrame(uint8_t message_type, const void* payload, size_t payload_size) {
   // Arduino-Pico SerialUSB::write may wait for up to one second when a
   // connected host does not drain the CDC endpoint. Never enter that wait in
   // the measurement loop; the TUI retries commands with the same request id.
-  if (static_cast<size_t>(Serial.availableForWrite()) < frame_size) {
-    return false;
+  bool sent = false;
+  if (static_cast<size_t>(Serial.availableForWrite()) >= frame_size) {
+    sent = Serial.write(frame, frame_size) == frame_size;
   }
-  return Serial.write(frame, frame_size) == frame_size;
+  // At 115200 baud a 150-byte status takes about 13 ms. INA228 charge
+  // integration continues in hardware while this bounded write completes.
+  sent = (Serial1.write(frame, frame_size) == frame_size) || sent;
+  return sent;
 }
 
 }  // namespace
@@ -1219,6 +1242,9 @@ void setup() {
   initializeDefaultState(gauge_state);
 
   Serial.begin(115200);
+  Serial1.setTX(kGaugeUartTxPin);
+  Serial1.setRX(kGaugeUartRxPin);
+  Serial1.begin(kGaugeUartBaud);
   Wire1.setSDA(kSdaPin);
   Wire1.setSCL(kSclPin);
   Wire1.setClock(kI2cClockHz);
@@ -1234,6 +1260,7 @@ void setup() {
 
 void loop() {
   processUsb();
+  processGaugeUart();
   const uint32_t now_ms = millis();
 
   if (!sensor_ready) {

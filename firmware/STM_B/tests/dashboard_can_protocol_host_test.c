@@ -54,6 +54,14 @@ int main(void)
                                   0x12U, 0U, 0U, 0U},
                 DASHBOARD_CAN_DLC) == 0);
 
+  snapshot.lv_status_flags = DASHBOARD_LV_PRESENT |
+      DASHBOARD_LV_MEASUREMENT_VALID | DASHBOARD_LV_SOC_KNOWN;
+  snapshot.lv_voltage_decivolt = 133U;
+  snapshot.lv_soc_percent = 73U;
+  DashboardCanProtocol_PackFault(&snapshot, payload);
+  assert(memcmp(payload, (const uint8_t[]){1U, 0xA5U, 0x56U, 0x34U,
+                                         0x12U, 7U, 133U, 73U}, 8U) == 0);
+
   for (uint8_t index = 0U; index < DASHBOARD_AUTO_DATA_SIZE; ++index)
   {
     snapshot.auto_data[index] = index;

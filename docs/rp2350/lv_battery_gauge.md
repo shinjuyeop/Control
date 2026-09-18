@@ -140,9 +140,9 @@ stale이며 brake나 traction safety logic에는 연결하지 않습니다.
 
 | Type | 이름 | 방향 | 설명 |
 |---:|---|---|---|
-| `0x20` | `BATTERY_STATUS` | XIAO→STM_B | 10 Hz 계측·SOC·상태 |
-| `0x21` | `BATTERY_COMMAND` | STM_B→XIAO | 설정·보정 request |
-| `0x22` | `BATTERY_COMMAND_ACK` | XIAO→STM_B | transaction 결과와 적용값 |
+| `0x01` | `BATTERY_STATUS` | XIAO→STM_B | 10 Hz 계측·SOC·상태 |
+| `0x10` | `BATTERY_COMMAND` | STM_B→XIAO | 설정·보정 request |
+| `0x11` | `BATTERY_COMMAND_ACK` | XIAO→STM_B | transaction 결과와 적용값 |
 
 ### 9.1 `BATTERY_STATUS` 주요 필드
 
@@ -222,9 +222,12 @@ STM_B의 현재 정적 micro-ROS library에는 `sensor_msgs/msg/BatteryState` ty
 STM_B는 `BATTERY_STATUS`가 1초 이상 없으면 `present=false`로 발행하고 LCD snapshot의
 LV valid flag를 내립니다. 이 상태는 brake request나 traction 판단에 사용하지 않습니다.
 
-PC에서 완충 기준을 설정하는 v1 경로는 `/lv_battery/set_full` service 요청을 STM_B가
-UART `SET_FULL` transaction으로 전달하고 ACK 결과를 돌려주는 구조입니다. service type과
-timeout은 STM_B 구현 전 micro-ROS executor 동작을 확인해 최종 고정합니다.
+PC TUI는 `/lv_battery/link/status`, `/lv_battery/link/command`,
+`/lv_battery/link/ack`의 `std_msgs/msg/UInt8MultiArray` payload로 기존 RP transaction을
+그대로 사용합니다. STM_B는 12-byte command payload에 UART frame/CRC를 붙이고,
+16-byte ACK를 다시 ROS로 발행합니다. 한 번에 command 하나만 처리하고 TUI는 같은
+request ID를 1초마다 재전송하므로 ACK 유실에도 RP journal mutation은 중복 적용되지
+않습니다. `/lv_battery/state`는 일반 ROS 소비자용 단순 상태를 계속 제공합니다.
 
 ## 12. 기구와 harness
 

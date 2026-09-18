@@ -55,6 +55,11 @@ LEGACY_AUTO_VALUES = [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0xFFFF, 0xFFFF, -0x8000, -0x80000000, -0x80000000, -0x8000,
 ]
+LV_VALUE_FIELDS = (
+    ("status_flags", 0, 255),
+    ("voltage_decivolt", 0, 255),
+    ("soc_percent", 0, 255),
+)
 
 
 def decode_display_report(line: bytes):
@@ -86,6 +91,16 @@ def decode_display_report(line: bytes):
         if type(value) is not int or not minimum <= value <= maximum:
             raise ValueError(f"UNO AUTO {name} 값이 범위를 벗어났습니다")
         auto_data[name] = value
+    lv_values = raw.get("lv", [0, 0, 255])
+    if not isinstance(lv_values, list) or len(lv_values) < len(LV_VALUE_FIELDS):
+        raise ValueError("UNO LV 표시값이 불완전합니다")
+    lv_data = {}
+    for (name, minimum, maximum), value in zip(LV_VALUE_FIELDS, lv_values):
+        if type(value) is not int or not minimum <= value <= maximum:
+            raise ValueError(f"UNO LV {name} 값이 범위를 벗어났습니다")
+        lv_data[name] = value
+    if lv_data["soc_percent"] > 100:
+        lv_data["status_flags"] &= ~4
     if type(raw.get("can_lost")) is not bool:
         raise ValueError("UNO can_lost 값이 boolean이 아닙니다")
     for name, minimum in (("uptime_ms", 0), ("seq", 0), ("can_age_ms", -1)):
@@ -104,6 +119,7 @@ def decode_display_report(line: bytes):
         seq=raw["seq"],
         values=data,
         auto_values=auto_data,
+        lv_values=lv_data,
         vtouch=type(raw.get("vtouch")) is int and raw["vtouch"] == 1,
         touch_errors=touch_errors,
     )
@@ -112,8 +128,9 @@ def decode_display_report(line: bytes):
 class NativeDashboardRenderer:
     def __init__(self, library: str | Path):
         self.library = ctypes.CDLL(str(library))
-        self.render_function = self.library.render_auto_dashboard
+        self.render_function = self.library.render_lv_dashboard
         self.render_function.argtypes = [
+            ctypes.POINTER(ctypes.c_int32),
             ctypes.POINTER(ctypes.c_int32),
             ctypes.POINTER(ctypes.c_int32),
             ctypes.c_int,
@@ -135,12 +152,15 @@ class NativeDashboardRenderer:
         auto_values = (ctypes.c_int32 * len(AUTO_VALUE_FIELDS))(
             *(report["auto_values"][name] for name, _, _ in AUTO_VALUE_FIELDS)
         )
+        lv_values = (ctypes.c_int32 * len(LV_VALUE_FIELDS))(
+            *(report["lv_values"][name] for name, _, _ in LV_VALUE_FIELDS)
+        )
         if report["page"].startswith("SWIPE_"):
             direction = {"SWIPE_WAIT": 0, "SWIPE_L": 1, "SWIPE_R": 2}[report["page"]]
             self.swipe_render_function(direction, self.rgb)
         else:
             self.render_function(
-                values, auto_values, int(report["can_lost"]),
+                values, auto_values, lv_values, int(report["can_lost"]),
                 int(report["page"] in ("AUTO_GT3", "AUTO_BASELINE")), self.rgb
             )
         output = BytesIO()

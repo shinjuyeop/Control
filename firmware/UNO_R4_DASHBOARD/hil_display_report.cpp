@@ -84,6 +84,7 @@ void poll(uint32_t now_ms,uint32_t snapshots,int32_t can_age_ms) {
       "HIL_LCD {\"v\":1,\"uptime_ms\":%lu,\"seq\":%lu,\"can_lost\":%s,\"can_age_ms\":%ld,"
       "\"page\":\"%s\",\"values\":[%u,%u,%u,%u,%d,%u,%d,%d,%d,%d,%lu],"
       "\"auto\":[%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%d,%ld,%ld,%d],"
+      "\"lv\":[%u,%u,%u],"
       "\"vtouch\":1,\"touch_errors\":%lu}\n",
       (unsigned long)now_ms,(unsigned long)snapshots,DashboardUi::canLost()?"true":"false",
       (long)can_age_ms,DashboardUi::pageName(),v.status_flags,v.drive_flags,v.pedal_percent,
@@ -95,6 +96,7 @@ void poll(uint32_t now_ms,uint32_t snapshots,int32_t can_age_ms) {
       a.feedback_state,a.host_valid,a.heading_centideg,a.target_heading_centideg,
       a.target_speed_centi_kmh,(long)a.actual_motor_count,(long)a.target_motor_count,
       a.steering_current_deciamp,
+      v.lv_status_flags,v.lv_voltage_decivolt,v.lv_soc_percent,
       (unsigned long)Ft6336Touch::state().errors);
     }
     report_size=(written>0 && size_t(written)<sizeof(report))?size_t(written):0;

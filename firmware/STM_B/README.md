@@ -71,6 +71,8 @@ build는 `display_app.c`/`lcd.c`가 아니라 `dashboard_can.c`와
 | `PA3` | `CN10-37` | `LPUART1_RX` | micro-ROS Agent transport |
 | `PC4` | `CN10-34` | `USART1_TX` | STM_A `PC5`로 safety frame 송신 |
 | `PC5` | `CN10-6` | `USART1_RX` | STM_A `PC4`에서 vehicle/detail 수신 |
+| `PC10` | `CN7-1` | `UART4_TX` | LV 적산계 XIAO `D7/GPIO1/UART0_RX` |
+| `PC11` | `CN7-2` | `UART4_RX` | LV 적산계 XIAO `D6/GPIO0/UART0_TX` |
 
 기존 SPI2와 LCD GPIO generated 초기화는 CubeMX 호환을 위해 남아 있지만 production
 application은 SPI transfer를 호출하지 않습니다. 직접-SPI LCD harness는 연결하지
@@ -158,12 +160,16 @@ publish를 하지 않습니다.
 | `/vehicle/command` | `kaiev26_msgs/msg/ActuatorCommand` | AUTO의 `brake_engage` |
 | `/gnss/fix` | `sensor_msgs/msg/NavSatFix` | `status.status`; 500 ms freshness |
 | `/dashboard/auto_status` | `std_msgs/msg/UInt8MultiArray` | PC가 실제 ROS 수신과 액추에이터 명령/응답을 합성한 고정 25-byte 표시 payload; 300 ms freshness |
+| `/lv_battery/link/command` | `std_msgs/msg/UInt8MultiArray` | 12-byte RP command payload; UART4 TX로 framing/CRC를 붙여 전달 |
 
 ### Publishers
 
 | Topic | Type | 주기 | 내용 |
 |---|---|---|---|
 | `/brake/status` | `kaiev26_msgs/msg/BrakeActuatorStatus` | 50 ms 및 reason 변경 | brake command, reason bits, command age |
+| `/lv_battery/state` | `sensor_msgs/msg/BatteryState` | 100 ms | UART4로 수신한 LV 전압, 전류, 용량, SOC와 freshness |
+| `/lv_battery/link/status` | `std_msgs/msg/UInt8MultiArray` | 100 ms | CRC 검증·decode된 136-byte RP status payload |
+| `/lv_battery/link/ack` | `std_msgs/msg/UInt8MultiArray` | event | RP 저장 완료 ACK 16-byte payload |
 
 ### Dashboard CAN
 
@@ -279,7 +285,15 @@ STM_B는 `/gnss/fix`를 best-effort로 구독하고 수신 시각을 monotonic t
 |---:|---|---|
 | 0/1 | `uint8` | version/alive |
 | 2-4 | `uint24` LE | motor fault low 24 bits |
-| 5-7 | reserved | zero |
+| 5 | `uint8` | LV flags: bit0=present, bit1=measurement valid, bit2=SOC known |
+| 6 | `uint8` | LV voltage, 0.1 V (0–25.5 V, bit1 확인) |
+| 7 | `uint8` | LV SOC 0–100%; unknown=`0xFF` (bit2 확인) |
+
+LV는 UART4의 CRC-valid RP2350 status에서 직접 받아 Display task가 전송합니다.
+마지막 수신 후 1초가 지나면 LV flags를 0으로 내리며 ROS Agent 연결 여부에
+의존하지 않습니다. 기존 fault 24bit와 native snapshot의 네 프레임/50ms 주기는
+유지합니다. 이전 UNO는 byte5–7을 무시하고, 새 UNO는 이전 STM_B의 zero flags를
+LV 미수신으로 표시합니다.
 
 #### `0x325`–`0x328` AUTO
 

@@ -33,7 +33,7 @@ pixel만 보입니다.
 Python 3, g++, Tkinter, Pillow와 PyYAML이 필요합니다.
 
 - `MANUAL_TFT`: 계기판 reference를 옮긴 2중 BUS/PHASE arc, 곡선형 F/R, speed,
-  4열 PED/HV/MOTOR/CTRL gauge, 한 줄 상태 표시와 작은 자동 dino runner
+  5열 PED/HV/MTR/CTRL/LV gauge, 한 줄 상태 표시와 작은 자동 dino runner
 - `AUTO_GT3`: 480x320 전체를 사용하는 AUTO cockpit. 상단 2행 상태 박스,
   좌측 차량 방위·목표 방향, 우측 실제·목표 조향각, 중앙 상태 메시지·속도,
   하단 조향 상태·전류·최근 추이로 구성합니다.
@@ -133,7 +133,7 @@ MANUAL의 우측 세로 gauge 아래, 하단 상태 panel 위 `x=281..470`, `y=2
 각 chunk 사이에 CAN 수신으로 복귀합니다.
 
 실제 Arduino firmware는 MANUAL에서 `MANUAL_TFT`의 곡선형 BUS/PHASE track,
-우측 4열 gauge와 하단 상태줄을 유지하고, AUTO에서는 선택된 `AUTO_GT3` cockpit을
+우측 5열 gauge와 하단 상태줄을 표시하고, AUTO에서는 선택된 `AUTO_GT3` cockpit을
 사용합니다. [`manual_tft_assets.h`](src/assets/manual_tft_assets.h)는 정적 레이아웃
 생성기가 만든 정적 raster, 곡선 antialias/progress mask와 Blender Pro glyph입니다.
 [`startup_tft_assets.h`](src/assets/startup_tft_assets.h)는
@@ -168,6 +168,19 @@ startup sequence가 한 번 재생됩니다. `Replay startup`으로 다시 볼 �
 cd firmware/UNO_R4_DASHBOARD
 python3 -m simulator
 ```
+
+LV 5열 화면은 생산 C++ renderer에 구현되어 있습니다. 네 게이지와 속도/단위를
+26px 왼쪽으로 옮기고, 원래 CTRL 자리 (`x=454..473`, 값 중심 `x=463`)에 LV를
+표시합니다. 막대 폭 20px, 간격 6px와 기존 glyph를 유지합니다. 원래 4열 static
+asset은 보존하고 scanline 디코딩 시 위치를 옮기며 LV 라벨은 기존 L/V raster를
+재사용합니다. 따라서 현재 머신에 없는 Blender Pro 파일을 대체 폰트로 재생성할
+필요가 없습니다. LV 막대는 SOC, 숫자는 전압만 표시합니다.
+
+`python3 -m simulator --manual-lv --lv-soc 73 --lv-voltage 13.3`은 실제 UNO CAN
+수신기와 렌더러에 LV 모의 프레임을 입력합니다. `--lv-soc -1`은 SOC 미설정,
+음수 전압은 무효 전압 표시입니다. SOC 미설정은 빈 막대, 유효 전압은 계속 표시하며
+CAN 또는 LV status가 끊기면 `--.-V`와 빈 막대를 표시합니다. 기존 시간 프로파일은
+변경 전 측정값으로, 추가 LV 렌더링의 실제 보드 시간은 별도 측정 대상입니다.
 
 오른쪽 panel에서 scenario, 10/20 Hz telemetry cadence, MANUAL/AUTO, FWD/REV,
 validity, E-stop/brake, GNSS 네 상태와 motor fault 24종을 바꿀 수 있습니다. 실제 LCD 해상도의 PNG만
@@ -212,8 +225,9 @@ cmake --install firmware/UNO_R4_DASHBOARD/build/host \
   --prefix software/src/vehicle_console
 ```
 
-보고 protocol v1의 기존 native `values`는 유지하고 `auto` 배열을 확장 필드로
-추가합니다. Web HIL은 확장 필드가 없는 기존 UNO 보고도 미수신 AUTO 값으로 처리합니다.
+보고 protocol v1의 기존 native `values`는 유지하고 `auto` 배열과
+`lv=[flags, voltage_decivolt, soc_percent]`를 확장 필드로 제공합니다. Web HIL은
+확장 필드가 없는 기존 UNO 보고도 해당 값이 미수신인 상태로 처리합니다.
 USB 보고 중에는 일반 사람용 serial 로그를 잠시 보류하고, `HIL_LCD OFF` 또는 USB
 연결 해제 뒤 다시 출력합니다. USB 보고 단절과 dashboard CAN LOST는 별도 상태입니다.
 
@@ -255,6 +269,12 @@ PC 생산자는 고정 25-byte `std_msgs/msg/UInt8MultiArray`를
 `/dashboard/auto_status`로 발행합니다. byte 0은 summary version이고 나머지 24 byte는
 각 AUTO CAN frame의 data byte 2–7 네 묶음입니다. STM_B는 이 ROS message가 300 ms
 이내 도착했을 때만 `0x325`의 `HOST_VALID` bit를 세웁니다. 이 bit가 꺼진 상태에서도
+`0x324`의 byte5는 LV flags(bit0=present, bit1=measurement valid, bit2=SOC known),
+byte6은 전압(0.1 V), byte7은 SOC(0–100%, unknown=255)입니다. LV는 STM_B가
+RP2350 UART에서 직접 받은 값이고 PC/ROS 없이도 전송합니다. UART status가
+1초 동안 없으면 STM_B가 flags를 지우며, CAN 전체가 300ms 끊기면 UNO가
+LV를 포함한 stale 값을 숨깁니다. 이전 STM_B의 zero flags는 LV 미수신입니다.
+
 STM_B의 native E-stop과 0x321–0x324는 계속 전송되므로 UNO는 `AUTO DATA LOST`와
 `DASH CAN LOST`를 구분합니다.
 

@@ -1,16 +1,17 @@
 # XIAO RP2350 LV battery gauge bring-up
 
 이 디렉터리는 XIAO RP2350이 INA228 측정, 전력/Ah/Wh 적산, SOC와 상태 저장을
-독립적으로 수행하는 LV 적산계 펌웨어와 USB 정비 TUI입니다. XIAO는 ROS나 PC가
-없어도 측정·적산하고, PC는 USB 설정/정비 화면으로만 동작합니다. USB 데이터는
-Rich TUI가 읽는 CRC 보호 binary protocol이며, SOC가 최초 완충 설정 전에는
-미설정으로 남습니다.
+독립적으로 수행하는 LV 적산계 펌웨어와 정비 TUI입니다. XIAO는 ROS나 PC가 없어도
+측정·적산합니다. TUI 기본 경로는 STM_B micro-ROS↔UART4이며 XIAO USB는 정비용
+fallback입니다. 두 경로는 같은 CRC 보호 payload와 transaction ID를 사용합니다.
 
 ## 현재 하드웨어 계약
 
 - XIAO `3V3` → INA228 `VIN`, 공통 `GND`
 - XIAO `D4/GPIO6` → INA228 `SDA`
 - XIAO `D5/GPIO7` → INA228 `SCL`
+- XIAO `D6/GPIO0/UART0_TX` → STM_B `PC11/CN7-2/UART4_RX`
+- XIAO `D7/GPIO1/UART0_RX` ← STM_B `PC10/CN7-1/UART4_TX`
 - XIAO의 `Wire1`을 사용하고 SDA/SCL을 코드에서 명시합니다.
 - FL-2C 100 A/75 mV 외장 션트: `0.00075 ohm`
 - 션트의 배터리 쪽(오른쪽 작은 나사) → `IN+`/`VIN+`
@@ -139,12 +140,15 @@ INA228 CHARGE 증가량과 구간 전압으로 계산합니다.
 
 ## Rich TUI
 
-TUI와 XIAO USB status는 10 Hz로 동작하고, INA228의 실제 완료 변환/적산 주기와
-분리되어 있습니다. TUI는 ROS와 pyserial에 의존하지 않고, USB by-id 경로를 찾아
-자동 연결·재연결합니다. 화면은 host monotonic 수신시각 기준으로 최근 60초의
+TUI와 XIAO status는 10 Hz로 동작하고, INA228의 실제 완료 변환/적산 주기와
+분리되어 있습니다. 기본 TUI는 STM_B가 발행하는 ROS payload에 연결하고, `--usb`
+정비 모드는 USB by-id 경로를 찾아 직접 연결·재연결합니다. 화면은 host monotonic
+수신시각 기준으로 최근 60초의
 유효 V/A/W를 session memory에 제한 길이로 보관합니다. 연결 끊김·stale·무효 샘플은
 0이나 직전값으로 메우지 않고 gap으로 표시합니다. 화면 갱신 중에도 키 입력을 받아
 정비 명령을 전송하고, XIAO의 저장 완료 ACK 뒤에만 성공을 표시합니다.
+Rich alternate-screen을 사용하지 않으므로 VS Code·원격 터미널에서도 전체 화면을
+한 Panel로 잘못 확장하지 않고, 종료 후 마지막 화면이 터미널에 남습니다.
 
 기본 화면에는 최근 60초 전압 V, 부호 있는 전류 A와 전력 W의 선 그래프가 있습니다.
 왼쪽에는 값 눈금, 아래에는 −60s/−45s/−30s/−15s/now 시간 눈금을 표시하며,
@@ -154,7 +158,17 @@ TUI와 XIAO USB status는 10 Hz로 동작하고, INA228의 실제 완료 변환/
 
 ```bash
 python3 -m pip install rich
+source /opt/ros/humble/setup.zsh
+source ~/KAI_ws/install/setup.zsh
 python3 firmware/XIAO_RP2350_LV_GAUGE/tools/lv_battery_gauge_tui.py
+```
+
+기본 TUI는 `/lv_battery/link/status|command|ack`을 사용하므로 XIAO USB를 연결하지
+않습니다. STM_B micro-ROS Agent는 실행 중이어야 합니다. XIAO 직접 정비가 필요할
+때만 외부 `5V/VBUS`를 분리하고 다음처럼 USB fallback을 사용합니다.
+
+```bash
+python3 firmware/XIAO_RP2350_LV_GAUGE/tools/lv_battery_gauge_tui.py --usb
 ```
 
 기본 화면은 연결/센서 상태, V/A/W와 충전·방전 방향, SOC/잔여 Ah, 충전·방전
@@ -169,17 +183,20 @@ INA228 ID, CONFIG/ADC_CONFIG/SHUNT_CAL, ADC 범위·변환 시간·평균화, �
 정비 키는 `f` 완충 기준점, `t` 트립 초기화, `z` 영점 보정, `c` 용량 설정입니다.
 각 기록 변경 전 대상과 영향이 화면에 나오며 `y` 확인 뒤 실행됩니다.
 
-## USB protocol
+## USB/UART protocol
 
 프레임은 `[A5 5A][version u8][type u8][length u16 LE][sequence u32 LE]`
 `payload` `CRC32 u32 LE` 순서입니다. CRC는 version부터 payload까지 계산합니다.
+동일 프레임을 USB CDC와 `Serial1` UART0(`115200 8N1`) 양쪽으로 보내며, 명령도
+두 transport에서 같은 형식으로 받습니다.
 `0x01` status는 100 ms마다 전송하고, `0x10` command와 `0x11` persisted-result ACK를
 사용합니다. Status payload의 정수 단위는 bus `uV`, shunt `nV`, current `uA`,
 power `mW`, INA die temperature `mC`, trip charge는 `uAs`/`mWs`입니다. SOC와
 remaining은 미설정일 때 각각 `-1`입니다. 진단에는 `VBUS/VSHUNT/CURRENT`의
 raw 24-bit register 값도 포함하며, VSHUNT/CURRENT는 bits 23:4를 signed 20-bit로
 해석합니다. `bus_voltage_uV`, `shunt_voltage_nV`, `current_uA`, `power_mW`는
-RP2350 LPF 결과이고 raw 레지스터 값은 미필터입니다. 이 payload 하나가 XIAO 내부 적산 상태와 USB TUI의 공통 상태입니다.
+RP2350 LPF 결과이고 raw 레지스터 값은 미필터입니다. 이 payload 하나가 XIAO 내부
+적산 상태와 STM_B ROS TUI·USB fallback의 공통 상태입니다.
 
 ## 업로드 절차
 

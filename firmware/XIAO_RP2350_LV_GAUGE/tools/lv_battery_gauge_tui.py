@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""ROS-free Rich TUI for the XIAO RP2350 LV battery gauge."""
+"""Rich TUI for the XIAO RP2350 LV gauge through STM_B micro-ROS or USB."""
 
 from __future__ import annotations
 
 import glob
+import argparse
 import math
 import errno
 import os
@@ -73,6 +74,19 @@ SENSOR_NAMES = {
     2: "INA228 읽기 오류",
     3: "INA228 설정 중",
 }
+
+STATUS_KEYS = (
+    "uptime_ms", "flags", "sensor_state", "ina_address", "reserved",
+    "manufacturer_id", "device_id", "config_register", "adc_config_register",
+    "shunt_cal_register", "diag_alert", "vbus_raw24", "vshunt_raw24",
+    "current_raw24", "bus_voltage_uV", "shunt_voltage_nV", "current_uA",
+    "power_mW", "current_offset_uA", "die_temperature_mC",
+    "soc_centi_percent", "remaining_uAs", "capacity_mAh", "charge_trip_uAs",
+    "discharge_trip_uAs", "charge_trip_mWs", "discharge_trip_mWs",
+    "active_time_ms", "storage_sequence", "i2c_error_count",
+    "storage_error_count", "sample_sequence", "last_valid_age_ms",
+    "accumulator_fault_count",
+)
 
 AVG_COUNTS = (1, 4, 16, 64, 128, 256, 512, 1024)
 DEVICE_GLOB = "/dev/serial/by-id/usb-Seeed_XIAO_RP2350_*-if00"
@@ -156,7 +170,7 @@ class PlotPoint:
     power_w: Optional[float]
 
 
-class GaugeClient:
+class UsbGaugeClient:
     """Own the USB file descriptor and reconnect without retaining stale data."""
 
     def __init__(self) -> None:
@@ -261,44 +275,8 @@ class GaugeClient:
         del sequence
         if message_type == MESSAGE_STATUS and len(payload) == STATUS.size:
             fields = STATUS.unpack(payload)
-            keys = (
-                "uptime_ms",
-                "flags",
-                "sensor_state",
-                "ina_address",
-                "reserved",
-                "manufacturer_id",
-                "device_id",
-                "config_register",
-                "adc_config_register",
-                "shunt_cal_register",
-                "diag_alert",
-                "vbus_raw24",
-                "vshunt_raw24",
-                "current_raw24",
-                "bus_voltage_uV",
-                "shunt_voltage_nV",
-                "current_uA",
-                "power_mW",
-                "current_offset_uA",
-                "die_temperature_mC",
-                "soc_centi_percent",
-                "remaining_uAs",
-                "capacity_mAh",
-                "charge_trip_uAs",
-                "discharge_trip_uAs",
-                "charge_trip_mWs",
-                "discharge_trip_mWs",
-                "active_time_ms",
-                "storage_sequence",
-                "i2c_error_count",
-                "storage_error_count",
-                "sample_sequence",
-                "last_valid_age_ms",
-                "accumulator_fault_count",
-            )
             received_at = time.monotonic()
-            status = dict(zip(keys, fields))
+            status = dict(zip(STATUS_KEYS, fields))
             with self._lock:
                 self._status = status
                 self._status_received = received_at
@@ -371,6 +349,157 @@ class GaugeClient:
         with self._lock:
             status = dict(self._status) if self._status is not None else None
             fresh = self._fd is not None and time.monotonic() - self._status_received <= 2.0
+            return status if fresh else None, fresh, self._note, self._pending
+
+
+class RosGaugeClient:
+    """Use STM_B as the only UART owner and carry the RP payload over ROS."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self._node = None
+        self._publisher = None
+        self._rclpy = None
+        self._message_type = None
+        self._owns_rclpy = False
+        self._note = "STM_B ROS link 시작 중"
+        self._status: Optional[dict[str, int]] = None
+        self._status_received = 0.0
+        self._acks: queue.Queue[dict[str, int]] = queue.Queue()
+        self._status_events: queue.Queue[PlotPoint] = queue.Queue()
+        self._pending: Optional[PendingCommand] = None
+
+    def start(self) -> None:
+        try:
+            import rclpy
+            from std_msgs.msg import UInt8MultiArray
+        except ImportError as exc:
+            raise RuntimeError(
+                "ROS 환경이 없습니다. /opt/ros/humble과 KAI_ws install을 source하세요: "
+                f"{exc}"
+            ) from exc
+        self._rclpy = rclpy
+        self._message_type = UInt8MultiArray
+        if not rclpy.ok():
+            rclpy.init(args=[])
+            self._owns_rclpy = True
+        self._node = rclpy.create_node(
+            f"lv_battery_tui_{os.getpid()}",
+            start_parameter_services=False,
+        )
+        self._publisher = self._node.create_publisher(
+            UInt8MultiArray, "/lv_battery/link/command", 10
+        )
+        self._node.create_subscription(
+            UInt8MultiArray, "/lv_battery/link/status", self._status_callback, 10
+        )
+        self._node.create_subscription(
+            UInt8MultiArray, "/lv_battery/link/ack", self._ack_callback, 10
+        )
+        self._note = "STM_B status topic 대기 중"
+        self._thread = threading.Thread(target=self._run, name="lv-gauge-ros")
+        self._thread.start()
+
+    def close(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+            self._thread = None
+        if self._node is not None:
+            self._node.destroy_node()
+            self._node = None
+        if self._owns_rclpy and self._rclpy is not None and self._rclpy.ok():
+            self._rclpy.shutdown()
+
+    def _run(self) -> None:
+        assert self._node is not None and self._rclpy is not None
+        while not self._stop.is_set() and self._rclpy.ok():
+            self._rclpy.spin_once(self._node, timeout_sec=0.1)
+            with self._lock:
+                pending = self._pending
+            if pending is not None and time.monotonic() - pending.last_sent >= 1.0:
+                self._write_pending(pending)
+
+    def _status_callback(self, message) -> None:
+        payload = bytes(message.data)
+        if len(payload) != STATUS.size:
+            self._note = f"STM_B status 길이 오류: {len(payload)}"
+            return
+        received_at = time.monotonic()
+        status = dict(zip(STATUS_KEYS, STATUS.unpack(payload)))
+        with self._lock:
+            self._status = status
+            self._status_received = received_at
+            self._note = "STM_B ROS link 연결됨"
+        if status["flags"] & STATUS_MEASUREMENT_VALID:
+            point = PlotPoint(
+                received_at,
+                status["bus_voltage_uV"] / 1_000_000,
+                status["current_uA"] / 1_000_000,
+                status["power_mW"] / 1000,
+            )
+        else:
+            point = PlotPoint(received_at, None, None, None)
+        self._status_events.put(point)
+
+    def _ack_callback(self, message) -> None:
+        payload = bytes(message.data)
+        if len(payload) != ACK.size:
+            return
+        request_id, command, result, _, storage_sequence, detail = ACK.unpack(payload)
+        ack = dict(
+            request_id=request_id, command=command, result=result,
+            storage_sequence=storage_sequence, detail=detail,
+        )
+        with self._lock:
+            if self._pending is not None and self._pending.request_id == request_id:
+                self._pending = None
+        self._acks.put(ack)
+
+    def _write_pending(self, pending: PendingCommand) -> None:
+        if self._publisher is None or self._message_type is None:
+            return
+        message = self._message_type()
+        message.data = list(pending.encoded)
+        self._publisher.publish(message)
+        with self._lock:
+            if self._pending is not None and self._pending.request_id == pending.request_id:
+                self._pending.last_sent = time.monotonic()
+
+    def send_command(self, command: int, value: int = 0) -> int:
+        with self._lock:
+            if self._pending is not None:
+                raise RuntimeError("명령 처리 중")
+        request_id = secrets.randbits(32) or 1
+        payload = COMMAND.pack(request_id, command, b"\x00\x00\x00", value)
+        pending = PendingCommand(request_id, command, value, payload)
+        with self._lock:
+            self._pending = pending
+        self._write_pending(pending)
+        return request_id
+
+    def poll_acks(self) -> list[dict[str, int]]:
+        result = []
+        while True:
+            try:
+                result.append(self._acks.get_nowait())
+            except queue.Empty:
+                return result
+
+    def poll_status_events(self) -> list[PlotPoint]:
+        result = []
+        while True:
+            try:
+                result.append(self._status_events.get_nowait())
+            except queue.Empty:
+                return result
+
+    def view(self) -> tuple[Optional[dict[str, int]], bool, str, Optional[PendingCommand]]:
+        with self._lock:
+            status = dict(self._status) if self._status is not None else None
+            fresh = status is not None and time.monotonic() - self._status_received <= 2.0
             return status if fresh else None, fresh, self._note, self._pending
 
 
@@ -612,7 +741,7 @@ def basic_view(
         "[f] 실제 완충 후 기준점  [t] 트립만 초기화  [z] 명시적 영점 보정  "
         "[c] 용량 설정  [d] 진단  [q] 종료\n"
         f"센서: {state}\n"
-        + (f"처리 중: {command_name(pending.command)} (USB 재연결 시 같은 요청 재전송)\n" if pending else "")
+        + (f"처리 중: {command_name(pending.command)} (link 복구 시 같은 요청 재전송)\n" if pending else "")
         + (f"플롯: {plot_note}\n" if plot_note else "")
         + (message or "화면 수치는 최신 유효 상태만 표시합니다.")
     )
@@ -641,7 +770,7 @@ def diagnostic_view(
     table = Table(expand=True)
     table.add_column("항목")
     table.add_column("실제 값")
-    table.add_row("USB 상태", "최신" if fresh else "연결 없음")
+    table.add_row("통신 상태", "최신" if fresh else "연결 없음")
     table.add_row("INA 주소", f"0x{status['ina_address']:02X}")
     table.add_row("제조사 ID", f"0x{status['manufacturer_id']:04X}")
     table.add_row("장치 ID", f"0x{status['device_id']:04X}")
@@ -727,14 +856,18 @@ def confirmation_text(command: int, value: int) -> str:
     )
 
 
-def run() -> int:
+def run(*, use_usb: bool = False) -> int:
     console = Console()
     if not sys.stdin.isatty():
         console.print("터미널에서 실행하세요.")
         return 2
 
-    client = GaugeClient()
-    client.start()
+    client = UsbGaugeClient() if use_usb else RosGaugeClient()
+    try:
+        client.start()
+    except RuntimeError as exc:
+        console.print(str(exc), style="bold red")
+        return 2
     screen = "basic"
     input_mode: Optional[str] = None
     input_text = ""
@@ -745,7 +878,12 @@ def run() -> int:
     next_render = time.monotonic()
     try:
         with keyboard_cbreak(), Live(
-            console=console, screen=True, refresh_per_second=10, auto_refresh=False
+            console=console,
+            screen=False,
+            transient=False,
+            vertical_overflow="crop",
+            refresh_per_second=10,
+            auto_refresh=False,
         ) as live:
             while True:
                 for ack in client.poll_acks():
@@ -863,5 +1001,17 @@ def run() -> int:
     return 0
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="LV battery gauge TUI through STM_B ROS link (default) or direct USB."
+    )
+    parser.add_argument(
+        "--usb", action="store_true",
+        help="Use the XIAO USB maintenance port instead of STM_B micro-ROS.",
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    raise SystemExit(run())
+    arguments = parse_args()
+    raise SystemExit(run(use_usb=arguments.usb))

@@ -32,10 +32,10 @@ struct ManualFrameData
   char speed[8];
   char bus[10];
   char phase[10];
-  char gauge_text[4][8];
-  uint8_t gauge_levels[4];
-  Rgb gauge_colors[4];
-  Rgb gauge_text_colors[4];
+  char gauge_text[5][8];
+  uint8_t gauge_levels[5];
+  Rgb gauge_colors[5];
+  Rgb gauge_text_colors[5];
   char status_values[6][6];
   Rgb status_colors[6];
   const char *alert;
@@ -84,6 +84,9 @@ static constexpr uint16_t DIRTY_GEAR = 1U << 7;
 static constexpr uint16_t DIRTY_STATUS = 1U << 8;
 static constexpr uint16_t DIRTY_TRACK = 1U << 9;
 static constexpr uint16_t DIRTY_DINO = 1U << 10;
+static constexpr uint16_t DIRTY_LV = 1U << 11;
+static constexpr uint8_t DIRTY_REGION_COUNT = 12U;
+static constexpr uint16_t ALL_REGIONS = (1U << DIRTY_REGION_COUNT) - 1U;
 static constexpr uint16_t URGENT_REGIONS =
     DIRTY_ALERT | DIRTY_STATUS | DIRTY_DINO;
 static constexpr uint8_t RENDER_ROWS_PER_SERVICE = 4U;
@@ -172,6 +175,29 @@ void decodeStaticRow(uint16_t y)
     for (uint8_t index = 0U; index < count; ++index)
     {
       row_pixels[x++] = color;
+    }
+  }
+
+  // Shift the stored four-column raster one column left without regenerating
+  // its original font. The fifth LV column occupies the old CTRL position.
+  if (y >= 92U && y <= 216U)
+  {
+    uint16_t lv_bar[20];
+    uint16_t lv_label[7];
+    memcpy(lv_bar, &row_pixels[454], sizeof(lv_bar));
+    memcpy(lv_label, &row_pixels[467], 3U * sizeof(uint16_t)); // CTRL's L
+    memcpy(&lv_label[3], &row_pixels[411], 4U * sizeof(uint16_t)); // HV's V
+    const uint16_t background = row_pixels[300];
+    const uint16_t left = y <= 201U ? 185U : 371U;
+    memmove(&row_pixels[left - 26U], &row_pixels[left],
+            (476U - left) * sizeof(uint16_t));
+    for (uint16_t column = 450U; column < 479U; ++column)
+      row_pixels[column] = background;
+    if (y <= 186U) memcpy(&row_pixels[454], lv_bar, sizeof(lv_bar));
+    if (y >= 193U && y <= 196U)
+    {
+      memcpy(&row_pixels[460], lv_label, 3U * sizeof(uint16_t));
+      memcpy(&row_pixels[464], &lv_label[3], 4U * sizeof(uint16_t));
     }
   }
 }
@@ -388,9 +414,9 @@ uint8_t gaugeLevel(int32_t value, int32_t minimum, int32_t maximum)
 void applyGaugeRows(uint16_t y,
                     const ManualFrameData &frame)
 {
-  static const uint16_t x_positions[] = {376U, 402U, 428U, 454U};
+  static const uint16_t x_positions[] = {350U, 376U, 402U, 428U, 454U};
 
-  for (uint8_t gauge = 0U; gauge < 4U; ++gauge)
+  for (uint8_t gauge = 0U; gauge < 5U; ++gauge)
   {
     for (uint8_t segment = 0U; segment < 8U; ++segment)
     {
@@ -532,6 +558,20 @@ void buildFrameData(const DashboardValues &values,
                  (char)0xB0);
   (void)snprintf(frame->gauge_text[3], sizeof(frame->gauge_text[3]), "--%c",
                  (char)0xB0);
+  (void)snprintf(frame->gauge_text[4], sizeof(frame->gauge_text[4]), "--.-V");
+
+  const bool lv_present = !dashboard_can_lost &&
+      (values.lv_status_flags & LV_PRESENT) != 0U;
+  const bool lv_voltage_valid = lv_present &&
+      (values.lv_status_flags & LV_MEASUREMENT_VALID) != 0U;
+  const bool lv_soc_known = lv_present &&
+      (values.lv_status_flags & LV_SOC_KNOWN) != 0U;
+  if (lv_voltage_valid)
+  {
+    (void)snprintf(frame->gauge_text[4], sizeof(frame->gauge_text[4]),
+                   "%u.%uV", (unsigned int)(values.lv_voltage_decivolt / 10U),
+                   (unsigned int)(values.lv_voltage_decivolt % 10U));
+  }
 
   if (part1_valid)
   {
@@ -565,6 +605,8 @@ void buildFrameData(const DashboardValues &values,
       ? gaugeLevel(values.motor_temperature_decic, 0, 1300) : 0U;
   frame->gauge_levels[3] = part2_valid
       ? gaugeLevel(values.controller_temperature_decic, 0, 700) : 0U;
+  frame->gauge_levels[4] = lv_soc_known
+      ? gaugeLevel(values.lv_soc_percent, 0, 100) : 0U;
 
   const bool motor_critical =
       part2_valid && (values.motor_fault_bits & (1UL << 5)) != 0U;
@@ -580,8 +622,10 @@ void buildFrameData(const DashboardValues &values,
       motor_critical ? COLOR_FAULT : COLOR_BLACK;
   frame->gauge_colors[3] =
       controller_critical ? COLOR_FAULT : COLOR_BLACK;
-  for (uint8_t index = 0U; index < 4U; ++index)
+  frame->gauge_colors[4] = COLOR_BLACK;
+  for (uint8_t index = 0U; index < 5U; ++index)
     frame->gauge_text_colors[index] = frame->gauge_colors[index];
+  frame->gauge_text_colors[4] = lv_voltage_valid ? COLOR_BLACK : COLOR_MUTED;
 
   const char *link = "OK";
   Rgb link_color = COLOR_BLACK;
@@ -657,7 +701,7 @@ void buildFrameData(const DashboardValues &values,
 void composeRow(uint16_t y, const ManualFrameData &frame)
 {
   const uint32_t timing_started_us = DashboardTiming::beginMeasure();
-  static const int16_t gauge_centers[] = {385, 411, 437, 463};
+  static const int16_t gauge_centers[] = {359, 385, 411, 437, 463};
   static const int16_t status_centers[] = {99, 174, 244, 312, 377, 439};
 
   decodeStaticRow(y);
@@ -674,7 +718,7 @@ void composeRow(uint16_t y, const ManualFrameData &frame)
               TftHorizontalAnchor::Center, COLOR_GEAR);
   const TftFontAsset &speed_font =
       strlen(frame.speed) <= 4U ? manual_font_speed64 : manual_font_speed57;
-  drawTextRow(y, 361, 162, frame.speed, speed_font,
+  drawTextRow(y, 335, 162, frame.speed, speed_font,
               TftHorizontalAnchor::Right, COLOR_BLACK);
   drawTextRow(y, 126, 229, frame.bus, manual_font_current,
               TftHorizontalAnchor::Center,
@@ -682,7 +726,7 @@ void composeRow(uint16_t y, const ManualFrameData &frame)
   drawTextRow(y, 197, 229, frame.phase, manual_font_current,
               TftHorizontalAnchor::Center,
               frame.part1_valid ? COLOR_BLACK : COLOR_MUTED);
-  for (uint8_t index = 0U; index < 4U; ++index)
+  for (uint8_t index = 0U; index < 5U; ++index)
   {
     drawTextRow(y, gauge_centers[index], 207, frame.gauge_text[index],
                 manual_font_gauge, TftHorizontalAnchor::Center,
@@ -801,8 +845,8 @@ void markChangedRegions(const ManualFrameData &current,
     pending_regions |= DIRTY_CURRENT;
 
   static const uint16_t gauge_bits[] = {
-      DIRTY_PEDAL, DIRTY_HV, DIRTY_MOTOR, DIRTY_CONTROLLER};
-  for (uint8_t index = 0U; index < 4U; ++index)
+      DIRTY_PEDAL, DIRTY_HV, DIRTY_MOTOR, DIRTY_CONTROLLER, DIRTY_LV};
+  for (uint8_t index = 0U; index < 5U; ++index)
   {
     if (strcmp(current.gauge_text[index], previous.gauge_text[index]) != 0 ||
         current.gauge_levels[index] != previous.gauge_levels[index] ||
@@ -831,12 +875,13 @@ void regionForBit(uint16_t bit,
                   uint16_t *y1)
 {
   if (bit == DIRTY_ALERT) {*x0 = 281U; *y0 = 218U; *x1 = 470U; *y1 = 242U;}
-  else if (bit == DIRTY_SPEED) {*x0 = 185U; *y0 = 130U; *x1 = 367U; *y1 = 193U;}
+  else if (bit == DIRTY_SPEED) {*x0 = 159U; *y0 = 130U; *x1 = 341U; *y1 = 193U;}
   else if (bit == DIRTY_CURRENT) {*x0 = 88U; *y0 = 214U; *x1 = 238U; *y1 = 244U;}
-  else if (bit == DIRTY_PEDAL) {*x0 = 371U; *y0 = 92U; *x1 = 400U; *y1 = 226U;}
-  else if (bit == DIRTY_HV) {*x0 = 397U; *y0 = 92U; *x1 = 426U; *y1 = 226U;}
-  else if (bit == DIRTY_MOTOR) {*x0 = 423U; *y0 = 92U; *x1 = 452U; *y1 = 226U;}
-  else if (bit == DIRTY_CONTROLLER) {*x0 = 449U; *y0 = 92U; *x1 = 479U; *y1 = 226U;}
+  else if (bit == DIRTY_PEDAL) {*x0 = 345U; *y0 = 92U; *x1 = 374U; *y1 = 226U;}
+  else if (bit == DIRTY_HV) {*x0 = 371U; *y0 = 92U; *x1 = 400U; *y1 = 226U;}
+  else if (bit == DIRTY_MOTOR) {*x0 = 397U; *y0 = 92U; *x1 = 426U; *y1 = 226U;}
+  else if (bit == DIRTY_CONTROLLER) {*x0 = 423U; *y0 = 92U; *x1 = 452U; *y1 = 226U;}
+  else if (bit == DIRTY_LV) {*x0 = 449U; *y0 = 92U; *x1 = 479U; *y1 = 226U;}
   else if (bit == DIRTY_GEAR) {*x0 = 4U; *y0 = 12U; *x1 = 67U; *y1 = 82U;}
   else if (bit == DIRTY_STATUS) {*x0 = 62U; *y0 = 284U; *x1 = 471U; *y1 = 306U;}
   else {*x0 = DINO_REGION_X0; *y0 = DINO_REGION_Y0;
@@ -845,13 +890,13 @@ void regionForBit(uint16_t bit,
 
 uint16_t selectRoundRobin(uint16_t regions)
 {
-  for (uint8_t offset = 0U; offset < 11U; ++offset)
+  for (uint8_t offset = 0U; offset < DIRTY_REGION_COUNT; ++offset)
   {
-    const uint8_t index = (uint8_t)((round_robin_index + offset) % 11U);
+    const uint8_t index = (uint8_t)((round_robin_index + offset) % DIRTY_REGION_COUNT);
     const uint16_t bit = (uint16_t)(1U << index);
     if ((regions & bit) != 0U)
     {
-      round_robin_index = (uint8_t)((index + 1U) % 11U);
+      round_robin_index = (uint8_t)((index + 1U) % DIRTY_REGION_COUNT);
       return bit;
     }
   }
@@ -1107,7 +1152,7 @@ void synchronize()
 {
   previous_queued_frame = desired_frame;
   have_queued_frame = true;
-  pending_regions |= 0x07FFU;
+  pending_regions |= ALL_REGIONS;
   urgent_regions = 0U;
   active_region = 0U;
   rendered_track_valid = false;
@@ -1140,7 +1185,7 @@ void update(const DashboardValues &values,
     desired_frame = current;
     previous_queued_frame = current;
     have_queued_frame = true;
-    pending_regions = 0x07FFU;
+    pending_regions = ALL_REGIONS;
     return;
   }
   markChangedRegions(current, previous_queued_frame);
