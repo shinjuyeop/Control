@@ -48,7 +48,7 @@ BUSY_STATES = {
     'CRUISE', 'RUNNING', 'TAIL', 'CLOSING',
 }
 STATE_LABELS = {
-    'IDLE': '시험 선택', 'RECORD_START': 'MCAP 연결 중', 'WAIT_AUTO': 'AUTO 전환 대기',
+    'IDLE': '시험 선택', 'RECORD_START': '녹화·제어 설정 기록 중', 'WAIT_AUTO': 'AUTO 전환 대기',
     'COUNTDOWN': '출발 카운트다운', 'ROUTE_ARMING': '경로 출발 명령 대기',
     'CRUISE': '정속 준비', 'RUNNING': '시험 중',
     'TAIL': '후행 기록 중', 'CLOSING': 'MCAP 저장 중',
@@ -102,6 +102,8 @@ class SysidNode(Node):
         self.command_publisher = self.create_publisher(ActuatorCommand, '/planning/command', 10)
         self.steering_control = SteeringControl(self)
         self.label_publisher = self.create_publisher(String, '/sysid/scinario', 10)
+        self.control_parameters_publisher = self.create_publisher(
+            String, '/sysid/control_parameters', 10)
         self.route_enable_publisher = self.create_publisher(Bool, '/sysid/route_enabled', 10)
         self.subscriptions_owned = []
         for topic, message_type in (TOPICS | FOLLOW_TOPICS).items():

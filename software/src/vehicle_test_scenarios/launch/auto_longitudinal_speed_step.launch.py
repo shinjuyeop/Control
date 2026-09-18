@@ -1,7 +1,7 @@
 """No-argument A02 launch.
 
 Available AUTO sysid launches in this package:
-  auto_longitudinal_speed_step.launch.py  0->1 then 1<->2 m/s, 5 s, 4 cycles
+  auto_longitudinal_speed_step.launch.py  configured low/high speeds (default 0), 5 s, 4 cycles
   auto_lateral_steering_step.launch.py    center/+1/center/-1 deg, 5 s, 3 cycles
   auto_lateral_steering_sine.launch.py    center +/-1 deg, period 8 s, 6 cycles
   auto_lateral_steering_square.launch.py  center +/-1 deg square, period 8 s, 6 cycles
@@ -16,5 +16,5 @@ from vehicle_test_scenarios.auto_sysid_launch import auto_sysid_launch_descripti
 def generate_launch_description():
     return auto_sysid_launch_description(
         config_filename="auto_longitudinal_speed_step.yaml",
-        scenario_summary="10 s zero baseline, then 0->1 and 1<->2 m/s steps",
+        scenario_summary="10 s zero baseline, then configured low/high speeds (default 0 km/h)",
     )

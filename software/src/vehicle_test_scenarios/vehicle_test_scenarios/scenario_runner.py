@@ -44,9 +44,9 @@ STARTUP_ONLY_PARAMETERS = {
 @dataclass(frozen=True)
 class ScenarioConfig:
     scenario: str = "straight"
-    cruise_speed_kph: float = 3.0
+    cruise_speed_kph: float = 0.0
     speed_low_kph: float = 0.0
-    speed_high_kph: float = 3.0
+    speed_high_kph: float = 0.0
     speed_step_interval_sec: float = 2.0
     speed_ramp_duration_sec: float = 5.0
     steering_center_deg: float = 0.0
@@ -298,8 +298,8 @@ class VehicleTestScenarioRunner(Node):
         scenario_status_topic = str(
             self.get_parameter("scenario_status_topic").value
         )
-        configured_label = str(self.get_parameter("scenario_label").value)
-        self._scenario_label = configured_label or self._config.scenario
+        self._configured_label = str(self.get_parameter("scenario_label").value)
+        self._scenario_label = self._configured_label or self._config.scenario
         self._scenario_status_publisher = self.create_publisher(
             String,
             scenario_status_topic,
@@ -324,7 +324,7 @@ class VehicleTestScenarioRunner(Node):
         self._timer = self.create_timer(1.0 / publish_rate_hz, self._publish)
 
         self.get_logger().warning(
-            "REAL-VEHICLE TEST SCENARIO: default is 3 km/h straight. "
+            "REAL-VEHICLE TEST SCENARIO: default is 0 km/h straight. "
             f"Publishing on {command_topic} starts only after enabled=true; "
             "confirm there is no other Planning publisher. "
             f"wait_for_auto_mode={self._wait_for_auto_mode}."
@@ -384,6 +384,7 @@ class VehicleTestScenarioRunner(Node):
 
         reset_scenario = proposed_config != self._config
         self._config = proposed_config
+        self._scenario_label = self._configured_label or self._config.scenario
         for parameter in parameters:
             if parameter.name == "enabled":
                 self._enabled = bool(parameter.value)

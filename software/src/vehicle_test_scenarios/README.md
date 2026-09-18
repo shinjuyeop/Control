@@ -1,10 +1,16 @@
 # vehicle_test_scenarios
 
+시나리오별 속도·중심각·진폭·주기는 이 패키지의 TUI에서 편집합니다.
+공통 조향 P·D, 출력 한도, 운용 설정과 Host timeout은 별도
+[Control Tuning TUI](../control_tuning/README.md)에서 편집·저장·적용합니다.
+
 ## 현장 실차 시험 TUI
 
 ROS 환경과 workspace overlay를 source한 터미널에서 다음 명령 하나로 실행한다.
 
 ```bash
+cd ~/KAI_ws
+si
 ros2 run vehicle_test_scenarios vehicle_test_scenario_runner
 ```
 
@@ -25,17 +31,16 @@ GO/NO-GO 원인을 표시한다.
 | 경로 추종 시험 | — | K-City 예선 경로, K-City 본선 경로 |
 
 조향 Square는 일반 TUI 목록에서 제외했다. 기존 `steering_square` headless 파라미터와
-`auto_lateral_steering_square.launch.py`는 기존 시험 재현을 위해 유지한다.
+`auto_lateral_steering_square.launch.py`는 기존 입력 형식 호환을 위해 유지한다. 기본 속도·중심각은 이 경로도 0이다.
 
 화살표로 시험과 파라미터를 이동하며 Enter로 선택·수정한다.
 
 | 키 | 동작 |
 | --- | --- |
-| `↑` / `↓` | 시험 또는 파라미터 이동 |
+| `↑` / `↓` | 시험·파라미터 이동; 선택형 항목 편집 중에는 값 전환 |
 | `←` / `→` | 시험 목록과 파라미터 영역 전환 |
 | `Enter` | 시험 선택, 파라미터 편집·확정 |
 | `Esc` | 편집 취소 또는 시험 목록으로 이동 |
-| `M` | MCAP 녹화 ON/OFF 전환 (기본 ON) |
 | `R` | 현재 설정으로 Run 요청, 녹화 ON이면 MCAP 시작 |
 | `S` / `Space` | 정지·브레이크 요청 |
 | `Q` | 안전 정리 후 종료 |
@@ -44,15 +49,30 @@ GO/NO-GO 원인을 표시한다.
 한 번에 고정하며 실행·저장 중에는 수정하지 못한다. TUI를 열기만 해서는 명령이나
 녹화를 시작하지 않는다.
 
-파라미터 마지막 `MCAP 녹화` 항목에서 Enter를 눌러도 ON/OFF를 바꿀 수 있다.
+모든 시험의 기본 목표속도와 조향 중심각은 `0 km/h`, `0 deg`다.
+속도 Step/Ramp의 낮은·높은 속도와 경로 시험의 최고 목표속도도 0에서 시작한다.
+시험할 속도와 중심각은 실행 전에 입력한다. 조향 진폭·주기 등은 기존 기본값을 유지한다.
+
+파라미터 아래의 `MCAP 녹화`와 `시험 조건`에서 **Enter로 편집 → ↑↓로 선택 → Enter로 확정**한다.
+`Esc`는 변경을 취소한다. 녹화는 ON/OFF(기본 ON), 조건은 주행/공중/접지 정지 순서다.
 녹화 선택은 시나리오를 이동해도 유지되며 실행 중에는 변경할 수 없다.
+시험 조건도 모든 시나리오에서 공유하며 `R`을 누를 때 고정한다. 시작 전에 조건을 직접
+선택해야 한다. 기록용 표시이므로 차속·조향 설정·차량 모드를 자동으로 바꾸지 않는다.
+조건별 **제어** 프리셋은 [Control Tuning](../control_tuning/README.md) 상단에서 먼저 선택하고
+편집하며 `S`로 조건별 YAML에 저장한다. 기본 구동 launch는 주행 프리셋을 사용하고
+공중·접지 정지는 `tuning_preset:=airborne` / `ground_stationary`로 실행한다. 튜닝 적용 후 실제 시험 조건을
+선택하고 실행한다.
 TUI는 alternate screen을 사용하므로 실행 중에는 이전 셸 명령과 로그가 보이지 않고,
 종료하면 원래 화면이 복원된다. 상단 상태, 모든 NO-GO 항목, 전체 시험·파라미터,
-하단 키 안내는 항상 같은 순서와 개수로 렌더링한다. 터미널보다 길면 마우스 휠 또는
-`PgUp/PgDn`으로 TUI 전체를 위아래로 스크롤한다. `↑/↓`는 시험·파라미터 선택에만
-사용한다.
+하단 키 안내의 패널 순서는 고정하며, NO-GO 정렬과 경고·파라미터에 따라 줄 수는 바뀐다. 터미널보다 길면 마우스 휠 또는
+`PgUp/PgDn`으로 TUI 전체를 위아래로 스크롤한다.
+사용자 정지·오류 안내는 상단 `VEHICLE STATE · 시험 상태`에 표시하며 하단에는 키 안내만 둔다.
 
-`R`은 GO 조건을 확인하고, 녹화 ON이면 MCAP recorder를 연결한 뒤 AUTO를 기다린다.
+화면은 변경된 줄만 한 번에 출력하며 주기적으로 전체 화면을 지우지 않는다.
+스크롤·터미널 크기 변경 시에도 현재 표시 영역을 다시 계산하고 남은 줄을 정리한다.
+
+`R`은 GO 조건을 확인하고, 녹화 ON이면 MCAP recorder 연결과 실제 제어 파라미터
+기록을 마친 뒤 AUTO를 기다린다. 파라미터 조회가 실패하면 시험 시작을 중단한다.
 OFF이면 파일과 recorder를 만들지 않고 시험 준비 후 AUTO를 기다린다.
 AUTO 확인부터 5초를 카운트다운하고 입력을 시작한다. 카운트다운·시험 중 MANUAL
 전환, 필수 통신 단절, 녹화 실패에는 Run을 끝내며 필요한 경우 브레이크를 요청한다.
@@ -71,6 +91,7 @@ K-City 경로 시험은 Decision의 `kcity_quali_route.yaml` 또는
   <시간>_<scenario>_v<최고속도>/
     rosbag/
     scenario.yaml
+    control_parameters.yaml
     console.log
 ```
 
@@ -78,6 +99,30 @@ K-City 경로 시험은 Decision의 `kcity_quali_route.yaml` 또는
 2초까지 포함한다. OFF이면 후행 녹화 대기 없이 시험을 정리한다. 경로 시험의
 위치추정·추종 프로세스는 녹화 여부와 관계없이 Run 동안 관리한다. 기본
 제어·상태·GNSS·IMU·TF, 압축 카메라, Ouster packet·metadata를 기록한다.
+
+`scenario.yaml`에는 시험 조건, 입력 설정, 종료 사유, 기록 토픽별 메시지 수와
+제어 파라미터 조회 결과를 저장한다. `control_parameters.yaml`은 **실행 중인**
+`/steering_actuator_node`, `/command_governor`에서 List/GetParameters로 읽은 전체 값이다.
+YAML 기본값으로 누락을 채우지 않는다. 토크 P full-scale·D, 전류 raw 한도, 허용/회복 시간,
+필터, 조향 속도 제한, 토크 방향, 운용 방식, timeout, 캘리브레이션과 전류 환산 기준을 포함한다.
+P·D·전류 한도의 화면 단위 환산값도 함께 기록한다.
+
+조회는 recorder가 필수 토픽과 `/parameter_events`에 연결된 뒤 수행한다. 파일 저장 성공
+후에만 AUTO 대기로 넘어간다. 필수 파라미터 누락·서비스 시간 초과·중복 노드는 실패로 기록하고
+시험 시작을 허용하지 않는다. 각 노드의 조회 시각은 ROS 시각과 UTC 시각으로 남긴다.
+이 스냅샷은 recorder 준비 완료 시점의 값이며, 이후 변경은 `/parameter_events`로 확인한다.
+
+같은 내용의 JSON은 `/sysid/control_parameters`에도 한 번 발행해 **MCAP 안에도** 보관한다.
+`/parameter_events`와 토크 P/D, 합산·최종 raw, 명령 전류, 출력 한도, 포화·고출력 제한·목표 도달
+여부, 필터 전후 각속도, `torque_safety` 등 상세 토픽을 기존 recorder에서 함께 기록한다.
+별도 `mcap_logging.launch.py`를 동시에 실행할 필요가 없다. Position 모드처럼 발행되지 않는
+상세 토픽에는 데이터가 없으며, 시험 중 변경이 없으면 parameter event가 없을 수도 있다.
+MCAP OFF에서는 파라미터 조회·파일 저장도 수행하지 않는다.
+
+현재 TUI의 조향 software fault 감지, 조향 설정 대기 중 mode·통신 검사,
+headless의 mode freshness에는
+[알려진 제한](../../../docs/SAFETY.md#실차-시나리오-실행기의-현재-제한)이 있다.
+RUNNING 표시는 모든 액추에이터가 정상 출력 중이라는 보장이 아니다.
 
 ## Headless ROS 시나리오 노드
 
@@ -108,7 +153,7 @@ vehicle_test_scenario_node
 | `steering_chirp` | 일정 속도에서 시작→종료 주파수로 sine 주파수를 선형 변화 |
 | `steering_square` | 중앙+진폭과 중앙−진폭을 반주기씩 유지하는 square 파형 |
 
-기본값은 `straight`, `3 km/h`, 조향 모터 Disable이다.
+기본값은 `straight`, `0 km/h`, 조향 모터 Disable이다.
 `straight`, `speed_step`, `speed_ramp`, `brake_test`는 중앙각과 관계없이
 조향 모터를 Disable한다. 대기·카운트다운·완료 후에도 동일하다.
 `steering_step`, `steering_sweep`, `steering_chirp`, `steering_square`는 기존
@@ -121,8 +166,8 @@ vehicle_test_scenario_node
 | --- | ---: | --- |
 | `enabled` | `false` | 실제 명령 발행 허용 |
 | `scenario` | `straight` | 실행할 시나리오 |
-| `cruise_speed_kph` | `3.0` | 직진·sweep·brake 사전 주행 속도 |
-| `speed_low_kph` / `speed_high_kph` | `0.0` / `3.0` | step/ramp 양 끝 속도 |
+| `cruise_speed_kph` | `0.0` | 직진·sweep·brake 사전 주행 속도 |
+| `speed_low_kph` / `speed_high_kph` | `0.0` / `0.0` | step/ramp 양 끝 속도 |
 | `speed_step_interval_sec` | `2.0` | step 전환 간격 |
 | `speed_ramp_duration_sec` | `5.0` | low에서 high까지 걸리는 시간 |
 | `steering_center_deg` | `0.0` | 조향 step/sweep/square 전용 중앙 기준 절대 조향각. 직진 시험에서는 무시 |
@@ -145,6 +190,8 @@ vehicle_test_scenario_node
 조향 시험의 중앙 절댓값과 조향 진폭의 합은 `28 deg` 이하로 제한한다.
 시나리오나 파라미터를 실행 중 바꾸면 경과 시간을 0으로 되돌려 새 시나리오를
 처음부터 시작한다.
+`scenario_label`이 빈 값이면 시나리오 변경에 맞춰 기록용 label도 갱신한다.
+명시적으로 지정한 `scenario_label`은 시나리오가 바뀌어도 유지한다.
 
 두 시험 실행기는 `/steering_actuator_node`의 런타임 파라미터
 `steering_enabled`를 시나리오에 맞게 설정한다. 이 기능을 지원하는 조향 노드와
@@ -157,11 +204,10 @@ MANUAL 정차 상태에서 조향 노드를 재시작하거나 `steering_enabled
 ## 실행
 
 ```bash
-cd "${KAIEV26_WS:?set KAIEV26_WS to the ROS 2 workspace root}"
-export ROS_DOMAIN_ID=0
-source /opt/ros/humble/setup.zsh
+cd ~/KAI_ws
+si
 colcon build --packages-up-to vehicle_test_scenarios --symlink-install
-source install/setup.zsh
+si
 
 ros2 run vehicle_test_scenarios vehicle_test_scenario_node
 ```
@@ -254,14 +300,15 @@ ros2 launch vehicle_test_scenarios auto_lateral_steering_square.launch.py
 
 | Launch | 고정 조건 | MCAP session prefix |
 | --- | --- | --- |
-| `auto_longitudinal_speed_step.launch.py` | 10 s zero baseline 후 0→1, 1↔2 m/s, 각 5 s, 4 cycle | `A02_speed_step_10_20` |
-| `auto_lateral_steering_step.launch.py` | 1 m/s, center/+1/center/-1°, 각 5 s, 3 cycle | `A11_steering_step_center_pm1` |
-| `auto_lateral_steering_sine.launch.py` | 1 m/s, center±1°, 8 s, 6 cycle | `A12_steering_sine_center_pm1_8s` |
-| `auto_lateral_steering_square.launch.py` | 1 m/s, center±1° square, 각 4 s 유지, 6 cycle | `A13_steering_square_center_pm1_8s` |
+| `auto_longitudinal_speed_step.launch.py` | 10 s zero baseline 후 low↔high, 기본 모두 0 km/h, 각 5 s, 4 cycle | `A02_speed_step_10_20` |
+| `auto_lateral_steering_step.launch.py` | 기본 0 km/h, center/+1/center/-1°, 각 5 s, 3 cycle | `A11_steering_step_center_pm1` |
+| `auto_lateral_steering_sine.launch.py` | 기본 0 km/h, center±1°, 8 s, 6 cycle | `A12_steering_sine_center_pm1_8s` |
+| `auto_lateral_steering_square.launch.py` | 기본 0 km/h, center±1° square, 각 4 s 유지, 6 cycle | `A13_steering_square_center_pm1_8s` |
 
-세 횡방향 YAML의 `steering_center_deg: -2.0`은 2026-08-24 실차 데이터에서 얻은 얼라인먼트
-변경 전 직진 추정값이다. 얼라인먼트를 바꿨다면 실행 전에 source YAML의 이 값만 새
-직진각으로 수정하고 다시 빌드한다. 종방향 YAML에는 센터각 설정이 필요 없다.
+모든 YAML의 목표속도 기본값은 0이며 세 횡방향 YAML의 `steering_center_deg`도 0이다.
+실행 전에 source YAML에서 시험할 속도와 중심각을 설정하고 다시 빌드한다.
+종방향 YAML에는 센터각 설정이 필요 없다. 기존 고정 label은 식별자 호환을 위해 유지하며,
+`A02_speed_step_10_20`의 숫자는 현재 설정속도를 나타내지 않는다.
 각 run은 실차 제어컴의
 실행 중인 workspace의 `records/` 아래 별도 MCAP으로 저장된다. logger는
 `/planning/command`와 `/vehicle/command`를 모두 기록한다.
