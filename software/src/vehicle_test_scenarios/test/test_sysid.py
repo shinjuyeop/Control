@@ -279,6 +279,40 @@ def begin(node, tick, scenario='speed_step'):
     assert node.state == 'COUNTDOWN'
 
 
+def test_latched_steering_controller_fault_prevents_run_before_auto(controlled):
+    node, _, _ = controlled
+    steering = node.received['/steering/status'][1]
+    steering.state = steering.STATE_FAULT
+    steering.disable_reason = steering.REASON_MOTOR_FAULT
+    steering.fault_bits = 1  # KEYA disabled, no hardware fault (recorded case).
+    node._receive('/steering/status', steering)
+    node.request_run(settings_with_speed('steering_step'))
+    node._tick()
+    assert node.state == 'IDLE'
+    assert not node.output_active
+    assert node.output.speed_kph == 0
+    assert node.process_actions.empty()
+
+
+@pytest.mark.parametrize('phase', ['COUNTDOWN', 'RUNNING'])
+def test_steering_controller_fault_stops_run_with_brake(controlled, phase):
+    node, tick, _ = controlled
+    begin(node, tick, scenario='steering_step')
+    if phase == 'RUNNING':
+        tick(5, auto=True, speed=10)
+        tick(1, auto=True, speed=10)
+    assert node.state == phase
+    steering = node.received['/steering/status'][1]
+    steering.state = steering.STATE_FAULT
+    steering.disable_reason = steering.REASON_MOTOR_FAULT
+    steering.fault_bits = 1
+    tick(auto=True, speed=10)
+    assert node.terminal_state == 'ERROR'
+    assert node.state == 'TAIL'
+    assert node.output.speed_kph == 0
+    assert node.output.brake_engage
+
+
 def test_run_waits_for_auto_then_five_seconds_and_manual_cancels(controlled):
     node, tick, _ = controlled
     node.request_run(replace(default_run_settings(), cruise_speed_kph=3.0))

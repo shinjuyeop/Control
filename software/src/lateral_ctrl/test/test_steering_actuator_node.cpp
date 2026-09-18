@@ -209,6 +209,65 @@ TEST_F(SteeringNodeTest, ManualStopsImmediately)
   expectStop();
 }
 
+TEST_F(SteeringNodeTest, ManualSteeringOutsideAutoEnvelopeDoesNotLatchAndCanReturnToAuto)
+{
+  create(); activate(); output();
+  Peer::drive(*node, 0);
+  expectStop();
+  can->frames.clear();
+  // Recorded MANUAL return turn: the motor was already disabled before the
+  // encoder crossed -3279. Returning to center must not leave a new AUTO latch.
+  for (const int32_t count : {-3247, -3292, -3398, 0}) {
+    can->fresh(count); Peer::tick(*node);
+    EXPECT_EQ(Peer::fault(*node), TorqueSafetyFault::NONE);
+    EXPECT_EQ(Peer::state(*node), SteeringState::DISABLED);
+    EXPECT_FALSE(Peer::enabled(*node));
+  }
+  for (const auto & frame : can->frames) {
+    EXPECT_NE(frame.first, "enable");
+    if (frame.first == "torque") {
+      EXPECT_EQ(frame.second, 0);
+    }
+  }
+  Peer::drive(*node);
+  can->fresh(); Peer::tick(*node);
+  EXPECT_EQ(Peer::state(*node), SteeringState::WAIT_CMD);
+  EXPECT_FALSE(Peer::enabled(*node));
+  activate();
+  output();
+  EXPECT_GT(can->frames.back().second, 0);
+}
+
+TEST_F(SteeringNodeTest, AutoEntryOutsideEnvelopeStillFaultsBeforeEnable)
+{
+  create();
+  Peer::drive(*node, 0);
+  can->fresh(-3299); Peer::tick(*node);
+  ASSERT_EQ(Peer::fault(*node), TorqueSafetyFault::NONE);
+  can->frames.clear();
+  Peer::drive(*node);
+  Peer::command(*node, 0.0F);
+  can->fresh(-3299); Peer::tick(*node);
+  EXPECT_EQ(Peer::fault(*node), TorqueSafetyFault::ANGLE_LIMIT);
+  EXPECT_EQ(Peer::state(*node), SteeringState::FAULT);
+  expectStop();
+  for (const auto & frame : can->frames) EXPECT_NE(frame.first, "enable");
+}
+
+TEST_F(SteeringNodeTest, ManualRoundTripDoesNotClearAnAutoSafetyFault)
+{
+  create(); activate(); output();
+  can->fresh(3280); Peer::tick(*node);
+  ASSERT_EQ(Peer::fault(*node), TorqueSafetyFault::ANGLE_LIMIT);
+  Peer::drive(*node, 0);
+  can->fresh(); Peer::tick(*node);
+  EXPECT_EQ(Peer::fault(*node), TorqueSafetyFault::ANGLE_LIMIT);
+  Peer::drive(*node);
+  Peer::command(*node); can->fresh(); Peer::tick(*node);
+  EXPECT_EQ(Peer::state(*node), SteeringState::FAULT);
+  EXPECT_FALSE(Peer::enabled(*node));
+}
+
 TEST_F(SteeringNodeTest, BrakeStopsImmediately)
 {
   create(); activate(); output();

@@ -164,7 +164,12 @@ Host current loop가 아니다. 실제 peak 지속 오차는 control tick jitter
   목표는 기본 margin으로 `[-26.8275,+24.9178]°` 안쪽에 제한한다.
   margin 내에서 바깥쪽 torque는 선형 taper, 경계에서는 차단하고 안쪽 회복 torque는
   허용한다. hard 범위를 실제로 넘으면 즉시 zero+Disable한다.
-- 각도 범위 초과, 실제 과속, invalid controller input, control stall/과도한 위치 샘플 간격은 latched
+- MANUAL에서는 조향 모터를 끄고 운전자 조작을 AUTO torque 제어기의 각도·각속도
+  fault로 잠그지 않는다. AUTO를 떠날 때 제어 이력을 초기화하므로 수동 조작의
+  각속도를 다음 AUTO 명령에 물려주지 않는다. AUTO 복귀 시에는 Enable 전에 현재
+  위치가 위 hard envelope 안인지 다시 검사한다. AUTO에서 이미 발생한 fault는
+  MANUAL 전환만으로 해제되지 않는다.
+- AUTO의 각도 범위 초과, 실제 과속, invalid controller input, control stall/과도한 위치 샘플 간격은 latched
   `FAULT`다. 메시지 ABI의 `REASON_MOTOR_FAULT`를 재사용하고 세부 원인은
   `/steering/torque_safety`에 표시한다. 잠금은 조향 노드의 프로세스 메모리에만 보관한다.
   원인 제거 후 기존 `control_launch vehicle.launch.py`를 완전히 종료하고 재실행하면
@@ -172,6 +177,10 @@ Host current loop가 아니다. 실제 peak 지속 오차는 control tick jitter
   `steering_enabled=false`, `true` 순서로 설정한다. 두 경우 모두 유효한 상태·피드백과
   새로운 command가 있어야 다시 Enable한다. 단순 saturation은 fault가 아니다.
   재실행 후에도 실제 과속이나 KEYA fault가 있으면 다시 정지한다.
+  대시보드의 `STEER MOTOR FAULT`는 이 소프트웨어 안전 정지도 포함하므로 문구만으로
+  KEYA 스톨을 판단하지 않는다. `fault_bits & ~1`과 `/steering/torque_safety`를 함께 본다.
+  [2026-09-18 MCAP 분석](../../../docs/STEERING_FAULT_20260918.md)에 MANUAL 범위 초과가
+  다음 시험까지 남았던 원인과 수정 내용을 정리했다.
 - `/brake/status` freshness에 별도 timeout이 없는 기존 한계와 물리 E-stop 경로는
   `docs/SAFETY.md`를 따른다. KEYA의 speed/torque watchdog은 최대 1000 ms이며
   Host의 100 ms 위치 감시와 별개다. 독립적인 하드웨어 차단 수단이 필요하다.
