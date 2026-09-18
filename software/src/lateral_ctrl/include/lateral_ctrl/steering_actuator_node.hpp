@@ -67,6 +67,7 @@ private:
   int32_t sent_torque_raw_{0};
   double keya_protection_current_a_{20.0};
   bool stop_pending_{false};
+  // Process-local: restarting vehicle.launch.py creates a node with no latched fault.
   TorqueSafetyFault torque_fault_latched_{TorqueSafetyFault::NONE};
   DriveMode drive_mode_{DriveMode::UNKNOWN};
   SteeringState state_{SteeringState::INIT};

@@ -232,7 +232,9 @@ void SteeringActuatorNode::torqueFault(TorqueSafetyFault fault)
 {
   if (torque_fault_latched_ == TorqueSafetyFault::NONE) {
     RCLCPP_ERROR(get_logger(),
-      "Torque safety stop: %s. Inspect cause, set steering_enabled=false then true to reset.",
+      "Torque safety stop: %s. After resolving the cause, restart steering_actuator_node "
+      "(stop and relaunch vehicle.launch.py), or set steering_enabled=false then true. "
+      "Fresh status and a new command are required to resume.",
       torqueSafetyFaultName(fault));
   }
   torque_fault_latched_ = fault;
