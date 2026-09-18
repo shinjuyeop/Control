@@ -55,12 +55,16 @@ ros2 launch control_launch vehicle.launch.py tuning_preset:=ground_stationary
 적용할 수 있다. 운용·수신 시간은 저장 후 기존 launch를 완전히 종료하고 같은 프리셋으로
 다시 실행한다. [저장 경로·단위·조작 안내](../software/src/control_tuning/README.md)를 따른다.
 
-세 프리셋은 기존 제어값으로 초기화했다. 조건별 검증값은 아니며, 저장 위치는
+세 프리셋은 저장돼 있다. 공중은 P=1 A/deg, D=0.04 A/(deg/s), 최대/지속 명령=2/1 A,
+고출력 허용/회복=200/2000 ms인 초기 시험 후보이며, 접지 정지·주행은 기존 초기값이다.
+조건별 검증값은 아니며, 저장 위치는
 Control의 `software/src/control_tuning/config/control_tuning.presets/`다.
 공중 프리셋을 저장해도 옵션 없는 다음 실행은 계속 주행 프리셋을 사용한다.
 
 시나리오 TUI에서는 오른쪽 설정의 `MCAP 녹화`와 `시험 조건`에서 Enter를 누른 뒤
 ↑↓로 고르고 Enter로 확정한다. 시험 조건은 기록용이며 제어 프리셋을 적용하지 않는다.
+실행 중인 조향 노드의 launch 프리셋을 시험 조건 기본값으로 가져오므로 보통은 다시
+선택할 필요가 없다. 수동 선택은 유지되며 이전 버전 노드에서는 직접 선택한다.
 `R`을 누르면 녹화가 켜진 경우 실제 조향·거버너 파라미터 조회와 저장을 마친 뒤
 AUTO를 기다린다. 조회 실패 시 시험을 시작하지 않는다. `control_parameters.yaml`과
 MCAP의 `/sysid/control_parameters`, `/parameter_events`, 토크 상세 토픽으로 분석한다.

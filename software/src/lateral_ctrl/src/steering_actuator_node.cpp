@@ -43,6 +43,7 @@ SteeringActuatorNode::SteeringActuatorNode(
   rcl_interfaces::msg::ParameterDescriptor startup_only;
   startup_only.read_only = true;
   startup_only.description = "Startup only; restart the node to change this parameter.";
+  declare_parameter("tuning_preset", std::string("unspecified"), startup_only);
   actuation_mode_ = declare_parameter("actuation_mode", std::string("position"), startup_only);
   if (actuation_mode_ != "position" && actuation_mode_ != "torque") {
     throw std::invalid_argument("actuation_mode must be position or torque");

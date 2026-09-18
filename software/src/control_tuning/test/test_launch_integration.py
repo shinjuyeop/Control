@@ -69,6 +69,7 @@ def test_launch_defaults_read_the_same_source_file_as_tui(store, tmp_path, monke
     layers = evaluate_parameters(context, normalize_parameters(node['parameters']))
     if package == 'lateral_ctrl':
         assert layers[1]['torque_full_scale_error_deg'] == .4
+        assert layers[-1]['tuning_preset'] == 'driving'
     else:
         assert layers[1]['input_timeout_ms'] == 250.
 

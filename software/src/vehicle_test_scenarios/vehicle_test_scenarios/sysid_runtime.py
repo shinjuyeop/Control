@@ -13,6 +13,8 @@ from kaiev26_msgs.msg import (
     SteeringActuatorStatus, VehicleState, RouteContext,
 )
 from nav_msgs.msg import Odometry
+from rcl_interfaces.srv import GetParameters
+from control_tuning.conditions import CONDITION_KEYS
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from sensor_msgs.msg import Imu, NavSatFix
@@ -115,6 +117,35 @@ class SysidNode(Node):
             ActuatorCommand, '/vehicle/command',
             lambda message: self._receive('/vehicle/command', message), qos_profile_sensor_data))
         self.create_timer(0.05, self._tick)
+        self.launch_preset = 'unspecified'
+        self.preset_client = self.create_client(
+            GetParameters, '/steering_actuator_node/get_parameters')
+        self.preset_future = None
+        self.preset_requested_at = 0.0
+        self.preset_timer = self.create_timer(1.0, self._read_launch_preset)
+
+    def _read_launch_preset(self):
+        if self.preset_future is not None:
+            if self.preset_future.done():
+                try:
+                    values = self.preset_future.result().values
+                    preset = values[0].string_value if values else ''
+                    if preset in CONDITION_KEYS:
+                        with self.lock:
+                            self.launch_preset = preset
+                        self.preset_timer.cancel()
+                except Exception as error:
+                    self.get_logger().debug(f'Launch preset query: {error}')
+                self.preset_future = None
+            elif time.monotonic() - self.preset_requested_at >= 2.0:
+                self.preset_client.remove_pending_request(self.preset_future)
+                self.preset_future.cancel()
+                self.preset_future = None
+            return
+        if self.preset_client.service_is_ready():
+            self.preset_requested_at = time.monotonic()
+            self.preset_future = self.preset_client.call_async(
+                GetParameters.Request(names=['tuning_preset']))
 
     @property
     def busy(self):
@@ -509,6 +540,7 @@ class SysidNode(Node):
                     'AUTO' if drive[1].mode == DriveActuatorStatus.MODE_AUTO else 'MANUAL')
             command_flow = self.state in {'ROUTE_ARMING', 'CRUISE', 'RUNNING'}
             return {
+                'launch_preset': self.launch_preset,
                 'state': self.state, 'label': (
                     '시험 준비 중' if self.state == 'RECORD_START' and not self.settings.record_mcap
                     else '시험 정리 중' if self.state == 'CLOSING' and not self.settings.record_mcap

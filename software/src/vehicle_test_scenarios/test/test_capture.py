@@ -68,6 +68,35 @@ def test_capture_reads_actual_values_all_names_and_clock(parameter_nodes):
     assert document['nodes']['/command_governor']['ros__parameters']['input_timeout_ms'] == 234.
 
 
+def test_tui_adopts_running_launch_preset_and_preserves_operator_choice(parameter_nodes):
+    from vehicle_test_scenarios.sysid_runtime import SysidNode
+    from vehicle_test_scenarios.sysid_tui import MenuState
+    _, steering, _, capture = parameter_nodes
+    steering.declare_parameter('tuning_preset', 'airborne')
+    document = capture('ground_stationary')
+    assert document['test_condition']['key'] == 'ground_stationary'
+    assert document['nodes']['/steering_actuator_node']['ros__parameters']['tuning_preset'] == 'airborne'
+    node = SysidNode()
+    executor = SingleThreadedExecutor()
+    executor.add_node(node)
+    executor.add_node(steering)
+    menu = MenuState()
+    try:
+        deadline = time.monotonic() + 6
+        while node.launch_preset == 'unspecified' and time.monotonic() < deadline:
+            executor.spin_once(timeout_sec=.02)
+        assert node.launch_preset == 'airborne'
+        menu.adopt_launch_preset(node.snapshot()['launch_preset'])
+        assert menu.run_settings().test_condition == 'airborne'
+        menu.test_condition = 'ground_stationary'
+        menu.adopt_launch_preset('airborne')
+        assert menu.run_settings().test_condition == 'ground_stationary'
+    finally:
+        executor.remove_node(steering)
+        executor.shutdown()
+        node.destroy_node()
+
+
 def test_missing_parameter_is_explicit_not_filled_from_yaml(parameter_nodes):
     _, steering, _, capture = parameter_nodes
     steering.undeclare_parameter('torque_kd')

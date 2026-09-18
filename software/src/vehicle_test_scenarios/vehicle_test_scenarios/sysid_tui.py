@@ -181,6 +181,11 @@ class MenuState:
         return replace(self.selection, record_mcap=self.record_mcap,
                        test_condition=self.test_condition)
 
+    def adopt_launch_preset(self, preset):
+        if self.test_condition == 'unspecified' and self.edit_field != 'test_condition':
+            if preset in CONDITION_KEYS:
+                self.test_condition = preset
+
     @property
     def selected_spec(self):
         return self.selection.spec
@@ -532,9 +537,12 @@ def main(*, use_sim_time=False, records_root=DEFAULT_RECORDS_ROOT,
         message = ''
         with keyboard(), tui_screen(console):
             while not quitting.is_set():
+                snapshot = node.snapshot()
+                if not node.busy:
+                    menu.adopt_launch_preset(snapshot['launch_preset'])
                 menu.view_offset = renderer.redraw(
                     dashboard(
-                        node.snapshot(), menu, message,
+                        snapshot, menu, message,
                         height=console.size.height, records_root=records_root,
                     ),
                     menu.view_offset,

@@ -58,6 +58,7 @@ def _make_actuator(context, calibration_parameters):
                 calibration_parameters,
                 {
                     **optional_parameters,
+                    'tuning_preset': LaunchConfiguration('tuning_preset'),
                     'can_interface': LaunchConfiguration('can_interface'),
                     'hardware_can_enabled': LaunchConfiguration('hardware_can_enabled'),
                     'actuator_output_enabled': LaunchConfiguration('actuator_output_enabled'),
