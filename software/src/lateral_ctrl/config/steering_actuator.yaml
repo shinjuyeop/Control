@@ -29,7 +29,7 @@ steering_actuator_node:
     torque_friction_raw: 0
     torque_friction_deadband_deg: 0.1
     # Optional [speed_mps, raw, ...], with strictly increasing nonnegative speeds.
-    torque_friction_schedule: []
+    # torque_friction_schedule: []
     control_period_ms: 20
     can_timeout_ms: 500
     feedback_timeout_ms: 500
