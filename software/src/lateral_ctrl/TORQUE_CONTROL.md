@@ -159,17 +159,19 @@ Host current loop가 아니다. 실제 peak 지속 오차는 control tick jitter
   fault는 기존 state machine을 사용한다. 출력이 잠기면 zero/disable도 보내지 않는다.
 - Torque의 command는 원래 header stamp의 남은 유효시간만 사용한다. future stamp,
   nonfinite target은 reject한다. 예전 목표를 재사용하지 않는다.
-- Calibration 범위 `[-3279,+3279] count` = 약 `[-27.8275,+25.9178]°`를 hard
-  envelope로 사용한다. 이는 **계측 범위**이며 확인된 기계 end-stop이 아니다.
+- Calibration 범위 `[-3279,+3279] count` = 약 `[-27.8275,+25.9178]°`를 목표각과
+  바깥 방향 torque 제한에 사용한다. 이는 **계측 범위**이며 확인된 기계 end-stop이 아니다.
   목표는 기본 margin으로 `[-26.8275,+24.9178]°` 안쪽에 제한한다.
   margin 내에서 바깥쪽 torque는 선형 taper, 경계에서는 차단하고 안쪽 회복 torque는
-  허용한다. hard 범위를 실제로 넘으면 즉시 zero+Disable한다.
+  허용한다. 실제 각도나 encoder count가 이 범위를 넘었다는 이유로 `angle_limit`
+  fault를 발생시키거나 Disable하지 않는다. 범위 밖에서도 바깥 방향 torque는
+  차단하고 안쪽 복귀 torque는 허용한다.
 - MANUAL에서는 조향 모터를 끄고 운전자 조작을 AUTO torque 제어기의 각도·각속도
   fault로 잠그지 않는다. AUTO를 떠날 때 제어 이력을 초기화하므로 수동 조작의
-  각속도를 다음 AUTO 명령에 물려주지 않는다. AUTO 복귀 시에는 Enable 전에 현재
-  위치가 위 hard envelope 안인지 다시 검사한다. AUTO에서 이미 발생한 fault는
-  MANUAL 전환만으로 해제되지 않는다.
-- AUTO의 각도 범위 초과, 실제 과속, invalid controller input, control stall/과도한 위치 샘플 간격은 latched
+  각속도를 다음 AUTO 명령에 물려주지 않는다. AUTO 복귀 시 현재 위치가 보정 범위
+  밖이어도 새 명령과 유효한 feedback으로 제어를 시작할 수 있다. AUTO에서 이미
+  발생한 과속 등 다른 fault는 MANUAL 전환만으로 해제되지 않는다.
+- AUTO의 실제 과속, invalid controller input, control stall/과도한 위치 샘플 간격은 latched
   `FAULT`다. 메시지 ABI의 `REASON_MOTOR_FAULT`를 재사용하고 세부 원인은
   `/steering/torque_safety`에 표시한다. 잠금은 조향 노드의 프로세스 메모리에만 보관한다.
   원인 제거 후 기존 `control_launch vehicle.launch.py`를 완전히 종료하고 재실행하면
@@ -288,7 +290,7 @@ filtered/unfiltered rate, current/speed, mode/safety를 함께 확인한다.
 | `/steering/torque_limit_raw` | Int32 | 현재 peak/sustained cap |
 | `/steering/torque_saturated`, `/steering/torque_peak_limited` | Bool | clipping·peak 예산 상태 |
 | `/steering/torque_settled`, `/steering/torque_rate_ready` | Bool | settle·rate 준비 |
-| `/steering/torque_safety` | String | none/angle_limit/rate_limit/invalid_input/feedback_timeout |
+| `/steering/torque_safety` | String | none/rate_limit/invalid_input/feedback_timeout (`angle_limit`은 더 이상 발생하지 않음) |
 | `/steering/status.motor_current_a`, `.motor_speed_rpm` | 기존 status | A/rpm, 진단용 |
 
 명령 전류 제한값은 실제 입력/모터 전류나 torque 측정값이 아니다. Motor current는

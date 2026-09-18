@@ -64,9 +64,6 @@ TorqueSafetyFault TorqueSteeringController::observeFeedback(double angle, double
   {
     return feedback_fault_ = TorqueSafetyFault::INVALID_INPUT;
   }
-  if (angle < config_.min_angle_rad || angle > config_.max_angle_rad) {
-    return feedback_fault_ = TorqueSafetyFault::ANGLE_LIMIT;
-  }
   if (have_sample_ && sample_time == sample_time_sec_) return feedback_fault_;
   feedback_fault_ = TorqueSafetyFault::NONE;
   if (have_sample_) {

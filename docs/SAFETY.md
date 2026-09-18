@@ -243,8 +243,9 @@ flag로 latch되지 않지만, feedback이 끊기면 timeout 경로로 Disable�
   kernel 수신 timestamp를 사용하므로 오래된 수신 큐를 읽어 freshness를 갱신하지 않는다.
 - 현재 calibration `±3279 count`는 검증된 측정 범위다. mechanical end-stop으로
   단정하지 않는다. 기본 soft margin1°만큼 목표를 안쪽으로 제한하고, 끝부분의 바깥
-  방향 torque는 taper/차단한다. 안쪽 recovery는 허용하되 hard 범위 초과 시 Disable한다.
-- Filtered/unfiltered actual rate 중 하나라도120 deg/s 초과, calibrated 범위 초과,
+  방향 torque는 taper/차단한다. 범위 밖에서도 안쪽 recovery는 허용하며,
+  각도/encoder 범위 초과만으로 `angle_limit` fault나 Disable을 발생시키지 않는다.
+- Filtered/unfiltered actual rate 중 하나라도120 deg/s 초과,
   nonfinite controller input, control stall/과도한 위치 샘플 간격은 latched FAULT다. ABI 변경 없이 기존
   `REASON_MOTOR_FAULT`를 쓰고 `/steering/torque_safety`에서 원인을 구분한다.
   원인 해결 후 `steering_enabled=false→true` 또는 조향 노드 재시작으로 해제한다.

@@ -5,6 +5,13 @@
 새 fault를 만들고, 조향을 중앙으로 돌리거나 ASMS를 다시 켜도 잠금이 남는 문제가
 확인됐다. 시험 TUI가 이 소프트웨어 fault를 놓쳐 출발 준비를 계속하는 문제도 수정했다.
 
+후속 사용자 요청으로 **AUTO에서도 `angle_limit` fault를 발생시키지 않도록 변경했다.**
+노드의 encoder 범위 검사와 torque 제어기의 각도 범위 fault 경로를 제거했다.
+목표각 clamp와 바깥 방향 torque 차단은 유지하며, 범위 밖에서도 안쪽 복귀 torque를
+허용한다. 과속·피드백 이상·통신 단절 등 다른 fault는 유지한다.
+아래 원인 분석과 초기 수정·검증 내역은 `c048eaa` 당시 기준이며, 현재 동작은
+[Torque 안전 동작](../software/src/lateral_ctrl/TORQUE_CONTROL.md#안전-동작)을 따른다.
+
 ## 근거와 확인 범위
 
 - 원본: `/home/kai/KAI_ws/records/260918_torque_control_test`의 17개 `rosbag/rosbag_0.mcap`.

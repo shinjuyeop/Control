@@ -83,20 +83,26 @@ TEST(TorqueSteeringController, SettleRequiresBothSmallErrorAndLowRate)
 TEST(TorqueSteeringController, SoftClampAndDirectionBlockingKeepInwardRecovery)
 {
   TorqueSteeringConfig cfg;
-  TorqueSteeringController c(cfg);
-  seed(c, cfg.max_angle_rad);
-  auto out = c.update(100.0, 10.0, 1.02);
-  EXPECT_DOUBLE_EQ(out.target_rad, cfg.max_angle_rad - cfg.soft_limit_margin_rad);
-  EXPECT_EQ(out.command_raw, 0);
-  EXPECT_TRUE(out.direction_blocked);
-  EXPECT_LT(c.update(0.0, 0.0, 1.02).command_raw, 0);
-  c.reset(2.0);
-  c.observeFeedback(cfg.min_angle_rad, 2.0);
-  c.observeFeedback(cfg.min_angle_rad, 2.02);
-  EXPECT_EQ(c.update(-100.0, -10.0, 2.02).command_raw, 0);
-  EXPECT_GT(c.update(0.0, 0.0, 2.02).command_raw, 0);
-  EXPECT_EQ(c.observeFeedback(cfg.min_angle_rad - 1e-6, 2.04), TorqueSafetyFault::ANGLE_LIMIT);
-  EXPECT_EQ(c.update(0.0, 0.0, 2.04).command_raw, 0);
+  for (const double sign : {-1.0, 1.0}) {
+    TorqueSteeringController c(cfg);
+    const double boundary = sign > 0 ? cfg.max_angle_rad : cfg.min_angle_rad;
+    seed(c, boundary);
+    auto out = c.update(sign * 100.0, sign * 10.0, 1.02);
+    EXPECT_DOUBLE_EQ(out.target_rad, boundary - sign * cfg.soft_limit_margin_rad);
+    EXPECT_EQ(out.command_raw, 0);
+    EXPECT_TRUE(out.direction_blocked);
+    EXPECT_LT(sign * c.update(0.0, 0.0, 1.02).command_raw, 0);
+
+    // Cross the calibration boundary slowly: retain inward recovery without a
+    // fault, while an outward D term must still be blocked outside the range.
+    EXPECT_EQ(c.observeFeedback(boundary + sign * 0.001, 1.04), TorqueSafetyFault::NONE);
+    out = c.update(0.0, 0.0, 1.04);
+    EXPECT_EQ(out.fault, TorqueSafetyFault::NONE);
+    EXPECT_LT(sign * out.command_raw, 0);
+    out = c.update(sign * 100.0, sign * 10.0, 1.04);
+    EXPECT_EQ(out.command_raw, 0);
+    EXPECT_TRUE(out.direction_blocked);
+  }
 }
 
 TEST(TorqueSteeringController, TaperAffectsOnlyOutwardEffort)

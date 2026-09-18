@@ -238,30 +238,36 @@ TEST_F(SteeringNodeTest, ManualSteeringOutsideAutoEnvelopeDoesNotLatchAndCanRetu
   EXPECT_GT(can->frames.back().second, 0);
 }
 
-TEST_F(SteeringNodeTest, AutoEntryOutsideEnvelopeStillFaultsBeforeEnable)
+TEST_F(SteeringNodeTest, AutoEntryOutsideCalibrationAllowsInwardRecovery)
 {
-  create();
-  Peer::drive(*node, 0);
-  can->fresh(-3299); Peer::tick(*node);
-  ASSERT_EQ(Peer::fault(*node), TorqueSafetyFault::NONE);
-  can->frames.clear();
-  Peer::drive(*node);
-  Peer::command(*node, 0.0F);
-  can->fresh(-3299); Peer::tick(*node);
-  EXPECT_EQ(Peer::fault(*node), TorqueSafetyFault::ANGLE_LIMIT);
-  EXPECT_EQ(Peer::state(*node), SteeringState::FAULT);
-  expectStop();
-  for (const auto & frame : can->frames) EXPECT_NE(frame.first, "enable");
+  for (const int32_t count : {-3299, 3299}) {
+    node.reset();
+    create();
+    Peer::drive(*node, 0);
+    can->fresh(count); Peer::tick(*node);
+    ASSERT_EQ(Peer::fault(*node), TorqueSafetyFault::NONE);
+    Peer::drive(*node);
+    Peer::command(*node, 0.0F);
+    can->fresh(count); Peer::tick(*node);
+    ASSERT_EQ(Peer::state(*node), SteeringState::WAIT_CMD);
+    can->fresh(count); Peer::tick(*node);
+    ASSERT_EQ(Peer::state(*node), SteeringState::ACTIVE);
+    can->fresh(count); Peer::tick(*node);
+    EXPECT_EQ(Peer::fault(*node), TorqueSafetyFault::NONE);
+    EXPECT_TRUE(Peer::enabled(*node));
+    ASSERT_EQ(can->frames.back().first, "torque");
+    EXPECT_LT(can->frames.back().second * count, 0);
+  }
 }
 
 TEST_F(SteeringNodeTest, ManualRoundTripDoesNotClearAnAutoSafetyFault)
 {
   create(); activate(); output();
-  can->fresh(3280); Peer::tick(*node);
-  ASSERT_EQ(Peer::fault(*node), TorqueSafetyFault::ANGLE_LIMIT);
+  can->fresh(300); Peer::tick(*node);
+  ASSERT_EQ(Peer::fault(*node), TorqueSafetyFault::RATE_LIMIT);
   Peer::drive(*node, 0);
   can->fresh(); Peer::tick(*node);
-  EXPECT_EQ(Peer::fault(*node), TorqueSafetyFault::ANGLE_LIMIT);
+  EXPECT_EQ(Peer::fault(*node), TorqueSafetyFault::RATE_LIMIT);
   Peer::drive(*node);
   Peer::command(*node); can->fresh(); Peer::tick(*node);
   EXPECT_EQ(Peer::state(*node), SteeringState::FAULT);
@@ -356,11 +362,12 @@ TEST_F(SteeringNodeTest, MotorFaultStops)
   EXPECT_EQ(Peer::state(*node), SteeringState::FAULT);
 }
 
-TEST_F(SteeringNodeTest, CalibratedHardLimitStopsAndLatches)
+TEST_F(SteeringNodeTest, OverspeedLatchClearsThroughExplicitDisable)
 {
   create(); activate(); output();
-  can->fresh(3280); Peer::tick(*node);
+  can->fresh(300); Peer::tick(*node);
   expectStop();
+  ASSERT_EQ(Peer::fault(*node), TorqueSafetyFault::RATE_LIMIT);
   can->fresh(); Peer::command(*node); Peer::tick(*node);
   EXPECT_EQ(Peer::state(*node), SteeringState::FAULT);
   EXPECT_FALSE(Peer::enabled(*node));

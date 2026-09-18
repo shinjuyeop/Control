@@ -553,16 +553,10 @@ void SteeringActuatorNode::controlTick()
   feedback_timeout_ = !motor.position_valid || position_age_ms > position_timeout_ms ||
     !std::isfinite(actual_wheel_angle_deg_);
   const bool feedback_valid = !feedback_timeout_ && !can_timeout_;
-  // MANUAL steering can leave the calibrated AUTO envelope while the motor is
-  // disabled. Do not latch that driver motion as an AUTO controller fault.
-  // applyMode() resets motion history on leaving AUTO; check the current
-  // position again in AUTO, before any pending command can enable the motor.
+  // Keep MANUAL motion out of AUTO rate history. Calibration limits shape the
+  // target and outward torque; crossing them does not latch a fault.
   if (torqueMode() && feedback_valid && drive_mode_ == DriveMode::AUTO) {
-    const bool count_out_of_range =
-      motor.motor_position_count < -converter_.commandCountLimit() ||
-      motor.motor_position_count > converter_.commandCountLimit();
-    const auto fault = count_out_of_range ? TorqueSafetyFault::ANGLE_LIMIT :
-      torque_controller_.observeFeedback(
+    const auto fault = torque_controller_.observeFeedback(
       actual_wheel_angle_deg_ * kDegToRad, seconds(motor.last_position_feedback));
     if (fault != TorqueSafetyFault::NONE && steering_enabled_) torqueFault(fault);
   }

@@ -27,6 +27,7 @@ struct TorqueSteeringConfig
   void validate() const;
 };
 
+// ANGLE_LIMIT is retained for enum compatibility but is no longer raised.
 enum class TorqueSafetyFault { NONE, INVALID_INPUT, FEEDBACK_TIMEOUT, ANGLE_LIMIT, RATE_LIMIT };
 const char * torqueSafetyFaultName(TorqueSafetyFault fault);
 
