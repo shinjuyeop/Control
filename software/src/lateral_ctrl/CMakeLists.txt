@@ -58,7 +58,8 @@ install(TARGETS steering_core steering_node steering_actuator_node steering_benc
 )
 install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
-install(PROGRAMS scripts/mcap_to_csv.py DESTINATION lib/${PROJECT_NAME})
+install(PROGRAMS scripts/mcap_to_csv.py scripts/torque_sysid_metrics.py
+  DESTINATION lib/${PROJECT_NAME})
 install(FILES README.md TORQUE_CONTROL.md DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)

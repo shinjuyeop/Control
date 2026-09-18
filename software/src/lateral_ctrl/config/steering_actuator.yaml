@@ -22,6 +22,14 @@ steering_actuator_node:
     torque_rate_filter_hz: 10.0
     torque_soft_limit_margin_deg: 1.0
     torque_hard_rate_limit_deg_s: 120.0
+    # Method A compensation. Zero gains preserve the existing PD response.
+    torque_inertia_ff: 0.0
+    torque_feedforward_limit_raw: 1000
+    torque_feedforward_filter_hz: 5.0
+    torque_friction_raw: 0
+    torque_friction_deadband_deg: 0.1
+    # Optional [speed_mps, raw, ...], with strictly increasing nonnegative speeds.
+    torque_friction_schedule: []
     control_period_ms: 20
     can_timeout_ms: 500
     feedback_timeout_ms: 500

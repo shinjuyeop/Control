@@ -60,7 +60,7 @@ class PresetStore:
 
     def normalize(self, values):
         if not isinstance(values, dict) or set(values) != set(BY_KEY):
-            raise ValueError('프리셋에는 현재 편집 항목 20개의 값이 모두 필요합니다.')
+            raise ValueError(f'프리셋에는 현재 편집 항목 {len(BY_KEY)}개의 값이 모두 필요합니다.')
         native = encode(values, self.settings.saved_native[STEERING])
         return decode({name: {**self.settings.base[name], **parameters}
                        for name, parameters in native.items()})

@@ -563,6 +563,7 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path, record_mcap):
     node = SysidNode()
     source = Node('steering_actuator_node')
     source.declare_parameter('steering_enabled', True)
+    source.declare_parameter('tuning_preset', 'driving')
     lateral_config = Path(get_package_share_directory('lateral_ctrl')) / 'config'
     steering_defaults = yaml.safe_load((lateral_config / 'steering_actuator.yaml').read_text())['steering_actuator_node']['ros__parameters']
     steering_defaults.update(yaml.safe_load((lateral_config / 'steering_motor_calibration.yaml').read_text()))

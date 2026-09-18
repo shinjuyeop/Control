@@ -256,3 +256,145 @@ TEST(TorqueSteeringController, MotorSignIsAppliedOnceAtBoundary)
   EXPECT_THROW(keyaTorqueCommand(10, 0), std::invalid_argument);
   EXPECT_THROW(keyaTorqueCommand(10001, 1), std::invalid_argument);
 }
+
+TEST(TorqueSteeringController, DefaultMethodATermsLeavePdUnchanged)
+{
+  TorqueSteeringController c;
+  seed(c);
+  const auto out = c.update(0.1 * rad, 0.0, 50.0, 3.0, 1.02);
+  EXPECT_DOUBLE_EQ(out.ff_raw, 0.0);
+  EXPECT_DOUBLE_EQ(out.friction_raw, 0.0);
+  EXPECT_EQ(out.command_raw, 400);
+}
+
+TEST(TorqueSteeringController, FrictionFollowsErrorSignOutsideDeadbandOnly)
+{
+  TorqueSteeringConfig cfg;
+  cfg.full_scale_error_rad = 5.0 * rad;
+  cfg.friction_raw = 106.0;
+  cfg.friction_deadband_rad = 0.2 * rad;
+  TorqueSteeringController c(cfg);
+  seed(c);
+  for (const double sign : {-1.0, 1.0}) {
+    const auto out = c.update(sign * 1.0 * rad, 0.0, 1.02);
+    EXPECT_DOUBLE_EQ(out.friction_raw, sign * 106.0);
+    EXPECT_EQ(out.command_raw, sign * (400 + 106));
+    const auto inside = c.update(sign * 0.15 * rad, 0.0, 1.02);
+    EXPECT_DOUBLE_EQ(inside.friction_raw, 0.0);
+    EXPECT_EQ(inside.command_raw, sign * 60);
+  }
+}
+
+TEST(TorqueSteeringController, SettledTargetStillSendsZeroWithFriction)
+{
+  TorqueSteeringConfig cfg;
+  cfg.friction_raw = 500.0;
+  cfg.friction_deadband_rad = 0.0;
+  TorqueSteeringController c(cfg);
+  seed(c);
+  const auto out = c.update(0.04 * rad, 0.0, 1.02);
+  EXPECT_TRUE(out.settled);
+  EXPECT_EQ(out.command_raw, 0);
+}
+
+TEST(TorqueSteeringController, FrictionScheduleInterpolatesAndHoldsEnds)
+{
+  TorqueSteeringConfig cfg;
+  cfg.friction_raw = 999.0;
+  cfg.friction_schedule_speed_mps = {0.5, 1.5, 3.5};
+  cfg.friction_schedule_raw = {300.0, 200.0, 100.0};
+  EXPECT_NO_THROW(cfg.validate());
+  EXPECT_DOUBLE_EQ(cfg.frictionRawAt(0.0), 300.0);
+  EXPECT_DOUBLE_EQ(cfg.frictionRawAt(1.0), 250.0);
+  EXPECT_DOUBLE_EQ(cfg.frictionRawAt(-2.5), 150.0);
+  EXPECT_DOUBLE_EQ(cfg.frictionRawAt(9.0), 100.0);
+  cfg.full_scale_error_rad = 5.0 * rad;
+  TorqueSteeringController c(cfg);
+  seed(c);
+  EXPECT_EQ(c.update(-1.0 * rad, 0.0, 0.0, 2.5, 1.02).command_raw, -(400 + 150));
+}
+
+TEST(TorqueSteeringController, InertiaFeedforwardAddsAndIsClamped)
+{
+  TorqueSteeringConfig cfg;
+  cfg.inertia_ff = 20.0;
+  cfg.feedforward_limit_raw = 300.0;
+  TorqueSteeringController c(cfg);
+  seed(c);
+  auto out = c.update(0.0, 0.0, 10.0, 0.0, 1.02);
+  EXPECT_DOUBLE_EQ(out.ff_raw, 200.0);
+  EXPECT_TRUE(out.settled);
+  out = c.update(0.1 * rad, 0.0, -50.0, 0.0, 1.02);
+  EXPECT_DOUBLE_EQ(out.ff_raw, -300.0);
+  EXPECT_EQ(out.command_raw, 400 - 300);
+  EXPECT_DOUBLE_EQ(out.unsaturated_raw, out.p_raw + out.d_raw + out.ff_raw + out.friction_raw);
+}
+
+TEST(TorqueSteeringController, NonFiniteAccelerationOrSpeedFailClosed)
+{
+  TorqueSteeringController c;
+  seed(c);
+  const auto nan = std::numeric_limits<double>::quiet_NaN();
+  EXPECT_EQ(c.update(rad, 0.0, nan, 0.0, 1.02).fault, TorqueSafetyFault::INVALID_INPUT);
+  EXPECT_EQ(c.update(rad, 0.0, 0.0, nan, 1.02).command_raw, 0);
+}
+
+TEST(TorqueSteeringController, MethodAConfigurationIsValidated)
+{
+  TorqueSteeringConfig cfg;
+  cfg.friction_raw = -1.0;
+  EXPECT_THROW(cfg.validate(), std::invalid_argument);
+  cfg = {};
+  cfg.inertia_ff = -0.1;
+  EXPECT_THROW(cfg.validate(), std::invalid_argument);
+  cfg = {};
+  cfg.feedforward_limit_raw = 10001.0;
+  EXPECT_THROW(cfg.validate(), std::invalid_argument);
+  cfg = {};
+  cfg.feedforward_filter_hz = 0.0;
+  EXPECT_THROW(cfg.validate(), std::invalid_argument);
+  cfg = {};
+  cfg.friction_deadband_rad = std::numeric_limits<double>::quiet_NaN();
+  EXPECT_THROW(cfg.validate(), std::invalid_argument);
+  cfg = {};
+  cfg.friction_schedule_speed_mps = {0.0, 1.0};
+  cfg.friction_schedule_raw = {100.0};
+  EXPECT_THROW(cfg.validate(), std::invalid_argument);
+  cfg.friction_schedule_raw = {100.0, 100.0};
+  EXPECT_NO_THROW(cfg.validate());
+  cfg.friction_schedule_speed_mps = {1.0, 1.0};
+  EXPECT_THROW(cfg.validate(), std::invalid_argument);
+}
+
+TEST(TargetAccelerationEstimator, RecoversConstantAccelerationFromCommandStamps)
+{
+  TargetAccelerationEstimator e;
+  const double accel = 2.0;
+  double estimate = 0.0;
+  for (int i = 0; i < 40; ++i) {
+    const double t = 10.0 + i * 0.05;
+    const double s = t - 10.0;
+    estimate = e.observe(0.5 * accel * s * s, t, 5.0, 0.2);
+    if (i < 2) {
+      EXPECT_DOUBLE_EQ(estimate, 0.0);
+    }
+  }
+  EXPECT_NEAR(estimate, accel, 1e-6);
+}
+
+TEST(TargetAccelerationEstimator, HeldTargetGivesZeroAndBadStampsRestart)
+{
+  TargetAccelerationEstimator e;
+  for (int i = 0; i < 10; ++i) {
+    EXPECT_DOUBLE_EQ(e.observe(0.1, 1.0 + i * 0.02, 5.0, 0.2), 0.0);
+  }
+  e.observe(0.2, 1.20, 50.0, 0.2);
+  EXPECT_NE(e.acceleration(), 0.0);
+  EXPECT_DOUBLE_EQ(e.observe(0.3, 1.50, 50.0, 0.2), 0.0);
+  e.observe(0.4, 1.52, 50.0, 0.2);
+  e.observe(0.6, 1.54, 50.0, 0.2);
+  EXPECT_NE(e.acceleration(), 0.0);
+  EXPECT_DOUBLE_EQ(e.observe(0.6, 1.54, 50.0, 0.2), 0.0);
+  EXPECT_DOUBLE_EQ(
+    e.observe(std::numeric_limits<double>::quiet_NaN(), 1.56, 50.0, 0.2), 0.0);
+}

@@ -30,6 +30,42 @@ void TorqueSteeringConfig::validate() const
   {
     throw std::invalid_argument("inconsistent torque gains, raw limits, timing or calibrated envelope");
   }
+  const auto raw_in_range = [](double value) {
+      return std::isfinite(value) && value >= 0.0 && value <= 10000.0;
+    };
+  if (!std::isfinite(inertia_ff) || inertia_ff < 0.0 || !raw_in_range(feedforward_limit_raw) ||
+    !std::isfinite(feedforward_filter_hz) || feedforward_filter_hz <= 0.0 ||
+    !raw_in_range(friction_raw) ||
+    !std::isfinite(friction_deadband_rad) || friction_deadband_rad < 0.0)
+  {
+    throw std::invalid_argument("feedforward and friction terms must be finite, nonnegative raw values");
+  }
+  if (friction_schedule_speed_mps.size() != friction_schedule_raw.size()) {
+    throw std::invalid_argument("friction schedule speed and raw arrays must have equal length");
+  }
+  for (std::size_t i = 0; i < friction_schedule_speed_mps.size(); ++i) {
+    const double speed = friction_schedule_speed_mps[i];
+    if (!std::isfinite(speed) || speed < 0.0 || !raw_in_range(friction_schedule_raw[i]) ||
+      (i > 0 && !(speed > friction_schedule_speed_mps[i - 1])))
+    {
+      throw std::invalid_argument(
+        "friction schedule needs strictly increasing nonnegative speeds and raw 0..10000");
+    }
+  }
+}
+
+double TorqueSteeringConfig::frictionRawAt(double vehicle_speed_mps) const
+{
+  const auto & speeds = friction_schedule_speed_mps;
+  if (speeds.empty()) return friction_raw;
+  const double speed = std::abs(vehicle_speed_mps);
+  if (!(speed > speeds.front())) return friction_schedule_raw.front();
+  if (speed >= speeds.back()) return friction_schedule_raw.back();
+  const auto upper = static_cast<std::size_t>(
+    std::upper_bound(speeds.begin(), speeds.end(), speed) - speeds.begin());
+  const double ratio = (speed - speeds[upper - 1]) / (speeds[upper] - speeds[upper - 1]);
+  return friction_schedule_raw[upper - 1] +
+         ratio * (friction_schedule_raw[upper] - friction_schedule_raw[upper - 1]);
 }
 
 const char * torqueSafetyFaultName(TorqueSafetyFault fault)
@@ -113,7 +149,8 @@ void TorqueSteeringController::accountOutput(double now)
   have_output_time_ = true;
 }
 
-TorqueSteeringOutput TorqueSteeringController::update(double target, double target_rate, double now)
+TorqueSteeringOutput TorqueSteeringController::update(double target, double target_rate,
+  double target_accel, double vehicle_speed, double now)
 {
   TorqueSteeringOutput out;
   out.rate_rad_s = rate_rad_s_;
@@ -121,6 +158,7 @@ TorqueSteeringOutput TorqueSteeringController::update(double target, double targ
   out.rate_ready = rate_ready_;
   out.fault = feedback_fault_;
   if (!std::isfinite(target) || !std::isfinite(target_rate) || !std::isfinite(now) ||
+    !std::isfinite(target_accel) || !std::isfinite(vehicle_speed) ||
     (have_output_time_ && now < output_time_sec_))
   {
     out.fault = TorqueSafetyFault::INVALID_INPUT;
@@ -140,7 +178,12 @@ TorqueSteeringOutput TorqueSteeringController::update(double target, double targ
   out.error_rad = out.target_rad - angle_rad_;
   out.p_raw = config_.peak_limit_raw / config_.full_scale_error_rad * out.error_rad;
   out.d_raw = config_.kd * (target_rate - rate_rad_s_);
-  out.unsaturated_raw = out.p_raw + out.d_raw;
+  out.target_accel_rad_s2 = target_accel;
+  out.ff_raw = std::clamp(config_.inertia_ff * target_accel,
+    -config_.feedforward_limit_raw, config_.feedforward_limit_raw);
+  out.friction_raw = std::abs(out.error_rad) > config_.friction_deadband_rad ?
+    std::copysign(config_.frictionRawAt(vehicle_speed), out.error_rad) : 0.0;
+  out.unsaturated_raw = out.ff_raw + out.p_raw + out.d_raw + out.friction_raw;
   if (!std::isfinite(out.unsaturated_raw)) {
     out.fault = TorqueSafetyFault::INVALID_INPUT;
     last_command_raw_ = 0;
@@ -181,6 +224,39 @@ void TorqueSteeringController::reset(double now)
   have_sample_ = rate_ready_ = false;
   angle_rad_ = sample_time_sec_ = rate_rad_s_ = unfiltered_rate_rad_s_ = 0.0;
   feedback_fault_ = TorqueSafetyFault::NONE;
+}
+
+double TargetAccelerationEstimator::observe(
+  double target, double stamp, double filter_hz, double max_gap_sec)
+{
+  if (!std::isfinite(target) || !std::isfinite(stamp)) {
+    reset();
+    return accel_;
+  }
+  const double dt = stamp - stamp_;
+  if (samples_ > 0 && (!(dt > 0.0) || dt > max_gap_sec)) reset();
+  if (samples_ > 0) {
+    const double rate = (target - target_) / dt;
+    if (samples_ >= 2) {
+      const double raw_accel = (rate - rate_) / (0.5 * (dt + dt_));
+      const double alpha = std::isfinite(filter_hz) && filter_hz > 0.0 ?
+        -std::expm1(-2.0 * 3.14159265358979323846 * filter_hz * dt) : 1.0;
+      accel_ += alpha * (raw_accel - accel_);
+      if (!std::isfinite(accel_)) accel_ = 0.0;
+    }
+    rate_ = rate;
+    dt_ = dt;
+  }
+  target_ = target;
+  stamp_ = stamp;
+  samples_ = std::min(samples_ + 1, 2);
+  return accel_;
+}
+
+void TargetAccelerationEstimator::reset()
+{
+  samples_ = 0;
+  target_ = stamp_ = dt_ = rate_ = accel_ = 0.0;
 }
 
 int32_t keyaTorqueCommand(int32_t canonical_command, int direction_sign)

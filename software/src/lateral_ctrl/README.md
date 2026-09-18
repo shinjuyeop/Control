@@ -23,7 +23,8 @@ P·D는 각각 `A/deg`, `A/(deg/s)`의 명령 환산 단위로 표시한다. 기
 내부 raw 단위는 유지한다. [편집·저장·적용 방법](../control_tuning/README.md)을 참고한다.
 
 Torque는 LEFT-positive road-wheel target을 직접 받고, `P=peak/error_full_scale*error`,
-`D=-Kd*measured_rate`를 계산한다. Ki=0, 기본 full-scale-error=0.5°로 작은 오차에도
+`D=-Kd*measured_rate`를 계산한다. 선택적 마찰·관성 보상은 기본값 0으로 꺼져 있으며
+`control_tuning`에서 조건별로 관리한다. Ki=0, 기본 full-scale-error=0.5°로 작은 오차에도
 높은 torque를 사용하며, 실제각 차분의 LPF로 damping한다. raw peak/sustained와 시간
 예산, calibrated 위치 한계·바깥 방향 차단, 실제 과속·freshness 보호는 별도로 적용한다.
 정수 A인 current telemetry는 진단용이다. saturation은 fault가 아니다.
@@ -32,6 +33,8 @@ Torque는 LEFT-positive road-wheel target을 직접 받고, `P=peak/error_full_s
 1°→5° step과 지면 부하 튜닝, 긴급 정지 및 Foxglove 토픽**은
 [TORQUE_CONTROL.md](TORQUE_CONTROL.md)를 따른다. Torque 운용 중에는 아래 기존
 position 전용 rate-limiter/position frame 설명 대신 해당 문서가 적용된다.
+무부하 T0-T2 측정은 `torque_sysid_bench.launch.py`, MCAP 후처리는
+`torque_sysid_metrics.py`를 사용하며 외장 ROS artifact 저장소가 필요하다.
 
 ## 실차 실행 전 주의
 

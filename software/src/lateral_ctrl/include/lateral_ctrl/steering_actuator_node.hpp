@@ -61,6 +61,8 @@ private:
   WheelAngleTrackingController tracking_controller_;
   TorqueSteeringController torque_controller_;
   TorqueSteeringOutput torque_output_;
+  TargetAccelerationEstimator target_accel_estimator_;
+  double vehicle_speed_mps_{0.0};
   std::string actuation_mode_{"position"};
   bool torqueMode() const { return actuation_mode_ == "torque"; }
   int torque_direction_sign_{1};
@@ -124,6 +126,8 @@ private:
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr requested_angle_pub_, angle_error_pub_;
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr rate_pub_, raw_rate_pub_, torque_p_pub_;
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr torque_d_pub_, torque_unsaturated_pub_;
+  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr torque_ff_pub_, torque_friction_pub_;
+  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr target_accel_pub_;
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr torque_current_limit_command_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr torque_saturated_pub_, torque_settled_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr torque_peak_limited_pub_, torque_rate_ready_pub_;

@@ -11,8 +11,13 @@ values:
   settle_error_deg: 0.05
   settle_rate_deg_s: 0.5
   rate_filter_cutoff_hz: 10.0
+  inertia_feedforward_raw_per_rad_s2: 0.0
+  feedforward_filter_hz: 5.0
+  friction_compensation_raw: 0
+  friction_deadband_deg: 0.1
   peak_current_command_a: 16.0
   continuous_current_command_a: 8.0
+  feedforward_limit_raw: 1000
   peak_budget_ms: 5000
   peak_recovery_hold_ms: 5000
   angle_limit_margin_deg: 1.0
