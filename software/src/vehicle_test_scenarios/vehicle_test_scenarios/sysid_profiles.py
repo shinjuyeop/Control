@@ -2,6 +2,7 @@
 
 from dataclasses import asdict, dataclass, replace
 import math
+from control_tuning.conditions import CONDITIONS, condition_document
 
 from .scenario_runner import (
     ScenarioConfig,
@@ -12,7 +13,7 @@ from .scenario_runner import (
 )
 
 
-CENTER_DEG = -0.56
+CENTER_DEG = 0.0
 AMPLITUDE_DEG = 1.0
 COUNTDOWN_SEC = 5.0
 TAIL_SEC = 2.0
@@ -44,7 +45,7 @@ SCENARIO_SPECS = (
     ScenarioSpec(
         'straight', '일정 속도 직진', '입력 응답 시험', '종방향 입력',
         (P('cruise_speed_kph', '목표속도', 'km/h'),),
-        (('cruise_speed_kph', 3.0),),
+        (('cruise_speed_kph', 0.0),),
     ),
     ScenarioSpec(
         'speed_step', '속도 Step', '입력 응답 시험', '종방향 입력',
@@ -56,7 +57,7 @@ SCENARIO_SPECS = (
             P('scenario_repetitions', '반복 횟수', '회', True, '0은 수동 정지까지 반복'),
         ),
         (
-            ('speed_low_kph', 1.0), ('speed_high_kph', 3.0),
+            ('speed_low_kph', 0.0), ('speed_high_kph', 0.0),
             ('speed_step_interval_sec', 2.0), ('initial_hold_sec', 0.0),
             ('scenario_repetitions', 4),
         ),
@@ -71,7 +72,7 @@ SCENARIO_SPECS = (
             P('scenario_repetitions', '반복 횟수', '회', True, '0은 수동 정지까지 반복'),
         ),
         (
-            ('speed_low_kph', 0.0), ('speed_high_kph', 3.0),
+            ('speed_low_kph', 0.0), ('speed_high_kph', 0.0),
             ('speed_ramp_duration_sec', 5.0), ('initial_hold_sec', 0.0),
             ('scenario_repetitions', 2),
         ),
@@ -82,7 +83,7 @@ SCENARIO_SPECS = (
             P('cruise_speed_kph', '제동 전 목표속도', 'km/h'),
             P('brake_delay_sec', '제동 시작시간', 'sec', note='이후 브레이크 유지'),
         ),
-        (('cruise_speed_kph', 3.0), ('brake_delay_sec', 3.0)),
+        (('cruise_speed_kph', 0.0), ('brake_delay_sec', 3.0)),
     ),
     ScenarioSpec(
         'steering_step', '조향 양방향 Step', '입력 응답 시험', '횡방향 입력',
@@ -95,7 +96,7 @@ SCENARIO_SPECS = (
             P('scenario_repetitions', '반복 횟수', '회', True, '0은 수동 정지까지 반복'),
         ),
         (
-            ('cruise_speed_kph', 3.0), ('steering_center_deg', CENTER_DEG),
+            ('cruise_speed_kph', 0.0), ('steering_center_deg', CENTER_DEG),
             ('steering_amplitude_deg', AMPLITUDE_DEG),
             ('steering_step_interval_sec', 5.0), ('initial_hold_sec', 0.0),
             ('scenario_repetitions', 3),
@@ -112,7 +113,7 @@ SCENARIO_SPECS = (
             P('scenario_repetitions', '반복 횟수', '회', True, '0은 수동 정지까지 반복'),
         ),
         (
-            ('cruise_speed_kph', 3.0), ('steering_center_deg', CENTER_DEG),
+            ('cruise_speed_kph', 0.0), ('steering_center_deg', CENTER_DEG),
             ('steering_amplitude_deg', AMPLITUDE_DEG),
             ('steering_period_sec', 8.0), ('initial_hold_sec', 5.0),
             ('scenario_repetitions', 6),
@@ -131,7 +132,7 @@ SCENARIO_SPECS = (
             P('scenario_repetitions', '반복 횟수', '회', True, '0은 수동 정지까지 반복'),
         ),
         (
-            ('cruise_speed_kph', 3.0), ('steering_center_deg', CENTER_DEG),
+            ('cruise_speed_kph', 0.0), ('steering_center_deg', CENTER_DEG),
             ('steering_amplitude_deg', AMPLITUDE_DEG),
             ('chirp_start_hz', 0.2), ('chirp_end_hz', 1.0),
             ('chirp_duration_sec', 10.0), ('initial_hold_sec', 5.0),
@@ -141,12 +142,12 @@ SCENARIO_SPECS = (
     ScenarioSpec(
         'route_quali', 'K-City 예선 경로', '경로 추종 시험', '',
         (P('cruise_speed_kph', '최고 목표속도', 'km/h'),),
-        (('cruise_speed_kph', 5.0),),
+        (('cruise_speed_kph', 0.0),),
     ),
     ScenarioSpec(
         'route_final', 'K-City 본선 경로', '경로 추종 시험', '',
         (P('cruise_speed_kph', '최고 목표속도', 'km/h'),),
-        (('cruise_speed_kph', 5.0),),
+        (('cruise_speed_kph', 0.0),),
     ),
 )
 SCENARIO_BY_KEY = {spec.key: spec for spec in SCENARIO_SPECS}
@@ -156,9 +157,9 @@ SCENARIO_KEYS = tuple(SCENARIO_BY_KEY)
 @dataclass(frozen=True)
 class RunSettings:
     scenario: str = 'straight'
-    cruise_speed_kph: float = 3.0
+    cruise_speed_kph: float = 0.0
     speed_low_kph: float = 0.0
-    speed_high_kph: float = 3.0
+    speed_high_kph: float = 0.0
     speed_step_interval_sec: float = 2.0
     speed_ramp_duration_sec: float = 5.0
     steering_center_deg: float = CENTER_DEG
@@ -172,13 +173,16 @@ class RunSettings:
     chirp_end_hz: float = 1.0
     chirp_duration_sec: float = 10.0
     record_mcap: bool = True
+    test_condition: str = 'unspecified'
 
     def __post_init__(self):
+        if self.test_condition not in (*CONDITIONS, 'unspecified'):
+            raise ValueError('지원하지 않는 시험 조건입니다.')
         if self.scenario not in SCENARIO_BY_KEY:
             raise ValueError(f'지원하지 않는 시나리오입니다: {self.scenario}')
         if self.follows_route:
-            if not math.isfinite(self.cruise_speed_kph) or self.cruise_speed_kph <= 0:
-                raise ValueError('최고 목표속도는 0보다 큰 유한한 값이어야 합니다')
+            if not math.isfinite(self.cruise_speed_kph) or self.cruise_speed_kph < 0:
+                raise ValueError('최고 목표속도는 0 이상의 유한한 값이어야 합니다')
             return
         validate_config(self.to_scenario_config(), 20.0)
 
@@ -299,6 +303,7 @@ class RunSettings:
             'auto_countdown_sec': COUNTDOWN_SEC,
             'publish_rate_hz': 20.0,
             'record_mcap': self.record_mcap,
+            'test_condition': condition_document(self.test_condition),
         }
         if self.follows_route:
             document['route_file'] = self.route_filename

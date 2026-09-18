@@ -107,13 +107,12 @@ Parameters:
 발행하는 기존 `lateral_ctrl/steering_bench_test_node`는 호환성 때문에 유지했지만
 governor를 우회하므로, 신규 HIL 시험은 이 node를 사용한다.
 
-실차 sysid에서는 이 node를 open-loop 시험입력으로만 사용한다. STM_A AUTO frame의
-phase-current 상한은 현재 소스 기준 480 A이며 배터리 전류가 아니므로 EZkontrol 내부 active current limit이 승인된
-값인지 export로 확인하거나 STM_A 상한을 안전하게 입증된 값으로 낮추기 전에는
-움직이는 실차에서 `enabled=true`로 두지 않는다. 시작할 때
-`ros2 topic info -v /vehicle/command`로 publisher가 하나인지 확인하고, 속도 target은
-0.25 m/s씩 1초 간격으로 올려 첫 1 m/s crawl을 만든다. 큰 속도 step, 무인 운행,
-communication timeout을 정상 정지수단으로 쓰는 것은 이 경로의 계약이 아니다.
+이 node는 HIL 벤치 시험용이다. 실차 sysid는
+[`vehicle_test_scenarios`](../vehicle_test_scenarios/README.md)의 TUI 또는 headless
+실행기를 사용한다. 실차 시나리오의 기본 속도·조향 중심은 모두 0이며 시험 전에
+필요한 입력을 설정한다. HIL generator와 실차 시험 명령원은 동시에 실행하지 않는다.
+명령 발행자 확인과 정지·복구 절차는
+[실차 운용 문서](../../../docs/VEHICLE_RUNBOOK.md)를 따른다.
 
 ### KAI Vehicle Console · HIL
 
@@ -284,10 +283,10 @@ Foxglove에서 `/hil/status`, `/vehicle/state`, `/drive/status`, `/brake/status`
 ## Build and test
 
 ```bash
-cd "${KAIEV26_WS:?set KAIEV26_WS to the ROS 2 workspace root}"
-source /opt/ros/humble/setup.zsh
+cd ~/KAI_ws
+si
 colcon build --symlink-install --packages-up-to vehicle_console
-source install/setup.zsh
+si
 colcon test --packages-select vehicle_console
 colcon test-result --verbose
 ```

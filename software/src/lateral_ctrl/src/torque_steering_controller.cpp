@@ -181,7 +181,6 @@ TorqueSteeringOutput TorqueSteeringController::update(double target, double targ
   out.target_accel_rad_s2 = target_accel;
   out.ff_raw = std::clamp(config_.inertia_ff * target_accel,
     -config_.feedforward_limit_raw, config_.feedforward_limit_raw);
-  // Push through the stiction deadzone in the error direction, but not inside the deadband.
   out.friction_raw = std::abs(out.error_rad) > config_.friction_deadband_rad ?
     std::copysign(config_.frictionRawAt(vehicle_speed), out.error_rad) : 0.0;
   out.unsaturated_raw = out.ff_raw + out.p_raw + out.d_raw + out.friction_raw;

@@ -25,14 +25,13 @@ struct TorqueSteeringConfig
   // Derived from the measured calibration range, never extrapolated mechanical stops.
   double min_angle_rad{-0.4};
   double max_angle_rad{0.4};
-  // Method A terms: u = J_ff*alpha_ff + P + D + F_c*sign(e). Zero keeps the pure PD response.
+  // Method A: u = J_ff*alpha_ff + P + D + F_c*sign(e).
+  // Zero gains keep the existing PD response unchanged.
   double inertia_ff{0.0};  // raw / (rad/s^2)
   double feedforward_limit_raw{1000.0};
   double feedforward_filter_hz{5.0};
   double friction_raw{0.0};
-  // Inside |e| <= deadband the friction term is off so it cannot chatter around the target.
   double friction_deadband_rad{0.1 * 3.14159265358979323846 / 180.0};
-  // Optional F_c(v) breakpoints. When present they replace friction_raw; speeds strictly increase.
   std::vector<double> friction_schedule_speed_mps{};
   std::vector<double> friction_schedule_raw{};
   double frictionRawAt(double vehicle_speed_mps) const;
@@ -85,12 +84,11 @@ private:
   TorqueSafetyFault feedback_fault_{TorqueSafetyFault::NONE};
 };
 
-// Commands arrive asynchronously to the control tick (20-50 Hz), so alpha_ff is differentiated
-// at the command timestamps, not per tick, which would alias a held target into impulses.
+// Commands arrive asynchronously to the control tick. Differentiate at their
+// timestamps so a held target does not create repeated acceleration impulses.
 class TargetAccelerationEstimator
 {
 public:
-  // A non-increasing stamp or a gap above max_gap_sec restarts the history at this sample.
   double observe(double target_rad, double stamp_sec, double filter_hz, double max_gap_sec);
   void reset();
   double acceleration() const { return accel_; }

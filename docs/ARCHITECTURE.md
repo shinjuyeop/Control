@@ -12,9 +12,15 @@
 
 ## 2. 전체 시스템 구성
 
+공통 Host 설정 UI는 `software/src/control_tuning`이다. 기존 노드의 파라미터를 읽고,
+MANUAL·정지 상태에서 torque 튜닝을 atomic 적용한다. 사용자 override YAML은 실차 및
+조향·거버너 단독 launch에서 읽는다. 운용·timeout 변경은 저장 후 재시작한다.
+주행 command 발행은 하지 않으며 시나리오 입력 편집은 `vehicle_test_scenarios`에 둔다.
+[파라미터 TUI 계약](../software/src/control_tuning/README.md)을 참고한다.
+
 ```mermaid
 flowchart LR
-    Planning["Planning / Motion Control<br/>(현재 구현 주체 TBD)"]
+    Planning["Planning / Motion Control<br/>(별도 상위 패키지)"]
     PlanCmd["/planning/command"]
     Governor["command_governor<br/>정합성 게이트 · 재발행"]
     Command["/vehicle/command"]
@@ -60,7 +66,7 @@ flowchart LR
     STMB -.->|"/brake/status"| Diagnostics
     Steering -.->|"/steering/status"| Diagnostics
     Diagnostics --> DiagnosticTopic
-    STMB -->|"Dashboard CAN<br/>250 kbit/s · 0x321–0x324"| UNO
+    STMB -->|"Dashboard CAN<br/>250 kbit/s · 0x321–0x328"| UNO
     UNO -->|"SPI"| LCD
     Touch -->|"I2C 0x38<br/>20 ms polling"| UNO
     HilConsole -.->|"HIL-only USB Serial 115200<br/>VT D/M/U/C"| UNO
@@ -110,7 +116,8 @@ STM_B는 물리 E-stop 입력과 브레이크 서보의 직접 구동을 담당�
 - `/brake/status`로 command 상태와 정지 원인을 발행합니다.
 - STM_A의 mode·gear·speed와 EZkontrol drive detail을 UART로 받아 250 kbit/s
   Classical CAN dashboard snapshot으로 Arduino UNO R4에 전송합니다. Arduino가
-  MSP4030/ST7796S LCD를 렌더링하며 표시 경로는 ROS와 독립적입니다.
+  MSP4030/ST7796S LCD를 렌더링합니다. native 표시는 ROS와 독립적이며,
+  AUTO 추가 표시는 `/dashboard/auto_status`를 중계합니다.
 
 브레이크 서보를 직접 구동하는 보드는 STM_B뿐입니다. STM_B의 FDCAN1은 dashboard
 송신과 bus-off 복구에만 사용하며, Dashboard CAN/Arduino 장애는 E-stop, 브레이크 PWM,
@@ -122,11 +129,13 @@ STM_A safety UART와 micro-ROS 상태를 변경하지 않습니다.
 ### 3.3 Arduino UNO R4 Dashboard
 
 Dashboard HMI는 **Arduino UNO R4 Minima**가 담당합니다. STM_B가 250 kbit/s
-Classical Dashboard CAN standard ID `0x321`~`0x324` snapshot을 송신하고,
-UNO R4는 RA4M1 internal CAN controller와 external TJA1050 transceiver로 이를
-수신합니다. 네 frame의 protocol version과 alive가 모두
-일치하는 complete snapshot만 적용하며 nominal snapshot 주기는 50 ms입니다.
-새 complete snapshot이 300 ms 없으면 `CAN LOST`를 표시합니다.
+Classical Dashboard CAN으로 native `0x321`~`0x324`와 AUTO `0x325`~`0x328`을
+송신합니다. UNO R4는 RA4M1 internal CAN controller와 MCP2551 transceiver로
+수신합니다. 각 그룹의 네 frame은 version·alive가 맞을 때 독립적으로 적용됩니다.
+native snapshot의 nominal 주기는 50 ms이며 300 ms 동안 새 완전한 native
+snapshot이 없으면 `CAN LOST`입니다. AUTO 표시는 Host의 `auto_dashboard_summary`가
+`/dashboard/auto_status`로 보낸 25-byte payload를 STM_B가 중계합니다.
+AUTO stale과 native CAN LOST는 별도로 판정합니다.
 
 - MSP4030/MSP4031의 ST7796S 480×320 LCD를 SPI로 렌더링합니다.
 - MSP4031의 FT6336U capacitive touch를 I2C로 20 ms polling합니다. INT는 기능상
@@ -149,14 +158,15 @@ pinout·전압·renderer 세부사항은
 - `command_governor`가 상위 Planning 계층의 `/planning/command`를 받아
   `/vehicle/command`로 재발행합니다. 이 노드가 `/vehicle/command`의 유일한
   발행자이며, 현재는 패스스루(정합성 게이트만, 형상 없음)입니다. Planning의
-  production 구현은 아직 없고 실차 시험은 `vehicle_test_scenario_runner`, HIL은
+  production 구현은 이 저장소 밖에서 관리하고 실차 시험은 `vehicle_test_scenario_runner`, HIL은
   `hil_command_generator`가 대역입니다. 두 시험 발행자는 동시에 실행하지 않습니다.
 - `lateral_ctrl/steering_actuator_node`가 KEYA 모터의 SocketCAN 소유자가 되어
   조향을 제어합니다.
 - `vehicle_state_publisher` package가 status 3종을 처리합니다.
   `vehicle_state_publisher_node`는 `/vehicle/state`와 유효한 구동·조향 관측 기반
   `/vehicle/wheel_twist`를 20 Hz로 발행하고, 별도 `diagnostics_publisher`는
-  `/diagnostics`를 1 Hz로 발행합니다.
+  `/diagnostics`를 1 Hz로 발행합니다. `auto_dashboard_summary`는 계기판용
+  `/dashboard/auto_status`를 10 Hz로 발행합니다.
 - 실차 구동 스택은 `control_launch/launch/vehicle.launch.py`로 실행합니다.
   구동 노드와 `/diagnostics` 요약을 포함하며 관측 화면은 `vehicle_console/vehicle.launch.py`와
   `foxglove/foxglove_bridge.launch.py`로 따로 켭니다. 실차 장치에서의 최종 확인은 아직이며
@@ -170,8 +180,12 @@ pinout·전압·renderer 세부사항은
 `software/src/lateral_ctrl`의 `steering_actuator_node`가 `/vehicle/command`,
 `/drive/status`, `/brake/status`를 받아 KEYA 조향 모터를 제어합니다.
 
+현재 launch가 읽는 YAML은 `actuation_mode=torque`,
+`minimum_steering_speed_kph=0.0`입니다. 노드의 코드 기본값인 `position`, `1.0`과
+구분해야 합니다. 최소속도가 0이어도 유효하고 fresh한 구동 속도 피드백이 필요합니다.
+
 Startup-only `actuation_mode`는 `position`(기존 count 명령) 또는 `torque`(외부
-calibrated wheel-angle PD + 방법 A 마찰 보상·관성 피드포워드)를 선택합니다. `TorqueSteeringController`는 ROS/CAN과
+calibrated wheel-angle PD)를 선택합니다. `TorqueSteeringController`는 ROS/CAN과
 독립적인 제어·rate 추정·raw/time envelope를 소유하고, 노드는 CAN과 기존 안전 상태
 머신을 계속 소유합니다. runtime mode 전환은 없으며 KEYA 0020은 운영자가
 position=3/torque=2로 맞춥니다. [Torque 운용 계약](../software/src/lateral_ctrl/TORQUE_CONTROL.md)을
@@ -190,8 +204,9 @@ position=3/torque=2로 맞춥니다. [Torque 운용 계약](../software/src/late
 ## 4. 명령 데이터 흐름
 
 ```text
-Planning / Motion Control (production TBD)
-  또는 vehicle_test_scenario_runner (실차 시험)
+Planning / Motion Control (별도 상위 패키지)
+  또는 vehicle_test_scenario_runner (실차 TUI, ROS node /auto_sysid)
+  또는 vehicle_test_scenario_node (headless, ROS node /vehicle_test_scenario_runner)
   또는 hil_command_generator (HIL)
   └─ /planning/command: ActuatorCommand
       └─ command_governor (정합성 게이트, 재-stamp; 현재 패스스루)
@@ -226,7 +241,8 @@ flowchart LR
     SS --> F
     F --> VS["/vehicle/state"]
     A -->|"drive detail / vehicle UART"| B
-    B -->|"Dashboard CAN<br/>4-frame snapshot"| UNO["Arduino UNO R4"]
+    Summary["auto_dashboard_summary"] -.->|"/dashboard/auto_status"| B
+    B -->|"Dashboard CAN<br/>native 4 + AUTO 4 frames"| UNO["Arduino UNO R4"]
     UNO -->|"SPI"| LCD["ST7796S LCD"]
     Touch["FT6336U touch"] -->|"I2C polling"| UNO
     HIL["vehicle_console HIL"] -.->|"USB Virtual Touch"| UNO
@@ -236,7 +252,7 @@ flowchart LR
 `/vehicle/state`는 세 status가 모두 최소 한 번 수신된 후에만 발행됩니다. 현재
 구현은 각 입력의 age나 freshness를 다시 검사하지 않고 마지막 수신값을
 합성합니다.
-STM_B→UNO→LCD는 ROS state fusion과 독립적인 표시 branch입니다. FT6336U 입력은
+STM_B→UNO→LCD의 native 표시는 ROS와 독립적이고, AUTO 표시는 Host 요약 토픽에 의존합니다. FT6336U 입력은
 UNO의 local navigation으로만 이어지며, 점선 USB 경로는 HIL 전용 가상 HMI입니다.
 
 ## 6. MANUAL / AUTO 모드
@@ -271,8 +287,9 @@ traction 차단 조건으로 사용하지 않습니다.
 - 이 시험 입력은 실제 STM의 안전 경로를 대체하는 인증된 fail-safe로 간주할 수
   없습니다.
 - HIL bench의 KEYA emulator는 모터축을 선형으로만 모사합니다. 따라서 CAN 경로와
-  안전 로직은 검증되지만 `calibration_a/b/c`와 `direction_sign`의 정확도는
-  검증되지 않으며, 실제 조향 기구에서 따로 확인해야 합니다.
+  안전 로직의 해당 경로를 검증하지만 실제 기구의 `count_scale`, `equivalent_k1_deg`~`equivalent_k5_deg`,
+  `command_count_limit` 보정이나 `torque_direction_sign`, torque 응답까지 검증하지는
+  않습니다. 이 항목들은 실제 조향 기구에서 따로 확인해야 합니다.
 
 실차는 `control_launch/vehicle.launch.py`, HIL bench는
 `vehicle_console/hil.launch.py start_bench:=true`로 실행합니다. 두 launch 모두

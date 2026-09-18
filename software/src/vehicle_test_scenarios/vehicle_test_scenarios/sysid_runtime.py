@@ -13,6 +13,8 @@ from kaiev26_msgs.msg import (
     SteeringActuatorStatus, VehicleState, RouteContext,
 )
 from nav_msgs.msg import Odometry
+from rcl_interfaces.srv import GetParameters
+from control_tuning.conditions import CONDITION_KEYS
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from sensor_msgs.msg import Imu, NavSatFix
@@ -48,7 +50,7 @@ BUSY_STATES = {
     'CRUISE', 'RUNNING', 'TAIL', 'CLOSING',
 }
 STATE_LABELS = {
-    'IDLE': '시험 선택', 'RECORD_START': 'MCAP 연결 중', 'WAIT_AUTO': 'AUTO 전환 대기',
+    'IDLE': '시험 선택', 'RECORD_START': '녹화·제어 설정 기록 중', 'WAIT_AUTO': 'AUTO 전환 대기',
     'COUNTDOWN': '출발 카운트다운', 'ROUTE_ARMING': '경로 출발 명령 대기',
     'CRUISE': '정속 준비', 'RUNNING': '시험 중',
     'TAIL': '후행 기록 중', 'CLOSING': 'MCAP 저장 중',
@@ -102,6 +104,8 @@ class SysidNode(Node):
         self.command_publisher = self.create_publisher(ActuatorCommand, '/planning/command', 10)
         self.steering_control = SteeringControl(self)
         self.label_publisher = self.create_publisher(String, '/sysid/scinario', 10)
+        self.control_parameters_publisher = self.create_publisher(
+            String, '/sysid/control_parameters', 10)
         self.route_enable_publisher = self.create_publisher(Bool, '/sysid/route_enabled', 10)
         self.subscriptions_owned = []
         for topic, message_type in (TOPICS | FOLLOW_TOPICS).items():
@@ -113,6 +117,35 @@ class SysidNode(Node):
             ActuatorCommand, '/vehicle/command',
             lambda message: self._receive('/vehicle/command', message), qos_profile_sensor_data))
         self.create_timer(0.05, self._tick)
+        self.launch_preset = 'unspecified'
+        self.preset_client = self.create_client(
+            GetParameters, '/steering_actuator_node/get_parameters')
+        self.preset_future = None
+        self.preset_requested_at = 0.0
+        self.preset_timer = self.create_timer(1.0, self._read_launch_preset)
+
+    def _read_launch_preset(self):
+        if self.preset_future is not None:
+            if self.preset_future.done():
+                try:
+                    values = self.preset_future.result().values
+                    preset = values[0].string_value if values else ''
+                    if preset in CONDITION_KEYS:
+                        with self.lock:
+                            self.launch_preset = preset
+                        self.preset_timer.cancel()
+                except Exception as error:
+                    self.get_logger().debug(f'Launch preset query: {error}')
+                self.preset_future = None
+            elif time.monotonic() - self.preset_requested_at >= 2.0:
+                self.preset_client.remove_pending_request(self.preset_future)
+                self.preset_future.cancel()
+                self.preset_future = None
+            return
+        if self.preset_client.service_is_ready():
+            self.preset_requested_at = time.monotonic()
+            self.preset_future = self.preset_client.call_async(
+                GetParameters.Request(names=['tuning_preset']))
 
     @property
     def busy(self):
@@ -507,6 +540,7 @@ class SysidNode(Node):
                     'AUTO' if drive[1].mode == DriveActuatorStatus.MODE_AUTO else 'MANUAL')
             command_flow = self.state in {'ROUTE_ARMING', 'CRUISE', 'RUNNING'}
             return {
+                'launch_preset': self.launch_preset,
                 'state': self.state, 'label': (
                     '시험 준비 중' if self.state == 'RECORD_START' and not self.settings.record_mcap
                     else '시험 정리 중' if self.state == 'CLOSING' and not self.settings.record_mcap

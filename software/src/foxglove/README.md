@@ -8,7 +8,8 @@ Foxglove bridge와 KAI 차량 engineering layout만 제공한다. 차량 상태 
 ros2 launch foxglove foxglove_bridge.launch.py
 ```
 
-노트북 Foxglove 앱에서 `ws://100.112.72.27:8765`로 연결하고
+Foxglove 앱에서 로컬은 `ws://127.0.0.1:8765`, 원격은 차량 PC 주소로 연결하고
+(기존 차량 PC Tailscale 예: `ws://100.112.72.27:8765`)
 [`control.json`](control.json)을 import한다. bridge는 PC당 하나만 실행한다.
 하나의 bridge가 ROS graph 전체를 전달하고 여러 클라이언트가 접속할 수 있다.
 `foxglove_bridge.launch.py`는 diagnostics publisher를 시작하지 않는다. 실차에서는
@@ -28,22 +29,18 @@ ros2 run vehicle_state_publisher diagnostics_publisher
 - `/diagnostics`: 구동 링크·구동 상태·조향 링크·조향 상태·브레이크 요약과
   source별 상세. sensor/bridge 등 다른 publisher의 진단도 같은 토픽에 공존한다.
 
-[`control.json`](control.json)은 다음 일곱 탭을 제공한다. 모든 탭 아래에는
+[`control.json`](control.json)은 다음 여섯 탭을 제공한다. 모든 탭 아래에는
 기어·모드·E-stop·브레이크·페달 공통 상태 바가 계속 보인다.
 
 - **공통**: 속도와 명령 age, ROS 파라미터
 - **Control**: 속도·조향 추종과 전원·상태·고장 상세
-- **조향 Torque**: 요청·soft-limit 목표·actual·error, P/D·unsaturated·KEYA raw,
+- **조향 Torque**: 요청·soft-limit 목표·actual·error, P/D·관성 FF·마찰·합계·KEYA raw,
   명령 전류 제한·KEYA 전류 진단, filtered/unfiltered wheel rate, speed,
   saturation·peak·settle, mode/safety.
   단위·튜닝 순서는 [TORQUE_CONTROL.md](../lateral_ctrl/TORQUE_CONTROL.md)를 따른다.
-- **Torque_Control**: 위는 인가 토크를 KEYA 매뉴얼 §4.3.3.2 전류 환산식
-  `A = raw/10000 × Parameter 0003(keya_protection_current_a, 20 A) × 0.8`로 바꾼
-  `/steering/torque_current_limit_command_a`와 KEYA 실측 전류(정수 A magnitude)를 같은
-  A 축에 비교한다. 아래는 조향 요청(`/vehicle/command`)과 응답(실측 바퀴각).
 - **종방향 테스트**: `/planning/command`부터 `/vehicle/command`, 실제 속도까지의
   추종 관계와 모터 RPM, 상전류·버스 전류, 통신 age, 안전 이벤트
-- **조향 테스트**: 시험 입력부터 변화율 제한·PID 보정·실측 조향각까지의 명령 체인과
+- **조향 테스트**: 시험 입력·목표·실측 조향각의 명령 체인과
   추종 오차, 차량 속도, 모터 전류, 통신 age, 상태·timeout 이벤트
 - **Diagnostics**: `/diagnostics` 요약과 선택 항목 상세
 
@@ -51,6 +48,11 @@ ros2 run vehicle_state_publisher diagnostics_publisher
 함께 따른다. `/sysid/scinario`는 현재 시험 label을 표시하며, 이 철자는 현재 시험
 runner의 토픽 계약을 그대로 사용한다. 이 레이아웃은 토픽을 관측할 뿐 차량 제어 또는
 safety 판단에 사용하지 않는다.
+
+현재 실차 YAML은 torque 모드다. position의 목표각 rate limit과 torque의 실제각
+120 deg/s safety ceiling을 구분한다. `/steering/torque_safety=rate_limit` 복구는
+[조향 운용 문서](../lateral_ctrl/TORQUE_CONTROL.md#안전-동작)를 따른다.
+시나리오 기본 목표속도·중심각은 0이므로 시험 설정 전 그래프가 0인 것은 정상이다.
 
 Foxglove 기본 포트는 8765, Vehicle Console은 8766, HIL Console은 8767이다.
 세 기능은 서로 다른 기본 포트를 사용한다.

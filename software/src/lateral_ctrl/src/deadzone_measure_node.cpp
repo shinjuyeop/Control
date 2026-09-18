@@ -12,10 +12,8 @@
 //   motor_angle_deg는 legacy 프로토콜의 Encoder count value query 응답
 //   (10000 count/turn = 0.036°/count)을 그대로 각도로 옮긴 값이라
 //   heartbeat(360 count/turn)보다 약 28배 촘촘하다. 캘리브레이션 다항식과
-//   중앙 등가각 환산을 거치지 않은 모터축 원시값이지만 부호는 raw count와 같고,
-//   현재 calibration은 +count = +바퀴각 = LEFT다. 따라서 각도 증감 방향은 바퀴
-//   각도(actual_wheel_angle_rad)와 같다. 부호를 뒤집었던 옛 /ctrl/steer_handle_hires
-//   기록과는 반대로 보인다.
+//   중앙 등가각 환산을 거치지 않은 모터축 원시값이므로, ramp_direction과 각도
+//   증감의 부호 관계는 바퀴 각도 기준과 반대로 나타난다.
 //
 // 사용 시나리오
 //   1. steering_actuator_node를 읽기 전용(hardware_can_enabled:=true,
@@ -164,9 +162,10 @@ public:
         // 드라이버 Enable (시작 시 1회만; 이후 재전송 없음 — torque 명령이 watchdog 유지)
         enable_motor();
 
-        // auto_start는 첫 유효 각도를 받은 뒤 시작한다. 생성자 시점에는 각도가 없어
-        // max_angle_delta 기준각이 0으로 잡히므로 여기서 바로 시작하면 안 된다.
-        auto_start_pending_ = auto_start_;
+        if (auto_start_)
+        {
+            start_ramp();
+        }
 
         // ── 램프 타이머 (keep-alive 겸용)
         ramp_timer_ = create_wall_timer(
@@ -403,13 +402,6 @@ private:
         if (!msg->feedback_valid) return;
         latest_angle_ = msg->motor_angle_deg;
         has_angle_ = true;
-        if (auto_start_pending_)
-        {
-            auto_start_pending_ = false;
-            RCLCPP_WARN(get_logger(), "auto_start: first valid angle %.3f deg received, starting ramp",
-                        latest_angle_);
-            start_ramp();
-        }
     }
 
     // ── 런타임 파라미터 변경 콜백
@@ -493,7 +485,6 @@ private:
     int ramp_direction_{1};
     int torque_limit_{2000};
     bool auto_start_{false};
-    bool auto_start_pending_{false};
     std::string status_topic_{"/steering/status"};
     bool sweep_mode_{false};
     int start_cmd_{0};

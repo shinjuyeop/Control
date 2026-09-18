@@ -10,8 +10,9 @@
 
 extern "C" void dashboard_host_publish_ui_state() {}
 
-extern "C" void render_auto_dashboard(const int32_t *native_values,
+extern "C" void render_lv_dashboard(const int32_t *native_values,
                                  const int32_t *auto_values,
+                                 const int32_t *lv_values,
                                  int can_lost,
                                  int auto_page,
                                  uint8_t *rgb)
@@ -22,7 +23,8 @@ extern "C" void render_auto_dashboard(const int32_t *native_values,
       int16_t(native_values[4]), uint16_t(native_values[5]),
       int16_t(native_values[6]), int16_t(native_values[7]),
       int16_t(native_values[8]), int16_t(native_values[9]),
-      uint32_t(native_values[10])};
+      uint32_t(native_values[10]), uint8_t(lv_values[0]),
+      uint8_t(lv_values[1]), uint8_t(lv_values[2])};
   const AutoDashboardValues automatic{
       uint8_t(auto_values[0]), uint8_t(auto_values[1]),
       uint8_t(auto_values[2]), uint8_t(auto_values[3]),
@@ -54,6 +56,15 @@ extern "C" void render_auto_dashboard(const int32_t *native_values,
     rgb[index * 3U + 1U] = uint8_t(((color >> 5U) & 63U) * 255U / 63U);
     rgb[index * 3U + 2U] = uint8_t((color & 31U) * 255U / 31U);
   }
+}
+
+// Existing callers do not provide LV telemetry.
+extern "C" void render_auto_dashboard(const int32_t *native_values,
+                                      const int32_t *auto_values,
+                                      int can_lost, int auto_page, uint8_t *rgb)
+{
+  const int32_t lv_values[] = {0, 0, 255};
+  render_lv_dashboard(native_values, auto_values, lv_values, can_lost, auto_page, rgb);
 }
 
 // Keep main's three-argument entrypoint for already installed Console clients.

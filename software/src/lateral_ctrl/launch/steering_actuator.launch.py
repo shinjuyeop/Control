@@ -3,6 +3,9 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from control_tuning.storage import default_settings_path
+from control_tuning.presets import load_launch_overrides
+from control_tuning.conditions import CONDITION_KEYS
 import os
 import yaml
 
@@ -17,18 +20,6 @@ CALIBRATION_PARAMETER_NAMES = (
     "command_count_limit",
     "counts_per_rev",
 )
-
-
-# Empty launch argument keeps the params_file value; a value overrides it.
-# Types are explicit: a bare "0" would otherwise reach a double parameter as an integer.
-OPTIONAL_PARAMETER_TYPES = {
-    'actuation_mode': str,
-    'steering_enabled': None,  # launch_ros parses true/false
-    'torque_full_scale_error_deg': float,
-    'torque_kd': float,
-    'torque_peak_limit_raw': int,
-    'torque_sustained_limit_raw': int,
-}
 
 
 def load_steering_motor_calibration(path):
@@ -46,13 +37,12 @@ def load_steering_motor_calibration(path):
 
 
 def _make_actuator(context, calibration_parameters):
-    # An omitted CLI override must preserve the operator's selected params_file.
+    # Explicit CLI arguments take precedence over the selected preset.
     optional_parameters = {}
-    for name, kind in OPTIONAL_PARAMETER_TYPES.items():
+    for name in ('actuation_mode', 'steering_enabled'):
         value = LaunchConfiguration(name).perform(context)
         if value:
-            optional_parameters[name] = (
-                LaunchConfiguration(name) if kind is None else kind(value))
+            optional_parameters[name] = LaunchConfiguration(name)
     return [
         Node(
             package='lateral_ctrl',
@@ -61,9 +51,14 @@ def _make_actuator(context, calibration_parameters):
             output='screen',
             parameters=[
                 LaunchConfiguration('params_file'),
+                load_launch_overrides(LaunchConfiguration('control_tuning_file').perform(context),
+                                      'steering_actuator_node',
+                                      LaunchConfiguration('tuning_preset').perform(context),
+                                      steering_config=LaunchConfiguration('params_file').perform(context)),
                 calibration_parameters,
                 {
                     **optional_parameters,
+                    'tuning_preset': LaunchConfiguration('tuning_preset'),
                     'can_interface': LaunchConfiguration('can_interface'),
                     'hardware_can_enabled': LaunchConfiguration('hardware_can_enabled'),
                     'actuator_output_enabled': LaunchConfiguration('actuator_output_enabled'),
@@ -89,18 +84,12 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('can_interface', default_value='can0'),
         DeclareLaunchArgument('params_file', default_value=config),
+        DeclareLaunchArgument('control_tuning_file', default_value=str(default_settings_path())),
+        DeclareLaunchArgument('tuning_preset', default_value='driving', choices=list(CONDITION_KEYS)),
         DeclareLaunchArgument(
             'actuation_mode', default_value='', choices=['', 'position', 'torque'],
-            description='Empty follows params_file; otherwise overrides its actuation mode.'),
+            description='Empty follows the selected tuning preset; otherwise overrides actuation mode.'),
         DeclareLaunchArgument('steering_enabled', default_value=''),
-        DeclareLaunchArgument('torque_full_scale_error_deg', default_value='',
-                              description='P: error deg where torque reaches peak. Empty follows params_file.'),
-        DeclareLaunchArgument('torque_kd', default_value='',
-                              description='D raw/(rad/s). Empty follows params_file.'),
-        DeclareLaunchArgument('torque_peak_limit_raw', default_value='',
-                              description='Empty follows params_file.'),
-        DeclareLaunchArgument('torque_sustained_limit_raw', default_value='',
-                              description='Empty follows params_file; must not exceed peak.'),
         DeclareLaunchArgument('hardware_can_enabled', default_value='true'),
         DeclareLaunchArgument('actuator_output_enabled', default_value='true'),
         DeclareLaunchArgument('test_input_injection_enabled', default_value='false'),

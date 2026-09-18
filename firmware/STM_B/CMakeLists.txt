@@ -74,6 +74,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/dashboard_can.c
     Core/Src/dashboard_can_protocol.c
     Core/Src/globals.c
+    Core/Src/lv_battery_protocol.c
 )
 
 # Add include paths

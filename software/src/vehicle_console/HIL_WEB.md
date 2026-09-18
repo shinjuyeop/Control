@@ -6,6 +6,10 @@
 KAI Vehicle Console의 HIL 운용 profile이다. Qt surface를 대체하며 serial은 기존
 `stm_test_bridge`가 단독으로 소유한다. 펌웨어와 production topic 계약은 바꾸지 않는다.
 
+이 문서의 Scenarios와 Control Dock은 HIL 벤치용이다. 실차 시험은
+[시나리오 TUI](../vehicle_test_scenarios/README.md), 실차 관측은
+[Vehicle Console](README.md)을 사용한다. HIL 명령원과 실차 명령원을 중복 실행하지 않는다.
+
 ## 화면과 Control Dock
 
 모든 페이지에서 같은 **Control Dock**을 사용한다. Desktop에서는 오른쪽 고정 패널,
@@ -207,14 +211,15 @@ Control Dock과 navigation drawer의 기존 동작 및 reduced-motion 정책을 
 ## 설치와 빌드
 
 Node.js 20.19 이상 또는 22.12 이상, ROS 2 Humble 환경을 사용한다.
-실행 예제는 이 PC의 zsh `humble` 함수(Humble 환경 로드 + Domain 0 설정)를 사용한다.
+실행 예제는 기존 차량 PC의 zsh 환경을 기준으로 한다. `cd ~/KAI_ws` 후
+`si`로 workspace 환경을 불러온다.
 이미 활성화 후 domain을 바꾼 셸과 다른 PC의 설정은
 [HIL runbook 공통 ROS 환경](../../../docs/HIL_RUNBOOK.md#4-공통-ros-환경)을 따른다.
 Web의 Python 의존성은 기존 GUI 환경과 분리해 설치할 수 있다.
-현재 호스트에서는 아래 `.venv`에 설치되어 있다.
+아래 `.venv`를 준비한 뒤 사용한다.
 
 ```zsh
-cd /home/kai/KAI_ws/src/Control/software/src/vehicle_console
+cd ~/KAI_ws/src/Control/software/src/vehicle_console
 uv venv --python /usr/bin/python3 --system-site-packages .venv
 uv pip install --python .venv/bin/python -r requirements-web.txt
 cd web
@@ -222,10 +227,10 @@ npm ci
 npm run build
 
 cd ~/KAI_ws
-humble
+si
 unset COLCON_CURRENT_PREFIX
 colcon build --symlink-install --packages-select vehicle_console
-source ~/KAI_ws/install/setup.zsh
+si
 ```
 
 `uv`를 쓰지 않는 환경에서는 `python3-venv` 설치 후
@@ -240,11 +245,10 @@ source ~/KAI_ws/install/setup.zsh
 
 ```zsh
 cd ~/KAI_ws
-humble
-source ~/KAI_ws/install/setup.zsh
+si
 
 ros2 launch vehicle_console hil.launch.py \
-  web_python:=/home/kai/KAI_ws/src/Control/software/src/vehicle_console/.venv/bin/python
+  web_python:="$HOME/KAI_ws/src/Control/software/src/vehicle_console/.venv/bin/python"
 ```
 
 브라우저: **http://127.0.0.1:8767**
@@ -269,12 +273,11 @@ ros2 launch vehicle_console hil.launch.py \
 
 ```zsh
 cd ~/KAI_ws
-humble
-source ~/KAI_ws/install/setup.zsh
+si
 
 ros2 launch vehicle_console hil.launch.py \
   start_bench:=true \
-  web_python:=/home/kai/KAI_ws/src/Control/software/src/vehicle_console/.venv/bin/python
+  web_python:="$HOME/KAI_ws/src/Control/software/src/vehicle_console/.venv/bin/python"
 ```
 
 기본 장치는 `/dev/hil_test`, `/dev/hil_a`, `/dev/hil_b`다.
@@ -419,15 +422,14 @@ tailscale serve --tcp=8767 off
 PC용 renderer를 먼저 빌드한 뒤 colcon으로 설치한다.
 
 ```zsh
-cd /home/kai/KAI_ws/src/Control
+cd ~/KAI_ws/src/Control
 cmake -S firmware/UNO_R4_DASHBOARD/dashboard_preview/native \
   -B firmware/UNO_R4_DASHBOARD/build/host -DCMAKE_BUILD_TYPE=Release
 cmake --build firmware/UNO_R4_DASHBOARD/build/host --parallel 2
 cmake --install firmware/UNO_R4_DASHBOARD/build/host --prefix software/src/vehicle_console
 
 cd ~/KAI_ws
-humble
-source ~/KAI_ws/install/setup.zsh
+si
 unset COLCON_CURRENT_PREFIX
 colcon build --symlink-install --packages-select vehicle_console
 ```
@@ -438,13 +440,12 @@ USB protocol과 빌드 방법은 [UNO README](../../../firmware/UNO_R4_DASHBOARD
 
 ```zsh
 cd ~/KAI_ws
-humble
-source ~/KAI_ws/install/setup.zsh
+si
 
 ros2 launch vehicle_console hil.launch.py \
   start_bench:=true steering:=true state:=true \
   dashboard_port:=/dev/arduino_hil \
-  web_python:=/home/kai/KAI_ws/src/Control/software/src/vehicle_console/.venv/bin/python
+  web_python:="$HOME/KAI_ws/src/Control/software/src/vehicle_console/.venv/bin/python"
 ```
 
 `dashboard_port` 기본값은 빈 문자열이다. 명시했을 때만 UNO serial을 연다.
@@ -505,9 +506,9 @@ LCD 보고에 `vtouch=1`, `touch_errors`만 추가한다. Virtual Touch는 dashb
 ## 검증
 
 ```zsh
-cd /home/kai/KAI_ws/src/Control
-humble
-source ~/KAI_ws/install/setup.zsh
+cd ~/KAI_ws
+si
+cd ~/KAI_ws/src/Control
 ROS_DOMAIN_ID=191 ROS_LOCALHOST_ONLY=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
   software/src/vehicle_console/.venv/bin/python -m pytest software/src/vehicle_console/test/hil -q
 ```

@@ -1,13 +1,12 @@
 # A13 — AUTO small-angle steering square
 #
 # MANUAL 정지 상태에서 AUTO로 전환한다. AUTO 감지 후 10 s 동안
-# speed_target=0.0 m/s, brake=false를 발행한다. 이후 1.0 m/s로 주행하며
+# speed_target=0.0 m/s, brake=false를 발행한다. 이후 설정한 목표속도로 주행하며
 # center+1 deg를 4 s, center-1 deg를 4 s 유지하는 square를 6주기 실행한다.
 # steering_period_sec의 절반이 한쪽 조향 유지 시간이다.
 # sine과 달리 t=0에서 곧바로 center+1 deg로 step하므로 center phase가 없다.
 # 완료 후 speed_target=0.0 m/s·center를 유지한다.
-# 현재 center=-2 deg는 어제 실차 직진 추정값이다. 얼라인먼트 후에는 이 YAML의
-# steering_center_deg만 수정한다.
+# 기본 목표속도와 센터각은 0이다. 시험 조건에 맞게 이 YAML에서 설정한다.
 vehicle_test_scenario_runner:
   ros__parameters:
     enabled: true
@@ -20,8 +19,8 @@ vehicle_test_scenario_runner:
     publish_rate_hz: 20.0
 
     scenario: steering_square
-    cruise_speed_kph: 3.6    # 1.0 m/s
-    steering_center_deg: -2.0
+    cruise_speed_kph: 0.0    # 시험할 목표속도를 입력한다.
+    steering_center_deg: 0.0
     steering_amplitude_deg: 1.0
     steering_period_sec: 8.0  # +1 deg 4 s, -1 deg 4 s
     initial_hold_sec: 0.0

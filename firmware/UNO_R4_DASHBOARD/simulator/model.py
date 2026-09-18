@@ -100,6 +100,9 @@ class DashboardValues:
     controller_temperature_decic: int = 0
     motor_temperature_decic: int = 0
     motor_fault_bits: int = 0
+    lv_status_flags: int = 0
+    lv_voltage_decivolt: int = 0
+    lv_soc_percent: int = 255
 
     def status(self, flag: int) -> bool:
         return bool(self.status_flags & flag)

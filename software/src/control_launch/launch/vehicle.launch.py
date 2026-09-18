@@ -18,6 +18,11 @@ hil_command_generator는 Planning 대역 시험 노드이므로 실차 launch에
 launch가 뜨면 바로 구동 가능한 상태가 되므로, 전원 인가 전에 KEYA 배선과
 E-stop을 먼저 확인한다.
 
+Torque 조향의 120 deg/s 초과 등으로 발생한 Host FAULT 잠금은 조향 노드
+메모리에만 보관한다. 기존 launch를 완전히 종료하고 재실행하면 초기화되며,
+유효한 상태·피드백과 새 /vehicle/command를 받은 뒤에만 다시 Enable한다.
+과속이나 KEYA fault가 계속되면 재실행 뒤에도 다시 정지한다.
+
 can0는 launch 전에 올라와 있어야 한다. 조향 노드는 SocketCAN을 시작 시 한
 번만 열고 실패해도 재시도하지 않으므로, can0가 늦으면 조향만 조용히 CAN이
 죽은 채 뜬다. host/systemd/의 networkd 설정을 설치하면 부팅·USB 재연결 시
@@ -36,12 +41,26 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, FindExecutable, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
+from control_tuning.storage import default_settings_path
+from control_tuning.presets import load_launch_overrides
+from control_tuning.conditions import CONDITION_KEYS
+
+
+def _governor(context, config):
+    return [Node(
+        package="command_governor", executable="command_governor_node",
+        name="command_governor", output="screen",
+        parameters=[config, load_launch_overrides(
+            LaunchConfiguration("control_tuning_file").perform(context), "command_governor",
+            LaunchConfiguration("tuning_preset").perform(context), governor_config=config)],
+        respawn=True, respawn_delay=2.0,
+    )]
 
 
 def _agent(name, port, baud):
@@ -94,6 +113,9 @@ def generate_launch_description():
         DeclareLaunchArgument("stm_a_port", default_value="/dev/stm_a"),
         DeclareLaunchArgument("stm_b_port", default_value="/dev/stm_b"),
         DeclareLaunchArgument("agent_baud", default_value="460800"),
+        DeclareLaunchArgument("control_tuning_file", default_value=str(default_settings_path())),
+        DeclareLaunchArgument("tuning_preset", default_value="driving", choices=list(CONDITION_KEYS),
+                              description="주행 / 공중 / 접지 정지 제어 프리셋"),
         DeclareLaunchArgument(
             "agents", default_value="true",
             description="STM_A/B micro-ROS Agent를 함께 띄운다. 이미 따로 실행 중이면 false.",
@@ -105,16 +127,6 @@ def generate_launch_description():
         DeclareLaunchArgument("actuation_mode", default_value="", choices=["", "position", "torque"]),
         DeclareLaunchArgument("steering_enabled", default_value=""),
         DeclareLaunchArgument(
-            "torque_full_scale_error_deg", default_value="",
-            description="조향 torque P: 이 오차(deg)에서 peak. 작을수록 P↑. 빈 값은 YAML",
-        ),
-        DeclareLaunchArgument(
-            "torque_kd", default_value="",
-            description="조향 torque D raw/(rad/s). 빈 값은 YAML",
-        ),
-        DeclareLaunchArgument("torque_peak_limit_raw", default_value=""),
-        DeclareLaunchArgument("torque_sustained_limit_raw", default_value=""),
-        DeclareLaunchArgument(
             "can_interface", default_value="can0",
             description="KEYA SocketCAN 인터페이스.",
         ),
@@ -123,27 +135,17 @@ def generate_launch_description():
         _agent("stm_a_agent", LaunchConfiguration("stm_a_port"), baud),
         _agent("stm_b_agent", LaunchConfiguration("stm_b_port"), baud),
         # /vehicle/command의 유일한 발행자. stateless라 respawn으로 복구한다.
-        Node(
-            package="command_governor",
-            executable="command_governor_node",
-            name="command_governor",
-            output="screen",
-            parameters=[governor_config],
-            respawn=True,
-            respawn_delay=2.0,
-        ),
+        OpaqueFunction(function=_governor, kwargs={"config": governor_config}),
         # 조향 armed 기본값을 launch 인자로 명시해, lateral_ctrl 쪽 기본값이
         # 바뀌어도 실차 launch는 즉시 구동 가능 상태를 유지한다.
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(steering_launch),
             launch_arguments={
                 "can_interface": LaunchConfiguration("can_interface"),
+                "control_tuning_file": LaunchConfiguration("control_tuning_file"),
+                "tuning_preset": LaunchConfiguration("tuning_preset"),
                 "actuation_mode": LaunchConfiguration("actuation_mode"),
                 "steering_enabled": LaunchConfiguration("steering_enabled"),
-                "torque_full_scale_error_deg": LaunchConfiguration("torque_full_scale_error_deg"),
-                "torque_kd": LaunchConfiguration("torque_kd"),
-                "torque_peak_limit_raw": LaunchConfiguration("torque_peak_limit_raw"),
-                "torque_sustained_limit_raw": LaunchConfiguration("torque_sustained_limit_raw"),
                 "hardware_can_enabled": "true",
                 "actuator_output_enabled": "true",
             }.items(),

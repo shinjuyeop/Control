@@ -494,6 +494,11 @@ static void accept_dashboard_frame(const CanMsg &message)
   else
   {
     assembly.values.motor_fault_bits = get_u24_le(&message.data[2]);
+    assembly.values.lv_status_flags = message.data[5];
+    assembly.values.lv_voltage_decivolt = message.data[6];
+    assembly.values.lv_soc_percent = message.data[7];
+    if (assembly.values.lv_soc_percent > 100U)
+      assembly.values.lv_status_flags &= (uint8_t)~LV_SOC_KNOWN;
     assembly.received_frames |= FRAME_FAULT;
   }
 

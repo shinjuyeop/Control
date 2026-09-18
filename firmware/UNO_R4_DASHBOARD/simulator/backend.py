@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import atexit
 import ctypes
+from dataclasses import replace
 import json
 import os
 from pathlib import Path
@@ -320,7 +321,8 @@ def _can_payloads(sample: ScenarioSample, alive: int) -> tuple[bytes, ...]:
         prefix + _i16(values.controller_temperature_decic)
         + _i16(values.motor_temperature_decic) + b"\0\0",
         prefix + int(values.motor_fault_bits & 0xFFFFFF).to_bytes(3, "little")
-        + b"\0\0\0",
+        + bytes((values.lv_status_flags, values.lv_voltage_decivolt,
+                 values.lv_soc_percent)),
     )
 
     raw = sample.auto or AutoTelemetry()
@@ -384,7 +386,12 @@ class _StartupFrameEvent(ctypes.Structure):
 
 
 class NativeDashboard:
-    def __init__(self, timing_profile: Path | None = None) -> None:
+    def __init__(self, timing_profile: Path | None = None, *,
+                 manual_lv: bool = False, lv_soc: int = 73,
+                 lv_voltage: float = 13.3) -> None:
+        self.manual_lv = manual_lv
+        self.lv_soc = lv_soc
+        self.lv_voltage_decivolt = round(lv_voltage * 10)
         library_path = _build_library()
         self.library = ctypes.CDLL(str(library_path))
         self.library.dashboard_run_until.argtypes = [ctypes.c_uint64]
@@ -478,6 +485,13 @@ class NativeDashboard:
     def schedule_sample(self, arrival_us: int, sample: ScenarioSample, alive: int) -> None:
         if sample.dashboard_can_lost:
             return
+        if self.manual_lv:
+            flags = 1 | (2 if self.lv_voltage_decivolt >= 0 else 0) | (4 if self.lv_soc >= 0 else 0)
+            sample = replace(sample, values=replace(
+                sample.values, lv_status_flags=flags,
+                lv_voltage_decivolt=max(0, min(255, self.lv_voltage_decivolt)),
+                lv_soc_percent=255 if self.lv_soc < 0 else self.lv_soc,
+            ))
         payloads = _can_payloads(sample, alive)
         for slot, offset_us in enumerate((0, 10_000, 20_000, 30_000)):
             for frame_index in (slot, slot + 4):

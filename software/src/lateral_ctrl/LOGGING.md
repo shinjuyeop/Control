@@ -10,6 +10,14 @@ Ouster LiDAR·IMU 패킷 및 메타데이터도 함께 녹화한다.
 - 원본은 항상 mcap — CSV는 파생물이라 나중에 필요한 필드가 생겨도 원본에서 다시 뽑으면 됨.
   mcap은 Foxglove에서 바로 열림.
 
+## 시나리오 TUI의 녹화와 구분
+
+[실차 시나리오 TUI](../vehicle_test_scenarios/README.md)는 `R` 시 자체 recorder를
+시작하며 기본 녹화는 ON이다. `M`으로 OFF를 선택할 수 있다. 기록은 실행 workspace의
+`records/<시간>_<scenario>_v<최고속도>/`에 `rosbag/`, `scenario.yaml`, `console.log`로
+저장한다. 아래 독립 launch의 기본 경로·폴더명·토픽 목록과는 다르다.
+TUI 녹화를 사용할 때는 별도 recorder를 중복 실행하지 않는다.
+
 ## 1. 녹화
 
 ```bash
@@ -64,7 +72,8 @@ ros2 launch lateral_ctrl mcap_logging.launch.py \
 (`SteeringActuatorStatus` 등)의 정의가 필요하기 때문.
 
 ```bash
-source install/setup.bash  # gazebo_sitl workspace root에서 실행
+cd ~/KAI_ws
+si
 
 # 전체 토픽 변환 → <bag>/csv/에 토픽당 1파일
 BAG_DIR=/home/kai/KAI_ws/records/rosbag2_2026_09_05-14_00_00
@@ -103,7 +112,7 @@ df.plot(x="recv_time_sec", y=["motor_current_a", "motor_angle_deg"])
 
 | 증상 | 원인 / 해결 |
 |---|---|
-| `file 'mcap_logging.launch.py' was not found` | 그 터미널이 다른(또는 옛) install을 소싱함. 현재 `gazebo_sitl/install/setup.bash`를 소싱하고 재시도 |
+| `file 'mcap_logging.launch.py' was not found` | 그 터미널이 다른(또는 옛) install을 소싱함. `cd ~/KAI_ws` 후 `si`로 현재 환경을 불러오고 재시도 |
 | `The message type '...' is invalid` (echo/변환 시) | 같은 원인 — 워크스페이스 소싱 안 됨 |
 | `external ROS artifact root is unavailable/not mounted separately` | `require_external_storage:=true` 실행에서 외장 SSD mount를 복구한 뒤 재시도. 내부 SSD나 `/tmp`로 fallback하지 않음 |
 | 변환 스크립트가 `metadata.yaml이 없습니다`로 거부 | 녹화를 Ctrl+C로 안 끝내고 강제 종료했거나, bag 디렉토리가 아닌 mcap 파일 자체를 지정함. 디렉토리를 지정할 것 |

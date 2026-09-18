@@ -5,8 +5,24 @@
 발행은 같은 노드가 소유한다. `kaiev26_msgs` ABI는 바꾸지 않는다.
 
 Mode의 **코드 기본값은 position**이다. 현재 작업 YAML의 운영자 선택은 `torque`이며
-이를 보존했다. Launch에서 mode 인자를 생략하면 `params_file` 값을 사용하고,
-명시적 `actuation_mode:=...`만 YAML을 덮어쓴다. 기존 HIL launch는 position을 명시한다.
+이를 보존했다. Launch는 `params_file` 위에 `control_tuning_file`의 사용자 설정을
+적용하고, 명시적 `actuation_mode:=...`가 가장 우선한다. 기존 HIL launch는 position을 명시한다.
+
+## 공통 파라미터 TUI
+
+`ros2 run control_tuning control_tuning_tui`에서 응답 튜닝·출력/보호·운용·timeout을
+편집한다. P는 `A/deg`, D는 `A/(deg/s)`이며 현재 기본값은 각각 32와 약 0.0418879다.
+20 A 환산 기준에서 최대 명령은 16 A, 지속 명령은 8 A다. 실측 전류나 정격 설정을 뜻하지 않는다.
+최대 명령을 바꿔도 화면의 P를 유지하도록 `torque_full_scale_error_deg`를 함께 환산한다.
+
+`A`는 MANUAL·정지 상태에서 16개 torque 튜닝을 atomic 적용하고 재조회한다.
+`S`는 다음 launch용 사용자 파일에 저장한다. 운용 방식·최소 차속·timeout은 저장 후
+노드 재시작이 필요하다. 기존 ROS 키는 유지하므로 아래 표와 CLI는 계속 유효하다.
+[TUI 사용법·단위·저장 경로](../control_tuning/README.md)를 참고한다.
+
+튜닝 TUI의 `P`는 공중·접지 정지·주행별 사용자 제어 프리셋을 관리한다. 검증되지 않은
+조건별 권장값은 제공하지 않는다. 시나리오 TUI에서 실제 시험 조건을 선택하면 녹화 시
+실행 노드의 실제 파라미터와 이후 변경 이벤트·torque 상세 신호를 함께 기록한다.
 
 | Host | KEYA Windows utility | 제어 경로 |
 |---|---|---|
@@ -28,23 +44,19 @@ e = target - actual
 Kp = torque_peak_limit_raw / deg2rad(torque_full_scale_error_deg)
 P = Kp * e
 D = torque_kd * (0 - measured_wheel_rate_rad_s)
-FF = clamp(torque_inertia_ff * alpha_ff, ±torque_feedforward_limit_raw)
-F = |e| > torque_friction_deadband_deg ? F_c(|drive speed|) * sign(e) : 0
-u = FF + P + D + F
+alpha_ff = filtered_second_derivative(target, command_timestamp)
+FF = clamp(torque_inertia_ff * alpha_ff, +/-torque_feedforward_limit_raw)
+F = abs(e) > deadband ? friction(speed) * sign(e) : 0
+u = P + D + FF + F
 canonical_torque = envelope_and_direction_limit(u)
 KEYA_torque = torque_direction_sign * canonical_torque
 ```
 
-Ki=0이며 integral은 사용하지 않는다. 정지 마찰(stiction)은 적분 대신 `F`항으로
-보상한다(방법 A, `docs/torque_steering_overview.md`). 이후 I항을 도입할 때는
-anti-windup을 별도로 설계해야 한다. direct step의 수치 미분으로 D kick을 만들지
-않도록 target rate=0이다. `alpha_ff`는 제어 tick이 아니라 `/vehicle/command`
-header stamp 간격으로 2차 차분하고 `torque_feedforward_filter_hz` LPF를 거친다.
-명령 간격이 `steer_command_timeout_ms`를 넘거나 명령이 폐기되면 추정 이력을 버린다.
-`F_c(v)`는 `torque_friction_schedule`이 있으면 구간 선형 보간(표 밖은 끝값),
-없으면 상수 `torque_friction_raw`다. FF·F 기본값은 0이라 기본 응답은 PD와 같다.
-settle 판정이면 FF·F와 무관하게 토크 0을 보낸다. 목표에서 오차가 0이어도 움직이는 방향의 반대 torque로
-제동한다. Position의 `max_steering_rate_deg_s`는 torque 경로에 적용하지 않는다.
+Ki=0이다. 마찰·관성 보상의 기본 gain은 0이므로 기존 PD 응답은 그대로다.
+목표 각가속도는 제어 tick이 아니라 새 명령의 header stamp에서 계산해 held target의
+가짜 impulse를 피한다. direct step의 target rate는 0으로 두어 D kick을 만들지 않는다.
+목표에서 오차가 0이어도 움직이는 방향의 반대 torque로 제동한다. Position의
+`max_steering_rate_deg_s`는 torque 경로에 적용하지 않는다.
 
 기본 full-scale-error=0.5°에서 정지 상태의 P는 0.1°=peak의 20%,
 0.25°=50%, 0.5°=100%다. 큰 오차의 saturation은 정상 동작이다. D·envelope·한계
@@ -79,6 +91,20 @@ fault는 5 tick, voltage/temperature는 25 tick 주기이며 heartbeat도 speed/
 
 ## 기본 파라미터
 
+아래 표는 **노드 코드 기본값**이다. launch가 읽는
+`config/steering_actuator.yaml`은 다음 값을 덮어쓴다.
+
+| 항목 | 현재 YAML |
+|---|---:|
+| `actuation_mode` | `torque` |
+| `torque_peak_limit_raw` | 10000 |
+| `torque_sustained_limit_raw` | 5000 |
+| `torque_peak_duration_ms` | 5000 |
+| `torque_peak_recovery_ms` | 5000 |
+| `minimum_steering_speed_kph` | 0.0 (정지 시험용; 코드 기본값 1.0) |
+
+현재 실차 설정을 확인할 때는 YAML과 `ros2 param get`을 기준으로 한다.
+
 | 이름 | 기본값 | 단위/설명 |
 |---|---:|---|
 | `actuation_mode` | position | startup-only |
@@ -97,12 +123,12 @@ fault는 5 tick, voltage/temperature는 25 tick 주기이며 heartbeat도 speed/
 | `torque_rate_filter_hz` | 10.0 | 양수, control Nyquist 이하 |
 | `torque_soft_limit_margin_deg` | 1.0 | calibration 양쪽 끝에서 안쪽 margin |
 | `torque_hard_rate_limit_deg_s` | 120.0 | 실제 wheel rate 안전 ceiling |
-| `torque_inertia_ff` | 0.0 | raw/(rad/s²), J_ff; 0이면 FF 없음 |
-| `torque_feedforward_limit_raw` | 1000 | 0..10000, \|J_ff·α\| 상한 |
-| `torque_feedforward_filter_hz` | 5.0 | 양수, 명령 stamp 기준 α LPF |
-| `torque_friction_raw` | 0 | 0..10000 int, F_c; 0이면 마찰 보상 없음 |
-| `torque_friction_deadband_deg` | 0.1 | 0 이상, \|e\|가 이 이하이면 F=0 |
-| `torque_friction_schedule` | 없음 | double 배열 `[v_mps, raw, ...]`, 속도 오름차순; 있으면 friction_raw 대신 사용 |
+| `torque_inertia_ff` | 0.0 | raw/(rad/s²), 0이면 비활성 |
+| `torque_feedforward_limit_raw` | 1000 | 관성 피드포워드 항의 절대값 상한, 0..10000 |
+| `torque_feedforward_filter_hz` | 5.0 | 명령 timestamp 기반 목표 각가속도 LPF |
+| `torque_friction_raw` | 0 | 오차 방향 정지 마찰 보상, 0이면 비활성 |
+| `torque_friction_deadband_deg` | 0.1 | 이 오차 안에서는 마찰 보상 0 |
+| `torque_friction_schedule` | `[]` | 선택적 `[speed_mps, raw, ...]`; 지정하면 고정 마찰값 대체 |
 
 startup-only 이외의 위 gain/envelope 값은 runtime 변경 가능하다. 전체 변경 묶음을
 검증한 후 **zero→Disable, 목표·rate 이력 폐기**하고 적용한다. 새 명령과 fresh rate
@@ -151,8 +177,12 @@ Host current loop가 아니다. 실제 peak 지속 오차는 control tick jitter
   허용한다. hard 범위를 실제로 넘으면 즉시 zero+Disable한다.
 - 각도 범위 초과, 실제 과속, invalid controller input, control stall/과도한 위치 샘플 간격은 latched
   `FAULT`다. 메시지 ABI의 `REASON_MOTOR_FAULT`를 재사용하고 세부 원인은
-  `/steering/torque_safety`에 표시한다. 원인 제거 후 `steering_enabled=false`,
-  `true` 순서와 새로운 command가 필요하다. 단순 saturation은 fault가 아니다.
+  `/steering/torque_safety`에 표시한다. 잠금은 조향 노드의 프로세스 메모리에만 보관한다.
+  원인 제거 후 기존 `control_launch vehicle.launch.py`를 완전히 종료하고 재실행하면
+  조향 노드가 새로 생성되면서 잠금이 초기화된다. 재실행 없이 해제하려면
+  `steering_enabled=false`, `true` 순서로 설정한다. 두 경우 모두 유효한 상태·피드백과
+  새로운 command가 있어야 다시 Enable한다. 단순 saturation은 fault가 아니다.
+  재실행 후에도 실제 과속이나 KEYA fault가 있으면 다시 정지한다.
 - `/brake/status` freshness에 별도 timeout이 없는 기존 한계와 물리 E-stop 경로는
   `docs/SAFETY.md`를 따른다. KEYA의 speed/torque watchdog은 최대 1000 ms이며
   Host의 100 ms 위치 감시와 별개다. 독립적인 하드웨어 차단 수단이 필요하다.
@@ -166,8 +196,8 @@ Host current loop가 아니다. 실제 peak 지속 오차는 control tick jitter
 2. workspace 환경에서 출력을 제어하기 전에 조향을 비활성 상태로 시작한다.
 
    ```bash
-   source /opt/ros/humble/setup.bash
-   source /home/shinjuyeop/KAI_ws/install/setup.bash
+   cd ~/KAI_ws
+   si
    ros2 launch lateral_ctrl steering_actuator.launch.py \
      actuation_mode:=torque steering_enabled:=false can_interface:=can0
    ```
@@ -209,8 +239,37 @@ Host current loop가 아니다. 실제 peak 지속 오차는 control tick jitter
 6. ±5° step에서 rise time·overshoot·settle time·rate·current를 확인한다. 그 다음
    지면 부하에서 작은 step부터 다시 검증하고 peak/sustained/duration을 확대한다.
    과속 fault를 없애려고 ceiling부터 올리지 말고 damping·피드백 지연을 먼저 본다.
-7. 실제 fault 후에는 원인 해결→`steering_enabled false`→`true`→새 명령 순서로
-   재개한다. position 복귀는 노드 종료·KEYA 0020=3/Burn 확인 후 실행한다.
+7. 실제 fault 후에는 원인 해결→기존 vehicle launch 종료·재실행→새 명령 순서로
+   재개한다. 노드를 유지할 때는 `steering_enabled false`→`true`로 잠금을 해제한다.
+   position 복귀는 노드 종료·KEYA 0020=3/Burn 확인 후 실행한다.
+
+## T0-T2 측정 도구
+
+`torque_sysid_bench.launch.py`는 T0 부호, T1 마찰, T2 관성 시험 중 하나만 실행한다.
+읽기 전용 조향 노드와 실제 torque를 보내는 측정 노드를 함께 띄우므로
+`vehicle.launch.py`나 다른 KEYA 송신원과 동시에 실행하면 안 된다. 바퀴를 띄우고
+차량 정지·MANUAL/중립·가속 페달 해제·E-stop 준비, 대상 CAN과 KEYA 0020=2를 확인한 뒤
+T0부터 진행한다. 이 문서의 코드·테스트 결과는 물리 부호나 안전 한계의 증명이 아니다.
+
+```bash
+ros2 launch lateral_ctrl torque_sysid_bench.launch.py test:=t0 direction:=1
+ros2 launch lateral_ctrl torque_sysid_bench.launch.py test:=t1 direction:=1
+ros2 launch lateral_ctrl torque_sysid_bench.launch.py test:=t2 level:=300
+```
+
+기록은 기본적으로 외장 저장소
+`~/Storage/ROS2_Workspace_offload/Control/torque_sysid`에 생성된다. 외장 저장소가 별도
+mount가 아니면 launch가 기록 전에 중단한다. T2를 두 개 이상의 raw level로 기록한 뒤:
+
+```bash
+ros2 run lateral_ctrl torque_sysid_metrics.py inertia \
+  <level300-bag>:300 <level500-bag>:500 --friction-raw <T1-result>
+ros2 run lateral_ctrl torque_sysid_metrics.py step <step-bag> --csv <output.csv>
+```
+
+측정값을 `control_tuning`에 입력하기 전 양방향 반복 결과와 출력 한계를 확인한다.
+속도별 마찰 배열은 고급 설정이므로 TUI가 아니라 `torque_friction_schedule` YAML 또는
+ROS parameter로 적용한다.
 
 ## Foxglove와 기록
 
@@ -226,10 +285,10 @@ filtered/unfiltered rate, current/speed, mode/safety를 함께 확인한다.
 | `/steering/status.actual_wheel_angle_rad` | 기존 status | calibrated actual rad |
 | `/steering/angle_error` | Float32 | PD 오차 rad |
 | `/steering/rate`, `/steering/unfiltered_rate` | Float32 | rad/s |
-| `/steering/torque_p_raw`, `/steering/torque_d_raw` | Float32 | canonical raw 기여 |
-| `/steering/torque_ff_raw`, `/steering/torque_friction_raw` | Float32 | canonical J·α_ff, F_c·sign(e) 기여 |
-| `/steering/target_accel` | Float32 | 명령 stamp로 추정한 α_ff rad/s² |
-| `/steering/torque_unsaturated_raw` | Float32 | canonical FF+P+D+F |
+| `/steering/torque_p_raw`, `/steering/torque_d_raw` | Float32 | canonical P/D raw 기여 |
+| `/steering/torque_ff_raw`, `/steering/torque_friction_raw` | Float32 | 관성/마찰 보상 raw 기여 |
+| `/steering/target_accel` | Float32 | 명령 timestamp 기반 목표 각가속도 rad/s² |
+| `/steering/torque_unsaturated_raw` | Float32 | canonical P+D+FF+F |
 | `/steering/torque_command_raw` | Int32 | sign 적용 후 KEYA에 요청한 raw; 실제 torque 측정 아님 |
 | `/steering/torque_current_limit_command_a` | Float32 | `raw/10000×Parameter 0003×0.8`; signed 명령 전류 제한값 A |
 | `/steering/torque_limit_raw` | Int32 | 현재 peak/sustained cap |
@@ -268,11 +327,11 @@ reset되며 actual/current/speed는 기존 status에서 계속 관측한다.
 재현 명령:
 
 ```bash
-cd /home/shinjuyeop/KAI_ws
-source /opt/ros/humble/setup.bash
+cd ~/KAI_ws
+si
 colcon build --base-paths src/kaiev26_msgs src/Control/software/src/lateral_ctrl \
   --packages-select kaiev26_msgs lateral_ctrl --cmake-args -DBUILD_TESTING=ON
-source install/setup.bash
+si
 ROS_DOMAIN_ID=197 ROS_LOCALHOST_ONLY=1 colcon test \
   --packages-select lateral_ctrl --return-code-on-test-failure
 colcon test-result --test-result-base build/lateral_ctrl --verbose
@@ -283,3 +342,10 @@ ROS_DOMAIN_ID=198 ROS_LOCALHOST_ONLY=1 python3 -m pytest \
   --ignore=software/src/vehicle_console/test/hil/test_web_console.py \
   --ignore=software/src/vehicle_console/test/hil/test_bridge_worker.py -q
 ```
+
+## 재시작 복구 회귀 검증 (2026-09-18)
+
+Driver stub 기반 회귀 시험에서 overspeed latch 유지, 노드 재생성 후 latch 해제,
+새 명령 대기, 새 명령으로 출력 재개, overspeed 재발 시 재잠금을 확인했다.
+`lateral_ctrl`의 CTest 6개 suite, GTest 79개가 통과했다. 이는 Host 노드 수명과
+상태 머신의 검증이며 실제 KEYA·차량에서 launch 재시작을 시험한 결과는 아니다.

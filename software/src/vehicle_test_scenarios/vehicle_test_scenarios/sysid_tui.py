@@ -17,7 +17,7 @@ import rclpy
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.parameter import Parameter
 from rclpy.signals import SignalHandlerOptions
-from rich.console import Console
+from rich.console import Console, Group
 from rich import box
 from rich.panel import Panel
 from rich.segment import Segment
@@ -29,6 +29,7 @@ from .sysid_profiles import (
     SCENARIO_KEYS, SCENARIO_SPECS, default_run_settings, update_setting,
 )
 from .sysid_runtime import SysidNode
+from control_tuning.conditions import CONDITION_KEYS, condition_label
 
 
 CLEAR_VIEWPORT = '\x1b[2J\x1b[H'
@@ -64,16 +65,42 @@ class RenderedLines:
                 yield Segment.line()
 
 
-def redraw(console, renderable, offset):
-    lines = console.render_lines(
-        renderable, console.options.update(height=None), pad=True,
-    )
-    visible_rows = max(1, console.size.height)
-    max_offset = max(0, len(lines) - visible_rows)
-    offset = max(0, min(offset, max_offset))
-    terminal_write(console, CLEAR_VIEWPORT)
-    console.print(RenderedLines(lines[offset:offset + visible_rows]), end='')
-    return offset
+class ScreenRenderer:
+    """Update changed rows in one write without exposing a cleared screen."""
+
+    def __init__(self, console):
+        self.console = console
+        self.previous_rows = []
+        self.previous_size = None
+
+    def redraw(self, renderable, offset):
+        console = self.console
+        size = console.size
+        lines = console.render_lines(
+            renderable, console.options.update(height=None), pad=True,
+        )
+        visible_rows = max(1, size.height)
+        max_offset = max(0, len(lines) - visible_rows)
+        offset = max(0, min(offset, max_offset))
+        visible = lines[offset:offset + visible_rows]
+        with console.capture() as capture:
+            console.print(
+                RenderedLines(visible),
+                end='', soft_wrap=True,
+            )
+        rows = capture.get().split('\n') if visible else []
+        rows += [' ' * size.width] * (visible_rows - len(rows))
+        previous = self.previous_rows if size == self.previous_size else []
+        updates = [
+            f'\x1b[{index + 1};1H{row}'
+            for index, row in enumerate(rows)
+            if index >= len(previous) or row != previous[index]
+        ]
+        if updates:
+            terminal_write(console, ''.join(updates))
+        self.previous_rows = rows
+        self.previous_size = size
+        return offset
 
 
 def vertical_stack(*renderables):
@@ -141,7 +168,9 @@ class MenuState:
         self.field_index = 0
         self.edit_field = None
         self.edit_text = ''
+        self.edit_choice = None
         self.record_mcap = True
+        self.test_condition = 'unspecified'
         self.view_offset = 0
 
     @property
@@ -149,7 +178,13 @@ class MenuState:
         return self.settings_by_key[self.selected_key]
 
     def run_settings(self):
-        return replace(self.selection, record_mcap=self.record_mcap)
+        return replace(self.selection, record_mcap=self.record_mcap,
+                       test_condition=self.test_condition)
+
+    def adopt_launch_preset(self, preset):
+        if self.test_condition == 'unspecified' and self.edit_field != 'test_condition':
+            if preset in CONDITION_KEYS:
+                self.test_condition = preset
 
     @property
     def selected_spec(self):
@@ -164,7 +199,7 @@ class MenuState:
         if self.focus == 'scenarios':
             self.hover_index = (self.hover_index + delta) % len(SCENARIO_SPECS)
         else:
-            count = len(self.selected_spec.fields) + 1  # MCAP option follows input parameters.
+            count = len(self.selected_spec.fields) + 2  # MCAP and physical test condition.
             self.field_index = (self.field_index + delta) % count
 
     def select_hovered(self):
@@ -173,16 +208,35 @@ class MenuState:
         self.focus = 'parameters'
 
     def begin_edit(self):
+        if self.field_index >= len(self.selected_spec.fields):
+            self.edit_field = ('record_mcap' if self.field_index == len(self.selected_spec.fields)
+                               else 'test_condition')
+            value = getattr(self, self.edit_field)
+            self.edit_choice = value if value in self.choice_options else self.choice_options[0]
+            return
         field = self.current_field
         value = getattr(self.selection, field.name)
         self.edit_field = field.name
         self.edit_text = str(value)
 
+    @property
+    def choice_options(self):
+        if self.edit_field == 'record_mcap':
+            return (True, False)
+        if self.edit_field == 'test_condition':
+            return CONDITION_KEYS
+        return ()
+
     def cancel_edit(self):
         self.edit_field = None
         self.edit_text = ''
+        self.edit_choice = None
 
     def commit_edit(self):
+        if self.choice_options:
+            setattr(self, self.edit_field, self.edit_choice)
+            self.cancel_edit()
+            return
         field = self.current_field
         if not self.edit_text.strip():
             raise ValueError('값을 입력하세요')
@@ -224,6 +278,12 @@ def handle_key(menu, key, *, busy=False):
         if key == 'escape':
             menu.cancel_edit()
             return None, ''
+        if menu.choice_options:
+            if key in ('up', 'down'):
+                options = menu.choice_options
+                step = -1 if key == 'up' else 1
+                menu.edit_choice = options[(options.index(menu.edit_choice) + step) % len(options)]
+            return None, ''
         if key == 'backspace':
             menu.edit_text = menu.edit_text[:-1]
         elif len(key) == 1 and key in '0123456789.-':
@@ -241,13 +301,11 @@ def handle_key(menu, key, *, busy=False):
     elif key == 'enter':
         if menu.focus == 'scenarios':
             menu.select_hovered()
-        elif menu.field_index == len(menu.selected_spec.fields):
-            menu.record_mcap = not menu.record_mcap
         else:
             menu.begin_edit()
-    elif key.lower() == 'm':
-        menu.record_mcap = not menu.record_mcap
     elif key.lower() == 'r':
+        if menu.test_condition == 'unspecified':
+            return None, '시험 조건에서 Enter → ↑↓ 선택 → Enter로 확정하세요.'
         return 'run', ''
     elif key == 'escape':
         menu.focus = 'scenarios'
@@ -321,14 +379,8 @@ def parameter_menu(menu):
     table.add_column(width=4, no_wrap=True)
     selection = menu.selection
     fields = menu.selected_spec.fields
-    for index in range(len(fields) + 1):
+    for index, field in enumerate(fields):
         focused = menu.focus == 'parameters' and index == menu.field_index
-        if index == len(fields):
-            table.add_row(Text(('▶ ' if focused else '  ') + 'MCAP 녹화',
-                               style='bold reverse' if focused else ''),
-                          Text('ON' if menu.record_mcap else 'OFF'), Text('M'))
-            continue
-        field = fields[index]
         editing = focused and menu.edit_field == field.name
         prefix = '▶ ' if focused else '  '
         value = menu.edit_text + '▌' if editing else f'{getattr(selection, field.name):g}'
@@ -338,13 +390,29 @@ def parameter_menu(menu):
             Text(value, style='bold cyan' if editing else style),
             Text(field.unit, style=style),
         )
+    # Choice values use the full right-hand space, including the numeric unit
+    # column, so 접지 정지 remains readable in a 71-column terminal.
+    choices = Table.grid(expand=True, padding=(0, 1))
+    choices.add_column(ratio=1, no_wrap=True)
+    choices.add_column(justify='right', no_wrap=True, min_width=9)
+    for offset, (name, label) in enumerate((('record_mcap', 'MCAP 녹화'),
+                                          ('test_condition', '시험 조건'))):
+        focused = menu.focus == 'parameters' and menu.field_index == len(fields) + offset
+        editing = menu.edit_field == name
+        value = menu.edit_choice if editing else getattr(menu, name)
+        rendered = ('ON' if value else 'OFF') if name == 'record_mcap' else condition_label(value)
+        style = 'bold cyan' if editing else 'bold reverse' if focused else ''
+        choices.add_row(Text(('▶ ' if focused else '  ') + label, style=style),
+                        Text(('↕ ' if editing else '') + rendered, style=style))
     duration = selection.duration
-    table.add_row(
+    timing = Table.grid(expand=True, padding=(0, 1))
+    timing.add_column(ratio=1)
+    timing.add_column(justify='right', no_wrap=True)
+    timing.add_row(
         Text('예상 입력시간', style='dim'),
-        Text('수동 종료' if duration is None else f'{duration:g}'),
-        Text('' if duration is None else 'sec'),
+        Text('수동 종료' if duration is None else f'{duration:g} sec', style='dim'),
     )
-    return table
+    return Group(table, choices, timing)
 
 
 def settings_panel(menu):
@@ -360,7 +428,7 @@ def settings_panel(menu):
     return columns
 
 
-def summary_panel(snapshot):
+def summary_panel(snapshot, message=''):
     target = snapshot['output'].steering_deg
     values = {
         'mode': snapshot['mode'],
@@ -382,14 +450,17 @@ def summary_panel(snapshot):
                   f"{values['target_speed']} / {values['rpm']}")
     table.add_row('조향 실제', values['steering'], '목표 / 전류',
                   f"{values['target_steering']} / {values['current']}")
-    return Panel(table, title='VEHICLE TEST', border_style='cyan')
+    notice = Table.grid(expand=True, padding=(0, 1))
+    notice.add_column(width=11, style='cyan', no_wrap=True)
+    notice.add_column(ratio=1, overflow='fold')
+    notice.add_row('안내', Text(message or '—', style='bold yellow' if message else 'dim'))
+    return Panel(Group(table, notice), title='VEHICLE STATE · 시험 상태', border_style='cyan')
 
 
-def footer_panel(snapshot, menu, message, records_root):
+def footer_panel(snapshot, menu, records_root):
     record_enabled = (
         snapshot['settings'].record_mcap if snapshot['busy'] else menu.record_mcap
     )
-    record_state = 'REC' if snapshot['recording'] else 'ON' if record_enabled else 'OFF'
     destination = (
         snapshot['run_dir'] or str(records_root)
         if record_enabled else '파일 저장 없이 실행'
@@ -398,13 +469,12 @@ def footer_panel(snapshot, menu, message, records_root):
     table.add_column(width=8, style='cyan', no_wrap=True)
     table.add_column(ratio=1, no_wrap=True, overflow='ellipsis')
     table.add_row('스크롤', '휠/PgUp/PgDn 전체 화면 · ↑↓ 항목 · ←→ 영역')
-    table.add_row('선택', 'Enter 선택/수정 · Esc 취소')
-    table.add_row('실행', 'R 실행 · S/Space 정지 · M 녹화 · Q 종료')
-    if message:
-        table.add_row('안내', Text(message, style='bold yellow'))
+    table.add_row('선택', '↑↓ 값 선택 · Enter 완료 · Esc 취소' if menu.choice_options else
+                  'Enter 선택/수정 · Esc 취소')
+    table.add_row('실행', 'R 실행 · S/Space 정지 · Q 종료')
     return Panel(
         table,
-        title=f'키 안내 · MCAP {record_state}',
+        title='키 안내',
         subtitle=Text(destination, no_wrap=True, overflow='ellipsis'),
     )
 
@@ -412,15 +482,15 @@ def footer_panel(snapshot, menu, message, records_root):
 def dashboard(snapshot, menu, message='', height=40,
               records_root=DEFAULT_RECORDS_ROOT):
     warning = snapshot['run_warning']
-    if snapshot['terminal_state'] in {'ABORTED', 'ERROR'} and snapshot['finish_reason']:
+    if snapshot['terminal_state'] and snapshot['finish_reason']:
         warning = snapshot['finish_reason']
-    if warning:
+    if not message:
         message = warning
     return vertical_stack(
-        summary_panel(snapshot),
+        summary_panel(snapshot, message),
         readiness_panel(snapshot),
         settings_panel(menu),
-        footer_panel(snapshot, menu, message, records_root),
+        footer_panel(snapshot, menu, records_root),
     )
 
 
@@ -463,13 +533,16 @@ def main(*, use_sim_time=False, records_root=DEFAULT_RECORDS_ROOT,
         manager = ProcessManager(node, records_root=records_root)
         manager.start()
         menu = MenuState()
+        renderer = ScreenRenderer(console)
         message = ''
         with keyboard(), tui_screen(console):
             while not quitting.is_set():
-                menu.view_offset = redraw(
-                    console,
+                snapshot = node.snapshot()
+                if not node.busy:
+                    menu.adopt_launch_preset(snapshot['launch_preset'])
+                menu.view_offset = renderer.redraw(
                     dashboard(
-                        node.snapshot(), menu, message,
+                        snapshot, menu, message,
                         height=console.size.height, records_root=records_root,
                     ),
                     menu.view_offset,

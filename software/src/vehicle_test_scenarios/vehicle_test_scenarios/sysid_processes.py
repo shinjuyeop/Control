@@ -14,9 +14,10 @@ import threading
 import time
 from zoneinfo import ZoneInfo
 
-from rcl_interfaces.srv import GetParameters
-from rclpy.parameter import parameter_value_to_python
 import yaml
+from std_msgs.msg import String
+from control_tuning.storage import SettingsStore
+from .sysid_capture import ParameterCapture, TORQUE_TOPICS
 
 
 DEFAULT_RECORDS_ROOT = next((
@@ -40,27 +41,7 @@ RECORD_TOPICS = (
     '/sysid/odometry', '/sysid/odometry_gnss', '/sysid/route_context',
     '/sysid/target_path', '/sysid/target_speed', '/sysid/route_command',
     '/sysid/route_enabled', '/sysid/tf',
-    # Torque steering diagnostics (lateral_ctrl TORQUE_CONTROL.md). Absent in position mode.
-    '/steering/actuation_mode', '/steering/requested_angle', '/steering/angle_error',
-    '/steering/rate', '/steering/unfiltered_rate',
-    '/steering/torque_p_raw', '/steering/torque_d_raw', '/steering/torque_ff_raw',
-    '/steering/torque_friction_raw', '/steering/target_accel',
-    '/steering/torque_unsaturated_raw', '/steering/torque_command_raw',
-    '/steering/torque_current_limit_command_a', '/steering/torque_limit_raw',
-    '/steering/torque_saturated', '/steering/torque_peak_limited',
-    '/steering/torque_settled', '/steering/torque_rate_ready', '/steering/torque_safety',
-    # Runtime gain changes during a run; the starting values go into scenario.yaml.
-    '/parameter_events',
-)
-STEERING_PARAMETERS = (
-    'actuation_mode', 'torque_direction_sign', 'minimum_steering_speed_kph',
-    'torque_full_scale_error_deg', 'torque_kd',
-    'torque_peak_limit_raw', 'torque_sustained_limit_raw',
-    'torque_peak_duration_ms', 'torque_peak_recovery_ms',
-    'torque_settle_angle_deg', 'torque_settle_rate_deg_s', 'torque_rate_filter_hz',
-    'torque_soft_limit_margin_deg', 'torque_hard_rate_limit_deg_s',
-    'torque_inertia_ff', 'torque_feedforward_limit_raw', 'torque_feedforward_filter_hz',
-    'torque_friction_raw', 'torque_friction_deadband_deg', 'torque_friction_schedule',
+    '/parameter_events', '/sysid/control_parameters', *TORQUE_TOPICS,
 )
 RECORDER_CODE = """
 import sys, json
@@ -163,11 +144,10 @@ class ProcessManager:
         self.run_document = None
         self.run_log = None
         self.recorder_ready = False
+        self.parameter_capture = None
         self.cleanup_errors = []
         self.record_started_at = 0.0
         self.subscribers_before_recording = {}
-        self.steering_parameters = node.create_client(
-            GetParameters, '/steering_actuator_node/get_parameters')
         self.stop_event = threading.Event()
         self.thread = threading.Thread(target=self._work, name='sysid-processes')
 
@@ -206,7 +186,7 @@ class ProcessManager:
             return
         self.run_dir = None
         self.record_topics_required = self.node.required_topics_for(settings.follows_route) + (
-            '/planning/command', '/vehicle/command')
+            '/planning/command', '/vehicle/command', '/sysid/control_parameters')
         if settings.follows_route:
             from .sysid_routes import RouteProcesses
             self.route = RouteProcesses(self.node, settings)
@@ -224,19 +204,14 @@ class ProcessManager:
         self.run_document.update({
             'started_at': datetime.now(ZoneInfo('Asia/Seoul')).isoformat(),
             'topics': list(RECORD_TOPICS),
+            'control_parameters': {'file': 'control_parameters.yaml', 'status': 'pending'},
         })
-        try:
-            self.run_document['steering_parameters'] = self._steering_parameter_snapshot()
-        except Exception as error:
-            # Tuning context only; never block a run on it.
-            self.run_document['steering_parameters_error'] = str(error)
-            self.node.log(f'조향 파라미터 기록 실패: {error}')
         self._save_document()
         self.subscribers_before_recording = {
             topic: {bytes(info.endpoint_gid) for info in
                     self.node.get_subscriptions_info_by_topic(topic)
                     if info.node_name == 'rosbag2_recorder'}
-            for topic in self.record_topics_required
+            for topic in (*self.record_topics_required, '/parameter_events')
         }
         self.recorder = OwnedProcess('MCAP', [
             sys.executable, '-u', '-c', RECORDER_CODE, str(self.run_dir / 'rosbag'),
@@ -246,41 +221,25 @@ class ProcessManager:
         self.recorder_ready = False
         self.node.commands.put(('record_started', str(self.run_dir)))
 
-    def _steering_parameter_snapshot(self, timeout=1.0):
-        """Gains in effect at Run, so each MCAP folder states the torque tuning it used."""
-        if not self.steering_parameters.wait_for_service(timeout_sec=timeout):
-            raise RuntimeError('steering_actuator_node 파라미터 서비스 없음')
-        future = self.steering_parameters.call_async(
-            GetParameters.Request(names=list(STEERING_PARAMETERS)))
-        deadline = time.monotonic() + timeout
-        while not future.done():
-            if time.monotonic() > deadline:
-                self.steering_parameters.remove_pending_request(future)
-                raise RuntimeError('steering_actuator_node 파라미터 응답 시간 초과')
-            time.sleep(0.01)
-        values = future.result().values
-        if len(values) != len(STEERING_PARAMETERS):
-            # rclcpp answers with no values at all when any requested name is undeclared.
-            raise RuntimeError('steering_actuator_node에 없는 파라미터가 있습니다')
-        snapshot = {}
-        for name, value in zip(STEERING_PARAMETERS, values):
-            python_value = parameter_value_to_python(value)
-            if python_value is None:
-                continue  # NOT_SET: parameter absent on this node version
-            # Array values arrive as array.array, which yaml.safe_dump cannot write.
-            snapshot[name] = list(python_value) if hasattr(python_value, 'tolist') \
-                or isinstance(python_value, tuple) else python_value
-        return snapshot
-
     def _save_document(self):
-        (self.run_dir / 'scenario.yaml').write_text(
-            yaml.safe_dump(self.run_document, sort_keys=False, allow_unicode=True))
+        SettingsStore._replace(self.run_dir / 'scenario.yaml',
+                               yaml.safe_dump(self.run_document, sort_keys=False, allow_unicode=True).encode('utf-8'))
 
     def _finish_recording(self, reason):
+        if self.parameter_capture is not None:
+            capture, self.parameter_capture = self.parameter_capture, None
+            try:
+                if not capture.finished:
+                    capture.document.update(status='cancelled', error=reason)
+                    self._save_capture(capture.document)
+            finally:
+                capture.close()
         if self.recorder is None:
             self._close_route()
             self.node.commands.put(('record_closed', ''))
             return
+        if self.run_document['control_parameters']['status'] == 'pending':
+            self.run_document['control_parameters'].update(status='cancelled', error=reason)
         child, self.recorder = self.recorder, None
         self.recorder_ready = False
         code = child.stop()
@@ -327,18 +286,44 @@ class ProcessManager:
             self._finish_recording('recorder_failed')
             return
         if not self.recorder_ready:
-            topics = self.record_topics_required
+            topics = (*self.record_topics_required, '/parameter_events')
             subscribed = all(any(
                 info.node_name == 'rosbag2_recorder'
                 and bytes(info.endpoint_gid) not in self.subscribers_before_recording[topic]
                 for info in self.node.get_subscriptions_info_by_topic(topic)
             ) for topic in topics)
             if subscribed:
-                self.recorder_ready = True
-                self.node.commands.put(('record_ready', None))
+                if self.parameter_capture is None:
+                    self.parameter_capture = ParameterCapture(
+                        self.node, self.run_document['test_condition']['key'])
+                    self.node.log('실행 중인 조향·거버너 파라미터를 기록합니다.')
+                if self.parameter_capture.tick():
+                    capture, self.parameter_capture = self.parameter_capture, None
+                    try:
+                        self._save_capture(capture.document)
+                    finally:
+                        capture.close()
+                    if capture.document['status'] != 'complete':
+                        self.node.commands.put(('record_failed', '실제 제어 파라미터 조회 실패 · control_parameters.yaml 확인'))
+                        self._finish_recording('parameter_snapshot_failed')
+                        return
+                    self.node.control_parameters_publisher.publish(String(data=json.dumps(capture.document, ensure_ascii=False)))
+                    self.recorder_ready = True
+                    self.node.commands.put(('record_ready', None))
             elif time.monotonic() - self.record_started_at > 15:
                 self.node.commands.put(('record_failed', 'MCAP 필수 토픽 구독이 연결되지 않았습니다'))
                 self._finish_recording('subscription_timeout')
+
+    def _save_capture(self, document):
+        SettingsStore._replace(self.run_dir / 'control_parameters.yaml',
+                               yaml.safe_dump(document, sort_keys=False, allow_unicode=True).encode('utf-8'))
+        self.run_document['control_parameters'] = {
+            'file': 'control_parameters.yaml', 'status': document['status'],
+            'capture_stage': document['capture_stage'],
+            'requested_ros_time_ns': document['requested_ros_time_ns'],
+            'nodes': {name: entry['status'] for name, entry in document['nodes'].items()},
+        }
+        self._save_document()
 
     def _work(self):
         next_scan = 0.0

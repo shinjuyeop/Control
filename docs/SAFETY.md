@@ -214,8 +214,8 @@ false가 되고, traction command 송신은 계속됩니다. CAN TX 실패 시 �
 
 ### 9.2 KEYA 조향
 
-기본 `actuation_mode=position`은 아래 기존 보호를 사용한다. startup에서 `torque`를
-선택하면 동일 state machine에 §9.3의 보호를 추가한다. KEYA 내부 mode는 별도 설정이며
+코드 기본값 `actuation_mode=position`은 아래 보호를 사용한다. 현재 launch YAML은
+`torque`이며 동일 state machine에 §9.3의 보호를 추가한다. KEYA 내부 mode는 별도 설정이며
 position=0020=3, torque=0020=2다. Host가 자동 변경하거나 확인하지 않는다.
 
 다음 조건은 조향 motor Disable 원인입니다.
@@ -247,7 +247,10 @@ flag로 latch되지 않지만, feedback이 끊기면 timeout 경로로 Disable�
 - Filtered/unfiltered actual rate 중 하나라도120 deg/s 초과, calibrated 범위 초과,
   nonfinite controller input, control stall/과도한 위치 샘플 간격은 latched FAULT다. ABI 변경 없이 기존
   `REASON_MOTOR_FAULT`를 쓰고 `/steering/torque_safety`에서 원인을 구분한다.
-  원인 해결 후 `steering_enabled=false→true`와 새 command가 필요하다.
+  원인 해결 후 `steering_enabled=false→true` 또는 조향 노드 재시작으로 해제한다.
+  `control_launch vehicle.launch.py`를 완전히 종료·재실행해도 새 노드의 latch는
+  해제된다. fresh 상태·피드백·새 command가 필요하며 이상이 지속되면 다시 latch된다.
+  관측용 `vehicle_console vehicle.launch.py` 재시작에는 이 효과가 없다.
 - Torque TX 실패 시 zero와 Disable을 시도하고 `CAN_LOST`로 이동한다. stop frame이
   실패하면 다음 tick에서 재시도하며 성공 전에는 재Enable하지 않는다. 버스 단절 시
   실제 zero/Disable 수신은 보장할 수 없다. 이 보호는 하드웨어 차단을 대체하지 않는다.
@@ -273,7 +276,7 @@ flag로 latch되지 않지만, feedback이 끊기면 timeout 경로로 Disable�
 | STM_B→STM_A UART 100 ms 중단 | HALTED | HALTED | 해당 없음 | 해당 없음 | 직접 입력 아님 |
 | STM_A→STM_B UART 200 ms 중단 | 직접 영향 없음 | 직접 영향 없음 | 자동 engage 안 함 | 마지막 mode로 판단 | `/drive/status` 1500 ms 후 Disable |
 | EZkontrol status 200 ms 중단 | command 계속 송신 | command 계속 송신 | 해당 없음 | 해당 없음 | 직접 입력 아님 |
-| KEYA CAN/position 500 ms 중단 | 이미 Disable | Disable | 해당 없음 | 해당 없음 | Disable |
+| KEYA CAN 500 ms / position feedback 500 ms (torque 100 ms) 중단 | 이미 Disable | Disable | 해당 없음 | 해당 없음 | Disable |
 
 ## 11. 복구 및 재활성화
 
@@ -286,6 +289,7 @@ flag로 latch되지 않지만, feedback이 끊기면 timeout 경로로 Disable�
 | STM_A→STM_B UART timeout | 새 CRC-valid vehicle frame | 마지막 mode·speed는 새 frame으로 갱신 |
 | EZkontrol handshake 대기 | 새 `0x55` request에 ACK TX 성공 | 그 후 현재 mode 명령 |
 | KEYA CAN·feedback·fault 복구 | CAN·position valid, fault 해제, AUTO와 safety 정상 | fault가 처음 감지된 뒤 수신한 fresh pending command가 필요; 복구 후 수신일 필요는 없음 |
+| Host torque safety latch | 원인 해결 후 조향 노드 재시작 또는 `steering_enabled=false→true` | 새 command와 fresh 상태·피드백 필요; KEYA 자체 fault 해제와 별개 |
 | MCU reboot | RTOS와 peripheral 재초기화 | STM_A는 safety frame 전 stop; STM_B는 engage에서 시작 후 입력 재계산 |
 
 물리 E-stop과 KEYA가 보고한 motor fault에는 software latch나 별도 reset command가
@@ -367,6 +371,26 @@ Virtual LCD stale 표시는 상태 관측이며 안전 차단의 증거 또는 �
 - [ ] STM_A와 STM_B를 각각 재부팅해 초기 brake/traction 상태와 복구 순서를 확인
 
 ## 14. 확인 필요 항목
+
+### 실차 시나리오 실행기의 현재 제한
+
+2026-09-18 코드 검토에서 아래 항목은 미수정 상태다. 화면의 RUNNING이나 GO만으로
+조향 출력·차량 정지 조건이 모두 충족됐다고 판단하지 않는다.
+
+- TUI의 조향 실행 조건은 raw KEYA fault bits 등을 확인하지만 Host torque
+  `state=FAULT`/`disable_reason`을 직접 검사하지 않는다. 조향이 latch되어도
+  시나리오가 계속되며 종방향 목표를 발행할 수 있다.
+- `RECORD_START`·`WAIT_AUTO`·`COUNTDOWN`에서 조향 설정 응답을 기다리는 동안
+  일부 tick은 mode·통신 검사 전에 반환한다. 이 구간의 MANUAL→AUTO 전환을
+  놓쳐 새 `R` 없이 진행할 수 있다.
+- Headless 실행기는 마지막 `/drive/status.mode`를 보관하며 수신 age에 대한
+  별도 timeout이 없다. 상태 토픽이 끊겨도 마지막 AUTO를 바탕으로 명령을
+  계속 생성할 수 있다. MCU·조향 자체 timeout과 실행기의 감시는 구분해야 한다.
+
+시험 중 `/steering/status`와 `/steering/torque_safety`를 함께 확인한다.
+복구·재시험은 현재 Run을 정지하고 새로 시작한다.
+
+### 차량 제어와 펌웨어
 
 - STM_A→STM_B UART timeout을 즉시 brake engage 조건으로 추가할지
 - EZkontrol Part I/II timeout과 CAN TX 실패를 traction HALTED 조건으로 추가할지

@@ -31,6 +31,36 @@ static volatile uint8_t s_gnss_received = 0U;
 static uint8_t s_auto_data[DASHBOARD_AUTO_DATA_SIZE];
 static volatile uint32_t s_auto_last_rx_ms = 0U;
 static volatile uint8_t s_auto_received = 0U;
+static uint8_t s_lv_flags = 0U;
+static uint8_t s_lv_voltage = 0U;
+static uint8_t s_lv_soc = 0xFFU;
+static uint32_t s_lv_last_rx_ms = 0U;
+
+void DashboardCan_ObserveLvBattery(const LvBatteryStatus *status)
+{
+  uint8_t flags = DASHBOARD_LV_PRESENT;
+  uint8_t voltage = 0U;
+  uint8_t soc = 0xFFU;
+  // Conversion into the CAN field's representable 0..25.5 V range.
+  if ((status->flags & LV_BATTERY_STATUS_MEASUREMENT_VALID) != 0U &&
+      status->bus_voltage_uV >= 0 && status->bus_voltage_uV <= 25500000)
+  {
+    voltage = (uint8_t)((status->bus_voltage_uV + 50000) / 100000);
+    flags |= DASHBOARD_LV_MEASUREMENT_VALID;
+  }
+  if ((status->flags & LV_BATTERY_STATUS_SOC_KNOWN) != 0U &&
+      status->soc_centi_percent >= 0 && status->soc_centi_percent <= 10000)
+  {
+    soc = (uint8_t)((status->soc_centi_percent + 50) / 100);
+    flags |= DASHBOARD_LV_SOC_KNOWN;
+  }
+  taskENTER_CRITICAL();
+  s_lv_flags = flags;
+  s_lv_voltage = voltage;
+  s_lv_soc = soc;
+  s_lv_last_rx_ms = HAL_GetTick();
+  taskEXIT_CRITICAL();
+}
 
 static int16_t speed_to_centi_mps(float speed_mps)
 {
@@ -92,6 +122,7 @@ static void capture_snapshot(DashboardCanSnapshot_t *snapshot, uint8_t alive)
   uint8_t gnss_received;
   uint32_t auto_last_rx_ms;
   uint8_t auto_received;
+  uint32_t lv_last_rx_ms;
   const uint32_t now = HAL_GetTick();
 
   taskENTER_CRITICAL();
@@ -109,7 +140,18 @@ static void capture_snapshot(DashboardCanSnapshot_t *snapshot, uint8_t alive)
   memcpy(snapshot->auto_data, s_auto_data, sizeof(snapshot->auto_data));
   auto_last_rx_ms = s_auto_last_rx_ms;
   auto_received = s_auto_received;
+  snapshot->lv_status_flags = s_lv_flags;
+  snapshot->lv_voltage_decivolt = s_lv_voltage;
+  snapshot->lv_soc_percent = s_lv_soc;
+  lv_last_rx_ms = s_lv_last_rx_ms;
   taskEXIT_CRITICAL();
+
+  if ((uint32_t)(now - lv_last_rx_ms) >= DASHBOARD_CAN_LV_TIMEOUT_MS)
+  {
+    snapshot->lv_status_flags = 0U;
+    snapshot->lv_voltage_decivolt = 0U;
+    snapshot->lv_soc_percent = 0xFFU;
+  }
 
   snapshot->alive = alive;
   snapshot->status_flags = 0U;

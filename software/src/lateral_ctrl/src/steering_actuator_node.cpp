@@ -19,7 +19,7 @@ double seconds(std::chrono::steady_clock::time_point time)
 {
   return std::chrono::duration<double>(time.time_since_epoch()).count();
 }
-// One flat [speed_mps, raw, speed_mps, raw, ...] parameter keeps a schedule edit a single set.
+
 void setFrictionSchedule(TorqueSteeringConfig & config, const std::vector<double> & pairs)
 {
   if (pairs.size() % 2 != 0) {
@@ -57,6 +57,7 @@ SteeringActuatorNode::SteeringActuatorNode(
   rcl_interfaces::msg::ParameterDescriptor startup_only;
   startup_only.read_only = true;
   startup_only.description = "Startup only; restart the node to change this parameter.";
+  declare_parameter("tuning_preset", std::string("unspecified"), startup_only);
   actuation_mode_ = declare_parameter("actuation_mode", std::string("position"), startup_only);
   if (actuation_mode_ != "position" && actuation_mode_ != "torque") {
     throw std::invalid_argument("actuation_mode must be position or torque");
@@ -95,11 +96,14 @@ SteeringActuatorNode::SteeringActuatorNode(
   const int torque_period_ms = integer_parameter("torque_control_period_ms", 20, 10, 50, startup_only);
   torque.control_period_sec = torque_period_ms / 1000.0;
   torque.inertia_ff = declare_parameter("torque_inertia_ff", 0.0);
-  torque.feedforward_limit_raw = integer_parameter("torque_feedforward_limit_raw", 1000, 0, 10000);
+  torque.feedforward_limit_raw =
+    integer_parameter("torque_feedforward_limit_raw", 1000, 0, 10000);
   torque.feedforward_filter_hz = declare_parameter("torque_feedforward_filter_hz", 5.0);
   torque.friction_raw = integer_parameter("torque_friction_raw", 0, 0, 10000);
-  torque.friction_deadband_rad = declare_parameter("torque_friction_deadband_deg", 0.1) * kDegToRad;
-  setFrictionSchedule(torque, declare_parameter("torque_friction_schedule", std::vector<double>{}));
+  torque.friction_deadband_rad =
+    declare_parameter("torque_friction_deadband_deg", 0.1) * kDegToRad;
+  setFrictionSchedule(
+    torque, declare_parameter("torque_friction_schedule", std::vector<double>{}));
   torque.min_angle_rad = converter_.countToEquivalentDeg(-converter_.commandCountLimit()) * kDegToRad;
   torque.max_angle_rad = converter_.countToEquivalentDeg(converter_.commandCountLimit()) * kDegToRad;
   torque_controller_.configure(torque);
@@ -192,7 +196,8 @@ SteeringActuatorNode::SteeringActuatorNode(
     torque_d_pub_ = create_publisher<std_msgs::msg::Float32>("/steering/torque_d_raw", 10);
     torque_unsaturated_pub_ = create_publisher<std_msgs::msg::Float32>("/steering/torque_unsaturated_raw", 10);
     torque_ff_pub_ = create_publisher<std_msgs::msg::Float32>("/steering/torque_ff_raw", 10);
-    torque_friction_pub_ = create_publisher<std_msgs::msg::Float32>("/steering/torque_friction_raw", 10);
+    torque_friction_pub_ =
+      create_publisher<std_msgs::msg::Float32>("/steering/torque_friction_raw", 10);
     target_accel_pub_ = create_publisher<std_msgs::msg::Float32>("/steering/target_accel", 10);
     torque_current_limit_command_pub_ = create_publisher<std_msgs::msg::Float32>(
       "/steering/torque_current_limit_command_a", 10);
@@ -255,7 +260,9 @@ void SteeringActuatorNode::torqueFault(TorqueSafetyFault fault)
 {
   if (torque_fault_latched_ == TorqueSafetyFault::NONE) {
     RCLCPP_ERROR(get_logger(),
-      "Torque safety stop: %s. Inspect cause, set steering_enabled=false then true to reset.",
+      "Torque safety stop: %s. After resolving the cause, restart steering_actuator_node "
+      "(stop and relaunch vehicle.launch.py), or set steering_enabled=false then true. "
+      "Fresh status and a new command are required to resume.",
       torqueSafetyFaultName(fault));
   }
   torque_fault_latched_ = fault;
@@ -299,8 +306,11 @@ rcl_interfaces::msg::SetParametersResult SteeringActuatorNode::onParameters(
       else if (name == "torque_feedforward_limit_raw") candidate.feedforward_limit_raw = p.as_int();
       else if (name == "torque_feedforward_filter_hz") candidate.feedforward_filter_hz = p.as_double();
       else if (name == "torque_friction_raw") candidate.friction_raw = p.as_int();
-      else if (name == "torque_friction_deadband_deg") candidate.friction_deadband_rad = p.as_double() * kDegToRad;
-      else if (name == "torque_friction_schedule") setFrictionSchedule(candidate, p.as_double_array());
+      else if (name == "torque_friction_deadband_deg") {
+        candidate.friction_deadband_rad = p.as_double() * kDegToRad;
+      } else if (name == "torque_friction_schedule") {
+        setFrictionSchedule(candidate, p.as_double_array());
+      }
       else throw std::invalid_argument(name + " is startup-only");
       tuning_changed = true;
     }
@@ -355,8 +365,9 @@ void SteeringActuatorNode::onCommand(const kaiev26_msgs::msg::ActuatorCommand::S
   pending_target_wheel_angle_deg_ =
     converter_.clampEquivalentDeg(input->steering_target_rad * kCanonicalRadToDeg);
   if (torqueMode()) {
-    target_accel_estimator_.observe(pending_target_wheel_angle_deg_ / kCanonicalRadToDeg,
-      stamp.seconds(), torque_controller_.config().feedforward_filter_hz,
+    target_accel_estimator_.observe(
+      pending_target_wheel_angle_deg_ / kCanonicalRadToDeg, stamp.seconds(),
+      torque_controller_.config().feedforward_filter_hz,
       steer_command_timeout_ms_ / 1000.0);
   }
   pending_command_valid_ = true;
@@ -394,7 +405,7 @@ void SteeringActuatorNode::onDriveStatus(
     driveSpeedPermitsSteering(
     input->speed_mps, input->part1_valid,
     static_cast<float>(minimum_steering_speed_mps_));
-  // Invalid speed already blocks steering; keep the friction schedule input finite regardless.
+  // Invalid speed already blocks steering; keep the compensation input finite.
   vehicle_speed_mps_ = input->part1_valid && std::isfinite(input->speed_mps) ?
     std::abs(static_cast<double>(input->speed_mps)) : 0.0;
   if (!drive_speed_permits_steering_) {
@@ -652,8 +663,9 @@ void SteeringActuatorNode::controlTick()
       // Direct target step; the 60 deg/s position shaper does not sit in this path.
       commanded_wheel_angle_deg_ = target_wheel_angle_deg_;
       corrected_wheel_angle_deg_ = target_wheel_angle_deg_;
-      // No target-rate D kick on a step; alpha_ff comes from command timestamps instead.
-      torque_output_ = torque_controller_.update(target_wheel_angle_deg_ * kDegToRad, 0.0,
+      // No target-rate D kick on a step; alpha_ff comes from command timestamps.
+      torque_output_ = torque_controller_.update(
+        target_wheel_angle_deg_ * kDegToRad, 0.0,
         target_accel_estimator_.acceleration(), vehicle_speed_mps_, seconds(age_now));
       if (torque_output_.fault != TorqueSafetyFault::NONE) {
         torqueFault(torque_output_.fault);

@@ -270,7 +270,7 @@ TEST(TorqueSteeringController, DefaultMethodATermsLeavePdUnchanged)
 TEST(TorqueSteeringController, FrictionFollowsErrorSignOutsideDeadbandOnly)
 {
   TorqueSteeringConfig cfg;
-  cfg.full_scale_error_rad = 5.0 * rad;  // P = 400 raw/deg keeps the sum below the limit
+  cfg.full_scale_error_rad = 5.0 * rad;
   cfg.friction_raw = 106.0;
   cfg.friction_deadband_rad = 0.2 * rad;
   TorqueSteeringController c(cfg);
@@ -300,7 +300,7 @@ TEST(TorqueSteeringController, SettledTargetStillSendsZeroWithFriction)
 TEST(TorqueSteeringController, FrictionScheduleInterpolatesAndHoldsEnds)
 {
   TorqueSteeringConfig cfg;
-  cfg.friction_raw = 999.0;  // ignored once a schedule exists
+  cfg.friction_raw = 999.0;
   cfg.friction_schedule_speed_mps = {0.5, 1.5, 3.5};
   cfg.friction_schedule_raw = {300.0, 200.0, 100.0};
   EXPECT_NO_THROW(cfg.validate());
@@ -321,7 +321,6 @@ TEST(TorqueSteeringController, InertiaFeedforwardAddsAndIsClamped)
   cfg.feedforward_limit_raw = 300.0;
   TorqueSteeringController c(cfg);
   seed(c);
-  // At zero error the term is still reported, but a settled target sends no torque.
   auto out = c.update(0.0, 0.0, 10.0, 0.0, 1.02);
   EXPECT_DOUBLE_EQ(out.ff_raw, 200.0);
   EXPECT_TRUE(out.settled);
@@ -373,7 +372,7 @@ TEST(TargetAccelerationEstimator, RecoversConstantAccelerationFromCommandStamps)
   const double accel = 2.0;
   double estimate = 0.0;
   for (int i = 0; i < 40; ++i) {
-    const double t = 10.0 + i * 0.05;  // 20 Hz planning cadence
+    const double t = 10.0 + i * 0.05;
     const double s = t - 10.0;
     estimate = e.observe(0.5 * accel * s * s, t, 5.0, 0.2);
     if (i < 2) {
@@ -383,16 +382,19 @@ TEST(TargetAccelerationEstimator, RecoversConstantAccelerationFromCommandStamps)
   EXPECT_NEAR(estimate, accel, 1e-6);
 }
 
-TEST(TargetAccelerationEstimator, HeldTargetGivesZeroAndGapsOrReversedStampsRestart)
+TEST(TargetAccelerationEstimator, HeldTargetGivesZeroAndBadStampsRestart)
 {
   TargetAccelerationEstimator e;
-  for (int i = 0; i < 10; ++i) EXPECT_DOUBLE_EQ(e.observe(0.1, 1.0 + i * 0.02, 5.0, 0.2), 0.0);
+  for (int i = 0; i < 10; ++i) {
+    EXPECT_DOUBLE_EQ(e.observe(0.1, 1.0 + i * 0.02, 5.0, 0.2), 0.0);
+  }
   e.observe(0.2, 1.20, 50.0, 0.2);
   EXPECT_NE(e.acceleration(), 0.0);
-  EXPECT_DOUBLE_EQ(e.observe(0.3, 1.50, 50.0, 0.2), 0.0);  // 300 ms gap
+  EXPECT_DOUBLE_EQ(e.observe(0.3, 1.50, 50.0, 0.2), 0.0);
   e.observe(0.4, 1.52, 50.0, 0.2);
   e.observe(0.6, 1.54, 50.0, 0.2);
   EXPECT_NE(e.acceleration(), 0.0);
-  EXPECT_DOUBLE_EQ(e.observe(0.6, 1.54, 50.0, 0.2), 0.0);  // duplicate stamp
-  EXPECT_DOUBLE_EQ(e.observe(std::numeric_limits<double>::quiet_NaN(), 1.56, 50.0, 0.2), 0.0);
+  EXPECT_DOUBLE_EQ(e.observe(0.6, 1.54, 50.0, 0.2), 0.0);
+  EXPECT_DOUBLE_EQ(
+    e.observe(std::numeric_limits<double>::quiet_NaN(), 1.56, 50.0, 0.2), 0.0);
 }

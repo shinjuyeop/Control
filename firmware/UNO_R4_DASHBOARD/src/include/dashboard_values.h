@@ -21,6 +21,9 @@ static constexpr uint8_t GNSS_UNAVAILABLE = 0U;
 static constexpr uint8_t GNSS_NO_FIX = 1U;
 static constexpr uint8_t GNSS_FIX = 2U;
 static constexpr uint8_t GNSS_RTK_FIXED = 3U;
+static constexpr uint8_t LV_PRESENT = 1U << 0;
+static constexpr uint8_t LV_MEASUREMENT_VALID = 1U << 1;
+static constexpr uint8_t LV_SOC_KNOWN = 1U << 2;
 
 static constexpr uint8_t AUTO_GPS_WAIT = 0U;
 static constexpr uint8_t AUTO_GPS_FIXED = 1U;
@@ -96,6 +99,9 @@ struct DashboardValues
   int16_t controller_temperature_decic;
   int16_t motor_temperature_decic;
   uint32_t motor_fault_bits;
+  uint8_t lv_status_flags;
+  uint8_t lv_voltage_decivolt;
+  uint8_t lv_soc_percent;
 };
 
 struct AutoDashboardValues

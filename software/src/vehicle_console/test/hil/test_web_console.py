@@ -600,7 +600,7 @@ def test_runtime_page_readonly_measurements_and_responsive(browser_page):
     page, client, observed, tmp_path = browser_page
     observed["runtime"] = runtime_messages
     page.get_by_role("button", name="STM_A RUNTIME").click()
-    expect(page.get_by_role("heading", name="ECU 상태", exact=True)).to_be_visible()
+    expect(page.get_by_role("heading", name="ECU Runtime", exact=True)).to_be_visible()
     a = page.locator(".runtime-summary").filter(has=page.get_by_role("heading", name="STM_A", exact=True))
     b = page.locator(".runtime-summary").filter(has=page.get_by_role("heading", name="STM_B", exact=True))
     expect(a).to_contain_text("RUNTIME OK")
@@ -628,9 +628,9 @@ def test_runtime_page_readonly_measurements_and_responsive(browser_page):
     page.keyboard.press("Escape")
     expect(page.locator("#control-dock")).not_to_be_visible()
     page.get_by_role("button", name="메뉴 열기", exact=True).click()
-    page.get_by_role("navigation").get_by_role("button", name="벤치", exact=True).click()
+    page.get_by_role("navigation").get_by_role("button", name="Bench", exact=True).click()
     page.get_by_role("button", name="STM_B RUNTIME").click()
-    expect(page.get_by_role("heading", name="ECU 상태", exact=True)).to_be_visible()
+    expect(page.get_by_role("heading", name="ECU Runtime", exact=True)).to_be_visible()
 
     def malformed():
         messages = runtime_messages()
@@ -688,17 +688,17 @@ def test_subsystem_instruments_render_observed_faults_and_offline(browser_page):
 
     page, _, observed, tmp_path = browser_page
     nav = page.get_by_role("navigation")
-    nav.get_by_role("button", name="구동", exact=True).click()
+    nav.get_by_role("button", name="Drive", exact=True).click()
     expect(page.get_by_role("group", name="주행 속도 비교", exact=True)).to_contain_text("4.32")
-    nav.get_by_role("button", name="조향", exact=True).click()
+    nav.get_by_role("button", name="Steering", exact=True).click()
     expect(page.get_by_role("group", name="조향각 목표와 피드백 계기", exact=True)).to_contain_text("30.00°")
     observed["hil"] = replace(observed["hil"], estop_dash=True, ez_fault=True, keya_can=False)
-    nav.get_by_role("button", name="브레이크 · 안전", exact=True).click()
+    nav.get_by_role("button", name="Safety / Brake", exact=True).click()
     expect(page.get_by_role("group", name="E-stop 입력 관측", exact=True)).to_contain_text("ACTIVE")
     # A test input being active must not fabricate a received STM_B safety report.
     expect(page.get_by_role("group", name="STM_B safety 판단", exact=True)).to_contain_text("UNKNOWN")
     page.screenshot(path=str(tmp_path / "safety-observed-input.png"), full_page=False)
-    nav.get_by_role("button", name="고장 주입", exact=True).click()
+    nav.get_by_role("button", name="Fault Injection", exact=True).click()
     expect(page.get_by_role("group", name="현재 고장 주입 상태", exact=True)).to_contain_text("EZ FAULT")
     expect(page.get_by_role("group", name="현재 고장 주입 상태", exact=True)).to_contain_text("KEYA CAN")
     page.screenshot(path=str(tmp_path / "faults-observed.png"), full_page=False)
@@ -764,7 +764,7 @@ def test_operator_remote_across_pages_and_navigation(browser_page):
     expect(remote.get_by_role("button", name="AUTO", exact=True)).to_be_enabled()
 
     page.get_by_role("navigation").get_by_role(
-        "button", name="구동", exact=True
+        "button", name="Drive", exact=True
     ).click()
     combined = page.get_by_role("img", name=re.compile(r"속도 목표"))
     expect(combined).to_be_visible()
@@ -824,7 +824,7 @@ def test_operator_remote_across_pages_and_navigation(browser_page):
     page.get_by_label("목표 속도", exact=True).fill("36")
     page.get_by_label("목표 조향각", exact=True).fill("30")
     page.get_by_role("navigation").get_by_role(
-        "button", name="조향", exact=True
+        "button", name="Steering", exact=True
     ).click()
     expect(page.get_by_label("목표 속도", exact=True)).to_have_value("36")
     expect(page.get_by_label("목표 조향각", exact=True)).to_have_value("30")
@@ -852,7 +852,7 @@ def test_operator_remote_across_pages_and_navigation(browser_page):
     ).value == pytest.approx(math.pi / 6)
 
     page.get_by_role("navigation").get_by_role(
-        "button", name="브레이크 · 안전", exact=True
+        "button", name="Safety / Brake", exact=True
     ).click()
     remote.get_by_role("switch", name="대시보드 E-stop", exact=True).click()
     page.get_by_role("status").get_by_text(
@@ -863,7 +863,7 @@ def test_operator_remote_across_pages_and_navigation(browser_page):
     ).to_have_attribute("aria-checked", "false")
     assert "SET ESTOP DASH ON" in observed["commands"]
     page.get_by_role("navigation").get_by_role(
-        "button", name="구동", exact=True
+        "button", name="Drive", exact=True
     ).click()
     part2 = page.get_by_role("group", name="EZkontrol Part II", exact=True)
     expect(part2).to_contain_text("750")
@@ -871,14 +871,14 @@ def test_operator_remote_across_pages_and_navigation(browser_page):
 
     # Exercise every observation page with the same active Remote and global ARM badge.
     for name in [
-        "벤치",
-        "조향",
-        "브레이크 · 안전",
-        "고장 주입",
-        "시나리오",
-        "가상 LCD",
-        "진단 · 로그",
-        "ECU 상태",
+        "Bench",
+        "Steering",
+        "Safety / Brake",
+        "Fault Injection",
+        "Scenarios",
+        "Virtual LCD",
+        "Diagnostics",
+        "ECU Runtime",
     ]:
         page.get_by_role("navigation").get_by_role(
             "button", name=name, exact=True
@@ -905,7 +905,7 @@ def test_operator_remote_across_pages_and_navigation(browser_page):
 
     client.portal.call(display_sample)
     page.get_by_role("navigation").get_by_role(
-        "button", name="가상 LCD", exact=True
+        "button", name="Virtual LCD", exact=True
     ).click()
     page.get_by_text("UNO LIVE", exact=True).wait_for()
     image = page.get_by_alt_text("UNO가 적용한 상태로 재구성한 가상 LCD")
@@ -923,7 +923,7 @@ def test_operator_remote_across_pages_and_navigation(browser_page):
             {"width": width, "height": 900 if width == 1440 else 768}
         )
         page.get_by_role("navigation").get_by_role(
-            "button", name="구동", exact=True
+            "button", name="Drive", exact=True
         ).click()
         expect(remote).to_be_visible()
         expect(
@@ -1010,7 +1010,7 @@ def test_remote_busy_scenario_and_stale_locks(browser_page):
     expect(remote.get_by_label("가속 페달", exact=True)).to_be_enabled()
 
     page.get_by_role("navigation").get_by_role(
-        "button", name="시나리오", exact=True
+        "button", name="Scenarios", exact=True
     ).click()
     page.get_by_role("checkbox").check()
     page.get_by_role("button", name="시나리오 실행", exact=True).click()
@@ -1023,11 +1023,11 @@ def test_remote_busy_scenario_and_stale_locks(browser_page):
         remote.get_by_role("switch", name="무선 리모컨 E-stop", exact=True)
     ).to_be_disabled()
     page.get_by_role("navigation").get_by_role(
-        "button", name="조향", exact=True
+        "button", name="Steering", exact=True
     ).click()
     expect(remote.get_by_label("가속 페달", exact=True)).to_be_disabled()
     page.get_by_role("navigation").get_by_role(
-        "button", name="시나리오", exact=True
+        "button", name="Scenarios", exact=True
     ).click()
     page.get_by_role("button", name="중단 · Bench Reset", exact=True).click()
     expect(page.get_by_label("시나리오 상태")).to_contain_text("IDLE")
@@ -1043,7 +1043,7 @@ def test_remote_busy_scenario_and_stale_locks(browser_page):
         remote.get_by_role("switch", name="대시보드 E-stop", exact=True)
     ).to_be_disabled()
     expect(remote).to_contain_text("STM_TEST 상태 미수신 / 지연")
-    page.get_by_role("navigation").get_by_role("button", name="벤치", exact=True).click()
+    page.get_by_role("navigation").get_by_role("button", name="Bench", exact=True).click()
     pedal_observation = page.get_by_role("group", name="페달 관측", exact=True)
     expect(pedal_observation).to_contain_text("—%")
     expect(pedal_observation).to_contain_text("— V")
@@ -1068,7 +1068,7 @@ def test_control_dock_collapse_and_global_estop(browser_page):
         page.get_by_role("button", name="Control Dock 접기", exact=True).click()
         expect(dock).not_to_be_visible()
         assert page.locator("main").bounding_box()["width"] > before_width
-        page.get_by_role("navigation").get_by_role("button", name="구동", exact=True).click()
+        page.get_by_role("navigation").get_by_role("button", name="Drive", exact=True).click()
         expect(dock).not_to_be_visible()
         assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
         page.get_by_role("button", name="Control Dock 펼치기", exact=True).click()
@@ -1282,7 +1282,7 @@ def test_virtual_lcd_pointer_mapping_cancel_and_report_only_mirror(browser_page,
     from playwright.sync_api import expect
     page, client, observed, _ = browser_page
     display, uno = uno_display
-    page.get_by_role("navigation").get_by_role("button", name="가상 LCD", exact=True).click()
+    page.get_by_role("navigation").get_by_role("button", name="Virtual LCD", exact=True).click()
     expect(page.locator(".virtual-display-container").get_by_text("VIEW ONLY", exact=True)).to_be_visible()
     lcd = page.get_by_role("img", name="UNO가 적용한 상태로 재구성한 가상 LCD")
     box = lcd.bounding_box()
@@ -1360,7 +1360,7 @@ def test_virtual_lcd_ownership_loss_cancel_and_no_false_success(browser_page, un
     from playwright.sync_api import expect
     page, client, _, _ = browser_page
     display, uno = uno_display
-    page.get_by_role("navigation").get_by_role("button", name="가상 LCD", exact=True).click()
+    page.get_by_role("navigation").get_by_role("button", name="Virtual LCD", exact=True).click()
     page.get_by_role("button", name="조작권 가져오기", exact=True).click()
     expect(page.get_by_text("VTOUCH READY", exact=True)).to_be_visible()
     lcd = page.get_by_role("img", name="UNO가 적용한 상태로 재구성한 가상 LCD")

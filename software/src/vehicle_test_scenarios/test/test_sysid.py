@@ -3,6 +3,8 @@
 import time
 from dataclasses import replace
 import os
+import json
+import yaml
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -11,6 +13,7 @@ import rclpy
 from ament_index_python.packages import get_package_prefix, get_package_share_directory
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
+from rclpy.parameter import Parameter
 from rclpy.qos import DurabilityPolicy, QoSProfile
 from geometry_msgs.msg import TransformStamped
 from kaiev26_msgs.msg import ActuatorCommand
@@ -44,6 +47,12 @@ def test_catalog_defaults_are_valid_and_document_only_visible_parameters(scenari
     assert set(document['parameters']) == {
         field.name for field in settings.spec.fields
     }
+    assert settings.cruise_speed_kph == 0.0
+    assert settings.speed_low_kph == settings.speed_high_kph == 0.0
+    assert settings.steering_center_deg == 0.0
+    if not settings.follows_route:
+        for elapsed in (0.0, 3.0, 10.0, 100.0):
+            assert input_setpoint(settings, elapsed)[0].speed_kph == 0.0
 
 
 def test_arrow_menu_selects_scenario_and_edits_its_visible_parameter():
@@ -53,6 +62,7 @@ def test_arrow_menu_selects_scenario_and_edits_its_visible_parameter():
     handle_key(menu, 'enter')
     assert menu.selected_key == 'speed_step'
     assert menu.focus == 'parameters'
+    menu.settings_by_key['speed_step'] = replace(menu.selection, speed_high_kph=3.0)
     handle_key(menu, 'enter')
     for _ in range(len(menu.edit_text)):
         handle_key(menu, 'backspace')
@@ -71,20 +81,78 @@ def test_busy_menu_keeps_stop_and_quit_but_locks_configuration():
     assert handle_key(menu, 'q', busy=True)[0] == 'quit'
 
 
+def edit_choice(menu, offset, *keys):
+    menu.focus = 'parameters'
+    menu.field_index = len(menu.selected_spec.fields) + offset
+    for key in ('enter', *keys):
+        handle_key(menu, key)
+
+
 def test_recording_choice_is_global_and_fixed_for_the_active_run():
     menu = MenuState()
-    handle_key(menu, 'm')
+    edit_choice(menu, 0, 'down')
+    assert menu.record_mcap  # Candidate changes only until Enter.
+    assert menu.edit_choice is False
+    assert handle_key(menu, 'r')[0] is None
+    handle_key(menu, 'enter')
     assert not menu.run_settings().record_mcap
+    handle_key(menu, 'left')
     handle_key(menu, 'down')
     handle_key(menu, 'enter')
     assert not menu.run_settings().record_mcap
     active = menu.run_settings()
-    handle_key(menu, 'm', busy=True)
+    edit_choice(menu, 0, 'up', 'escape')
     assert not menu.record_mcap
-    menu.field_index = len(menu.selected_spec.fields)
-    handle_key(menu, 'enter')
+    edit_choice(menu, 0, 'up', 'enter')
     assert menu.record_mcap
     assert not active.record_mcap
+    handle_key(menu, 'enter', busy=True)
+    assert menu.edit_field is None
+
+
+def test_test_condition_must_be_selected_and_never_changes_scenario_commands():
+    menu = MenuState()
+    assert handle_key(menu, 'r')[0] is None
+    before = menu.run_settings().to_scenario_config()
+    edit_choice(menu, 1)
+    assert menu.edit_choice == 'driving'
+    assert menu.test_condition == 'unspecified'
+    assert handle_key(menu, 'r')[0] is None
+    handle_key(menu, 'escape')
+    assert menu.test_condition == 'unspecified'
+    edit_choice(menu, 1, 'down', 'enter')
+    assert menu.test_condition == 'airborne'
+    assert handle_key(menu, 'r')[0] == 'run'
+    active = menu.run_settings()
+    handle_key(menu, 'enter', busy=True)
+    assert menu.edit_field is None and menu.test_condition == 'airborne'
+    edit_choice(menu, 1, 'down', 'enter')
+    assert menu.test_condition == 'ground_stationary'
+    assert active.test_condition == 'airborne'
+    assert menu.run_settings().to_scenario_config() == before
+    assert active.document()['test_condition'] == {
+        'key': 'airborne', 'label': '공중', 'source': 'operator_selection', 'changes_control': False}
+    edit_choice(menu, 1, 'down', 'enter')
+    assert menu.test_condition == 'driving'
+    edit_choice(menu, 1, 'up', 'enter')
+    assert menu.test_condition == 'ground_stationary'
+    with pytest.raises(ValueError):
+        replace(active, test_condition='inferred_from_speed')
+
+
+@pytest.mark.parametrize('key,action', [('s', 'stop'), (' ', 'stop'), ('q', 'quit')])
+def test_stop_and_quit_remain_available_while_selecting_choices(key, action):
+    menu = MenuState()
+    edit_choice(menu, 1, 'down')
+    assert handle_key(menu, key, busy=True)[0] == action
+    assert menu.test_condition == 'unspecified'
+
+
+def test_removed_shortcuts_do_not_change_recording_or_condition():
+    menu = MenuState()
+    handle_key(menu, 'm')
+    handle_key(menu, 'c')
+    assert menu.record_mcap and menu.test_condition == 'unspecified'
 
 
 def test_whole_tui_scrolls_independently_from_scenario_selection():
@@ -117,17 +185,17 @@ def test_terminal_wheel_and_page_keys_control_status_scroll(sequence, key):
 
 
 def test_parameterized_speed_step_and_ramp_use_runner_math():
-    step = default_run_settings('speed_step')
+    step = replace(default_run_settings('speed_step'), speed_low_kph=1.0, speed_high_kph=3.0)
     assert [input_setpoint(step, t)[0].speed_kph for t in (0, 1.99, 2, 3.99)] == [
         1, 1, 3, 3,
     ]
-    ramp = default_run_settings('speed_ramp')
+    ramp = replace(default_run_settings('speed_ramp'), speed_high_kph=3.0)
     assert [input_setpoint(ramp, t)[0].speed_kph for t in (0, 2.5, 5, 7.5, 10)] == [
         0, 1.5, 3, 1.5, 0,
     ]
 
 
-@pytest.mark.parametrize('speed', [0, -1, float('nan'), float('inf')])
+@pytest.mark.parametrize('speed', [-1, float('nan'), float('inf')])
 def test_invalid_route_speed_is_rejected(speed):
     with pytest.raises(ValueError):
         replace(default_run_settings('route_quali'), cruise_speed_kph=speed)
@@ -213,7 +281,7 @@ def begin(node, tick, scenario='speed_step'):
 
 def test_run_waits_for_auto_then_five_seconds_and_manual_cancels(controlled):
     node, tick, _ = controlled
-    node.request_run(default_run_settings())
+    node.request_run(replace(default_run_settings(), cruise_speed_kph=3.0))
     tick()
     node.commands.put(('record_ready', None))
     tick()
@@ -495,6 +563,12 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path, record_mcap):
     node = SysidNode()
     source = Node('steering_actuator_node')
     source.declare_parameter('steering_enabled', True)
+    source.declare_parameter('tuning_preset', 'driving')
+    lateral_config = Path(get_package_share_directory('lateral_ctrl')) / 'config'
+    steering_defaults = yaml.safe_load((lateral_config / 'steering_actuator.yaml').read_text())['steering_actuator_node']['ros__parameters']
+    steering_defaults.update(yaml.safe_load((lateral_config / 'steering_motor_calibration.yaml').read_text()))
+    for key, value in steering_defaults.items():
+        source.declare_parameter(key, value)
     executor = SingleThreadedExecutor()
     executor.add_node(node)
     executor.add_node(source)
@@ -509,6 +583,19 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path, record_mcap):
         qos = (QoSProfile(depth=10, durability=DurabilityPolicy.TRANSIENT_LOCAL)
                if topic == '/tf_static' else 10)
         publishers[topic] = source.create_publisher(kind, topic, qos)
+    from std_msgs.msg import Bool, Float32, Int32, String
+    from vehicle_test_scenarios.sysid_capture import TORQUE_TOPICS
+    for topic in TORQUE_TOPICS:
+        if topic.endswith(('/actuation_mode', '/torque_safety')):
+            kind, message = String, String(data='torque' if topic.endswith('/actuation_mode') else 'none')
+        elif topic.endswith(('/torque_command_raw', '/torque_limit_raw')):
+            kind, message = Int32, Int32(data=200)
+        elif topic.endswith(('/torque_saturated', '/torque_peak_limited', '/torque_settled', '/torque_rate_ready')):
+            kind, message = Bool, Bool(data=False)
+        else:
+            kind, message = Float32, Float32(data=1.0)
+        publishers[topic] = source.create_publisher(kind, topic, 10)
+        messages[topic] = message
     received = []
     source.create_subscription(ActuatorCommand, '/vehicle/command',
                                lambda m: received.append(m), 10)
@@ -545,8 +632,11 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path, record_mcap):
             default_run_settings('speed_ramp'), speed_high_kph=5.0,
             speed_ramp_duration_sec=1.0, scenario_repetitions=1,
             record_mcap=record_mcap,
+            test_condition='driving',
         ))
         spin_until(lambda: node.state == 'WAIT_AUTO')
+        # Change a gain after the start snapshot so the bag must retain the delta.
+        source.set_parameters([Parameter('torque_kd', value=1800.0)])
         assert not source.get_parameter('steering_enabled').value
         assert all(m.speed_target_mps == 0 for m in received)
         messages['/drive/status'].mode = 1
@@ -566,6 +656,31 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path, record_mcap):
             assert counts['/vehicle/command'] > 0
             assert counts['/drive/status'] > 0
             assert (Path(node.run_dir) / 'scenario.yaml').is_file()
+            document = yaml.safe_load((Path(node.run_dir) / 'scenario.yaml').read_text())
+            capture = yaml.safe_load((Path(node.run_dir) / 'control_parameters.yaml').read_text())
+            assert document['test_condition']['key'] == 'driving'
+            assert document['control_parameters']['status'] == 'complete'
+            assert capture['nodes']['/steering_actuator_node']['ros__parameters']['torque_kd'] == 1500.0
+            assert capture['nodes']['/steering_actuator_node']['ros__parameters']['steering_enabled'] is False
+            assert capture['nodes']['/command_governor']['ros__parameters']['input_timeout_ms'] == 200.0
+            assert counts['/sysid/control_parameters'] == 1
+            assert counts['/parameter_events'] > 0
+            assert all(counts.get(topic, 0) > 0 for topic in TORQUE_TOPICS)
+            from rcl_interfaces.msg import ParameterEvent
+            from rclpy.serialization import deserialize_message
+            from std_msgs.msg import String
+            reader = rosbag2_py.SequentialReader()
+            reader.open(rosbag2_py.StorageOptions(uri=str(Path(node.run_dir) / 'rosbag'), storage_id='mcap'),
+                        rosbag2_py.ConverterOptions('', ''))
+            event_found = snapshot_found = False
+            while reader.has_next():
+                topic, payload, _ = reader.read_next()
+                if topic == '/parameter_events':
+                    event = deserialize_message(payload, ParameterEvent)
+                    event_found |= any(p.name == 'torque_kd' and p.value.double_value == 1800.0 for p in event.changed_parameters)
+                elif topic == '/sysid/control_parameters':
+                    snapshot_found = json.loads(deserialize_message(payload, String).data) == capture
+            assert event_found and snapshot_found
         else:
             assert node.run_dir == ''
             assert not list(tmp_path.iterdir())

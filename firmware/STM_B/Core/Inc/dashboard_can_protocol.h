@@ -48,6 +48,10 @@ extern "C" {
 #define DASHBOARD_GNSS_FIX         2U
 #define DASHBOARD_GNSS_RTK_FIXED   3U
 
+#define DASHBOARD_LV_PRESENT (1U << 0)
+#define DASHBOARD_LV_MEASUREMENT_VALID (1U << 1)
+#define DASHBOARD_LV_SOC_KNOWN (1U << 2)
+
 typedef struct
 {
   uint8_t alive;
@@ -62,6 +66,9 @@ typedef struct
   int16_t controller_temperature_decic;
   int16_t motor_temperature_decic;
   uint32_t motor_fault_bits;
+  uint8_t lv_status_flags;
+  uint8_t lv_voltage_decivolt;
+  uint8_t lv_soc_percent;
   uint8_t auto_data[DASHBOARD_AUTO_DATA_SIZE];
   uint8_t auto_host_valid;
 } DashboardCanSnapshot_t;

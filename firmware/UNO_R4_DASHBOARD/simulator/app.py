@@ -23,6 +23,7 @@ class PreviewApp:
     def __init__(
         self, *, scenario: str, telemetry_hz: int,
         timing_profile: Path | None = None,
+        manual_lv: bool = False, lv_soc: int = 73, lv_voltage: float = 13.3,
     ) -> None:
         import tkinter as tk
         from tkinter import filedialog, ttk
@@ -34,9 +35,12 @@ class PreviewApp:
         self.ImageTk = ImageTk
         self.root = tk.Tk()
         self.root.title("KAI 4-inch Dashboard Preview")
+        if manual_lv:
+            self.root.title("KAI 4-inch Dashboard Preview — LV CAN (mock data)")
         self.root.configure(bg=UI_BG)
 
-        self.native = NativeDashboard(timing_profile)
+        self.native = NativeDashboard(timing_profile, manual_lv=manual_lv,
+                                      lv_soc=lv_soc, lv_voltage=lv_voltage)
         self.scenario_var = tk.StringVar(value=scenario)
         self.auto_case_var = tk.StringVar(value="")
         self.telemetry_var = tk.IntVar(value=telemetry_hz)
@@ -568,6 +572,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--scenario", choices=SCENARIOS, default="road")
     parser.add_argument("--telemetry-hz", type=int, choices=(10, 20), default=20)
     parser.add_argument("--timing-profile", type=Path)
+    parser.add_argument("--manual-lv", action="store_true",
+                        help="Send mock LV values through the native CAN receiver and UI.")
+    parser.add_argument("--lv-soc", type=int, choices=range(-1, 101), default=73,
+                        metavar="PERCENT", help="Mock LV SOC; -1 means unknown.")
+    parser.add_argument("--lv-voltage", type=float, default=13.3,
+                        help="Mock LV voltage in V; a negative value means unavailable.")
     parser.add_argument(
         "--snapshot",
         type=Path,
@@ -584,7 +594,8 @@ def _build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = _build_parser().parse_args()
     if args.snapshot is not None:
-        native = NativeDashboard(args.timing_profile)
+        native = NativeDashboard(args.timing_profile, manual_lv=args.manual_lv,
+                                 lv_soc=args.lv_soc, lv_voltage=args.lv_voltage)
         try:
             if args.variant == "startup":
                 native.run_until(round(max(0.0, args.time) * 1_000_000))
@@ -613,9 +624,11 @@ def main() -> int:
             image = native.image()
             image.save(args.snapshot)
             calibration = "calibrated" if native.profile_calibrated else "unprofiled"
+            rendering = ("native C++/SPI, LV mock CAN, baseline timing"
+                         if args.manual_lv else f"native C++/SPI, {calibration}")
             print(
                 f"saved {args.snapshot} ({args.variant}, {args.scenario}, "
-                f"t={args.time:.3f}s, native C++/SPI, {calibration}, 480x320)"
+                f"t={args.time:.3f}s, {rendering}, 480x320)"
             )
         finally:
             native.close()
@@ -624,6 +637,7 @@ def main() -> int:
         scenario=args.scenario,
         telemetry_hz=args.telemetry_hz,
         timing_profile=args.timing_profile,
+        manual_lv=args.manual_lv, lv_soc=args.lv_soc, lv_voltage=args.lv_voltage,
     )
     app.run()
     return 0

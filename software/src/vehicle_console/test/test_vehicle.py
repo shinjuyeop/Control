@@ -216,7 +216,7 @@ def test_vehicle_browser_overview_stale_reconnect_and_responsive(vehicle, tmp_pa
         expect(page.get_by_role("button", name="Bench Reset")).to_have_count(0)
         expect(page.locator("#control-dock")).to_have_count(0)
         expect(page.get_by_role("button", name="조작권 가져오기")).to_have_count(0)
-        for label in ("고장 주입", "시나리오", "가상 LCD", "HIL"):
+        for label in ("Fault Injection", "Scenarios", "Virtual LCD", "HIL"):
             expect(page.get_by_role("navigation").get_by_role("button", name=label, exact=True)).to_have_count(0)
         control["publish"] = True
         expect(page.locator(".vehicle-overview")).to_contain_text("7 / 7 LIVE")

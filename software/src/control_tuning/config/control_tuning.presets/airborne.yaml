@@ -1,0 +1,33 @@
+# 무부하 급가속 기록을 바탕으로 출력을 낮춘 공중 시험 초기 후보입니다. 실차 검증값이 아닙니다.
+# tuning_preset으로 선택한 다음 launch에 적용됩니다. 실행 중 적용은 TUI의 A를 사용합니다.
+schema_version: 1
+condition: airborne
+label: 공중
+saved_at: '2026-09-18T08:33:17Z'
+current_reference_a: 20.0
+values:
+  p_gain_a_per_deg: 1.0
+  d_gain_a_per_deg_s: 0.04
+  settle_error_deg: 0.05
+  settle_rate_deg_s: 0.5
+  rate_filter_cutoff_hz: 10.0
+  inertia_feedforward_raw_per_rad_s2: 0.0
+  feedforward_filter_hz: 5.0
+  friction_compensation_raw: 0
+  friction_deadband_deg: 0.1
+  peak_current_command_a: 2.0
+  continuous_current_command_a: 1.0
+  feedforward_limit_raw: 1000
+  peak_budget_ms: 200
+  peak_recovery_hold_ms: 2000
+  angle_limit_margin_deg: 1.0
+  overspeed_fault_deg_s: 120.0
+  actuation_mode: torque
+  minimum_vehicle_speed_kph: 0.0
+  steering_command_timeout_ms: 200
+  can_timeout_ms: 500
+  position_feedback_timeout_ms: 500
+  torque_feedback_timeout_ms: 100
+  mode_timeout_ms: 1500
+  drive_status_timeout_ms: 500
+  governor_input_timeout_ms: 200.0

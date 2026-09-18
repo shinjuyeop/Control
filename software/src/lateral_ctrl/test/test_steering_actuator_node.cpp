@@ -59,6 +59,7 @@ public:
   static SteeringState state(const SteeringActuatorNode & n) { return n.state_; }
   static bool enabled(const SteeringActuatorNode & n) { return n.enabled_commanded_; }
   static bool pending(const SteeringActuatorNode & n) { return n.pending_command_valid_; }
+  static TorqueSafetyFault fault(const SteeringActuatorNode & n) { return n.torque_fault_latched_; }
   static void expireCommand(SteeringActuatorNode & n) {
     n.last_steer_command_time_ = std::chrono::steady_clock::now() - std::chrono::seconds(1);
   }
@@ -90,7 +91,7 @@ protected:
   }
   static void TearDownTestSuite() { rclcpp::shutdown(); }
   void create(const std::string & mode = "torque", bool armed = true, int sign = 1,
-    std::vector<rclcpp::Parameter> extra = {})
+    std::vector<rclcpp::Parameter> extra = {}, int32_t initial_count = 0)
   {
     rclcpp::NodeOptions options;
     std::vector<rclcpp::Parameter> parameters{
@@ -106,7 +107,7 @@ protected:
     can = driver.get();
     node = std::make_unique<SteeringActuatorNode>(options, std::move(driver));
     Peer::cancelTimer(*node);
-    can->fresh();
+    can->fresh(initial_count);
     Peer::drive(*node);
     Peer::tick(*node);
     can->frames.clear();
@@ -321,6 +322,47 @@ TEST_F(SteeringNodeTest, OverspeedStops)
   EXPECT_EQ(Peer::state(*node), SteeringState::FAULT);
 }
 
+TEST_F(SteeringNodeTest, OverspeedLatchClearsOnRestartAndRequiresFreshCommand)
+{
+  create(); activate(); output();
+  can->fresh(300); Peer::tick(*node);
+  expectStop();
+  ASSERT_EQ(Peer::fault(*node), TorqueSafetyFault::RATE_LIMIT);
+
+  // Stopping the wheel and sending new targets cannot clear this process's latch.
+  for (int i = 0; i < 3; ++i) {
+    can->fresh(300); Peer::command(*node); Peer::tick(*node);
+    ASSERT_EQ(Peer::state(*node), SteeringState::FAULT);
+    ASSERT_FALSE(Peer::enabled(*node));
+  }
+
+  // vehicle.launch.py starts a new node; the wheel remains at its stopped angle.
+  node.reset();
+  create("torque", true, 1, {}, 300);
+  EXPECT_EQ(Peer::fault(*node), TorqueSafetyFault::NONE);
+  EXPECT_EQ(Peer::state(*node), SteeringState::WAIT_CMD);
+  EXPECT_FALSE(Peer::pending(*node));
+  EXPECT_FALSE(Peer::enabled(*node));
+  can->fresh(300); Peer::tick(*node);
+  EXPECT_FALSE(Peer::enabled(*node));
+
+  Peer::command(*node, 0.0F);
+  can->fresh(300); Peer::tick(*node);
+  ASSERT_EQ(Peer::state(*node), SteeringState::ACTIVE);
+  ASSERT_EQ(can->frames.size(), 2U);
+  EXPECT_EQ(can->frames[0], std::make_pair(std::string("torque"), int32_t{0}));
+  EXPECT_EQ(can->frames[1].first, "enable");
+  can->fresh(300); Peer::tick(*node);
+  EXPECT_EQ(can->frames.back().first, "torque");
+  EXPECT_LT(can->frames.back().second, 0);
+
+  // A new overspeed still trips the unchanged safety limit after restart.
+  can->fresh(600); Peer::tick(*node);
+  expectStop();
+  EXPECT_EQ(Peer::state(*node), SteeringState::FAULT);
+  EXPECT_EQ(Peer::fault(*node), TorqueSafetyFault::RATE_LIMIT);
+}
+
 TEST_F(SteeringNodeTest, ControlStallStopsEvenWithFreshFeedback)
 {
   create(); activate(); output();
@@ -392,7 +434,6 @@ TEST_F(SteeringNodeTest, PositionModeRetainsCurrentCountBeforeEnableAndRateShape
 
 TEST_F(SteeringNodeTest, FrictionScheduleUsesDriveSpeedAndErrorSign)
 {
-  // P = 2000 raw / 5 deg; Peer::drive reports 1.0 m/s, halfway through the schedule.
   create("torque", true, 1, {{"torque_full_scale_error_deg", 5.0},
     {"torque_friction_schedule", std::vector<double>{0.0, 300.0, 2.0, 100.0}}});
   activate(); output();
