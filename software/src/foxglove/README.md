@@ -8,7 +8,8 @@ Foxglove bridge와 KAI 차량 engineering layout만 제공한다. 차량 상태 
 ros2 launch foxglove foxglove_bridge.launch.py
 ```
 
-노트북 Foxglove 앱에서 `ws://100.112.72.27:8765`로 연결하고
+Foxglove 앱에서 로컬은 `ws://127.0.0.1:8765`, 원격은 차량 PC 주소로 연결하고
+(기존 차량 PC Tailscale 예: `ws://100.112.72.27:8765`)
 [`control.json`](control.json)을 import한다. bridge는 PC당 하나만 실행한다.
 하나의 bridge가 ROS graph 전체를 전달하고 여러 클라이언트가 접속할 수 있다.
 `foxglove_bridge.launch.py`는 diagnostics publisher를 시작하지 않는다. 실차에서는
@@ -39,7 +40,7 @@ ros2 run vehicle_state_publisher diagnostics_publisher
   단위·튜닝 순서는 [TORQUE_CONTROL.md](../lateral_ctrl/TORQUE_CONTROL.md)를 따른다.
 - **종방향 테스트**: `/planning/command`부터 `/vehicle/command`, 실제 속도까지의
   추종 관계와 모터 RPM, 상전류·버스 전류, 통신 age, 안전 이벤트
-- **조향 테스트**: 시험 입력부터 변화율 제한·PID 보정·실측 조향각까지의 명령 체인과
+- **조향 테스트**: 시험 입력·목표·실측 조향각의 명령 체인과
   추종 오차, 차량 속도, 모터 전류, 통신 age, 상태·timeout 이벤트
 - **Diagnostics**: `/diagnostics` 요약과 선택 항목 상세
 
@@ -47,6 +48,11 @@ ros2 run vehicle_state_publisher diagnostics_publisher
 함께 따른다. `/sysid/scinario`는 현재 시험 label을 표시하며, 이 철자는 현재 시험
 runner의 토픽 계약을 그대로 사용한다. 이 레이아웃은 토픽을 관측할 뿐 차량 제어 또는
 safety 판단에 사용하지 않는다.
+
+현재 실차 YAML은 torque 모드다. position의 목표각 rate limit과 torque의 실제각
+120 deg/s safety ceiling을 구분한다. `/steering/torque_safety=rate_limit` 복구는
+[조향 운용 문서](../lateral_ctrl/TORQUE_CONTROL.md#안전-동작)를 따른다.
+시나리오 기본 목표속도·중심각은 0이므로 시험 설정 전 그래프가 0인 것은 정상이다.
 
 Foxglove 기본 포트는 8765, Vehicle Console은 8766, HIL Console은 8767이다.
 세 기능은 서로 다른 기본 포트를 사용한다.

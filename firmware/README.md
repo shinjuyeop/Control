@@ -13,6 +13,8 @@ firmware/
 ├── STM_B/             # E-stop·brake와 CAN dashboard를 담당하는 production STM_B
 ├── STM_TEST/          # STM_A/B 입출력과 EZ/KEYA CAN을 대신하는 HIL emulator
 ├── UNO_R4_DASHBOARD/  # UNO R4 Minima CAN receiver와 MSP4030 UI
+├── common/            # STM 공통 주기·성능 계측
+├── KEYA/              # 조향 드라이버 설정·프로토콜 자료
 ├── micro_ros_agent/   # vendored micro-ROS Agent
 ├── tools/             # micro-ROS 라이브러리 재생성 보조 스크립트
 └── udev/              # STM 보드 고정 장치 이름 규칙
@@ -33,9 +35,11 @@ Renesas UNO core로 빌드합니다. STM_TEST는 LPUART1 ASCII protocol로 PC와
 [`../archive/firmware/STM_B_DIRECT_LCD`](../archive/firmware/STM_B_DIRECT_LCD)에
 보관합니다.
 
+STM 공통 주기·성능 계측은 [common](common/README.md)을 따른다.
+
 ## 보드와 핀 표기
 
-세 보드 모두 NUCLEO-G474RE(MB1367, STM32G474RETx)를 사용합니다. 각 README의 핀맵은
+STM_A·STM_B·STM_TEST 세 보드는 NUCLEO-G474RE(MB1367, STM32G474RETx)를 사용합니다. 각 README의 핀맵은
 MCU 핀 이름과 ST morpho 헤더 번호를 함께 적습니다.
 
 - `CN7`, `CN10`은 각각 2×19 ST morpho 헤더이고 홀수 번호와 짝수 번호가 각각 한
@@ -53,7 +57,7 @@ MCU 핀 이름과 ST morpho 헤더 번호를 함께 적습니다.
 상위 Planning 계층은 `kaiev26_msgs/msg/ActuatorCommand`를
 `/planning/command`로 발행하고, Host의 `command_governor`가 이를
 `/vehicle/command`로 재발행합니다. `/vehicle/command`의 발행자는
-`command_governor` 하나입니다. Planning의 production 구현은 아직 없으며
+`command_governor` 하나입니다. Planning의 production 구현은 이 저장소에 포함하지 않으며
 실차 시험에서는 `vehicle_test_scenario_runner`, HIL에서는
 `hil_command_generator`가 그 자리를 대신합니다.
 
@@ -132,13 +136,13 @@ vendored Agent와 `micro_ros_msgs`만 ROS 패키지로 빌드합니다.
 
 ```bash
 cd ~/KAI_ws
-source /opt/ros/humble/setup.bash
+si
 
 colcon build \
   --base-paths src/Control/firmware \
   --packages-select micro_ros_msgs micro_ros_agent
 
-source ~/KAI_ws/install/setup.bash
+si
 ```
 
 vendored upstream revision과 로컬 빌드 수정은
@@ -209,8 +213,8 @@ STM_TEST는 micro-ROS를 쓰지 않으므로 Agent를 붙이지 않습니다.
 터미널 1, STM_A:
 
 ```bash
-source /opt/ros/humble/setup.bash
-source ~/KAI_ws/install/setup.bash
+cd ~/KAI_ws
+si
 ros2 run micro_ros_agent micro_ros_agent serial \
   --dev /dev/hil_a -b 115200
 ```
@@ -218,8 +222,8 @@ ros2 run micro_ros_agent micro_ros_agent serial \
 터미널 2, STM_B:
 
 ```bash
-source /opt/ros/humble/setup.bash
-source ~/KAI_ws/install/setup.bash
+cd ~/KAI_ws
+si
 ros2 run micro_ros_agent micro_ros_agent serial \
   --dev /dev/hil_b -b 115200
 ```

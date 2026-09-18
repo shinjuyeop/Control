@@ -21,3 +21,10 @@ starting the XRCE worker: default DDS participants use loopback UDP and shared
 memory, matching ROS Humble's localhost transports. This covers the STM_A/B
 binary participant creation path and the Agent's ROS graph participants for
 both direct and launch-based execution. Unset or `0` keeps the upstream behavior.
+
+## 저장소 문서 관리 범위
+
+Control의 Agent 빌드·serial 실행은 [상위 firmware 문서](../README.md)를 따른다.
+이 디렉터리의 upstream README·CONTRIBUTING·issue template은 해당 commit의
+원문으로 유지한다. 원문에 남은 `micro_ros_agent/README.md`의 `TODO` 링크와
+`micro_ros_msgs/CONTRIBUTING.md`의 미포함 `NOTICE` 참조는 로컬 운용 경로가 아니다.

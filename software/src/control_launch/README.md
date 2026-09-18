@@ -1,4 +1,61 @@
-# control_launch 조이스틱 텔레옵
+# control_launch
+
+실차 구동 스택과 조이스틱 시험 명령 launch를 제공합니다. 워크스페이스 루트에서
+빌드하고 차량 데스크탑에서 `cd ~/KAI_ws` 후 `si`로 환경을 불러와 사용합니다.
+차량 TF를 위해 별도 `kaiev26_description` 패키지도 필요합니다.
+
+## 실차 통합 실행
+
+```bash
+cd ~/KAI_ws
+si
+ros2 launch control_launch vehicle.launch.py
+```
+
+`can0`는 먼저 250 kbit/s로 준비되어 있어야 합니다. 이 launch는 차량 TF,
+STM_A/B Agent, `command_governor`, `steering_actuator_node`, 차량 상태·wheel twist,
+`diagnostics_publisher`, `auto_dashboard_summary`를 실행합니다.
+센서 드라이버, Planning, 시나리오 TUI와 관측 화면은 별도로 실행합니다.
+`/planning/command` 명령원은 하나만 실행하며 `/vehicle/command`는 governor가 발행합니다.
+
+| 인자 | 기본값 | 의미 |
+|---|---|---|
+| `stm_a_port`, `stm_b_port` | `/dev/stm_a`, `/dev/stm_b` | 각 Agent의 serial 장치 |
+| `agent_baud` | `460800` | micro-ROS serial baud |
+| `agents` | `true` | Agent 2개 실행 |
+| `steering` | `true` | 조향 노드 실행 |
+| `can_interface` | `can0` | 조향 CAN 인터페이스 |
+| `actuation_mode` | 빈 값 | 선택한 프리셋 사용; `position`/`torque`로 override 가능 |
+| `steering_enabled` | 빈 값 | 조향 설정 기본값 사용, 현재 `true` |
+| `tuning_preset` | `driving` | `driving`(주행) / `airborne`(공중) / `ground_stationary`(접지 정지) |
+| `control_tuning_file` | 제어 설정 경로 | 기본 `Control/software/src/control_tuning/config/control_tuning.yaml`; `KAI_CONTROL_TUNING_FILE`로 변경 가능 |
+
+공통 파라미터는 `ros2 run control_tuning control_tuning_tui`로 수정합니다.
+조향·거버너 모두 **기본 YAML → 기존 공통 설정 → 선택한 프리셋 → 명시적 launch 인자** 순서로 읽습니다.
+옵션 없이 실행하면 항상 주행 프리셋을 읽습니다. 선택한 프리셋이 없거나 잘못되면 오류를 냅니다.
+TUI에서 `S`로 저장한 값은 기존 launch를 완전히 종료하고 같은 프리셋으로 다시 실행할 때 반영됩니다. Torque 튜닝 11개는 MANUAL·정지 상태에서 `A`로
+실행 중 적용할 수도 있습니다. [TUI 사용법](../control_tuning/README.md)을 참고하십시오.
+
+현재 조향 YAML은 하드웨어 출력을 허용하고 최소 차속을 `0 km/h`로 설정합니다.
+AUTO·fresh 상태·새 명령 등 조향 조건은 계속 적용됩니다. KEYA 내부 mode는 Host가
+설정하지 않으며 torque 운용 시 Parameter 0020=2를 별도로 맞춰야 합니다.
+
+## 조향 잠금과 재시작
+
+실제 조향 변화율이 `120 deg/s`를 넘으면 Host torque safety fault가 latch됩니다.
+속도가 다시 낮아지거나 새 명령이 들어오는 것만으로 풀리지는 않습니다.
+시험을 정지하고 원인을 확인한 뒤 기존 `control_launch vehicle.launch.py`를
+Ctrl+C로 완전히 종료하고 위 명령으로 다시 실행하면 새 조향 노드의 latch는 해제됩니다.
+재시작 뒤 fresh 상태·피드백·새 command를 받아야 출력하며, 같은 이상이 반복되면 다시 잠깁니다.
+노드를 유지할 때는 `steering_enabled=false→true`로도 해제할 수 있습니다.
+
+`ros2 launch vehicle_console vehicle.launch.py`는 **관측 화면**입니다.
+이 화면을 재시작해도 조향 노드는 재시작되지 않습니다. KEYA 자체 hardware fault도
+Host 재시작만으로 해제된다고 보장하지 않습니다.
+[조향 복구 계약](../lateral_ctrl/TORQUE_CONTROL.md),
+[실차 운용 절차](../../../docs/VEHICLE_RUNBOOK.md)를 참고하십시오.
+
+## 조이스틱 텔레옵
 
 게임패드로 목표 조향각과 속도를 조작해 `/planning/command`를 발행합니다.
 

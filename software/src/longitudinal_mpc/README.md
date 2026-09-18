@@ -1,5 +1,10 @@
 # longitudinal_mpc
 
+현재 `COLCON_IGNORE`로 기본 빌드에서 제외된 실험용 패키지다.
+`control_launch vehicle.launch.py`는 이 노드를 실행하지 않는다. 현재 실차 STM_A는
+`/vehicle/command.speed_target_mps`를 사용하는 EZkontrol 속도 명령 경로이며,
+아래 상전류 출력 경로를 현행 실차 계약으로 해석하지 않는다.
+
 `/vehicle/command`의 현재 목표속도를 horizon 전체의 상수 reference로 사용해
 `/vehicle/drive_current_command`에 양의 상전류를 발행하는 host-side MPC다.
 solver는 MCU가 아니라 PC에서 실행한다.

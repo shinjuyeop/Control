@@ -28,7 +28,7 @@ CAN, Dashboard CAN, Arduino LCD/touch와 HIL UNO USB의 데이터 계약과
 
 | 송신 | 수신 | 방식 | 이름/ID | 데이터 | 주기 | Timeout | 설명 |
 |---|---|---|---|---|---:|---:|---|
-| Planning 또는 시험 명령원 | `command_governor` | ROS 2 | `/planning/command` | `ActuatorCommand` | production 미구현; 실차 시험·HIL은 20 Hz | 거버너 입력 게이트 200 ms | 실차 시험은 `vehicle_test_scenario_runner`, HIL은 `hil_command_generator` |
+| Planning 또는 시험 명령원 | `command_governor` | ROS 2 | `/planning/command` | `ActuatorCommand` | production은 별도 상위 패키지; 실차 시험·HIL은 20 Hz | 거버너 입력 게이트 200 ms | 실차 시험은 `vehicle_test_scenario_runner`, HIL은 `hil_command_generator` |
 | `command_governor` | STM_A | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 500 ms | AUTO 속도·brake |
 | `command_governor` | STM_B | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 적용 안 함 | brake만 저장 |
 | `command_governor` | 조향 노드 | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 200 ms | ACTIVE 조향 freshness |
@@ -59,7 +59,7 @@ CAN, Dashboard CAN, Arduino LCD/touch와 HIL UNO USB의 데이터 계약과
 
 | Topic | Publisher | Subscriber | Type | Rate | QoS | 설명 |
 |---|---|---|---|---:|---|---|
-| `/planning/command` | Planning (production 미구현), 실차 시험 `vehicle_test_scenario_runner`, HIL `hil_command_generator` 중 하나 | `command_governor` | `kaiev26_msgs/msg/ActuatorCommand` | 시험 명령원 20 Hz | default | Planning 의도 명령 |
+| `/planning/command` | Planning (production은 별도 상위 패키지), 실차 시험 `vehicle_test_scenario_runner`, HIL `hil_command_generator` 중 하나 | `command_governor` | `kaiev26_msgs/msg/ActuatorCommand` | 시험 명령원 20 Hz | default | Planning 의도 명령 |
 | `/vehicle/command` | `command_governor` (유일 발행자) | STM_A, STM_B, `steering_actuator_node` | `kaiev26_msgs/msg/ActuatorCommand` | 입력 연동; HIL 20 Hz | default | 속도·조향·최종 brake 명령 |
 | `/drive/status` | `/stm_a_node` | 조향 노드, `vehicle_state_publisher_node`, `diagnostics_publisher`, 관측 도구 | `kaiev26_msgs/msg/DriveActuatorStatus` | 50 Hz | default | mode·gear·구동 명령 및 EZkontrol 진단 |
 | `/brake/status` | `/stm_b_node` | 조향 노드, `vehicle_state_publisher_node`, `diagnostics_publisher`, 관측 도구 | `kaiev26_msgs/msg/BrakeActuatorStatus` | 20 Hz + 변경 시 | default | 브레이크 command와 stop reason |
@@ -116,6 +116,17 @@ STM_A의 500 ms와 조향의 200 ms freshness 한계보다 충분히 빠르게 �
 합니다. 5 Hz는 조향 200 ms의 경계라 간헐 timeout이 납니다.
 `/planning/command`의 production Planning publisher는 아직 구현되지 않았습니다.
 실차 시험·HIL·production publisher 중 하나만 실행합니다.
+
+### 시험 실행기와 label
+
+`vehicle_test_scenario_runner` 실행 파일은 일반 호출 시 TUI(`/auto_sysid`)이며,
+YAML launch는 headless `vehicle_test_scenario_node`(`/vehicle_test_scenario_runner`)를
+사용한다. 두 경로 모두 시험 명령을 20 Hz로 `/planning/command`에 발행한다.
+`/sysid/scinario`는 `std_msgs/msg/String` 기록용 label 토픽이며 철자는 호환성 때문에
+유지한다. Headless의 빈 `scenario_label`은 `scenario` 변경을 따라가고,
+명시된 label은 그대로 유지된다. 고정 YAML label에 들어 있는 숫자는 식별자이며
+현재 속도 설정을 뜻하지 않는다. 모든 실차 시나리오의 기본 속도·중심각은 0이다.
+실행 중단 조건의 차이는 [Safety](SAFETY.md#실차-시나리오-실행기의-현재-제한)를 따른다.
 
 ### 4.2 조향 보조 topic
 
@@ -461,12 +472,14 @@ byte가 먼저 옵니다. 아래 byte 위치는 8-byte CAN payload의 0-based in
 | Driver temperature query | `60 0F 21 01 00 00 DATA 00` | byte 6, 1 byte | driver temperature `[°C]` |
 | Heartbeat | `ELE_H ELE_L SPEED_H SPEED_L CURRENT_H CURRENT_L ERR_H ERR_L` | position byte 0~1, speed 2~3, current 4~5, fault 6~7 | position `360 count/rev`, speed `[rpm]`, current `[A]`, failure code. 현재 driver는 heartbeat position을 사용하지 않음 |
 
-control tick 20 ms마다 position을 조회하며 ACTIVE에서는 rate-limit된 position
-command도 매 tick 전송합니다. fault는 100 ms, speed·current는 200 ms,
+control tick 20 ms마다 position을 조회합니다. `position` 모드의 ACTIVE에서는
+rate-limit된 position command를, 현재 YAML의 `torque` 모드에서는 외부 PD의
+torque command를 전송합니다. fault는 100 ms, speed·current는 200 ms,
 bus voltage·driver temperature는 500 ms 간격으로 번갈아 조회합니다.
 
 - CAN timeout: heartbeat 또는 feedback frame이 500 ms 동안 없을 때
-- position feedback timeout: 유효 position response가 500 ms 동안 없을 때
+- position feedback timeout: position 모드는 500 ms, torque 모드는 100 ms 동안
+  유효 position response가 없을 때
 - KEYA 매뉴얼은 speed·torque command 간격이 1000 ms를 넘으면 CAN disconnect
   error가 발생하고 재시작 시 Enable을 다시 보내야 한다고 규정. 현재 통합 경로의
   position command에도 같은 watchdog과 출력 차단이 적용되는지는 미확인
@@ -507,7 +520,7 @@ Float32다. 후자는 KEYA Parameter 0003과 매뉴얼의 80% 식으로 계산�
 
 | 항목 | 값 | 근거 상수/설정 | 구현 위치 |
 |---|---:|---|---|
-| STM_A Control command | 50 ms | `osDelay(50)` | STM_A `app_freertos.c` |
+| STM_A Control command | 50 ms | `RuntimePeriodic`의 50 ms 주기 | STM_A `app_freertos.c` |
 | STM_A Host command timeout | 500 ms | `HOST_COMMAND_TIMEOUT_MS` | STM_A `app_freertos.c` |
 | STM_B safety TX | 20 ms | `SAFETY_TX_PERIOD_MS` | STM_B `app_freertos.c` |
 | STM_A vehicle TX | 20 ms | `VEHICLE_TX_PERIOD_MS` | STM_A `app_freertos.c` |
@@ -526,6 +539,7 @@ Float32다. 후자는 KEYA Parameter 0003과 매뉴얼의 80% 식으로 계산�
 | 조향 position timeout | 500 ms | `feedback_timeout_ms` | `steering_actuator.yaml` |
 | Torque control/status | 20 ms | `torque_control_period_ms` | `steering_actuator.yaml` |
 | Torque position timeout | 100 ms | `torque_feedback_timeout_ms` (기존 timeout과 작은 값) | `steering_actuator.yaml` |
+| 조향 차속 feedback timeout | 500 ms | `drive_status_timeout_ms`; 최소속도 0에서도 적용 | `steering_actuator.yaml` |
 | 조향 mode timeout | 1500 ms | `mode_timeout_ms` | `steering_actuator.yaml` |
 | 거버너 입력 나이 게이트 | 200 ms | `input_timeout_ms` | `command_governor.yaml` |
 | `/vehicle/state` publish | 50 ms | `publish_rate_hz=20.0` | vehicle state publisher |

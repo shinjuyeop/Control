@@ -1,5 +1,10 @@
 # vcan SIL Signals Reference (교육용 요약)
 
+이 표는 `can_io.py`의 software-only 모델을 설명한다. 현재 조향 모델은
+enable·position 입력과 단순 heartbeat를 사용하며, production driver의 encoder query
+응답이나 외부 torque 제어를 재현하지 않는다. 실차 CAN 계약은
+[Interfaces](../../../../../../docs/INTERFACES.md#8-steering-motor-can)를 따른다.
+
 ## 1. Motor command `0x0C01EFD0` (EFF, 8 bytes)
 
 | Byte | 의미 | 엔디안 | 변환 |
@@ -9,7 +14,7 @@
 | 4 | control bits | - | bit0 = RUN, bit1 = SPEED |
 | 5 | reserved | - | 0 |
 | 6 | reserved | - | 0 |
-| 7 | life counter | - | 증가 카운터 |
+| 7 | reserved | - | 모델의 명령 생성기는 0을 송신 |
 
 ## 2. Motor status1 `0x1801D0EF`
 
@@ -33,9 +38,9 @@
 | 0 | controller temp | `°C = raw - 40` |
 | 1 | motor temp | `°C = raw - 40` |
 | 2 | status bits | bit0 = RUN, bit1 = SPEED |
-| 3 | error bits | 교육용에서는 일부만 사용 |
-| 4 | fault1 | 교육용 reserve |
-| 5 | fault2 | 교육용 reserve |
+| 3 | error_group low byte | 24-bit fault 값의 bits 0..7 |
+| 4 | error_group middle byte | bits 8..15 |
+| 5 | error_group high byte | bits 16..23 |
 | 6 | reserve | 0 |
 | 7 | reserve | 0 |
 

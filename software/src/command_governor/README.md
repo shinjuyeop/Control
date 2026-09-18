@@ -13,6 +13,12 @@ Planning ──/planning/command──> command_governor ──/vehicle/command�
 입출력이 같은 타입(`kaiev26_msgs/ActuatorCommand`)이므로 STM_A/B 펌웨어와
 lateral_ctrl은 변경 없이 기존 구독을 유지한다.
 
+실차 시험의 TUI 실행 파일은 `vehicle_test_scenario_runner`(ROS node `/auto_sysid`),
+headless 실행 파일은 `vehicle_test_scenario_node`(ROS node `/vehicle_test_scenario_runner`)다.
+둘을 포함한 `/planning/command` 명령원은 한 번에 하나만 사용한다. 시나리오
+기본 목표속도는 0이며, 실제 입력값과 실행기 제한은
+[시나리오 문서](../vehicle_test_scenarios/README.md)를 따른다.
+
 ## 현재 단계: 패스스루
 
 지금은 형상(shaping) 로직이 없다. 필드 4개를 그대로 전달하고, 정합성 게이트만
@@ -88,13 +94,21 @@ HALTED로 정지한다.
 세 파라미터 모두 시작 시 한 번만 읽는다. 런타임 `ros2 param set`은
 `restart required` 사유로 거부되므로 조용한 no-op이 되지 않는다.
 
+`input_timeout_ms`는 [Control Tuning](../control_tuning/README.md)의 `수신 시간 제한` 분류에서
+수정하고 `S`로 선택한 프리셋을 저장한다. 단독 launch와 `control_launch vehicle.launch.py` 모두
+`tuning_preset`(기본 `driving`)을 읽는다. `airborne` / `ground_stationary`도 선택할 수 있다.
+기본 프리셋 폴더는 Control 저장소의 `software/src/control_tuning/config/control_tuning.presets/`다.
+사용자 지정 `control_tuning_file:=bench.yaml`이면 `bench.presets/`를 읽는다.
+저장 후 거버너를 포함한 launch를 같은 프리셋으로 재시작한다.
+
 ## 빌드·시험·실행
 
 ```bash
-cd "${KAIEV26_WS:?set KAIEV26_WS to the ROS 2 workspace root}"
+cd ~/KAI_ws
+si
 colcon build --packages-select command_governor
 colcon test --packages-select command_governor && colcon test-result --verbose
-source install/setup.bash
+si
 ros2 launch command_governor command_governor.launch.py
 ```
 

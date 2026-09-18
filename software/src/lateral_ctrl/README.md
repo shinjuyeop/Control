@@ -12,9 +12,15 @@ TeamKAI-DL 차량의 KEYA 조향 액추에이터를 제어하는 ROS 2 Humble �
 두 모드는 startup-only이며 KEYA utility의 **position: 0020=3 / torque: 0020=2**
 설정을 Host가 자동 변경하거나 검증하지 않는다.
 
-Launch 인자를 생략하면 `params_file`의 mode를 따른다. 현재 작업 YAML은 운영자가
-선택한 `torque`를 유지하며, 명시적 `actuation_mode:=position`/`torque`가 YAML보다
+Launch는 `params_file` 위에 `control_tuning_file`의 기존 공통 설정과
+`tuning_preset` 프리셋(기본 `driving`)을 읽는다. 다른 조건은 `airborne` / `ground_stationary`다.
+프리셋은 `control_tuning.presets/`의 조건별 YAML에 저장한다. 현재 기본은 `torque`이며,
+명시적 `actuation_mode:=position`/`torque`가 프리셋보다
 우선한다. 기존 HIL은 position 모델에 맞춰 position을 명시한다.
+
+공통 설정 편집은 `ros2 run control_tuning control_tuning_tui`를 사용한다.
+P·D는 각각 `A/deg`, `A/(deg/s)`의 명령 환산 단위로 표시한다. 기존 ROS 파라미터명과
+내부 raw 단위는 유지한다. [편집·저장·적용 방법](../control_tuning/README.md)을 참고한다.
 
 Torque는 LEFT-positive road-wheel target을 직접 받고, `P=peak/error_full_scale*error`,
 `D=-Kd*measured_rate`를 계산한다. Ki=0, 기본 full-scale-error=0.5°로 작은 오차에도
@@ -63,8 +69,9 @@ ros2 launch lateral_ctrl steering_actuator.launch.py \
 
 CAN 소켓조차 열지 않으려면 `hardware_can_enabled:=false`를 함께 줍니다.
 
-`ros2 run lateral_ctrl steering_actuator_node`로 params file 없이 직접 실행할 때만
-두 파라미터의 코드 기본값인 `false`가 적용됩니다. 두 값은 노드 생성 시 한 번만 읽으며 런타임 arm/disarm
+두 파라미터의 코드 기본값은 `false`입니다. 하지만 보정 파라미터도 필수이므로
+params file 없는 `ros2 run`을 읽기 전용 실행 방법으로 사용하지 않습니다.
+위 launch에 `actuator_output_enabled:=false`를 지정합니다. 두 값은 노드 생성 시 한 번만 읽으며 런타임 arm/disarm
 기능은 없습니다. `node_id`는 `0..255`만 허용하며 범위를 벗어나면 KEYA 드라이버를
 생성하지 않고 노드가 종료됩니다.
 
@@ -137,11 +144,14 @@ ABI에 넣지 않은 최종 브레이크 명령입니다.
 모터가 Enable될 수 있는 상태는 `ACTIVE`뿐입니다. 안전 입력, MANUAL 전환, CAN
 손실, 모터 fault 또는 명령 timeout이 발생하면 노드는 과거 target과 pending
 command를 폐기하고 모터를 Disable합니다. 조건이 복구되어도 과거 목표를 되살리지
-않고, 복구 경계 이후 들어온 새 `/vehicle/command`만 받습니다.
+않고, 차단 사건 이후 받은 fresh pending `/vehicle/command`가 필요합니다.
+차단 중 받은 명령도 복구 시점에 fresh하면 사용될 수 있습니다. Host torque
+safety latch는 [별도 복구 절차](TORQUE_CONTROL.md#안전-동작)를 따릅니다.
 
 정지 상태의 조향 부하를 줄이기 위해 `/drive/status`의 `part1_valid=true`이고
-유한한 `abs(speed_mps) >= 1/3.6`일 때만 조향을 허용합니다. 전·후진 모두
-1 km/h 이상이어야 하며, 미수신 또는 마지막 수신 후 `drive_status_timeout_ms`
+유한한 `abs(speed_mps) >= minimum_steering_speed_kph / 3.6`일 때 조향을 허용합니다.
+코드 기본 최저속도는 1 km/h이며 현재 YAML은 정지 시험을 위해 0 km/h로 설정되어
+있습니다. 전·후진 모두 같은 절댓값 조건을 쓰며, 미수신 또는 마지막 수신 후 `drive_status_timeout_ms`
 (기본 500 ms)를 넘겨도 Disable합니다. 저속·무효 피드백 수신 시 즉시 Disable하고
 기존 목표를 폐기합니다. 조건 미충족 동안에는 위치·Enable 명령을 보내지 않으며,
 속력 조건 회복 후 새 조향 명령이 필요합니다. 다른 안전 원인이 없으면
@@ -149,8 +159,9 @@ command를 폐기하고 모터를 Disable합니다. 조건이 복구되어도 �
 `speed_mps`는 STM_A가 구동모터 RPM에서 환산하고 0 RPM dropout을 보정한 값이므로
 실제 정지 순간과 Disable 사이에는 속도 피드백 및 제어 주기 지연이 있습니다.
 
-기본 control tick은 20 ms, 즉 50 Hz입니다. `ACTIVE`에서는 rate limit을 적용한
-position 명령을 매 tick 보냅니다. `/vehicle/command`의 기본 timeout은 200 ms이므로
+기본 control tick은 20 ms, 즉 50 Hz입니다. `position` 모드의 `ACTIVE`에서는
+rate limit을 적용한 position 명령을 매 tick 보냅니다. 현재 YAML의 `torque` 모드는
+direct target을 PD로 제어하고 실제 조향속도 120 deg/s 초과를 fault로 latch합니다. `/vehicle/command`의 기본 timeout은 200 ms이므로
 실제 발행자는 이보다 충분히 빠르게 명령을 계속 보내야 합니다.
 header stamp가 0이거나 timeout보다 오래됐거나 `steering_target_rad`가 nonfinite인
 명령도 즉시 모터를 Disable하고 과거 target을 폐기합니다. 공개 상태에는 기존
@@ -161,29 +172,27 @@ fresh한 header stamp를 가진 명령의 `brake_engage=false`만 기존 command
 못합니다. fresh한 명령이 `brake_engage=false`와 nonfinite 조향값을 함께 보내면
 조향 노드는 command brake는 해제하되 조향 명령은 거부하고 Disable 상태를
 유지합니다. `minimum_steering_speed_kph`는 조향 허용 최저 속도이며 기본값은
-`1.0`입니다. `0.0`이면 유효하고 fresh한 `/drive/status`는 계속 요구하면서
+코드에서는 `1.0`, 현재 YAML에서는 `0.0`입니다. `0.0`이면 유효하고 fresh한 `/drive/status`는
+계속 요구하면서
 정지 상태 조향을 허용합니다.
 
 ## 빌드와 테스트
 
-`kaiev26_msgs`가 같은 ROS 작업공간에 있어야 합니다. 상위 저장소에서 Control과
-메시지 저장소가 나란히 있는 경우:
+`kaiev26_msgs`와 `Control`을 `~/KAI_ws/src/`에 배치한 경우:
 
 ```bash
-source /opt/ros/humble/setup.bash
+cd ~/KAI_ws
+si
+colcon build --symlink-install --packages-up-to lateral_ctrl
 
-colcon build \
-  --base-paths kaiev26_msgs Control/software/src \
-  --packages-select kaiev26_msgs lateral_ctrl
-
-source install/setup.bash
+si
 
 colcon test --packages-select lateral_ctrl
 colcon test-result --verbose
 ```
 
-Control 저장소만 따로 빌드한다면 먼저 현재 계약의 `kaiev26_msgs`를 빌드하고 그
-`install/setup.bash`를 source해야 합니다.
+Control 패키지만 선택해 빌드한다면 먼저 현재 계약의 `kaiev26_msgs`를 빌드하고,
+`cd ~/KAI_ws` 후 `si`로 빌드 결과를 불러와야 합니다.
 
 ## 실차 실행
 
@@ -222,8 +231,8 @@ AUTO, 유효한 KEYA feedback과 구동 속력 조건을 충족한 뒤 새 명�
 ## 순수 조향 벤치
 
 벤치 노드는 `/drive/status`와 각도 시퀀스를 직접 발행합니다. 현재 기본 시험
-status는 유효한 구동 속력을 제공하지 않으므로, 1 km/h 조건에 의해 조향은
-Disable 상태를 유지합니다. 정지 스윕을 위해 속력 조건을 우회하지 않습니다.
+status는 유효한 구동 속력을 제공하지 않으므로 조향은 Disable 상태를 유지합니다.
+최저속도 설정이 0이어도 `part1_valid`와 fresh한 속도 피드백은 필요합니다.
 
 > **HIL bench와 동시에 실행하지 마십시오.** HIL 스택의 `command_governor`와
 > 이 노드가 모두 `/vehicle/command`를 발행하므로 명령이 서로 덮어써집니다.
@@ -284,7 +293,8 @@ ros2 launch lateral_ctrl steering_bench_test.launch.py \
 | `drive_status_timeout_ms` | 500 | 조향 속력 허용에 사용하는 `/drive/status` 수신 timeout |
 | `steer_command_timeout_ms` | 200 | `ACTIVE`에서 `/vehicle/command` timeout |
 | `command_count_limit` | 3279 | 명령 가능한 KEYA raw count 절댓값. nominal 중앙 등가각 약 -27.83°..+25.92° |
-| `max_steering_rate_deg_s` | 60.0 | 중앙 등가각 변화율 제한 |
+| `minimum_steering_speed_kph` | YAML 0.0 / 코드 1.0 | 조향 허용 최저 차속; YAML은 정지 시험용 임시 설정 |
+| `max_steering_rate_deg_s` | 60.0 | position 모드 목표각 변화율 제한; torque 안전 한계와 별개 |
 | `tracking_control_enabled` | false | 중앙 등가각 tracking 보정 |
 
 count-to-angle 계수와 `counts_per_rev`는

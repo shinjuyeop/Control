@@ -39,14 +39,18 @@ Control/
 │   ├── STM_B/                       # E-stop 및 브레이크 펌웨어
 │   ├── STM_TEST/                    # STM_A/B 입출력과 EZ/KEYA HIL emulator
 │   ├── UNO_R4_DASHBOARD/            # Dashboard CAN·LCD·FT6336U touch HMI
+│   ├── common/                      # STM 공통 주기·성능 계측
+│   ├── KEYA/                        # 조향 드라이버 설정·프로토콜 자료
 │   ├── micro_ros_agent/             # vendored micro-ROS Agent
 │   └── tools/                       # micro-ROS 라이브러리 재생성 스크립트
 ├── software/
 │   └── src/
+│       ├── longitudinal_mpc/        # 실험용 MPC, COLCON_IGNORE로 빌드 제외
 │       ├── lateral_ctrl/            # KEYA 조향 액추에이터 제어
 │       ├── command_governor/        # /planning/command → /vehicle/command 단일 발행자
 │       ├── vehicle_state_publisher/ # 차량 상태·wheel twist·diagnostics 발행
 │       ├── control_launch/          # 실차 구동 통합 launch (vehicle.launch.py)
+│       ├── control_tuning/          # 공통 제어 파라미터 편집·저장·적용 TUI
 │       ├── vehicle_test_scenarios/  # /planning/command 실차 시험 시나리오
 │       ├── vehicle_console/         # 통합 Console: Vehicle 관측 / HIL 시험 / 공용 Web
 │       └── foxglove/                # Foxglove bridge와 engineering layout
@@ -64,6 +68,8 @@ Control/
 | `firmware/STM_B` | `/vehicle/command`의 브레이크 명령, 물리 E-stop, 브레이크 PWM, `/brake/status`, CAN dashboard 송신 |
 | `firmware/UNO_R4_DASHBOARD` | STM_B dashboard CAN 수신, LCD 렌더링, Web 가상 LCD용 USB 적용 상태 보고 |
 | `firmware/STM_TEST` | mode·gear·E-stop·pedal 주입, brake PWM 관측, EZ/KEYA CAN emulator와 Plant |
+| `firmware/common` | STM 공통 주기 실행과 runtime 성능 계측 |
+| `firmware/KEYA` | 조향 드라이버 설정 도구와 프로토콜 분석 자료 |
 | `firmware/micro_ros_agent` | vendored micro-ROS Agent. 각 STM의 serial transport를 ROS 2 graph에 연결 |
 
 ### software/src
@@ -74,9 +80,25 @@ Control/
 | `command_governor` | `/planning/command`를 정합성 게이트 후 `/vehicle/command`로 재발행하는 유일한 발행자. 현재 패스스루이며 형상(속도 상한·램프·축간 협조)은 이후 단계 |
 | `vehicle_state_publisher` | status 3종을 `/vehicle/state`, `/vehicle/wheel_twist`, `/diagnostics`로 변환 |
 | `control_launch` | 실차 구동 스택 통합 `vehicle.launch.py` (Agent 2개 + 거버너 + 조향 + 상태 통합) |
-| `vehicle_test_scenarios` | production Planning 대신 `/planning/command`를 발행하는 실차 직진·조향·속도·제동 시험 시나리오 |
+| `control_tuning` | P·D 명령 전류 단위 편집, 출력·운용·timeout 설정, 저장과 실행 중 적용 |
+| `vehicle_test_scenarios` | production Planning 대신 `/planning/command`를 발행하는 실차 입력 응답·K-City 경로 추종 TUI 및 headless 시험 시나리오 |
 | `vehicle_console` | KAI Vehicle Console: 단일 frontend·공용 Web/ROS/runtime, Vehicle read-only 및 HIL backend |
 | `foxglove` | Foxglove bridge와 engineering layout |
+
+## 공통 제어 설정
+
+`ros2 run control_tuning control_tuning_tui`에서 공통 파라미터를 편집합니다.
+`S`는 선택한 프리셋을 저장하고, `A`는 MANUAL·정지 상태에서 torque
+튜닝을 일괄 적용합니다. 시나리오의 속도·진폭·주기는 기존 시나리오 TUI에서 수정합니다.
+[Control Tuning 사용법](software/src/control_tuning/README.md)을 참고하십시오.
+
+Control Tuning은 상단에서 주행·공중·접지 정지 프리셋을 먼저 선택한 뒤 편집합니다.
+`S`로 조건별 YAML에 프리셋을 저장하고, `P`로 다른 프리셋을 선택합니다.
+시작 설정과 프리셋은 `software/src/control_tuning/config/`에 저장해 Git으로 함께 관리합니다.
+기본 구동 launch는 주행 프리셋을 사용하며, 다른 조건은 `tuning_preset:=airborne` 또는
+`tuning_preset:=ground_stationary`로 선택합니다. 실제 시험 조건은 시나리오 TUI 오른쪽의
+`시험 조건`에서 Enter → ↑↓ → Enter로 별도로 선택합니다. 녹화에는 실행 노드에서
+조회한 실제 제어 파라미터와 시험 중 변경 이벤트, 토크 상세 토픽도 함께 남깁니다.
 
 ## KAI Vehicle Console
 
@@ -107,13 +129,17 @@ Web 의존성 설치, 프론트엔드·공통 LCD renderer 빌드, 전체 벤치
     └── kaiev26_msgs/
 ```
 
-ROS 2 패키지는 워크스페이스 루트에서 빌드합니다.
+ROS 2 패키지는 워크스페이스 루트에서 빌드합니다. 위 트리는 Control과 메시지의
+기본 배치입니다. 실차 통합 launch에는 별도 `kaiev26_description`과 그 의존성이
+필요하고, 센서 드라이버와 TUI 경로 시험의 `kaiev26_decision`,
+`kaiev26_motion_control`, `eskf_localization`도 해당 시험에 맞게 준비해야 합니다.
+`longitudinal_mpc`와 `archive/`는 기본 colcon 탐색에서 제외됩니다.
 
 ```bash
 cd ~/KAI_ws
-source /opt/ros/humble/setup.bash
+si
 colcon build --symlink-install
-source ~/KAI_ws/install/setup.bash
+si
 ```
 
 STM 펌웨어 빌드와 보드별 micro-ROS Agent 실행 절차는
@@ -123,7 +149,8 @@ STM 펌웨어 빌드와 보드별 micro-ROS Agent 실행 절차는
 끝까지의 절차는 [실차 운용 절차](docs/VEHICLE_RUNBOOK.md)를 따라 하십시오.**
 Planning은
 포함되지 않으며(별도 실행, `/planning/command` 발행), Planning이 없으면
-안전한 대기 상태(STM_A HALTED, 조향 WAIT_CMD)로 섭니다. 조향은 기본
+AUTO에서는 명령 timeout으로 STM_A가 HALTED, 조향이 WAIT_CMD로 대기합니다.
+MANUAL의 물리 페달 경로는 별도입니다. 조향은 기본
 armed이므로 전원 인가 전에 배선과 E-stop을 먼저 확인하십시오.
 관측 화면(Foxglove·Vehicle Console)은 별도로 켭니다. `/diagnostics` 요약은 구동 스택에
 포함되어 있습니다. production Planning 없이 실차 명령 경로를 시험할 때는
@@ -146,6 +173,27 @@ bench([HIL runbook](docs/HIL_RUNBOOK.md)), 조향 단독
 과거의 종방향 패키지 골격 `longitudinal_ctrl`은 노드가 채워진 적 없이
 `command_governor`로 대체되었습니다. 종방향 하드 한도는 계속 STM_A 펌웨어에
 있습니다.
+
+## 시험 기본값과 이전 폴더
+
+실차 시나리오 TUI와 headless YAML의 기본 속도는 모두 `0 km/h`, 조향 중심은
+`0 deg`입니다. 조향 진폭은 별도 설정이므로 속도·중심이 0이어도 횡방향 시험은
+조향 입력을 생성할 수 있습니다. 시험 속도·진폭을 확인한 뒤 Run을 시작합니다.
+TUI는 `ros2 run vehicle_test_scenarios vehicle_test_scenario_runner`로 실행합니다.
+
+| 이전 구성 | 현재 위치 또는 역할 |
+|---|---|
+| `can_lab` | `archive/teamkai_can_lab.py` |
+| `visualization`의 Qt dashboard | `archive/software/legacy_vehicle_dashboard/` |
+| 상태·진단 / Web 관측 / Foxglove | `vehicle_state_publisher` / `vehicle_console` / `foxglove` |
+| `kaiev26_hil` | 이전 패키지는 `archive/software/kaiev26_hil/`, 현재 HIL은 `vehicle_console` |
+| PID/Gazebo 실험 | `archive/software/gazebo/` |
+| `longitudinal_ctrl` | `archive/longitudinal_ctrl/`; 현재 명령 경로는 `command_governor` |
+
+`git pull`은 ignored 캐시나 예전 `build/`, `install/`을 자동 정리하지 않습니다.
+패키지 목록은 `colcon list`로, 실제 실행 대상은 `ros2 pkg prefix <package>`로
+확인하고 차량 데스크탑에서 `cd ~/KAI_ws` 후 `si`로 현재 workspace 환경을 불러옵니다.
+과거 중첩 workspace의 setup 파일을 섞어 읽으면 옛 패키지가 다시 선택될 수 있습니다.
 
 ## 문서
 
@@ -173,6 +221,13 @@ bench([HIL runbook](docs/HIL_RUNBOOK.md)), 조향 단독
 
 | 문서 | 내용 |
 |---|---|
+| [control_launch](software/src/control_launch/README.md) | 실차 통합 launch, 재시작, 조이스틱 텔레옵 |
+| [control_tuning](software/src/control_tuning/README.md) | 공통 파라미터 TUI, A 단위 P·D, 저장 파일·적용·재시작 |
+| [Torque control](software/src/lateral_ctrl/TORQUE_CONTROL.md) | 현재 YAML과 코드 기본값, 조향 fault 복구 |
+| [Logging](software/src/lateral_ctrl/LOGGING.md) | 독립 MCAP 기록과 TUI 기록의 구분, CSV 변환 |
+| [UNO dashboard](firmware/UNO_R4_DASHBOARD/README.md) | native·AUTO CAN 표시와 touch |
+| [Vehicle wiring](docs/vehicle-wiring/README.md) | 배선도 편집 |
+| [longitudinal_mpc](software/src/longitudinal_mpc/README.md) | 빌드에서 제외된 실험용 MPC |
 | [STM_A](firmware/STM_A/README.md) | STM_A 내부 구조 및 동작 |
 | [STM_B](firmware/STM_B/README.md) | STM_B 내부 구조 및 동작 |
 | [STM_TEST](firmware/STM_TEST/README.md) | HIL emulator의 pin map, UART protocol과 Plant |

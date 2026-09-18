@@ -1,5 +1,8 @@
 # KAI Vehicle Console validation — 2026-09-11
 
+> 이 문서는 Console 통합 당시의 판단·검증 기록이다. 날짜·테스트 수·당시 조건은
+> 이력을 유지하며, 현재 설치·실행 방법은 [README](README.md)와 [HIL Web](HIL_WEB.md)을 따른다.
+
 ## Initial frontend promotion (historical)
 
 Starting branch/HEAD: `Shin`, `f8a0b766eaa1ab227eec6d574e696024c0ef8ab0`.

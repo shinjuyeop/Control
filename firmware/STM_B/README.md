@@ -386,8 +386,8 @@ STM32_Programmer_CLI \
 micro-ROS Agent:
 
 ```bash
-source /opt/ros/humble/setup.bash
-source ~/KAI_ws/install/setup.bash
+cd ~/KAI_ws
+si
 ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/stm_b -b 460800
 ```
 
