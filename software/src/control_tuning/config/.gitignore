@@ -1,0 +1,4 @@
+# 설정 YAML은 Git으로 관리하고 실행 중 생성되는 보조 파일만 제외합니다.
+*.yaml.bak
+*.yaml.lock
+.*.yaml*

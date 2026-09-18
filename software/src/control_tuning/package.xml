@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>control_tuning</name>
+  <version>0.1.0</version>
+  <description>Terminal editor for shared vehicle control settings.</description>
+  <maintainer email="shinjp02@gmail.com">shinjuyeop</maintainer>
+  <license>TODO: License declaration</license>
+  <buildtool_depend>ament_python</buildtool_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
+  <exec_depend>kaiev26_msgs</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>python3-rich</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <test_depend>python3-pytest</test_depend>
+  <test_depend>python3-pyte</test_depend>
+  <test_depend>launch</test_depend>
+  <test_depend>launch_ros</test_depend>
+  <export><build_type>ament_python</build_type></export>
+</package>
