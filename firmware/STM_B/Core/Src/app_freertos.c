@@ -24,6 +24,7 @@
 #include "dashboard_can.h"
 #include "dashboard_can_protocol.h"
 #include "globals.h"
+#include "lv_battery_protocol.h"
 #include "usart.h"
 #include "tim.h"
 #include "gpio.h"
@@ -33,6 +34,7 @@
 #include <rclc/executor.h>
 #include <kaiev26_msgs/msg/actuator_command.h>
 #include <kaiev26_msgs/msg/brake_actuator_status.h>
+#include <sensor_msgs/msg/battery_state.h>
 #include <sensor_msgs/msg/nav_sat_fix.h>
 #include <std_msgs/msg/u_int8_multi_array.h>
 #include "rmw_microros/rmw_microros.h"
@@ -111,6 +113,10 @@ _Static_assert(BRAKE_RELEASED_PULSE_US >= BRAKE_SERVO_PWM_MIN_US &&
 #define AGENT_PING_TIMEOUT_MS 100u
 #define BRAKE_STATUS_PERIOD_MS 50u
 #define ROS_OPERATION_FAILURE_LIMIT 3u
+#define BATTERY_UART_RX_RING_SIZE 256u
+#define BATTERY_STATUS_TIMEOUT_MS 1000u
+#define BATTERY_STATUS_PERIOD_MS 100u
+#define BATTERY_COMMAND_TX_TIMEOUT_MS 20u
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -127,8 +133,18 @@ static sensor_msgs__msg__NavSatFix s_gnss_msg;
 static char s_gnss_frame_id[16];
 static std_msgs__msg__UInt8MultiArray s_dashboard_auto_msg;
 static uint8_t s_dashboard_auto_data[DASHBOARD_AUTO_ROS_PAYLOAD_SIZE];
+static std_msgs__msg__UInt8MultiArray s_battery_command_msg;
+static uint8_t s_battery_command_data[LV_BATTERY_COMMAND_PAYLOAD_SIZE];
+static std_msgs__msg__UInt8MultiArray s_battery_link_status_msg;
+static uint8_t s_battery_link_status_data[LV_BATTERY_STATUS_PAYLOAD_SIZE];
+static std_msgs__msg__UInt8MultiArray s_battery_link_ack_msg;
+static uint8_t s_battery_link_ack_data[LV_BATTERY_ACK_PAYLOAD_SIZE];
 static kaiev26_msgs__msg__BrakeActuatorStatus s_status_msg;
 static char s_status_frame_id[4];
+static sensor_msgs__msg__BatteryState s_battery_msg;
+static char s_battery_frame_id[16];
+static char s_battery_location[16];
+static char s_battery_serial[1];
 static volatile uint32_t s_last_command_tick = 0u;
 static volatile uint8_t s_command_received = 0u;
 
@@ -140,14 +156,22 @@ static rcl_node_t s_ros_node;
 static rcl_subscription_t s_ros_sub_cmd;
 static rcl_subscription_t s_ros_sub_gnss;
 static rcl_subscription_t s_ros_sub_dashboard_auto;
+static rcl_subscription_t s_ros_sub_battery_command;
 static rcl_publisher_t s_ros_pub_brake_status;
+static rcl_publisher_t s_ros_pub_battery_state;
+static rcl_publisher_t s_ros_pub_battery_link_status;
+static rcl_publisher_t s_ros_pub_battery_link_ack;
 static rclc_executor_t s_ros_executor;
 static uint8_t s_ros_support_initialized = 0u;
 static uint8_t s_ros_node_initialized = 0u;
 static uint8_t s_ros_sub_cmd_initialized = 0u;
 static uint8_t s_ros_sub_gnss_initialized = 0u;
 static uint8_t s_ros_sub_dashboard_auto_initialized = 0u;
+static uint8_t s_ros_sub_battery_command_initialized = 0u;
 static uint8_t s_ros_publisher_initialized = 0u;
+static uint8_t s_ros_battery_publisher_initialized = 0u;
+static uint8_t s_ros_battery_link_status_initialized = 0u;
+static uint8_t s_ros_battery_link_ack_initialized = 0u;
 static uint8_t s_ros_executor_initialized = 0u;
 
 /* Host에서는 최종 브레이크 명령만 받는다. Vehicle Status는 STM_A UART에서 수신한다. */
@@ -176,6 +200,32 @@ static void cb_dashboard_auto(const void *m)
   DashboardCan_ObserveAutoStatus(summary->data.data, summary->data.size);
 }
 
+static volatile uint32_t s_battery_command_tx_count = 0u;
+static volatile uint32_t s_battery_command_tx_error_count = 0u;
+static uint32_t s_battery_command_frame_sequence = 0u;
+
+static void cb_battery_command(const void *m)
+{
+  const std_msgs__msg__UInt8MultiArray *message =
+      (const std_msgs__msg__UInt8MultiArray *)m;
+  LvBatteryCommand command;
+  if (message->data.size != LV_BATTERY_COMMAND_PAYLOAD_SIZE ||
+      !LvBattery_DecodeCommandPayload(message->data.data, &command)) {
+    s_battery_command_tx_error_count++;
+    return;
+  }
+  uint8_t frame[LV_BATTERY_MAX_FRAME_SIZE];
+  const size_t frame_size = LvBattery_EncodeCommandFrame(
+      &command, s_battery_command_frame_sequence++, frame);
+  if (frame_size == 0u ||
+      HAL_UART_Transmit(&huart4, frame, (uint16_t)frame_size,
+                        BATTERY_COMMAND_TX_TIMEOUT_MS) != HAL_OK) {
+    s_battery_command_tx_error_count++;
+    return;
+  }
+  s_battery_command_tx_count++;
+}
+
 static uint8_t s_usart1_rx_dma[UART_RX_DMA_SIZE];
 static uint8_t s_usart1_rx_ring[UART_RX_RING_SIZE];
 static volatile uint16_t s_usart1_rx_head = 0u;
@@ -187,6 +237,25 @@ static uint8_t s_vehicle_last_sequence = 0u;
 static uint8_t s_vehicle_sequence_initialized = 0u;
 static uint8_t s_detail_last_sequence = 0u;
 static uint8_t s_detail_sequence_initialized = 0u;
+
+static uint8_t s_uart4_rx_byte;
+static uint8_t s_uart4_rx_ring[BATTERY_UART_RX_RING_SIZE];
+static volatile uint16_t s_uart4_rx_head = 0u;
+static volatile uint16_t s_uart4_rx_tail = 0u;
+static volatile uint8_t s_uart4_rx_restart_requested = 0u;
+static volatile uint32_t s_uart4_rx_overflow_count = 0u;
+static LvBatteryParser s_battery_parser;
+static LvBatteryStatus s_battery_status;
+static volatile uint32_t s_last_battery_rx_tick = 0u;
+static volatile uint32_t s_battery_rx_count = 0u;
+static volatile uint32_t s_battery_crc_error_count = 0u;
+static volatile uint32_t s_battery_format_error_count = 0u;
+static volatile uint32_t s_battery_sequence_error_count = 0u;
+static uint32_t s_battery_last_sequence = 0u;
+static uint8_t s_battery_sequence_initialized = 0u;
+static volatile uint8_t s_battery_status_received = 0u;
+static LvBatteryAck s_battery_ack;
+static volatile uint32_t s_battery_ack_count = 0u;
 
 static uint8_t read_active_low(GPIO_TypeDef *port, uint16_t pin)
 {
@@ -273,10 +342,17 @@ static uint8_t usart1_rx_ring_pop(uint8_t *byte);
 static void reset_vehicle_parser(uint8_t last_byte);
 static void process_vehicle_rx_byte(uint8_t byte);
 static HAL_StatusTypeDef restart_usart1_rx(UART_HandleTypeDef *huart);
+static void uart4_rx_ring_push(uint8_t byte);
+static uint8_t uart4_rx_ring_pop(uint8_t *byte);
+static HAL_StatusTypeDef restart_uart4_rx(UART_HandleTypeDef *huart);
+static void process_battery_rx_byte(uint8_t byte);
 static void init_ros_message_buffers(void);
 static uint8_t create_ros_entities(void);
 static void destroy_ros_entities(void);
 static rcl_ret_t publish_brake_status(uint8_t reason_bits);
+static rcl_ret_t publish_battery_state(void);
+static rcl_ret_t publish_battery_link_status(void);
+static rcl_ret_t publish_battery_link_ack(void);
 static uint8_t ros_operation_failed(rcl_ret_t result);
 /* USER CODE END FunctionPrototypes */
 
@@ -460,9 +536,13 @@ void StartuROS(void *argument)
   ros_connection_state_t state = ROS_STATE_WAIT_AGENT;
   uint32_t last_agent_ping;
   uint32_t last_status;
+  uint32_t last_battery_status;
   uint8_t previous_bits = 0xFFu;
   uint8_t spin_failures = 0u;
   uint8_t publish_failures = 0u;
+  uint8_t battery_publish_failures = 0u;
+  uint32_t published_ack_count = 0u;
+  uint32_t published_link_status_count = 0u;
 
   (void)argument;
   rmw_uros_set_custom_transport(true,(void*)&hlpuart1,
@@ -472,6 +552,7 @@ void StartuROS(void *argument)
 
   last_agent_ping = HAL_GetTick() - AGENT_PING_PERIOD_MS;
   last_status = HAL_GetTick();
+  last_battery_status = HAL_GetTick();
 
   for (;;) {
     RuntimeActivation activation = RuntimeMetrics_Begin(RM_UROS);
@@ -494,8 +575,12 @@ void StartuROS(void *argument)
         if (create_ros_entities() != 0u) {
           spin_failures = 0u;
           publish_failures = 0u;
+          battery_publish_failures = 0u;
+          published_ack_count = 0u;
+          published_link_status_count = 0u;
           previous_bits = 0xFFu;
           last_status = now - BRAKE_STATUS_PERIOD_MS;
+          last_battery_status = now - BATTERY_STATUS_PERIOD_MS;
           last_agent_ping = now;
           state = ROS_STATE_RUNNING;
         } else {
@@ -536,8 +621,46 @@ void StartuROS(void *argument)
           last_status = now;
         }
 
+        if ((uint32_t)(now - last_battery_status) >=
+            BATTERY_STATUS_PERIOD_MS) {
+          rcl_ret_t battery_publish_result = publish_battery_state();
+          uint32_t rx_count;
+          taskENTER_CRITICAL();
+          rx_count = s_battery_rx_count;
+          taskEXIT_CRITICAL();
+          if (battery_publish_result == RCL_RET_OK &&
+              rx_count != published_link_status_count) {
+            battery_publish_result = publish_battery_link_status();
+            if (battery_publish_result == RCL_RET_OK)
+              published_link_status_count = rx_count;
+          }
+          if (ros_operation_failed(battery_publish_result) != 0u) {
+            if (battery_publish_failures < UINT8_MAX) {
+              battery_publish_failures++;
+            }
+          } else {
+            battery_publish_failures = 0u;
+          }
+          last_battery_status = now;
+        }
+
+        uint32_t ack_count;
+        taskENTER_CRITICAL();
+        ack_count = s_battery_ack_count;
+        taskEXIT_CRITICAL();
+        if (ack_count != published_ack_count) {
+          rcl_ret_t ack_result = publish_battery_link_ack();
+          if (ros_operation_failed(ack_result) != 0u) {
+            if (battery_publish_failures < UINT8_MAX)
+              battery_publish_failures++;
+          } else {
+            published_ack_count = ack_count;
+          }
+        }
+
         if ((spin_failures >= ROS_OPERATION_FAILURE_LIMIT) ||
-            (publish_failures >= ROS_OPERATION_FAILURE_LIMIT)) {
+            (publish_failures >= ROS_OPERATION_FAILURE_LIMIT) ||
+            (battery_publish_failures >= ROS_OPERATION_FAILURE_LIMIT)) {
           state = ROS_STATE_DESTROY_ENTITIES;
           break;
         }
@@ -593,8 +716,13 @@ void StartARx(void *argument)
 {
   /* USER CODE BEGIN StartARx */
   extern UART_HandleTypeDef huart1;
+  extern UART_HandleTypeDef huart4;
 
   while (restart_usart1_rx(&huart1) != HAL_OK) {
+    osDelay(10);
+  }
+  LvBatteryParser_Init(&s_battery_parser);
+  while (restart_uart4_rx(&huart4) != HAL_OK) {
     osDelay(10);
   }
   uint32_t last_restart_ms = HAL_GetTick();
@@ -604,6 +732,9 @@ void StartARx(void *argument)
     uint8_t byte;
     while (usart1_rx_ring_pop(&byte) != 0u) {
       process_vehicle_rx_byte(byte);
+    }
+    while (uart4_rx_ring_pop(&byte) != 0u) {
+      process_battery_rx_byte(byte);
     }
 
     uint32_t now = HAL_GetTick();
@@ -623,6 +754,11 @@ void StartARx(void *argument)
       if (restart_usart1_rx(&huart1) == HAL_OK) {
         s_usart1_rx_restart_requested = 0u;
         last_restart_ms = now;
+      }
+    }
+    if (s_uart4_rx_restart_requested != 0u) {
+      if (restart_uart4_rx(&huart4) == HAL_OK) {
+        s_uart4_rx_restart_requested = 0u;
       }
     }
     RuntimeMetrics_End(RM_RX, activation);
@@ -694,7 +830,11 @@ static void init_ros_message_buffers(void)
   memset(&s_cmd_msg, 0, sizeof(s_cmd_msg));
   memset(&s_gnss_msg, 0, sizeof(s_gnss_msg));
   memset(&s_dashboard_auto_msg, 0, sizeof(s_dashboard_auto_msg));
+  memset(&s_battery_command_msg, 0, sizeof(s_battery_command_msg));
+  memset(&s_battery_link_status_msg, 0, sizeof(s_battery_link_status_msg));
+  memset(&s_battery_link_ack_msg, 0, sizeof(s_battery_link_ack_msg));
   memset(&s_status_msg, 0, sizeof(s_status_msg));
+  memset(&s_battery_msg, 0, sizeof(s_battery_msg));
 
   /* 수신 string은 reconnect 횟수와 무관하게 수명이 고정된 버퍼를 사용한다. */
   s_cmd_msg.header.frame_id.data = s_cmd_frame_id;
@@ -703,8 +843,33 @@ static void init_ros_message_buffers(void)
   s_gnss_msg.header.frame_id.capacity = sizeof(s_gnss_frame_id);
   s_dashboard_auto_msg.data.data = s_dashboard_auto_data;
   s_dashboard_auto_msg.data.capacity = sizeof(s_dashboard_auto_data);
+  s_battery_command_msg.data.data = s_battery_command_data;
+  s_battery_command_msg.data.capacity = sizeof(s_battery_command_data);
+  s_battery_link_status_msg.data.data = s_battery_link_status_data;
+  s_battery_link_status_msg.data.capacity = sizeof(s_battery_link_status_data);
+  s_battery_link_ack_msg.data.data = s_battery_link_ack_data;
+  s_battery_link_ack_msg.data.capacity = sizeof(s_battery_link_ack_data);
   s_status_msg.header.frame_id.data = s_status_frame_id;
   s_status_msg.header.frame_id.capacity = sizeof(s_status_frame_id);
+  s_battery_msg.header.frame_id.data = s_battery_frame_id;
+  s_battery_msg.header.frame_id.capacity = sizeof(s_battery_frame_id);
+  s_battery_msg.location.data = s_battery_location;
+  s_battery_msg.location.capacity = sizeof(s_battery_location);
+  s_battery_msg.serial_number.data = s_battery_serial;
+  s_battery_msg.serial_number.capacity = sizeof(s_battery_serial);
+  s_battery_msg.cell_voltage.data = NULL;
+  s_battery_msg.cell_voltage.size = 0u;
+  s_battery_msg.cell_voltage.capacity = 0u;
+  s_battery_msg.cell_temperature.data = NULL;
+  s_battery_msg.cell_temperature.size = 0u;
+  s_battery_msg.cell_temperature.capacity = 0u;
+
+  memcpy(s_battery_frame_id, "lv_battery", sizeof("lv_battery"));
+  s_battery_msg.header.frame_id.size = sizeof("lv_battery") - 1u;
+  memcpy(s_battery_location, "LV pack", sizeof("LV pack"));
+  s_battery_msg.location.size = sizeof("LV pack") - 1u;
+  s_battery_serial[0] = '\0';
+  s_battery_msg.serial_number.size = 0u;
 }
 
 static uint8_t create_ros_entities(void)
@@ -715,13 +880,23 @@ static uint8_t create_ros_entities(void)
   s_ros_sub_cmd = rcl_get_zero_initialized_subscription();
   s_ros_sub_gnss = rcl_get_zero_initialized_subscription();
   s_ros_sub_dashboard_auto = rcl_get_zero_initialized_subscription();
+  s_ros_sub_battery_command = rcl_get_zero_initialized_subscription();
   s_ros_pub_brake_status = rcl_get_zero_initialized_publisher();
+  s_ros_pub_battery_state = rcl_get_zero_initialized_publisher();
+  s_ros_pub_battery_link_status = rcl_get_zero_initialized_publisher();
+  s_ros_pub_battery_link_ack = rcl_get_zero_initialized_publisher();
   s_ros_executor = rclc_executor_get_zero_initialized_executor();
 
   s_cmd_msg.header.frame_id.size = 0u;
   s_gnss_msg.header.frame_id.size = 0u;
   s_dashboard_auto_msg.data.size = 0u;
+  s_battery_command_msg.data.size = 0u;
+  s_battery_link_status_msg.data.size = 0u;
+  s_battery_link_ack_msg.data.size = 0u;
   s_status_msg.header.frame_id.size = 0u;
+  s_battery_msg.header.frame_id.size = sizeof("lv_battery") - 1u;
+  s_battery_msg.location.size = sizeof("LV pack") - 1u;
+  s_battery_msg.serial_number.size = 0u;
 
   if (rclc_support_init(
           &s_ros_support, 0, NULL, &s_ros_allocator) != RCL_RET_OK) {
@@ -759,6 +934,14 @@ static uint8_t create_ros_entities(void)
   }
   s_ros_sub_dashboard_auto_initialized = 1u;
 
+  if (rclc_subscription_init_default(
+          &s_ros_sub_battery_command, &s_ros_node,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8MultiArray),
+          "/lv_battery/link/command") != RCL_RET_OK) {
+    return 0u;
+  }
+  s_ros_sub_battery_command_initialized = 1u;
+
   if (rclc_publisher_init_default(
           &s_ros_pub_brake_status, &s_ros_node,
           ROSIDL_GET_MSG_TYPE_SUPPORT(
@@ -768,8 +951,32 @@ static uint8_t create_ros_entities(void)
   }
   s_ros_publisher_initialized = 1u;
 
+  if (rclc_publisher_init_default(
+          &s_ros_pub_battery_state, &s_ros_node,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, BatteryState),
+          "/lv_battery/state") != RCL_RET_OK) {
+    return 0u;
+  }
+  s_ros_battery_publisher_initialized = 1u;
+
+  if (rclc_publisher_init_default(
+          &s_ros_pub_battery_link_status, &s_ros_node,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8MultiArray),
+          "/lv_battery/link/status") != RCL_RET_OK) {
+    return 0u;
+  }
+  s_ros_battery_link_status_initialized = 1u;
+
+  if (rclc_publisher_init_default(
+          &s_ros_pub_battery_link_ack, &s_ros_node,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8MultiArray),
+          "/lv_battery/link/ack") != RCL_RET_OK) {
+    return 0u;
+  }
+  s_ros_battery_link_ack_initialized = 1u;
+
   if (rclc_executor_init(
-          &s_ros_executor, &s_ros_support.context, 3,
+          &s_ros_executor, &s_ros_support.context, 4,
           &s_ros_allocator) != RCL_RET_OK) {
     return 0u;
   }
@@ -777,6 +984,12 @@ static uint8_t create_ros_entities(void)
 
   if (rclc_executor_add_subscription(
           &s_ros_executor, &s_ros_sub_cmd, &s_cmd_msg, &cb_cmd,
+          ON_NEW_DATA) != RCL_RET_OK) {
+    return 0u;
+  }
+  if (rclc_executor_add_subscription(
+          &s_ros_executor, &s_ros_sub_battery_command,
+          &s_battery_command_msg, &cb_battery_command,
           ON_NEW_DATA) != RCL_RET_OK) {
     return 0u;
   }
@@ -812,6 +1025,24 @@ static void destroy_ros_entities(void)
     s_ros_executor_initialized = 0u;
   }
   RuntimeStatsRos_Fini(&s_runtime_ros, &s_ros_node);
+  if (s_ros_battery_link_ack_initialized != 0u) {
+    const rcl_ret_t fini_result =
+        rcl_publisher_fini(&s_ros_pub_battery_link_ack, &s_ros_node);
+    (void)fini_result;
+    s_ros_battery_link_ack_initialized = 0u;
+  }
+  if (s_ros_battery_link_status_initialized != 0u) {
+    const rcl_ret_t fini_result =
+        rcl_publisher_fini(&s_ros_pub_battery_link_status, &s_ros_node);
+    (void)fini_result;
+    s_ros_battery_link_status_initialized = 0u;
+  }
+  if (s_ros_battery_publisher_initialized != 0u) {
+    const rcl_ret_t fini_result =
+        rcl_publisher_fini(&s_ros_pub_battery_state, &s_ros_node);
+    (void)fini_result;
+    s_ros_battery_publisher_initialized = 0u;
+  }
   if (s_ros_publisher_initialized != 0u) {
     const rcl_ret_t fini_result =
         rcl_publisher_fini(&s_ros_pub_brake_status, &s_ros_node);
@@ -829,6 +1060,12 @@ static void destroy_ros_entities(void)
         rcl_subscription_fini(&s_ros_sub_dashboard_auto, &s_ros_node);
     (void)fini_result;
     s_ros_sub_dashboard_auto_initialized = 0u;
+  }
+  if (s_ros_sub_battery_command_initialized != 0u) {
+    const rcl_ret_t fini_result =
+        rcl_subscription_fini(&s_ros_sub_battery_command, &s_ros_node);
+    (void)fini_result;
+    s_ros_sub_battery_command_initialized = 0u;
   }
   if (s_ros_sub_cmd_initialized != 0u) {
     const rcl_ret_t fini_result =
@@ -865,6 +1102,107 @@ static rcl_ret_t publish_brake_status(uint8_t reason_bits)
   s_status_msg.command_age_ms = (command_received != 0u) ?
       (float)((uint32_t)(HAL_GetTick() - last_command_tick)) : INFINITY;
   return rcl_publish(&s_ros_pub_brake_status, &s_status_msg, NULL);
+}
+
+static rcl_ret_t publish_battery_state(void)
+{
+  LvBatteryStatus status;
+  uint32_t last_rx_tick;
+  uint8_t received;
+  const uint32_t now = HAL_GetTick();
+
+  taskENTER_CRITICAL();
+  status = s_battery_status;
+  last_rx_tick = s_last_battery_rx_tick;
+  received = s_battery_status_received;
+  taskEXIT_CRITICAL();
+
+  const uint8_t present =
+      ((received != 0u) &&
+       ((uint32_t)(now - last_rx_tick) < BATTERY_STATUS_TIMEOUT_MS)) ? 1u : 0u;
+  const uint8_t measurement_valid =
+      ((present != 0u) &&
+       ((status.flags & LV_BATTERY_STATUS_MEASUREMENT_VALID) != 0u)) ? 1u : 0u;
+  const uint8_t soc_known =
+      ((present != 0u) &&
+       ((status.flags & LV_BATTERY_STATUS_SOC_KNOWN) != 0u) &&
+       (status.remaining_uAs >= 0) &&
+       (status.soc_centi_percent >= 0)) ? 1u : 0u;
+
+  s_battery_msg.present = (present != 0u);
+  s_battery_msg.temperature = NAN;
+  s_battery_msg.power_supply_health =
+      sensor_msgs__msg__BatteryState__POWER_SUPPLY_HEALTH_UNKNOWN;
+  s_battery_msg.power_supply_technology =
+      sensor_msgs__msg__BatteryState__POWER_SUPPLY_TECHNOLOGY_LIFE;
+
+  if (measurement_valid != 0u) {
+    s_battery_msg.voltage = (float)status.bus_voltage_uV / 1000000.0f;
+    /* Gauge convention is discharge positive; BatteryState is discharge negative. */
+    s_battery_msg.current = -(float)status.current_uA / 1000000.0f;
+    if (status.current_uA > 0) {
+      s_battery_msg.power_supply_status =
+          sensor_msgs__msg__BatteryState__POWER_SUPPLY_STATUS_DISCHARGING;
+    } else if (status.current_uA < 0) {
+      s_battery_msg.power_supply_status =
+          sensor_msgs__msg__BatteryState__POWER_SUPPLY_STATUS_CHARGING;
+    } else {
+      s_battery_msg.power_supply_status =
+          sensor_msgs__msg__BatteryState__POWER_SUPPLY_STATUS_NOT_CHARGING;
+    }
+  } else {
+    s_battery_msg.voltage = NAN;
+    s_battery_msg.current = NAN;
+    s_battery_msg.power_supply_status =
+        sensor_msgs__msg__BatteryState__POWER_SUPPLY_STATUS_UNKNOWN;
+  }
+
+  if (present != 0u) {
+    s_battery_msg.capacity = (float)status.capacity_mAh / 1000.0f;
+    s_battery_msg.design_capacity =
+        (float)status.capacity_mAh / 1000.0f;
+  } else {
+    s_battery_msg.capacity = NAN;
+    s_battery_msg.design_capacity = NAN;
+  }
+
+  if (soc_known != 0u) {
+    s_battery_msg.charge = (float)((double)status.remaining_uAs / 3.6e9);
+    s_battery_msg.percentage =
+        (float)status.soc_centi_percent / 10000.0f;
+  } else {
+    s_battery_msg.charge = NAN;
+    s_battery_msg.percentage = NAN;
+  }
+
+  return rcl_publish(&s_ros_pub_battery_state, &s_battery_msg, NULL);
+}
+
+static rcl_ret_t publish_battery_link_status(void)
+{
+  LvBatteryStatus status;
+  uint8_t received;
+  taskENTER_CRITICAL();
+  status = s_battery_status;
+  received = s_battery_status_received;
+  taskEXIT_CRITICAL();
+  if (received == 0u) return RCL_RET_OK;
+  LvBattery_EncodeStatusPayload(&status, s_battery_link_status_data);
+  s_battery_link_status_msg.data.size = LV_BATTERY_STATUS_PAYLOAD_SIZE;
+  return rcl_publish(
+      &s_ros_pub_battery_link_status, &s_battery_link_status_msg, NULL);
+}
+
+static rcl_ret_t publish_battery_link_ack(void)
+{
+  LvBatteryAck ack;
+  taskENTER_CRITICAL();
+  ack = s_battery_ack;
+  taskEXIT_CRITICAL();
+  LvBattery_EncodeAckPayload(&ack, s_battery_link_ack_data);
+  s_battery_link_ack_msg.data.size = LV_BATTERY_ACK_PAYLOAD_SIZE;
+  return rcl_publish(&s_ros_pub_battery_link_ack,
+                     &s_battery_link_ack_msg, NULL);
 }
 
 static uint8_t ros_operation_failed(rcl_ret_t result)
@@ -1023,6 +1361,79 @@ static void process_vehicle_rx_byte(uint8_t byte)
   }
 }
 
+static void uart4_rx_ring_push(uint8_t byte)
+{
+  uint16_t next = (uint16_t)(s_uart4_rx_head + 1u);
+  if (next >= BATTERY_UART_RX_RING_SIZE) next = 0u;
+  if (next != s_uart4_rx_tail) {
+    s_uart4_rx_ring[s_uart4_rx_head] = byte;
+    s_uart4_rx_head = next;
+  } else {
+    s_uart4_rx_overflow_count++;
+  }
+}
+
+static uint8_t uart4_rx_ring_pop(uint8_t *byte)
+{
+  uint8_t available = 0u;
+  taskENTER_CRITICAL();
+  if (s_uart4_rx_tail != s_uart4_rx_head) {
+    *byte = s_uart4_rx_ring[s_uart4_rx_tail];
+    s_uart4_rx_tail++;
+    if (s_uart4_rx_tail >= BATTERY_UART_RX_RING_SIZE) {
+      s_uart4_rx_tail = 0u;
+    }
+    available = 1u;
+  }
+  taskEXIT_CRITICAL();
+  return available;
+}
+
+static HAL_StatusTypeDef restart_uart4_rx(UART_HandleTypeDef *huart)
+{
+  (void)HAL_UART_AbortReceive(huart);
+  taskENTER_CRITICAL();
+  s_uart4_rx_head = 0u;
+  s_uart4_rx_tail = 0u;
+  LvBatteryParser_Init(&s_battery_parser);
+  taskEXIT_CRITICAL();
+  return HAL_UART_Receive_IT(huart, &s_uart4_rx_byte, 1u);
+}
+
+static void process_battery_rx_byte(uint8_t byte)
+{
+  LvBatteryStatus status;
+  LvBatteryAck ack;
+  const LvBatteryParseResult result =
+      LvBatteryParser_Feed(&s_battery_parser, byte, &status, &ack);
+
+  if (result == LV_BATTERY_PARSE_STATUS) {
+    if ((s_battery_sequence_initialized != 0u) &&
+        (status.frame_sequence != s_battery_last_sequence + 1u)) {
+      s_battery_sequence_error_count++;
+    }
+    s_battery_last_sequence = status.frame_sequence;
+    s_battery_sequence_initialized = 1u;
+
+    taskENTER_CRITICAL();
+    s_battery_status = status;
+    s_last_battery_rx_tick = HAL_GetTick();
+    s_battery_rx_count++;
+    s_battery_status_received = 1u;
+    taskEXIT_CRITICAL();
+    DashboardCan_ObserveLvBattery(&status);
+  } else if (result == LV_BATTERY_PARSE_ACK) {
+    taskENTER_CRITICAL();
+    s_battery_ack = ack;
+    s_battery_ack_count++;
+    taskEXIT_CRITICAL();
+  } else if (result == LV_BATTERY_PARSE_CRC_ERROR) {
+    s_battery_crc_error_count++;
+  } else if (result == LV_BATTERY_PARSE_FORMAT_ERROR) {
+    s_battery_format_error_count++;
+  }
+}
+
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
   const uint32_t entry_cycle = RuntimeMetrics_Now();
@@ -1069,10 +1480,22 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
   s_usart1_rx_dma_pos = position;
 }
 
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+  if (huart->Instance == UART4) {
+    uart4_rx_ring_push(s_uart4_rx_byte);
+    if (HAL_UART_Receive_IT(huart, &s_uart4_rx_byte, 1u) != HAL_OK) {
+      s_uart4_rx_restart_requested = 1u;
+    }
+  }
+}
+
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
   if (huart->Instance == USART1) {
     s_usart1_rx_restart_requested = 1u;
+  } else if (huart->Instance == UART4) {
+    s_uart4_rx_restart_requested = 1u;
   }
 }
 

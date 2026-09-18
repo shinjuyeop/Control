@@ -56,6 +56,9 @@ void DashboardCanProtocol_PackFault(
   payload[2] = (uint8_t)(snapshot->motor_fault_bits & 0xFFU);
   payload[3] = (uint8_t)((snapshot->motor_fault_bits >> 8) & 0xFFU);
   payload[4] = (uint8_t)((snapshot->motor_fault_bits >> 16) & 0xFFU);
+  payload[5] = snapshot->lv_status_flags;
+  payload[6] = snapshot->lv_voltage_decivolt;
+  payload[7] = snapshot->lv_soc_percent;
 }
 
 void DashboardCanProtocol_PackAuto(

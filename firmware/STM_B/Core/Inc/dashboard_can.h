@@ -7,6 +7,7 @@ extern "C" {
 
 #include <stdint.h>
 #include <stddef.h>
+#include "lv_battery_protocol.h"
 
 #define DASHBOARD_CAN_SLOT_PERIOD_MS 10U
 #define DASHBOARD_CAN_SLOTS_PER_SNAPSHOT 5U
@@ -14,6 +15,7 @@ extern "C" {
 #define DASHBOARD_CAN_RECOVERY_BACKOFF_MS 1000U
 #define DASHBOARD_CAN_GNSS_TIMEOUT_MS 500U
 #define DASHBOARD_CAN_AUTO_TIMEOUT_MS 300U
+#define DASHBOARD_CAN_LV_TIMEOUT_MS 1000U
 
 extern volatile uint32_t DASHBOARD_CAN_TX_COUNT;
 extern volatile uint32_t DASHBOARD_CAN_TX_ERROR_COUNT;
@@ -28,6 +30,7 @@ extern volatile uint8_t DASHBOARD_CAN_ALIVE;
 
 void DashboardCan_ObserveGnssFix(int8_t navsat_status);
 void DashboardCan_ObserveAutoStatus(const uint8_t *payload, size_t size);
+void DashboardCan_ObserveLvBattery(const LvBatteryStatus *status);
 void DashboardCan_Task(void *argument);
 
 #ifdef __cplusplus

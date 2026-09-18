@@ -44,6 +44,18 @@ def test_report_decodes_raw_applied_values_and_tolerates_extensions():
     assert decode_display_report(b"DASH v1 alive=42 complete=101\n") is None
 
 
+def test_lv_report_preserves_unknown_soc_and_legacy_report_compatibility():
+    legacy = decode_display_report(wire_report())
+    assert legacy["lv_values"]["status_flags"] == 0
+    current = decode_display_report(wire_report(lv=[3, 133, 255]))
+    assert current["lv_values"] == dict(status_flags=3, voltage_decivolt=133, soc_percent=255)
+    renderer = NativeDashboardRenderer(LIBRARY)
+    unknown = renderer.render(current)
+    known = renderer.render(decode_display_report(wire_report(lv=[7, 133, 73])))
+    assert known != unknown
+    assert renderer.render(current) == unknown
+
+
 @pytest.mark.parametrize(
     "payload",
     [
