@@ -70,9 +70,6 @@ public:
     n.previous_tick_ = std::chrono::steady_clock::now() - std::chrono::milliseconds(150);
   }
   static double kd(const SteeringActuatorNode & n) { return n.torque_controller_.config().kd; }
-  static double friction(const SteeringActuatorNode & n) {
-    return n.torque_controller_.config().friction_raw;
-  }
   static double currentLimitCommandA(const SteeringActuatorNode & n) {
     return n.torqueCurrentLimitCommandA();
   }
@@ -430,41 +427,4 @@ TEST_F(SteeringNodeTest, PositionModeRetainsCurrentCountBeforeEnableAndRateShape
   EXPECT_LT(can->frames.back().second, 77); // 1 deg would be about 77 counts; tiny test dt is shaped.
   Peer::estop(*node);
   EXPECT_EQ(can->frames.back().first, "disable");
-}
-
-TEST_F(SteeringNodeTest, FrictionScheduleUsesDriveSpeedAndErrorSign)
-{
-  create("torque", true, 1, {{"torque_full_scale_error_deg", 5.0},
-    {"torque_friction_schedule", std::vector<double>{0.0, 300.0, 2.0, 100.0}}});
-  activate(); output();
-  EXPECT_EQ(can->frames.back(), std::make_pair(std::string("torque"), int32_t{400 + 200}));
-  Peer::command(*node, -0.0174532925F);
-  output();
-  EXPECT_EQ(can->frames.back(), std::make_pair(std::string("torque"), int32_t{-(400 + 200)}));
-}
-
-TEST_F(SteeringNodeTest, MethodATuningIsRuntimeValidated)
-{
-  create(); activate(); output();
-  can->frames.clear();
-  EXPECT_FALSE(node->set_parameter({"torque_friction_raw", int64_t{-1}}).successful);
-  EXPECT_FALSE(node->set_parameter({"torque_inertia_ff", -1.0}).successful);
-  EXPECT_FALSE(node->set_parameter(
-    {"torque_friction_schedule", std::vector<double>{0.0, 100.0, 1.0}}).successful);
-  EXPECT_FALSE(node->set_parameter(
-    {"torque_friction_schedule", std::vector<double>{1.0, 100.0, 0.5, 90.0}}).successful);
-  EXPECT_TRUE(can->frames.empty());
-  EXPECT_TRUE(Peer::enabled(*node));
-  ASSERT_TRUE(node->set_parameters_atomically({{"torque_friction_raw", int64_t{106}},
-    {"torque_friction_deadband_deg", 0.05}, {"torque_inertia_ff", 5.0}}).successful);
-  expectStop();
-  EXPECT_DOUBLE_EQ(Peer::friction(*node), 106.0);
-}
-
-TEST_F(SteeringNodeTest, StartupRejectsInvalidMethodAParameters)
-{
-  EXPECT_THROW(create("torque", true, 1, {{"torque_friction_raw", int64_t{10001}}}),
-    std::invalid_argument);
-  EXPECT_THROW(create("torque", true, 1,
-    {{"torque_friction_schedule", std::vector<double>{0.0}}}), std::invalid_argument);
 }

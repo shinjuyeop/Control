@@ -20,7 +20,6 @@ class Field:
     node: str = STEERING
     live: bool = True
     integer: bool = False
-    allow_zero: bool = False
     choices: tuple = ()
 
 
@@ -37,23 +36,10 @@ FIELDS = (
           'torque_settle_rate_deg_s', '목표각 변화율과 필터 적용 전·후 실제 조향속도가 모두 이 값보다 작아야 합니다.', 0.1),
     Field('rate_filter_cutoff_hz', '조향속도 필터', 'Hz', GROUPS[0],
           'torque_rate_filter_hz', '낮출수록 속도 측정 잡음을 더 줄이지만, 실제 움직임을 늦게 반영합니다.', 0.5),
-    Field('inertia_feedforward_raw_per_rad_s2', '관성 피드포워드', 'raw/(rad/s²)', GROUPS[0],
-          'torque_inertia_ff', '목표 각가속도에 곱하는 J_ff입니다. 0이면 관성 보상을 사용하지 않습니다.', 1.0),
-    Field('feedforward_filter_hz', '목표 가속도 필터', 'Hz', GROUPS[0],
-          'torque_feedforward_filter_hz', '명령 시각에서 계산한 목표 각가속도의 저역통과 필터입니다.', 0.5),
-    Field('friction_compensation_raw', '마찰 보상', 'raw', GROUPS[0],
-          'torque_friction_raw', '오차 방향으로 더하는 정지 마찰 보상입니다. 0이면 사용하지 않습니다.',
-          10, integer=True, allow_zero=True),
-    Field('friction_deadband_deg', '마찰 보상 비활성 오차', 'deg', GROUPS[0],
-          'torque_friction_deadband_deg', '목표 근처 채터링을 막기 위해 이 오차 안에서는 마찰 보상을 끕니다.',
-          0.05, allow_zero=True),
     Field('peak_current_command_a', '최대 전류 명령', 'A', GROUPS[1],
           'torque_peak_limit_raw', '순간적으로 허용할 전류 명령의 상한입니다. 실제 측정 전류나 모터 정격을 설정하는 값은 아닙니다.', 0.1),
     Field('continuous_current_command_a', '지속 전류 명령', 'A', GROUPS[1],
           'torque_sustained_limit_raw', '고출력 허용 시간을 모두 사용한 뒤 적용할 전류 명령의 상한입니다.', 0.1),
-    Field('feedforward_limit_raw', '관성 보상 상한', 'raw', GROUPS[1],
-          'torque_feedforward_limit_raw', 'J_ff×목표 각가속도 항에만 적용하는 절대값 상한입니다.',
-          100, integer=True, allow_zero=True),
     Field('peak_budget_ms', '고출력 허용 시간', 'ms', GROUPS[1],
           'torque_peak_duration_ms', '지속 전류 한도를 넘긴 시간을 누적합니다. 목표각을 바꿔도 사용한 시간은 초기화되지 않습니다.', 100, integer=True),
     Field('peak_recovery_hold_ms', '고출력 재사용 대기시간', 'ms', GROUPS[1],
@@ -139,9 +125,8 @@ def encode(values, context):
                 raise ValueError(f'{f.label}: 유한한 숫자가 필요합니다.')
             if f.integer and int(value) != value:
                 raise ValueError(f'{f.label}: 정수를 입력하십시오.')
-            lower = 0 if f.allow_zero else 1
-            if f.integer and not lower <= value <= 2147483647:
-                raise ValueError(f'{f.label}: {lower}~2147483647 사이 정수가 필요합니다.')
+            if f.integer and not 0 < value <= 2147483647:
+                raise ValueError(f'{f.label}: 1~2147483647 사이 정수가 필요합니다.')
             value = int(value) if f.integer else float(value)
         result[f.node][f.native] = value
     s = result[STEERING]
@@ -171,15 +156,6 @@ def validate_native(s, governor):
         raise ValueError('각도·주파수·수신 시간 제한은 0보다 큰 유한한 값이어야 합니다.')
     if s['torque_kd'] < 0 or not math.isfinite(s['torque_kd']):
         raise ValueError('D 게인은 0 이상의 유한한 값이어야 합니다.')
-    nonnegative = ('torque_inertia_ff', 'torque_friction_deadband_deg')
-    if any(not math.isfinite(s[k]) or s[k] < 0 for k in nonnegative):
-        raise ValueError('관성·마찰 보상값은 0 이상의 유한한 값이어야 합니다.')
-    if not math.isfinite(s['torque_feedforward_filter_hz']) or s['torque_feedforward_filter_hz'] <= 0:
-        raise ValueError('목표 가속도 필터는 0보다 큰 유한한 값이어야 합니다.')
-    if not 0 <= s['torque_feedforward_limit_raw'] <= 10000:
-        raise ValueError('관성 보상 상한은 0~10000 raw입니다.')
-    if not 0 <= s['torque_friction_raw'] <= 10000:
-        raise ValueError('마찰 보상은 0~10000 raw입니다.')
     if not math.isfinite(s['minimum_steering_speed_kph']) or s['minimum_steering_speed_kph'] < 0:
         raise ValueError('조향 허용 최소 차속은 0 이상입니다.')
     peak, continuous = s['torque_peak_limit_raw'], s['torque_sustained_limit_raw']
@@ -222,11 +198,6 @@ def range_hint(field, values, context):
         'peak_budget_ms': f'{period}~5000',
         'peak_recovery_hold_ms': '고출력 허용 시간 이상',
         'rate_filter_cutoff_hz': f'0 초과, {500 / period:g} 이하',
-        'inertia_feedforward_raw_per_rad_s2': '0 이상 · 0이면 비활성',
-        'feedforward_filter_hz': '0 초과',
-        'friction_compensation_raw': '0~10000 · 0이면 비활성',
-        'friction_deadband_deg': '0 이상',
-        'feedforward_limit_raw': '0~10000',
         'settle_error_deg': f'0 초과, {peak / values["p_gain_a_per_deg"]:g} 미만' if values['p_gain_a_per_deg'] > 0 else '0 초과',
         'settle_rate_deg_s': '0 초과, 조향 과속 차단 기준 미만',
         'overspeed_fault_deg_s': '목표 도달 속도 초과 · 코드상 고정 상한 없음',

@@ -1205,7 +1205,7 @@
       "showPlotValuesInLegend": true
     },
     "Plot!torque_effort": {
-      "foxglovePanelTitle": "P / D / FF / 마찰 / 토크 명령",
+      "foxglovePanelTitle": "P / D / 토크 명령",
       "paths": [
         {
           "timestampMethod": "receiveTime",
@@ -1225,27 +1225,11 @@
         },
         {
           "timestampMethod": "receiveTime",
-          "value": "/steering/torque_ff_raw.data",
-          "enabled": true,
-          "color": "#5cd6c0",
-          "id": "Plot!torque_effort-5",
-          "label": "J·α_ff (LEFT+)"
-        },
-        {
-          "timestampMethod": "receiveTime",
-          "value": "/steering/torque_friction_raw.data",
-          "enabled": true,
-          "color": "#e8a0bf",
-          "id": "Plot!torque_effort-6",
-          "label": "F_c·sign(e) (LEFT+)"
-        },
-        {
-          "timestampMethod": "receiveTime",
           "value": "/steering/torque_unsaturated_raw.data",
           "enabled": true,
           "color": "#a5d76e",
           "id": "Plot!torque_effort-2",
-          "label": "합계 (LEFT+)"
+          "label": "P+D (LEFT+)"
         },
         {
           "timestampMethod": "receiveTime",

@@ -39,9 +39,6 @@ def test_peak_change_preserves_p_and_quantizes_current(store):
 @pytest.mark.parametrize('key,value', [
     ('p_gain_a_per_deg', 0), ('p_gain_a_per_deg', 320),
     ('d_gain_a_per_deg_s', -1), ('d_gain_a_per_deg_s', float('nan')),
-    ('inertia_feedforward_raw_per_rad_s2', -1), ('feedforward_filter_hz', 0),
-    ('friction_compensation_raw', -1), ('friction_compensation_raw', 10001),
-    ('friction_deadband_deg', -0.1), ('feedforward_limit_raw', 10001),
     ('peak_current_command_a', 16.1), ('peak_current_command_a', .0001),
     ('continuous_current_command_a', 17), ('peak_budget_ms', 19),
     ('peak_budget_ms', 5001), ('peak_budget_ms', 100.1),
@@ -164,6 +161,6 @@ def test_standalone_install_uses_packaged_config(tmp_path, monkeypatch):
 
 
 def test_every_field_round_trips_and_is_unique(store):
-    assert len({f.key for f in FIELDS}) == len(FIELDS) == 25
+    assert len({f.key for f in FIELDS}) == len(FIELDS)
     for f in FIELDS:
         assert f.key in store.saved

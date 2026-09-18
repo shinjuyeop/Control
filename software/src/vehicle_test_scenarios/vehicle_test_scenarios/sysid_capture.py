@@ -13,8 +13,7 @@ from control_tuning.schema import STEERING, GOVERNOR, READ_NAMES, decode_node
 TORQUE_TOPICS = (
     '/steering/actuation_mode', '/steering/requested_angle', '/steering/angle_error',
     '/steering/rate', '/steering/unfiltered_rate', '/steering/torque_p_raw',
-    '/steering/torque_d_raw', '/steering/torque_ff_raw', '/steering/torque_friction_raw',
-    '/steering/target_accel', '/steering/torque_unsaturated_raw',
+    '/steering/torque_d_raw', '/steering/torque_unsaturated_raw',
     '/steering/torque_command_raw', '/steering/torque_current_limit_command_a',
     '/steering/torque_limit_raw', '/steering/torque_saturated',
     '/steering/torque_peak_limited', '/steering/torque_settled',

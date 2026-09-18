@@ -44,17 +44,12 @@ e = target - actual
 Kp = torque_peak_limit_raw / deg2rad(torque_full_scale_error_deg)
 P = Kp * e
 D = torque_kd * (0 - measured_wheel_rate_rad_s)
-alpha_ff = filtered_second_derivative(target, command_timestamp)
-FF = clamp(torque_inertia_ff * alpha_ff, +/-torque_feedforward_limit_raw)
-F = abs(e) > deadband ? friction(speed) * sign(e) : 0
-u = P + D + FF + F
+u = P + D
 canonical_torque = envelope_and_direction_limit(u)
 KEYA_torque = torque_direction_sign * canonical_torque
 ```
 
-Ki=0이다. 마찰·관성 보상의 기본 gain은 0이므로 기존 PD 응답은 그대로다.
-목표 각가속도는 제어 tick이 아니라 새 명령의 header stamp에서 계산해 held target의
-가짜 impulse를 피한다. direct step의 target rate는 0으로 두어 D kick을 만들지 않는다.
+Ki=0이다. direct step의 target rate는 0으로 두어 D kick을 만들지 않는다.
 목표에서 오차가 0이어도 움직이는 방향의 반대 torque로 제동한다. Position의
 `max_steering_rate_deg_s`는 torque 경로에 적용하지 않는다.
 
@@ -123,12 +118,6 @@ fault는 5 tick, voltage/temperature는 25 tick 주기이며 heartbeat도 speed/
 | `torque_rate_filter_hz` | 10.0 | 양수, control Nyquist 이하 |
 | `torque_soft_limit_margin_deg` | 1.0 | calibration 양쪽 끝에서 안쪽 margin |
 | `torque_hard_rate_limit_deg_s` | 120.0 | 실제 wheel rate 안전 ceiling |
-| `torque_inertia_ff` | 0.0 | raw/(rad/s²), 0이면 비활성 |
-| `torque_feedforward_limit_raw` | 1000 | 관성 피드포워드 항의 절대값 상한, 0..10000 |
-| `torque_feedforward_filter_hz` | 5.0 | 명령 timestamp 기반 목표 각가속도 LPF |
-| `torque_friction_raw` | 0 | 오차 방향 정지 마찰 보상, 0이면 비활성 |
-| `torque_friction_deadband_deg` | 0.1 | 이 오차 안에서는 마찰 보상 0 |
-| `torque_friction_schedule` | `[]` | 선택적 `[speed_mps, raw, ...]`; 지정하면 고정 마찰값 대체 |
 
 startup-only 이외의 위 gain/envelope 값은 runtime 변경 가능하다. 전체 변경 묶음을
 검증한 후 **zero→Disable, 목표·rate 이력 폐기**하고 적용한다. 새 명령과 fresh rate
@@ -267,9 +256,7 @@ ros2 run lateral_ctrl torque_sysid_metrics.py inertia \
 ros2 run lateral_ctrl torque_sysid_metrics.py step <step-bag> --csv <output.csv>
 ```
 
-측정값을 `control_tuning`에 입력하기 전 양방향 반복 결과와 출력 한계를 확인한다.
-속도별 마찰 배열은 고급 설정이므로 TUI가 아니라 `torque_friction_schedule` YAML 또는
-ROS parameter로 적용한다.
+측정 도구는 조향 기구의 마찰·관성 특성을 분석하는 용도이며 PD 제어 설정을 변경하지 않는다.
 
 ## Foxglove와 기록
 
@@ -286,9 +273,7 @@ filtered/unfiltered rate, current/speed, mode/safety를 함께 확인한다.
 | `/steering/angle_error` | Float32 | PD 오차 rad |
 | `/steering/rate`, `/steering/unfiltered_rate` | Float32 | rad/s |
 | `/steering/torque_p_raw`, `/steering/torque_d_raw` | Float32 | canonical P/D raw 기여 |
-| `/steering/torque_ff_raw`, `/steering/torque_friction_raw` | Float32 | 관성/마찰 보상 raw 기여 |
-| `/steering/target_accel` | Float32 | 명령 timestamp 기반 목표 각가속도 rad/s² |
-| `/steering/torque_unsaturated_raw` | Float32 | canonical P+D+FF+F |
+| `/steering/torque_unsaturated_raw` | Float32 | canonical P+D |
 | `/steering/torque_command_raw` | Int32 | sign 적용 후 KEYA에 요청한 raw; 실제 torque 측정 아님 |
 | `/steering/torque_current_limit_command_a` | Float32 | `raw/10000×Parameter 0003×0.8`; signed 명령 전류 제한값 A |
 | `/steering/torque_limit_raw` | Int32 | 현재 peak/sustained cap |

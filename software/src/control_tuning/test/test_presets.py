@@ -62,7 +62,7 @@ def test_preset_load_checks_reference_completeness_and_filename(store):
     document['values'].pop('p_gain_a_per_deg')
     path.write_text(yaml.safe_dump(document))
     presets.reload()
-    with pytest.raises(ValueError, match='25개'):
+    with pytest.raises(ValueError):
         presets.load('airborne')
     document['condition'] = 'driving'
     path.write_text(yaml.safe_dump(document))
