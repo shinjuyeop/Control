@@ -15,6 +15,9 @@ import time
 from zoneinfo import ZoneInfo
 
 import yaml
+from std_msgs.msg import String
+from control_tuning.storage import SettingsStore
+from .sysid_capture import ParameterCapture, TORQUE_TOPICS
 
 
 DEFAULT_RECORDS_ROOT = next((
@@ -38,6 +41,7 @@ RECORD_TOPICS = (
     '/sysid/odometry', '/sysid/odometry_gnss', '/sysid/route_context',
     '/sysid/target_path', '/sysid/target_speed', '/sysid/route_command',
     '/sysid/route_enabled', '/sysid/tf',
+    '/parameter_events', '/sysid/control_parameters', *TORQUE_TOPICS,
 )
 RECORDER_CODE = """
 import sys, json
@@ -140,6 +144,7 @@ class ProcessManager:
         self.run_document = None
         self.run_log = None
         self.recorder_ready = False
+        self.parameter_capture = None
         self.cleanup_errors = []
         self.record_started_at = 0.0
         self.subscribers_before_recording = {}
@@ -179,27 +184,34 @@ class ProcessManager:
     def _start_recording(self, settings):
         if self.recorder is not None:
             return
+        self.run_dir = None
         self.record_topics_required = self.node.required_topics_for(settings.follows_route) + (
-            '/planning/command', '/vehicle/command')
+            '/planning/command', '/vehicle/command', '/sysid/control_parameters')
         if settings.follows_route:
             from .sysid_routes import RouteProcesses
             self.route = RouteProcesses(self.node, settings)
+        if not settings.record_mcap:
+            self.node.commands.put(('record_ready', None))
+            return
         stamp = datetime.now(ZoneInfo('Asia/Seoul')).strftime('%Y%m%d_%H%M%S_%f')
         speed = f'{settings.max_speed_kph:g}'.replace('.', 'p')
-        self.run_dir = self.records_root / f'{stamp}_scenario_{settings.scenario:02d}_v{speed}'
+        self.run_dir = self.records_root / (
+            f'{stamp}_{settings.record_slug}_v{speed}'
+        )
         self.run_dir.mkdir(parents=True, exist_ok=False)
         self.run_log = (self.run_dir / 'console.log').open('a', buffering=1)
         self.run_document = settings.document()
         self.run_document.update({
             'started_at': datetime.now(ZoneInfo('Asia/Seoul')).isoformat(),
             'topics': list(RECORD_TOPICS),
+            'control_parameters': {'file': 'control_parameters.yaml', 'status': 'pending'},
         })
         self._save_document()
         self.subscribers_before_recording = {
             topic: {bytes(info.endpoint_gid) for info in
                     self.node.get_subscriptions_info_by_topic(topic)
                     if info.node_name == 'rosbag2_recorder'}
-            for topic in self.record_topics_required
+            for topic in (*self.record_topics_required, '/parameter_events')
         }
         self.recorder = OwnedProcess('MCAP', [
             sys.executable, '-u', '-c', RECORDER_CODE, str(self.run_dir / 'rosbag'),
@@ -210,13 +222,24 @@ class ProcessManager:
         self.node.commands.put(('record_started', str(self.run_dir)))
 
     def _save_document(self):
-        (self.run_dir / 'scenario.yaml').write_text(
-            yaml.safe_dump(self.run_document, sort_keys=False, allow_unicode=True))
+        SettingsStore._replace(self.run_dir / 'scenario.yaml',
+                               yaml.safe_dump(self.run_document, sort_keys=False, allow_unicode=True).encode('utf-8'))
 
     def _finish_recording(self, reason):
+        if self.parameter_capture is not None:
+            capture, self.parameter_capture = self.parameter_capture, None
+            try:
+                if not capture.finished:
+                    capture.document.update(status='cancelled', error=reason)
+                    self._save_capture(capture.document)
+            finally:
+                capture.close()
         if self.recorder is None:
             self._close_route()
+            self.node.commands.put(('record_closed', ''))
             return
+        if self.run_document['control_parameters']['status'] == 'pending':
+            self.run_document['control_parameters'].update(status='cancelled', error=reason)
         child, self.recorder = self.recorder, None
         self.recorder_ready = False
         code = child.stop()
@@ -263,18 +286,44 @@ class ProcessManager:
             self._finish_recording('recorder_failed')
             return
         if not self.recorder_ready:
-            topics = self.record_topics_required
+            topics = (*self.record_topics_required, '/parameter_events')
             subscribed = all(any(
                 info.node_name == 'rosbag2_recorder'
                 and bytes(info.endpoint_gid) not in self.subscribers_before_recording[topic]
                 for info in self.node.get_subscriptions_info_by_topic(topic)
             ) for topic in topics)
             if subscribed:
-                self.recorder_ready = True
-                self.node.commands.put(('record_ready', None))
+                if self.parameter_capture is None:
+                    self.parameter_capture = ParameterCapture(
+                        self.node, self.run_document['test_condition']['key'])
+                    self.node.log('실행 중인 조향·거버너 파라미터를 기록합니다.')
+                if self.parameter_capture.tick():
+                    capture, self.parameter_capture = self.parameter_capture, None
+                    try:
+                        self._save_capture(capture.document)
+                    finally:
+                        capture.close()
+                    if capture.document['status'] != 'complete':
+                        self.node.commands.put(('record_failed', '실제 제어 파라미터 조회 실패 · control_parameters.yaml 확인'))
+                        self._finish_recording('parameter_snapshot_failed')
+                        return
+                    self.node.control_parameters_publisher.publish(String(data=json.dumps(capture.document, ensure_ascii=False)))
+                    self.recorder_ready = True
+                    self.node.commands.put(('record_ready', None))
             elif time.monotonic() - self.record_started_at > 15:
                 self.node.commands.put(('record_failed', 'MCAP 필수 토픽 구독이 연결되지 않았습니다'))
                 self._finish_recording('subscription_timeout')
+
+    def _save_capture(self, document):
+        SettingsStore._replace(self.run_dir / 'control_parameters.yaml',
+                               yaml.safe_dump(document, sort_keys=False, allow_unicode=True).encode('utf-8'))
+        self.run_document['control_parameters'] = {
+            'file': 'control_parameters.yaml', 'status': document['status'],
+            'capture_stage': document['capture_stage'],
+            'requested_ros_time_ns': document['requested_ros_time_ns'],
+            'nodes': {name: entry['status'] for name, entry in document['nodes'].items()},
+        }
+        self._save_document()
 
     def _work(self):
         next_scan = 0.0

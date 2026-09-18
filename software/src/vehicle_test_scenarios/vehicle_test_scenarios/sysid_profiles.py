@@ -1,151 +1,346 @@
-"""Finite field-test inputs. Speeds are targets; the plant response is recorded."""
+"""Scenario catalog shared by the field TUI and its runtime."""
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import math
+from control_tuning.conditions import CONDITIONS, condition_document
 
-from .scenario_runner import ScenarioSetpoint
+from .scenario_runner import (
+    ScenarioConfig,
+    ScenarioSetpoint,
+    scenario_cycle_duration_sec,
+    scheduled_scenario_setpoint,
+    validate_config,
+)
 
 
-CENTER_DEG = -0.56
+CENTER_DEG = 0.0
 AMPLITUDE_DEG = 1.0
 COUNTDOWN_SEC = 5.0
 TAIL_SEC = 2.0
 ROUTE_FINISH_DISTANCE_M = 1.0
 ROUTE_STOP_SPEED_MPS = 0.05
-SCENARIO_NAMES = {
-    1: '종방향 스텝', 2: '종방향 램프',
-    3: '횡방향 스텝', 4: '횡방향 주파수 스윕',
-    5: '예선 GNSS-only 추종', 6: '본선 GNSS-only 추종',
-}
+
+
+@dataclass(frozen=True)
+class ParameterSpec:
+    name: str
+    label: str
+    unit: str
+    integer: bool = False
+    note: str = ''
+
+
+@dataclass(frozen=True)
+class ScenarioSpec:
+    key: str
+    label: str
+    category: str
+    subgroup: str
+    fields: tuple[ParameterSpec, ...]
+    defaults: tuple[tuple[str, float | int], ...] = ()
+
+
+P = ParameterSpec
+SCENARIO_SPECS = (
+    ScenarioSpec(
+        'straight', '일정 속도 직진', '입력 응답 시험', '종방향 입력',
+        (P('cruise_speed_kph', '목표속도', 'km/h'),),
+        (('cruise_speed_kph', 0.0),),
+    ),
+    ScenarioSpec(
+        'speed_step', '속도 Step', '입력 응답 시험', '종방향 입력',
+        (
+            P('speed_low_kph', '낮은 속도', 'km/h'),
+            P('speed_high_kph', '높은 속도', 'km/h'),
+            P('speed_step_interval_sec', '구간 유지시간', 'sec'),
+            P('initial_hold_sec', '초기 유지시간', 'sec'),
+            P('scenario_repetitions', '반복 횟수', '회', True, '0은 수동 정지까지 반복'),
+        ),
+        (
+            ('speed_low_kph', 0.0), ('speed_high_kph', 0.0),
+            ('speed_step_interval_sec', 2.0), ('initial_hold_sec', 0.0),
+            ('scenario_repetitions', 4),
+        ),
+    ),
+    ScenarioSpec(
+        'speed_ramp', '속도 Ramp', '입력 응답 시험', '종방향 입력',
+        (
+            P('speed_low_kph', '낮은 속도', 'km/h'),
+            P('speed_high_kph', '높은 속도', 'km/h'),
+            P('speed_ramp_duration_sec', '편도 변화시간', 'sec'),
+            P('initial_hold_sec', '초기 유지시간', 'sec'),
+            P('scenario_repetitions', '반복 횟수', '회', True, '0은 수동 정지까지 반복'),
+        ),
+        (
+            ('speed_low_kph', 0.0), ('speed_high_kph', 0.0),
+            ('speed_ramp_duration_sec', 5.0), ('initial_hold_sec', 0.0),
+            ('scenario_repetitions', 2),
+        ),
+    ),
+    ScenarioSpec(
+        'brake_test', '제동 입력', '입력 응답 시험', '종방향 입력',
+        (
+            P('cruise_speed_kph', '제동 전 목표속도', 'km/h'),
+            P('brake_delay_sec', '제동 시작시간', 'sec', note='이후 브레이크 유지'),
+        ),
+        (('cruise_speed_kph', 0.0), ('brake_delay_sec', 3.0)),
+    ),
+    ScenarioSpec(
+        'steering_step', '조향 양방향 Step', '입력 응답 시험', '횡방향 입력',
+        (
+            P('cruise_speed_kph', '주행속도', 'km/h'),
+            P('steering_center_deg', '센터각', 'deg'),
+            P('steering_amplitude_deg', '조향 진폭', 'deg'),
+            P('steering_step_interval_sec', '구간 유지시간', 'sec'),
+            P('initial_hold_sec', '초기 직진시간', 'sec'),
+            P('scenario_repetitions', '반복 횟수', '회', True, '0은 수동 정지까지 반복'),
+        ),
+        (
+            ('cruise_speed_kph', 0.0), ('steering_center_deg', CENTER_DEG),
+            ('steering_amplitude_deg', AMPLITUDE_DEG),
+            ('steering_step_interval_sec', 5.0), ('initial_hold_sec', 0.0),
+            ('scenario_repetitions', 3),
+        ),
+    ),
+    ScenarioSpec(
+        'steering_sine', '조향 Sine · 고정 주기', '입력 응답 시험', '횡방향 입력',
+        (
+            P('cruise_speed_kph', '주행속도', 'km/h'),
+            P('steering_center_deg', '센터각', 'deg'),
+            P('steering_amplitude_deg', '조향 진폭', 'deg'),
+            P('steering_period_sec', '파형 주기', 'sec'),
+            P('initial_hold_sec', '초기 직진시간', 'sec'),
+            P('scenario_repetitions', '반복 횟수', '회', True, '0은 수동 정지까지 반복'),
+        ),
+        (
+            ('cruise_speed_kph', 0.0), ('steering_center_deg', CENTER_DEG),
+            ('steering_amplitude_deg', AMPLITUDE_DEG),
+            ('steering_period_sec', 8.0), ('initial_hold_sec', 5.0),
+            ('scenario_repetitions', 6),
+        ),
+    ),
+    ScenarioSpec(
+        'steering_chirp', '조향 Chirp · 주파수 Sweep', '입력 응답 시험', '횡방향 입력',
+        (
+            P('cruise_speed_kph', '주행속도', 'km/h'),
+            P('steering_center_deg', '센터각', 'deg'),
+            P('steering_amplitude_deg', '조향 진폭', 'deg'),
+            P('chirp_start_hz', '시작 주파수', 'Hz'),
+            P('chirp_end_hz', '종료 주파수', 'Hz'),
+            P('chirp_duration_sec', 'Sweep 시간', 'sec'),
+            P('initial_hold_sec', '초기 직진시간', 'sec'),
+            P('scenario_repetitions', '반복 횟수', '회', True, '0은 수동 정지까지 반복'),
+        ),
+        (
+            ('cruise_speed_kph', 0.0), ('steering_center_deg', CENTER_DEG),
+            ('steering_amplitude_deg', AMPLITUDE_DEG),
+            ('chirp_start_hz', 0.2), ('chirp_end_hz', 1.0),
+            ('chirp_duration_sec', 10.0), ('initial_hold_sec', 5.0),
+            ('scenario_repetitions', 1),
+        ),
+    ),
+    ScenarioSpec(
+        'route_quali', 'K-City 예선 경로', '경로 추종 시험', '',
+        (P('cruise_speed_kph', '최고 목표속도', 'km/h'),),
+        (('cruise_speed_kph', 0.0),),
+    ),
+    ScenarioSpec(
+        'route_final', 'K-City 본선 경로', '경로 추종 시험', '',
+        (P('cruise_speed_kph', '최고 목표속도', 'km/h'),),
+        (('cruise_speed_kph', 0.0),),
+    ),
+)
+SCENARIO_BY_KEY = {spec.key: spec for spec in SCENARIO_SPECS}
+SCENARIO_KEYS = tuple(SCENARIO_BY_KEY)
 
 
 @dataclass(frozen=True)
 class RunSettings:
-    scenario: int = 1
-    max_speed_kph: float = 5.0
+    scenario: str = 'straight'
+    cruise_speed_kph: float = 0.0
+    speed_low_kph: float = 0.0
+    speed_high_kph: float = 0.0
+    speed_step_interval_sec: float = 2.0
+    speed_ramp_duration_sec: float = 5.0
+    steering_center_deg: float = CENTER_DEG
+    steering_amplitude_deg: float = AMPLITUDE_DEG
+    steering_step_interval_sec: float = 5.0
+    steering_period_sec: float = 8.0
+    brake_delay_sec: float = 3.0
+    initial_hold_sec: float = 0.0
+    scenario_repetitions: int = 1
+    chirp_start_hz: float = 0.2
+    chirp_end_hz: float = 1.0
+    chirp_duration_sec: float = 10.0
+    record_mcap: bool = True
+    test_condition: str = 'unspecified'
 
     def __post_init__(self):
-        if self.scenario not in SCENARIO_NAMES:
-            raise ValueError('시나리오는 1..6입니다')
-        if not math.isfinite(self.max_speed_kph) or self.max_speed_kph <= 0:
-            raise ValueError('최고 목표속도는 0보다 큰 유한한 값이어야 합니다')
+        if self.test_condition not in (*CONDITIONS, 'unspecified'):
+            raise ValueError('지원하지 않는 시험 조건입니다.')
+        if self.scenario not in SCENARIO_BY_KEY:
+            raise ValueError(f'지원하지 않는 시나리오입니다: {self.scenario}')
+        if self.follows_route:
+            if not math.isfinite(self.cruise_speed_kph) or self.cruise_speed_kph < 0:
+                raise ValueError('최고 목표속도는 0 이상의 유한한 값이어야 합니다')
+            return
+        validate_config(self.to_scenario_config(), 20.0)
+
+    @property
+    def spec(self):
+        return SCENARIO_BY_KEY[self.scenario]
+
+    @property
+    def name(self):
+        return self.spec.label
+
+    @property
+    def follows_route(self):
+        return self.scenario in ('route_quali', 'route_final')
+
+    @property
+    def route_filename(self):
+        return {
+            'route_quali': 'kcity_quali_route.yaml',
+            'route_final': 'kcity_final_route.yaml',
+        }[self.scenario]
+
+    @property
+    def steering_enabled(self):
+        return self.follows_route or self.scenario.startswith('steering_')
+
+    @property
+    def needs_cruise(self):
+        return self.scenario.startswith('steering_')
+
+    @property
+    def max_speed_kph(self):
+        if self.scenario in ('speed_step', 'speed_ramp'):
+            return self.speed_high_kph
+        return self.cruise_speed_kph
 
     @property
     def duration(self):
         if self.follows_route:
             return None
-        return {1: 20.0, 2: 13.0, 3: 12.0, 4: 17.0}[self.scenario]
+        cycle = scenario_cycle_duration_sec(self.to_scenario_config())
+        if cycle is None or self.scenario_repetitions == 0:
+            return None
+        return self.initial_hold_sec + self.scenario_repetitions * cycle
 
     @property
-    def follows_route(self):
-        return self.scenario in (5, 6)
+    def record_slug(self):
+        return self.scenario
 
-    @property
-    def route_filename(self):
-        return {5: 'kcity_quali_route.yaml', 6: 'kcity_final_route.yaml'}[self.scenario]
-
-    @property
-    def name(self):
-        return SCENARIO_NAMES[self.scenario]
-
-    @property
-    def needs_cruise(self):
-        return self.scenario in (3, 4)
-
-    @property
-    def steering_enabled(self):
-        return self.scenario in (3, 4, 5, 6)
+    def to_scenario_config(self):
+        engine_scenario = 'steering_sweep' if self.scenario == 'steering_sine' else self.scenario
+        return ScenarioConfig(
+            scenario=engine_scenario,
+            cruise_speed_kph=self.cruise_speed_kph,
+            speed_low_kph=self.speed_low_kph,
+            speed_high_kph=self.speed_high_kph,
+            speed_step_interval_sec=self.speed_step_interval_sec,
+            speed_ramp_duration_sec=self.speed_ramp_duration_sec,
+            steering_center_deg=self.steering_center_deg,
+            steering_amplitude_deg=self.steering_amplitude_deg,
+            steering_step_interval_sec=self.steering_step_interval_sec,
+            steering_period_sec=self.steering_period_sec,
+            chirp_start_hz=self.chirp_start_hz,
+            chirp_end_hz=self.chirp_end_hz,
+            chirp_duration_sec=self.chirp_duration_sec,
+            brake_delay_sec=self.brake_delay_sec,
+            initial_hold_sec=self.initial_hold_sec,
+            scenario_repetitions=self.scenario_repetitions,
+        )
 
     def description(self):
-        v = self.max_speed_kph
         if self.follows_route:
-            return f'{self.name} · 최고 목표 {v:g} km/h · 종료점 감속·정지'
-        if self.scenario == 1:
-            return f'{v/3:.1f} → 0 → {v/3:.1f} → {2*v/3:.1f} → {v:g} → {2*v/3:.1f} → {v/3:.1f} → 0 km/h'
-        if self.scenario == 2:
-            return f'0 ↗ {v:g} km/h (3초) · 유지 3초 · ↘ 0 (4초)'
-        if self.scenario == 3:
-            return f'{v:g} km/h 유지 · 중앙 / 좌 / 중앙 / 우 / 중앙 각 1초 · 감속'
-        return f'{v:g} km/h 유지 · 작은 좌우 조향을 점차 빠르게 10초 · 감속'
+            return f'{self.name} · 최고 목표 {self.cruise_speed_kph:g} km/h · 종료점 감속·정지'
+        if self.scenario == 'straight':
+            return f'{self.cruise_speed_kph:g} km/h 일정 입력 · S/Space로 종료'
+        if self.scenario == 'speed_step':
+            return (
+                f'{self.speed_low_kph:g} ↔ {self.speed_high_kph:g} km/h · '
+                f'{self.speed_step_interval_sec:g}초 간격'
+            )
+        if self.scenario == 'speed_ramp':
+            return (
+                f'{self.speed_low_kph:g} ↗ {self.speed_high_kph:g} ↘ '
+                f'{self.speed_low_kph:g} km/h · 편도 {self.speed_ramp_duration_sec:g}초'
+            )
+        if self.scenario == 'brake_test':
+            return f'{self.cruise_speed_kph:g} km/h · {self.brake_delay_sec:g}초 후 브레이크 유지'
+        if self.scenario == 'steering_step':
+            return (
+                f'{self.cruise_speed_kph:g} km/h · 센터/좌/센터/우 · '
+                f'진폭 ±{self.steering_amplitude_deg:g}°'
+            )
+        if self.scenario == 'steering_sine':
+            return (
+                f'{self.cruise_speed_kph:g} km/h · ±{self.steering_amplitude_deg:g}° · '
+                f'{self.steering_period_sec:g}초 고정 주기'
+            )
+        return (
+            f'{self.cruise_speed_kph:g} km/h · ±{self.steering_amplitude_deg:g}° · '
+            f'{self.chirp_start_hz:g}→{self.chirp_end_hz:g} Hz'
+        )
 
     def document(self):
-        document = asdict(self)
-        if self.follows_route:
-            document.update({
-                'description': self.description(), 'route_file': self.route_filename,
-                'speed_unit': 'km/h', 'steering_enabled': True,
-                'auto_countdown_sec': COUNTDOWN_SEC, 'publish_rate_hz': 20.0,
-            })
-            return document
-        document.update({
-            'speed_unit': 'km/h', 'steering_unit': 'central_equivalent_degrees',
-            'steering_enabled': self.steering_enabled,
-            'auto_countdown_sec': COUNTDOWN_SEC, 'publish_rate_hz': 20.0,
-            'input_duration_sec': self.duration, 'cruise_preparation': self.needs_cruise,
-            'cruise_tolerance_kph': 0.5, 'cruise_hold_sec': 1.0,
-            'cruise_timeout_sec': 15.0,
+        values = asdict(self)
+        parameters = {
+            field.name: values[field.name]
+            for field in self.spec.fields
+        }
+        document = {
+            'scenario': self.scenario,
+            'name': self.name,
+            'category': self.spec.category,
+            'subgroup': self.spec.subgroup,
+            'parameters': parameters,
             'description': self.description(),
-            'segments': segments(self),
-        })
-        if self.steering_enabled:
+            'speed_unit': 'km/h',
+            'steering_enabled': self.steering_enabled,
+            'auto_countdown_sec': COUNTDOWN_SEC,
+            'publish_rate_hz': 20.0,
+            'record_mcap': self.record_mcap,
+            'test_condition': condition_document(self.test_condition),
+        }
+        if self.follows_route:
+            document['route_file'] = self.route_filename
+        else:
             document.update({
-                'steering_center_deg': CENTER_DEG, 'steering_amplitude_deg': AMPLITUDE_DEG,
+                'steering_unit': 'central_equivalent_degrees',
+                'input_duration_sec': self.duration,
+                'cruise_preparation': self.needs_cruise,
+                'cruise_tolerance_kph': 0.5,
+                'cruise_hold_sec': 1.0,
+                'cruise_timeout_sec': 15.0,
             })
         return document
 
 
-def baseline(brake=False, *, steering_enabled=False):
-    return ScenarioSetpoint(0.0, CENTER_DEG if steering_enabled else None, brake)
+def default_run_settings(scenario='straight'):
+    spec = SCENARIO_BY_KEY[scenario]
+    return RunSettings(scenario=scenario, **dict(spec.defaults))
 
 
-def segments(settings):
-    """The same segment definitions drive execution and the saved run settings."""
-    v = settings.max_speed_kph
+def update_setting(settings, name, value):
+    return replace(settings, **{name: value})
+
+
+def baseline(brake=False, *, settings=None, steering_enabled=None):
+    settings = settings or RunSettings()
+    enabled = settings.steering_enabled if steering_enabled is None else steering_enabled
+    return ScenarioSetpoint(
+        0.0,
+        settings.steering_center_deg if enabled else None,
+        brake,
+    )
+
+
+def input_setpoint(settings, elapsed):
+    """Return the selected input and whether its finite schedule is complete."""
+    elapsed = max(0.0, elapsed)
     if settings.follows_route:
-        return []
-    if settings.scenario == 1:
-        return [
-            {'duration_sec': duration, 'from_kph': fraction * v, 'to_kph': fraction * v}
-            for duration, fraction in ((3, 1 / 3), (3, 0), (2, 1 / 3), (2, 2 / 3),
-                                       (3, 1), (2, 2 / 3), (2, 1 / 3), (3, 0))
-        ]
-    if settings.scenario == 2:
-        return [
-            {'duration_sec': 3, 'from_kph': 0, 'to_kph': v},
-            {'duration_sec': 3, 'from_kph': v, 'to_kph': v},
-            {'duration_sec': 4, 'from_kph': v, 'to_kph': 0},
-            {'duration_sec': 3, 'from_kph': 0, 'to_kph': 0},
-        ]
-    if settings.scenario == 3:
-        steering = [
-            {'duration_sec': 1, 'from_kph': v, 'to_kph': v,
-             'steering_deg': CENTER_DEG + offset}
-            for offset in (0, AMPLITUDE_DEG, 0, -AMPLITUDE_DEG, 0)
-        ]
-    else:
-        steering = [{'duration_sec': 10, 'from_kph': v, 'to_kph': v,
-                     'chirp_start_hz': 0.2, 'chirp_end_hz': 1.0,
-                     'steering_amplitude_deg': AMPLITUDE_DEG}]
-    return steering + [
-        {'duration_sec': 4, 'from_kph': v, 'to_kph': 0, 'steering_deg': CENTER_DEG},
-        {'duration_sec': 3, 'from_kph': 0, 'to_kph': 0, 'steering_deg': CENTER_DEG},
-    ]
-
-
-def evaluate(schedule, elapsed):
-    """Return the input and segment number at a monotonic elapsed time."""
-    remaining = max(0.0, elapsed)
-    for index, segment in enumerate(schedule):
-        duration = segment['duration_sec']
-        if remaining < duration:
-            speed = segment['from_kph'] + (
-                segment['to_kph'] - segment['from_kph']) * remaining / duration
-            steering = segment.get('steering_deg')
-            if 'chirp_start_hz' in segment:
-                f0, f1 = segment['chirp_start_hz'], segment['chirp_end_hz']
-                phase = 2 * math.pi * (
-                    f0 * remaining + (f1 - f0) * remaining**2 / (2 * duration))
-                steering = CENTER_DEG + segment['steering_amplitude_deg'] * math.sin(phase)
-            return ScenarioSetpoint(speed, steering), index + 1
-        remaining -= duration
-    return baseline(steering_enabled='steering_deg' in schedule[-1]), len(schedule)
+        raise ValueError('경로 추종 입력은 route worker가 생성합니다')
+    return scheduled_scenario_setpoint(settings.to_scenario_config(), elapsed)

@@ -32,17 +32,17 @@ ROS 2 Humble 및 기존 frontend의 Node.js 환경을 사용한다. Web Python �
 ROS Python modules를 볼 수 있어야 한다. 새 환경을 만들 때:
 
 ```bash
-cd /home/kai/KAI_ws/src/Control/software/src/vehicle_console
+cd ~/KAI_ws/src/Control/software/src/vehicle_console
 python3 -m venv --system-site-packages .venv
 .venv/bin/pip install -r requirements-web.txt
 cd web
 npm ci
 npm run build
-cd /home/kai/KAI_ws
-source /opt/ros/humble/setup.bash
+cd ~/KAI_ws
+si
 unset COLCON_CURRENT_PREFIX
 colcon build --symlink-install --packages-select vehicle_console vehicle_state_publisher foxglove control_launch
-source install/setup.bash
+si
 source src/Control/software/src/vehicle_console/.venv/bin/activate
 ros2 launch vehicle_console vehicle.launch.py
 ```
@@ -66,6 +66,11 @@ ros2 launch foxglove foxglove_bridge.launch.py  # 상세 분석, 기본 8765
 Foxglove(8765), Vehicle(8766), HIL(8767)은 서로 다른 기본 포트를 사용한다. Console은 Foxglove를
 자동으로 띄우지 않는다. 구동 launch는 `control_launch/vehicle.launch.py`, 관측만
 시작하는 launch는 **`vehicle_console/vehicle.launch.py`**다.
+
+관측용 Vehicle Console을 재시작해도 조향 노드나 torque fault latch는 초기화되지
+않는다. 조향 복구는 [구동 launch 문서](../control_launch/README.md#조향-잠금과-재시작)를 따른다.
+HIL의 Scenarios는 벤치 시험 기능이며 실차 입력 응답·경로 추종 TUI는
+[vehicle_test_scenarios](../vehicle_test_scenarios/README.md)에서 실행한다.
 
 ## Profile과 표시
 
@@ -141,7 +146,7 @@ tailnet에서 보이는 IP가 서버 자체 IP와 다를 수 있다. 예시 주�
 
 ```bash
 ros2 launch vehicle_console vehicle.launch.py allowed_hosts:=100.112.72.27
-tailscale serve --bg --tcp=8766 tcp://127.0.0.1:8766
+sudo tailscale serve --bg --yes --tcp=8766 tcp://127.0.0.1:8766
 tailscale serve status
 # 공유 해제
 tailscale serve --tcp=8766 off
@@ -168,9 +173,9 @@ JSON은 그대로 유지한다. 원본 메시지와 상세 계측 분석은 ROS/
 항목 수에 따라 크기가 달라지고 여러 브라우저의 전송량은 합산된다.
 
 ```bash
-cd /home/kai/KAI_ws/src/Control
-source /opt/ros/humble/setup.bash
-source /home/kai/KAI_ws/install/setup.bash
+cd ~/KAI_ws
+si
+cd ~/KAI_ws/src/Control
 ROS_DOMAIN_ID=193 ROS_LOCALHOST_ONLY=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
   software/src/vehicle_console/.venv/bin/python -m pytest software/src/vehicle_console/test -q
 ROS_DOMAIN_ID=196 ROS_LOCALHOST_ONLY=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \

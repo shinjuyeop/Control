@@ -10,24 +10,23 @@ HIL을 준비하고 Web에서 연결 상태·입력·피드백·시나리오를 
 
 ## 바로 실행
 
-이 PC의 새 zsh 터미널에서 아래 명령으로 Web과 전체 HIL 벤치·가상 LCD를 실행한다.
-`humble`은 `~/.zshrc`에 정의된 함수이며 Humble 환경과 Domain 0을 설정한다.
+아래 명령으로 Web과 전체 HIL 벤치·가상 LCD를 실행한다.
+예제의 `si`는 기존 차량 PC에 등록된 zsh 별칭이다. 별칭이 없는 PC는
+[공통 ROS 환경](#4-공통-ros-환경)의 source 명령을 사용한다.
 이미 HIL launch가 실행 중이면 중복 실행하지 않는다.
 
 ```zsh
 cd ~/KAI_ws
-humble
-source ~/KAI_ws/install/setup.zsh
-
+si
 ros2 launch vehicle_console hil.launch.py \
   start_bench:=true steering:=true state:=true \
   dashboard_port:=/dev/arduino_hil \
-  web_python:=/home/kai/KAI_ws/src/Control/software/src/vehicle_console/.venv/bin/python
+  web_python:="$HOME/KAI_ws/src/Control/software/src/vehicle_console/.venv/bin/python"
 ```
 
 로컬 브라우저: **http://127.0.0.1:8767/**
 
-Tailscale 원격 브라우저: **http://100.112.72.27:8767/**
+Tailscale 원격 브라우저 예시: **http://100.112.72.27:8767/** (현재 호스트 주소로 변경)
 ([원격 접속 준비](#3-원격-브라우저-접속) 필요).
 
 ## 1. 실행 구성
@@ -171,21 +170,28 @@ HIL 서버가 이미 실행 중이면 launch를 추가로 실행하지 않는다
 
 ```zsh
 cd ~/KAI_ws
-humble
-source ~/KAI_ws/install/setup.zsh
+si
 ```
 
-`humble`은 `/opt/ros/humble/setup.zsh`를 불러오고 `ROS_DOMAIN_ID=0`을 설정한다.
-현재 STM_A/B firmware도 Domain 0 participant를 만들므로 일반 실행 예제에는
-별도의 domain 설정을 반복하지 않는다.
+이 PC의 `.zshrc`는 새 zsh에서 `humble`을 자동 호출한다. `si`는 현재 디렉터리의
+`install/setup.zsh`를 불러오고 ROS 2·colcon 자동완성을 다시 등록한다. 따라서
+`si`는 반드시 `~/KAI_ws`에서 실행한다. 현재 STM_A/B firmware도 Domain 0
+participant를 만들므로 일반 실행 예제에는 별도의 domain 설정을 반복하지 않는다.
 
 단, 이미 활성화된 셸(`ROS_HUMBLE_ACTIVE=1`)에서는 `humble`이 바로 반환한다.
 그 이후 domain을 191 등으로 변경했다면 다시 호출해도 0으로 돌아오지 않으므로,
 벤치 실행 전 그 셸에서 `export ROS_DOMAIN_ID=0`으로 복구한다.
 개발 테스트의 격리용 domain 지정은 그대로 유지한다.
 
-`humble`이 없는 다른 PC에서는 먼저 이 함수에 해당하는 Humble 환경 로드와 Domain 0
-설정을 준비해야 한다. 함수 없이 위 명령을 그대로 사용할 수는 없다.
+`si`와 자동 `humble` 설정이 없는 다른 PC나 비대화형 셸에서는 다음 portable
+fallback을 사용한다.
+
+```zsh
+cd ~/KAI_ws
+source /opt/ros/humble/setup.zsh
+source ~/KAI_ws/install/setup.zsh
+export ROS_DOMAIN_ID=0
+```
 
 ## 5. 소프트웨어 빌드와 테스트
 
@@ -194,10 +200,9 @@ source ~/KAI_ws/install/setup.zsh
 
 ```zsh
 cd ~/KAI_ws
-humble
 unset COLCON_CURRENT_PREFIX
 colcon build --symlink-install --packages-up-to vehicle_console
-source ~/KAI_ws/install/setup.zsh
+si
 ```
 
 개발 중 HIL 소프트웨어 검증은 보드와 분리된 domain에서 한다.
@@ -256,18 +261,16 @@ ps -eo pid,ppid,pgid,args | rg 'hil_web_bridge|stm_test_bridge|micro_ros_agent|h
 
 ```zsh
 cd ~/KAI_ws
-humble
-source ~/KAI_ws/install/setup.zsh
-
+si
 ros2 launch vehicle_console hil.launch.py \
   start_bench:=true steering:=true state:=true \
   dashboard_port:=/dev/arduino_hil \
-  web_python:=/home/kai/KAI_ws/src/Control/software/src/vehicle_console/.venv/bin/python
+  web_python:="$HOME/KAI_ws/src/Control/software/src/vehicle_console/.venv/bin/python"
 ```
 
 로컬 브라우저: **http://127.0.0.1:8767/**
 
-Tailscale 원격 브라우저: **http://100.112.72.27:8767/**
+Tailscale 원격 브라우저 예시: **http://100.112.72.27:8767/** (현재 호스트 주소로 변경)
 ([원격 접속 준비](#3-원격-브라우저-접속) 필요).
 
 - 조향/상태 통합을 사용하지 않을 때만 해당 옵션을 생략한다.
@@ -470,7 +473,7 @@ KEYA 모터축 추종은 EZ 폐루프/직접 피드백 선택과 독립적이다
 ### 10.3 조향 폐루프 시험
 
 1. **조향**을 열고 Control Dock에서 AUTO를 선택한다. 주행 목표 속도를 낮게 설정한다(예: 3.6 km/h).
-2. 명령을 발행하고 **관측 속도가 1 km/h 이상**, 조향 통신·피드백이 유효한지 확인한다.
+2. 명령을 발행하고 **관측 속도가 `minimum_steering_speed_kph` 이상**, 조향 통신·피드백이 유효한지 확인한다.
 3. 목표 조향각을 입력한다(예: 5.73°). **목표 변경**으로 적용한다.
 4. **로드휠 위치 추종**에서 명령각과 관측각의 수렴을 확인한다.
 5. **조향 보드 관측**에서 ACTIVE, 해제 사유 NONE을 확인한다.
@@ -576,7 +579,9 @@ git -C ~/KAI_ws/src/kaiev26_msgs rev-parse HEAD
 ### KEYA가 NO RX이거나 조향이 활성화되지 않음
 
 먼저 **조향 보드 관측**의 해제 사유와 **진단·로그**의 KEYA RX age·TEC/REC·bus-off를 본다.
-AUTO, 관측 속도 1 km/h 이상, 유효한 피드백, fresh 명령 등의 조건을 확인한다.
+AUTO, 설정된 최소 차속, 유효한 피드백, fresh 명령 등의 조건을 확인한다.
+HIL launch는 `position` 모드를 선택하지만 최소 차속은 조향 YAML을 따른다.
+현재 YAML은 0 km/h이며, 이때도 fresh하고 유효한 `/drive/status`가 필요하다.
 
 Web만으로 Host USB-CAN 상태를 구분하지 못할 때는 raw traffic을 확인한다.
 

@@ -44,7 +44,7 @@ def auto_sysid_launch_description(
             ),
             Node(
                 package="vehicle_test_scenarios",
-                executable="vehicle_test_scenario_runner",
+                executable="vehicle_test_scenario_node",
                 name="vehicle_test_scenario_runner",
                 output="screen",
                 parameters=[scenario_config],

@@ -32,22 +32,26 @@ add_library(steering_core
   src/keya_can_driver.cpp
   src/steering_angle_converter.cpp
   src/wheel_angle_tracking_controller.cpp
+  src/torque_steering_controller.cpp
 )
 target_include_directories(steering_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
 
-add_executable(steering_actuator_node src/steering_actuator_node.cpp)
-target_include_directories(steering_actuator_node PRIVATE include)
-target_link_libraries(steering_actuator_node steering_core)
-ament_target_dependencies(steering_actuator_node rclcpp std_msgs kaiev26_msgs)
+target_link_libraries(deadzone_measure_node steering_core)
+add_library(steering_node src/steering_actuator_node.cpp)
+target_link_libraries(steering_node steering_core)
+ament_target_dependencies(steering_node rclcpp std_msgs kaiev26_msgs)
+add_executable(steering_actuator_node src/steering_actuator_main.cpp)
+target_link_libraries(steering_actuator_node steering_node)
+ament_target_dependencies(steering_actuator_node rclcpp)
 
 add_executable(steering_bench_test_node src/steering_bench_test_node.cpp)
 target_include_directories(steering_bench_test_node PRIVATE include)
 ament_target_dependencies(steering_bench_test_node rclcpp std_msgs kaiev26_msgs)
 
-install(TARGETS steering_core steering_actuator_node steering_bench_test_node
+install(TARGETS steering_core steering_node steering_actuator_node steering_bench_test_node
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}
@@ -55,7 +59,7 @@ install(TARGETS steering_core steering_actuator_node steering_bench_test_node
 install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
 install(PROGRAMS scripts/mcap_to_csv.py DESTINATION lib/${PROJECT_NAME})
-install(FILES README.md DESTINATION share/${PROJECT_NAME})
+install(FILES README.md TORQUE_CONTROL.md DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
@@ -74,6 +78,13 @@ if(BUILD_TESTING)
 
   ament_add_gtest(test_steering_safety_logic test/test_steering_safety_logic.cpp)
   target_include_directories(test_steering_safety_logic PRIVATE include)
+
+  ament_add_gtest(test_torque_steering_controller test/test_torque_steering_controller.cpp)
+  target_link_libraries(test_torque_steering_controller steering_core)
+
+  ament_add_gtest(test_steering_actuator_node test/test_steering_actuator_node.cpp)
+  target_link_libraries(test_steering_actuator_node steering_node)
+  ament_target_dependencies(test_steering_actuator_node rclcpp std_msgs kaiev26_msgs)
 endif()
 
 ament_export_include_directories(include)

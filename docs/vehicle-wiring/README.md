@@ -10,7 +10,7 @@ VS Code 1.70 이상이 필요합니다.
 저장소를 clone 또는 pull한 다음 아래 명령을 그대로 실행합니다.
 
 ```bash
-cd docs/vehicle-wiring
+cd ~/KAI_ws/src/Control/docs/vehicle-wiring
 code --install-extension tools/vscode-drawio-wiring.vsix --force
 code vehicle-wiring.code-workspace
 ```
@@ -128,7 +128,7 @@ libraries/interface-modules/
 리로드합니다.
 
 ```bash
-cd docs/vehicle-wiring
+cd ~/KAI_ws/src/Control/docs/vehicle-wiring
 code --install-extension tools/vscode-drawio-wiring.vsix --force
 ```
 

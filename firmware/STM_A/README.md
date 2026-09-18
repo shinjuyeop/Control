@@ -288,8 +288,8 @@ SWD target 확인을 거칩니다.
 Agent는 STM_A의 LPUART1 장치에 하나 붙입니다.
 
 ```bash
-source /opt/ros/humble/setup.bash
-source ~/KAI_ws/install/setup.bash
+cd ~/KAI_ws
+si
 ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/stm_a -b 460800
 ```
 

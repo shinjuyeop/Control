@@ -2,7 +2,8 @@
 #
 # MANUAL 정지 상태에서 AUTO로 전환한다. AUTO 감지 후 10 s 동안
 # speed_target=0.0 m/s, brake=false를 발행하고 countdown이 끝나는 순간
-# 1.0 m/s 5 s → 2.0 m/s 5 s를 4회 반복한다. 완료 후에는
+# 낮은 속도 5 s → 높은 속도 5 s를 4회 반복한다. 두 속도의 기본값은 0이다.
+# 완료 후에는
 # speed_target=0.0 m/s, brake=false를 계속 유지한다.
 # 대기·countdown·시험·완료 후 모두 조향 모터 Disable. 센터각 설정은 필요 없다.
 vehicle_test_scenario_runner:
@@ -17,9 +18,9 @@ vehicle_test_scenario_runner:
     publish_rate_hz: 20.0
 
     scenario: speed_step
-    speed_low_kph: 3.6       # 1.0 m/s
-    speed_high_kph: 7.2      # 2.0 m/s
+    speed_low_kph: 0.0       # 시험할 낮은 속도를 입력한다.
+    speed_high_kph: 0.0      # 시험할 높은 속도를 입력한다.
     speed_step_interval_sec: 5.0
-    scenario_repetitions: 4  # 0→1 초기 step 뒤 1↔2 m/s cycle 4회
+    scenario_repetitions: 4  # 설정한 low↔high 속도 cycle 4회
     initial_hold_sec: 0.0    # countdown 후 첫 low phase 5 s가 moving baseline
     brake_override: false

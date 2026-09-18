@@ -9,18 +9,29 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from control_tuning.storage import default_settings_path
+from control_tuning.presets import load_launch_overrides
+from control_tuning.conditions import CONDITION_KEYS
+
+
+def _make_governor(context, config):
+    return [Node(
+        package="command_governor", executable="command_governor_node",
+        name="command_governor", output="screen",
+        parameters=[config, load_launch_overrides(
+            LaunchConfiguration("control_tuning_file").perform(context), "command_governor",
+            LaunchConfiguration("tuning_preset").perform(context), governor_config=config)],
+    )]
 
 
 def generate_launch_description():
     share = get_package_share_directory("command_governor")
     config = os.path.join(share, "config", "command_governor.yaml")
     return LaunchDescription([
-        Node(
-            package="command_governor",
-            executable="command_governor_node",
-            name="command_governor",
-            output="screen",
-            parameters=[config],
-        ),
+        DeclareLaunchArgument("control_tuning_file", default_value=str(default_settings_path())),
+        DeclareLaunchArgument("tuning_preset", default_value="driving", choices=list(CONDITION_KEYS)),
+        OpaqueFunction(function=_make_governor, kwargs={"config": config}),
     ])

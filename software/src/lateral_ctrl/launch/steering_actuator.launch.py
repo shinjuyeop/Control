@@ -1,8 +1,11 @@
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from control_tuning.storage import default_settings_path
+from control_tuning.presets import load_launch_overrides
+from control_tuning.conditions import CONDITION_KEYS
 import os
 import yaml
 
@@ -33,6 +36,42 @@ def load_steering_motor_calibration(path):
     return parameters
 
 
+def _make_actuator(context, calibration_parameters):
+    # Explicit CLI arguments take precedence over the selected preset.
+    optional_parameters = {}
+    for name in ('actuation_mode', 'steering_enabled'):
+        value = LaunchConfiguration(name).perform(context)
+        if value:
+            optional_parameters[name] = LaunchConfiguration(name)
+    return [
+        Node(
+            package='lateral_ctrl',
+            executable='steering_actuator_node',
+            name='steering_actuator_node',
+            output='screen',
+            parameters=[
+                LaunchConfiguration('params_file'),
+                load_launch_overrides(LaunchConfiguration('control_tuning_file').perform(context),
+                                      'steering_actuator_node',
+                                      LaunchConfiguration('tuning_preset').perform(context),
+                                      steering_config=LaunchConfiguration('params_file').perform(context)),
+                calibration_parameters,
+                {
+                    **optional_parameters,
+                    'tuning_preset': LaunchConfiguration('tuning_preset'),
+                    'can_interface': LaunchConfiguration('can_interface'),
+                    'hardware_can_enabled': LaunchConfiguration('hardware_can_enabled'),
+                    'actuator_output_enabled': LaunchConfiguration('actuator_output_enabled'),
+                    'test_input_injection_enabled': LaunchConfiguration(
+                        'test_input_injection_enabled'),
+                    'use_sim_time': LaunchConfiguration('use_sim_time'),
+                    'tracking_control_enabled': False,
+                },
+            ],
+        ),
+    ]
+
+
 def generate_launch_description():
     share = get_package_share_directory("lateral_ctrl")
     config = os.path.join(share, "config", "steering_actuator.yaml")
@@ -44,27 +83,19 @@ def generate_launch_description():
     )
     return LaunchDescription([
         DeclareLaunchArgument('can_interface', default_value='can0'),
+        DeclareLaunchArgument('params_file', default_value=config),
+        DeclareLaunchArgument('control_tuning_file', default_value=str(default_settings_path())),
+        DeclareLaunchArgument('tuning_preset', default_value='driving', choices=list(CONDITION_KEYS)),
+        DeclareLaunchArgument(
+            'actuation_mode', default_value='', choices=['', 'position', 'torque'],
+            description='Empty follows the selected tuning preset; otherwise overrides actuation mode.'),
+        DeclareLaunchArgument('steering_enabled', default_value=''),
         DeclareLaunchArgument('hardware_can_enabled', default_value='true'),
         DeclareLaunchArgument('actuator_output_enabled', default_value='true'),
         DeclareLaunchArgument('test_input_injection_enabled', default_value='false'),
         DeclareLaunchArgument('use_sim_time', default_value='false'),
-        Node(
-            package='lateral_ctrl',
-            executable='steering_actuator_node',
-            name='steering_actuator_node',
-            output='screen',
-            parameters=[
-                config,
-                calibration_parameters,
-                {
-                    'can_interface': LaunchConfiguration('can_interface'),
-                    'hardware_can_enabled': LaunchConfiguration('hardware_can_enabled'),
-                    'actuator_output_enabled': LaunchConfiguration('actuator_output_enabled'),
-                    'test_input_injection_enabled': LaunchConfiguration(
-                        'test_input_injection_enabled'),
-                    'use_sim_time': LaunchConfiguration('use_sim_time'),
-                    'tracking_control_enabled': False,
-                },
-            ],
+        OpaqueFunction(
+            function=_make_actuator,
+            kwargs={'calibration_parameters': calibration_parameters},
         ),
     ])

@@ -11,7 +11,10 @@ headless ROS 2 package다. 각 기능은 별도 노드로 유지한다.
 
 `vehicle_state_publisher_node`는 세 status가 모두 한 번 이상 들어온 뒤
 `/vehicle/state`를 발행한다. 유효한 drive Part I과 steering feedback이 있을 때만
-Ackermann 근사 `/vehicle/wheel_twist`를 발행한다.
+유한한 값으로 Ackermann 근사 `/vehicle/wheel_twist`를 발행한다.
+두 출력은 입력의 수신 age를 별도로 차단하지 않는다. `/vehicle/state`가 계속
+나오는 것만으로 세 원본 status가 fresh하다고 판단하지 말고 `/diagnostics`와
+각 원본 토픽의 수신 상태를 함께 확인한다.
 
 `diagnostics_publisher`는 각 status의 수신 단절과 메시지가 보고한 timeout, valid,
 fault, brake reason을 `diagnostic_msgs/msg/DiagnosticArray`로 요약한다. 진단 등급은

@@ -1,13 +1,17 @@
 import math
+from dataclasses import fields
+from pathlib import Path
 import time
 from unittest.mock import Mock
 
 import pytest
 import rclpy
+import yaml
 from kaiev26_msgs.msg import DriveActuatorStatus
 from rclpy.parameter import Parameter
 
 from vehicle_test_scenarios.scenario_runner import (
+    SCENARIOS,
     ScenarioConfig,
     VehicleTestScenarioRunner,
     kph_to_mps,
@@ -17,12 +21,56 @@ from vehicle_test_scenarios.scenario_runner import (
 )
 
 
+@pytest.mark.parametrize('scenario', sorted(SCENARIOS))
+def test_default_scenarios_have_zero_speed_and_center(scenario):
+    config = ScenarioConfig(scenario=scenario)
+    assert config.steering_center_deg == 0.0
+    for elapsed in (0.0, 1.0, 3.0, 10.0, 100.0):
+        assert scheduled_scenario_setpoint(config, elapsed)[0].speed_kph == 0.0
+
+
+@pytest.mark.parametrize('path', sorted((Path(__file__).parents[1] / 'config').glob('auto_*.yaml')))
+def test_fixed_launch_defaults_have_zero_speed_and_center(path):
+    parameters = yaml.safe_load(path.read_text())['vehicle_test_scenario_runner']['ros__parameters']
+    config_names = {field.name for field in fields(ScenarioConfig)}
+    config = ScenarioConfig(**{key: value for key, value in parameters.items() if key in config_names})
+    assert config.cruise_speed_kph == config.speed_low_kph == config.speed_high_kph == 0.0
+    assert config.steering_center_deg == 0.0
+    for elapsed in (0.0, 5.0, 10.0, 100.0):
+        assert scheduled_scenario_setpoint(config, elapsed)[0].speed_kph == 0.0
+
+
+@pytest.mark.parametrize('configured_label', ['', 'fixed_run_label'])
+def test_scenario_label_tracks_changes_unless_explicitly_configured(configured_label):
+    args = ['--ros-args', '-p', f'scenario_label:={configured_label}'] if configured_label else []
+    rclpy.init(args=args)
+    node = VehicleTestScenarioRunner()
+    try:
+        node._publisher = Mock()
+        node._scenario_status_publisher = Mock()
+        node._steering_control.ready = Mock(return_value=True)
+        node.set_parameters([Parameter('enabled', value=True)])
+        for scenario in ('straight', 'speed_step', 'steering_sweep'):
+            result = node.set_parameters([Parameter('scenario', value=scenario)])[0]
+            assert result.successful
+            node._publish()
+            message = node._scenario_status_publisher.publish.call_args.args[0]
+            assert message.data == (configured_label or scenario)
+        assert not node.set_parameters([Parameter('scenario', value='invalid')])[0].successful
+        node._publish()
+        assert node._scenario_status_publisher.publish.call_args.args[0].data == (
+            configured_label or 'steering_sweep')
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
 def test_default_speed_converts_to_meters_per_second():
     assert kph_to_mps(3.0) == pytest.approx(0.8333333333)
 
 
 def test_straight_uses_constant_speed_with_motor_disabled():
-    output = scenario_setpoint(ScenarioConfig(steering_center_deg=-2.0), 123.0)
+    output = scenario_setpoint(ScenarioConfig(cruise_speed_kph=3.0, steering_center_deg=-2.0), 123.0)
     assert output.speed_kph == 3.0
     assert output.steering_deg is None
     assert not output.brake_engage
@@ -33,7 +81,7 @@ def test_straight_uses_constant_speed_with_motor_disabled():
     [(0.0, 0.0), (1.0, 10.0), (2.0, 0.0), (3.0, -10.0), (4.0, 0.0)],
 )
 def test_steering_sweep_is_smooth_periodic_sine(elapsed_sec, expected_deg):
-    config = ScenarioConfig(scenario="steering_sweep")
+    config = ScenarioConfig(scenario="steering_sweep", cruise_speed_kph=3.0)
     output = scenario_setpoint(config, elapsed_sec)
     assert output.speed_kph == 3.0
     assert output.steering_deg == pytest.approx(expected_deg, abs=1e-9)
@@ -105,7 +153,7 @@ def test_steering_square_keeps_motor_enabled_at_baseline():
     [(0.0, 0.0), (1.99, 0.0), (2.0, 3.0), (3.99, 3.0), (4.0, 0.0)],
 )
 def test_speed_step_alternates_low_and_high(elapsed_sec, expected_kph):
-    config = ScenarioConfig(scenario="speed_step")
+    config = ScenarioConfig(scenario="speed_step", speed_high_kph=3.0)
     assert scenario_setpoint(config, elapsed_sec).speed_kph == expected_kph
 
 
@@ -114,7 +162,7 @@ def test_speed_step_alternates_low_and_high(elapsed_sec, expected_kph):
     [(0.0, 0.0), (2.5, 1.5), (5.0, 3.0), (7.5, 1.5), (10.0, 0.0)],
 )
 def test_speed_ramp_moves_linearly_up_and_down(elapsed_sec, expected_kph):
-    config = ScenarioConfig(scenario="speed_ramp")
+    config = ScenarioConfig(scenario="speed_ramp", speed_high_kph=3.0)
     output = scenario_setpoint(config, elapsed_sec)
     assert output.speed_kph == pytest.approx(expected_kph)
 
@@ -159,6 +207,33 @@ def test_initial_hold_precedes_sine_repetitions():
     assert finished_complete
 
 
+def test_chirp_frequency_increases_and_finite_run_returns_to_center():
+    config = ScenarioConfig(
+        scenario="steering_chirp",
+        steering_center_deg=-2.0,
+        steering_amplitude_deg=1.0,
+        chirp_start_hz=0.2,
+        chirp_end_hz=1.0,
+        chirp_duration_sec=10.0,
+        scenario_repetitions=1,
+    )
+    crossings = []
+    previous = 0.0
+    for index in range(1, 10000):
+        elapsed = index / 1000.0
+        value = scenario_setpoint(config, elapsed).steering_deg + 2.0
+        if previous < 0.0 <= value:
+            crossings.append(elapsed)
+        previous = value
+    periods = [right - left for left, right in zip(crossings, crossings[1:])]
+    assert len(periods) >= 3
+    assert all(left > right for left, right in zip(periods, periods[1:]))
+    finished, complete = scheduled_scenario_setpoint(config, 10.0)
+    assert complete
+    assert finished.steering_deg == -2.0
+    assert finished.speed_kph == 0.0
+
+
 def test_zero_speed_baseline_does_not_engage_brake():
     output = zero_speed_baseline_setpoint(
         ScenarioConfig(steering_center_deg=-2.0)
@@ -169,7 +244,7 @@ def test_zero_speed_baseline_does_not_engage_brake():
 
 
 def test_brake_test_holds_brake_after_delay():
-    config = ScenarioConfig(scenario="brake_test")
+    config = ScenarioConfig(scenario="brake_test", cruise_speed_kph=3.0)
     before = scenario_setpoint(config, 2.99)
     after = scenario_setpoint(config, 3.0)
     assert before.speed_kph == 3.0
@@ -302,6 +377,8 @@ def test_auto_mode_transition_starts_and_resets_scenario_timeline():
         ("speed_low_kph", 4.0),
         ("steering_step_interval_sec", 0.0),
         ("steering_period_sec", 0.0),
+        ("chirp_start_hz", 0.0),
+        ("chirp_duration_sec", 0.0),
         ("initial_hold_sec", -0.1),
         ("scenario_repetitions", -1),
         ("brake_delay_sec", math.nan),
