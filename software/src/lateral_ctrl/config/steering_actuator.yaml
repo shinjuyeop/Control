@@ -21,7 +21,6 @@ steering_actuator_node:
     torque_settle_rate_deg_s: 0.5
     torque_rate_filter_hz: 10.0
     torque_soft_limit_margin_deg: 1.0
-    torque_hard_rate_limit_deg_s: 120.0
     control_period_ms: 20
     can_timeout_ms: 500
     feedback_timeout_ms: 500

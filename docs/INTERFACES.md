@@ -506,7 +506,8 @@ Float32다. 후자는 KEYA Parameter 0003과 매뉴얼의 80% 식으로 계산�
 전류 제한값이며 실제 입력/모터 전류가 아니다. `/steering/torque_command_raw`와
 `/steering/torque_limit_raw`는 Int32, `torque_saturated`, `torque_peak_limited`,
 `torque_settled`, `torque_rate_ready`는 같은 prefix의 Bool이다.
-`/steering/torque_safety`(String)는 Host torque safety latch 원인을 보고한다.
+`/steering/torque_safety`(String)는 현재 Host torque feedback stop 원인을 보고하며,
+정상 feedback에서 `none`으로 돌아간다.
 상세 unit·설정·튜닝 계약은
 [`TORQUE_CONTROL.md`](../software/src/lateral_ctrl/TORQUE_CONTROL.md)를 따른다.
 

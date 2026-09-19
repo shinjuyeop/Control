@@ -347,6 +347,15 @@ def readiness_panel(snapshot):
                  border_style='red' if failures else 'green')
 
 
+def steering_advice_panel(advice):
+    table = Table.grid(expand=True, padding=(0, 1))
+    table.add_column(ratio=1, style='bold yellow', overflow='fold')
+    table.add_column(ratio=3, overflow='fold')
+    for item in advice:
+        table.add_row(Text(item.cause), Text(item.action))
+    return Panel(table, title='조향 원인 · 조치 안내', border_style='yellow')
+
+
 def scenario_menu(menu):
     table = Table.grid(expand=True)
     table.add_column()
@@ -486,8 +495,10 @@ def dashboard(snapshot, menu, message='', height=40,
         warning = snapshot['finish_reason']
     if not message:
         message = warning
+    advice = snapshot.get('steering_advice', ())
     return vertical_stack(
         summary_panel(snapshot, message),
+        *([steering_advice_panel(advice)] if advice else []),
         readiness_panel(snapshot),
         settings_panel(menu),
         footer_panel(snapshot, menu, records_root),

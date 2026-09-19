@@ -117,7 +117,6 @@ fault는 5 tick, voltage/temperature는 25 tick 주기이며 heartbeat도 speed/
 | `torque_settle_rate_deg_s` | 0.5 | raw·filtered rate 모두 이 값 미만일 때 settle |
 | `torque_rate_filter_hz` | 10.0 | 양수, control Nyquist 이하 |
 | `torque_soft_limit_margin_deg` | 1.0 | calibration 양쪽 끝에서 안쪽 margin |
-| `torque_hard_rate_limit_deg_s` | 120.0 | 실제 wheel rate 안전 ceiling |
 
 startup-only 이외의 위 gain/envelope 값은 runtime 변경 가능하다. 전체 변경 묶음을
 검증한 후 **zero→Disable, 목표·rate 이력 폐기**하고 적용한다. 새 명령과 fresh rate
@@ -170,18 +169,16 @@ Host current loop가 아니다. 실제 peak 지속 오차는 control tick jitter
 - MANUAL에서는 조향 모터를 끄고 운전자 조작을 AUTO torque 제어기의 각도·각속도
   fault로 잠그지 않는다. AUTO를 떠날 때 제어 이력을 초기화하므로 수동 조작의
   각속도를 다음 AUTO 명령에 물려주지 않는다. AUTO 복귀 시 현재 위치가 보정 범위
-  밖이어도 새 명령과 유효한 feedback으로 제어를 시작할 수 있다. AUTO에서 이미
-  발생한 과속 등 다른 fault는 MANUAL 전환만으로 해제되지 않는다.
-- AUTO의 실제 과속, invalid controller input, control stall/과도한 위치 샘플 간격은 latched
-  `FAULT`다. 메시지 ABI의 `REASON_MOTOR_FAULT`를 재사용하고 세부 원인은
-  `/steering/torque_safety`에 표시한다. 잠금은 조향 노드의 프로세스 메모리에만 보관한다.
-  원인 제거 후 기존 `control_launch vehicle.launch.py`를 완전히 종료하고 재실행하면
-  조향 노드가 새로 생성되면서 잠금이 초기화된다. 재실행 없이 해제하려면
-  `steering_enabled=false`, `true` 순서로 설정한다. 두 경우 모두 유효한 상태·피드백과
-  새로운 command가 있어야 다시 Enable한다. 단순 saturation은 fault가 아니다.
-  재실행 후에도 실제 과속이나 KEYA fault가 있으면 다시 정지한다.
-  대시보드의 `STEER MOTOR FAULT`는 이 소프트웨어 안전 정지도 포함하므로 문구만으로
-  KEYA 스톨을 판단하지 않는다. `fault_bits & ~1`과 `/steering/torque_safety`를 함께 본다.
+  밖이어도 새 명령과 유효한 feedback으로 제어를 시작할 수 있다.
+- 실제 조향속도는 P/D 관측과 settle 판정에 사용하지만 속도 자체로 출력을 차단하거나
+  `FAULT`로 전환하지 않는다. invalid controller input, control stall, 과도한 위치 샘플
+  간격은 `FEEDBACK_LOST`로 즉시 zero→Disable한다. 정상 feedback이 확인되면 잠금이나
+  노드 재시작 없이 `WAIT_CMD`로 복귀하며, 차단 뒤 받은 새로운 command가 있어야 다시
+  Enable한다. 단순 saturation은 fault가 아니다.
+- `FAULT`/`REASON_MOTOR_FAULT`는 KEYA가 보고한 bit0(Disable) 이외의 실제 fault bit에만
+  사용한다. KEYA fault bit가 해제되어도 차단 뒤 받은 새로운 command가 있어야 재개한다.
+  `/steering/torque_safety`는 현재 Host 피드백 정지 원인을 표시하며 정상 피드백에서
+  `none`으로 돌아간다. `fault_bits & ~1`과 함께 확인한다.
   [2026-09-18 MCAP 분석](../../../docs/STEERING_FAULT_20260918.md)에 MANUAL 범위 초과가
   다음 시험까지 남았던 원인과 수정 내용을 정리했다.
 - `/brake/status` freshness에 별도 timeout이 없는 기존 한계와 물리 E-stop 경로는
@@ -239,9 +236,9 @@ Host current loop가 아니다. 실제 peak 지속 오차는 control tick jitter
    Disable하며 새 명령으로 재진입한다. 0.5° full-scale-error는 유지 가능한 목표다.
 6. ±5° step에서 rise time·overshoot·settle time·rate·current를 확인한다. 그 다음
    지면 부하에서 작은 step부터 다시 검증하고 peak/sustained/duration을 확대한다.
-   과속 fault를 없애려고 ceiling부터 올리지 말고 damping·피드백 지연을 먼저 본다.
-7. 실제 fault 후에는 원인 해결→기존 vehicle launch 종료·재실행→새 명령 순서로
-   재개한다. 노드를 유지할 때는 `steering_enabled false`→`true`로 잠금을 해제한다.
+   실제 조향속도와 damping·피드백 지연을 함께 본다.
+7. 실제 KEYA fault나 feedback stop 후에는 원인을 해제하고 새 명령으로 재개한다.
+   별도 노드 재시작이나 `steering_enabled` toggle은 필요하지 않다.
    position 복귀는 노드 종료·KEYA 0020=3/Burn 확인 후 실행한다.
 
 ## T0-T2 측정 도구
@@ -291,7 +288,7 @@ filtered/unfiltered rate, current/speed, mode/safety를 함께 확인한다.
 | `/steering/torque_limit_raw` | Int32 | 현재 peak/sustained cap |
 | `/steering/torque_saturated`, `/steering/torque_peak_limited` | Bool | clipping·peak 예산 상태 |
 | `/steering/torque_settled`, `/steering/torque_rate_ready` | Bool | settle·rate 준비 |
-| `/steering/torque_safety` | String | none/rate_limit/invalid_input/feedback_timeout (`angle_limit`은 더 이상 발생하지 않음) |
+| `/steering/torque_safety` | String | none/invalid_input/feedback_timeout (`angle_limit`은 더 이상 발생하지 않음) |
 | `/steering/status.motor_current_a`, `.motor_speed_rpm` | 기존 status | A/rpm, 진단용 |
 
 명령 전류 제한값은 실제 입력/모터 전류나 torque 측정값이 아니다. Motor current는
@@ -340,9 +337,8 @@ ROS_DOMAIN_ID=198 ROS_LOCALHOST_ONLY=1 python3 -m pytest \
   --ignore=software/src/vehicle_console/test/hil/test_bridge_worker.py -q
 ```
 
-## 재시작 복구 회귀 검증 (2026-09-18)
+## 자동 복구 회귀 검증 (2026-09-19)
 
-Driver stub 기반 회귀 시험에서 overspeed latch 유지, 노드 재생성 후 latch 해제,
-새 명령 대기, 새 명령으로 출력 재개, overspeed 재발 시 재잠금을 확인했다.
-`lateral_ctrl`의 CTest 6개 suite, GTest 79개가 통과했다. 이는 Host 노드 수명과
-상태 머신의 검증이며 실제 KEYA·차량에서 launch 재시작을 시험한 결과는 아니다.
+Driver stub 기반 회귀 시험에서 높은 조향속도가 진단값으로만 남는지, 제어 지연이
+즉시 `FEEDBACK_LOST`로 정지하는지, 정상 피드백과 새 명령으로 자동 복귀하는지,
+KEYA 실제 fault가 계속 `FAULT`를 만드는지 확인한다. 실제 KEYA·차량 검증과는 구분한다.

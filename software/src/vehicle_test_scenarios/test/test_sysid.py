@@ -294,6 +294,23 @@ def test_latched_steering_controller_fault_prevents_run_before_auto(controlled):
     assert node.process_actions.empty()
 
 
+def test_steering_recovery_advice_uses_live_status_and_marks_stale_bits(controlled):
+    node, _, clock = controlled
+    steering = node.received['/steering/status'][1]
+    steering.state = steering.STATE_FAULT
+    steering.fault_bits = 0x0010
+    node._receive('/steering/status', steering)
+    advice = node.snapshot()['steering_advice']
+    assert '저전압' in advice[0].cause
+    assert 'DC-DC' in advice[0].action
+    clock[0] += 1.1
+    assert '마지막 수신값' in node.snapshot()['steering_advice'][0].cause
+    steering.state = steering.STATE_DISABLED
+    steering.fault_bits = 1
+    node._receive('/steering/status', steering)
+    assert not node.snapshot()['steering_advice']
+
+
 @pytest.mark.parametrize('phase', ['COUNTDOWN', 'RUNNING'])
 def test_steering_controller_fault_stops_run_with_brake(controlled, phase):
     node, tick, _ = controlled

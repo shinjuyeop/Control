@@ -16,7 +16,6 @@ values:
   peak_budget_ms: 5000
   peak_recovery_hold_ms: 5000
   angle_limit_margin_deg: 1.0
-  overspeed_fault_deg_s: 120.0
   actuation_mode: torque
   minimum_vehicle_speed_kph: 0.0
   steering_command_timeout_ms: 200

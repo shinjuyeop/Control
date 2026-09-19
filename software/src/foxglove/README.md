@@ -49,8 +49,9 @@ ros2 run vehicle_state_publisher diagnostics_publisher
 runner의 토픽 계약을 그대로 사용한다. 이 레이아웃은 토픽을 관측할 뿐 차량 제어 또는
 safety 판단에 사용하지 않는다.
 
-현재 실차 YAML은 torque 모드다. position의 목표각 rate limit과 torque의 실제각
-120 deg/s safety ceiling을 구분한다. `/steering/torque_safety=rate_limit` 복구는
+현재 실차 YAML은 torque 모드다. position의 목표각 rate limit은 torque 모드에
+적용되지 않는다. torque의 실제각 속도는 D항과 settle 판정에 사용하고 속도 자체로
+FAULT를 만들지 않는다. feedback stop과 자동 복구는
 [조향 운용 문서](../lateral_ctrl/TORQUE_CONTROL.md#안전-동작)를 따른다.
 시나리오 기본 목표속도·중심각은 0이므로 시험 설정 전 그래프가 0인 것은 정상이다.
 

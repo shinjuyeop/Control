@@ -33,7 +33,7 @@ public:
 private:
   friend class SteeringActuatorNodeTestPeer;
   void stopMotor();
-  void torqueFault(TorqueSafetyFault fault);
+  void torqueSafetyStop(TorqueSafetyFault fault);
   rcl_interfaces::msg::SetParametersResult onParameters(
     const std::vector<rclcpp::Parameter> & parameters);
   double torqueCurrentLimitCommandA() const;
@@ -67,8 +67,8 @@ private:
   int32_t sent_torque_raw_{0};
   double keya_protection_current_a_{20.0};
   bool stop_pending_{false};
-  // Process-local: restarting vehicle.launch.py creates a node with no latched fault.
-  TorqueSafetyFault torque_fault_latched_{TorqueSafetyFault::NONE};
+  // Active Host-side controller condition. A healthy feedback cycle clears it.
+  TorqueSafetyFault torque_safety_condition_{TorqueSafetyFault::NONE};
   DriveMode drive_mode_{DriveMode::UNKNOWN};
   SteeringState state_{SteeringState::INIT};
   SteeringDisableReason disable_reason_{SteeringDisableReason::MODE_NOT_RECEIVED};

@@ -8,7 +8,10 @@
 후속 사용자 요청으로 **AUTO에서도 `angle_limit` fault를 발생시키지 않도록 변경했다.**
 노드의 encoder 범위 검사와 torque 제어기의 각도 범위 fault 경로를 제거했다.
 목표각 clamp와 바깥 방향 torque 차단은 유지하며, 범위 밖에서도 안쪽 복귀 torque를
-허용한다. 과속·피드백 이상·통신 단절 등 다른 fault는 유지한다.
+허용한다. 이 문서 작성 당시에는 과속·피드백 이상·통신 단절 fault를 유지했다.
+2026-09-19 변경으로 조향속도 기반 fault와 Host latch는 제거됐고, 피드백 이상은
+조건이 정상화되면 새 명령으로 자동 복구한다. E-stop·CAN 단절·KEYA 실제 fault·
+유효하지 않은 피드백 차단은 유지한다.
 아래 원인 분석과 초기 수정·검증 내역은 `c048eaa` 당시 기준이며, 현재 동작은
 [Torque 안전 동작](../software/src/lateral_ctrl/TORQUE_CONTROL.md#안전-동작)을 따른다.
 

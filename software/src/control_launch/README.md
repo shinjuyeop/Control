@@ -40,14 +40,13 @@ TUI에서 `S`로 저장한 값은 기존 launch를 완전히 종료하고 같은
 AUTO·fresh 상태·새 명령 등 조향 조건은 계속 적용됩니다. KEYA 내부 mode는 Host가
 설정하지 않으며 torque 운용 시 Parameter 0020=2를 별도로 맞춰야 합니다.
 
-## 조향 잠금과 재시작
+## 조향 정지와 자동 복구
 
-실제 조향 변화율이 `120 deg/s`를 넘으면 Host torque safety fault가 latch됩니다.
-속도가 다시 낮아지거나 새 명령이 들어오는 것만으로 풀리지는 않습니다.
-시험을 정지하고 원인을 확인한 뒤 기존 `control_launch vehicle.launch.py`를
-Ctrl+C로 완전히 종료하고 위 명령으로 다시 실행하면 새 조향 노드의 latch는 해제됩니다.
-재시작 뒤 fresh 상태·피드백·새 command를 받아야 출력하며, 같은 이상이 반복되면 다시 잠깁니다.
-노드를 유지할 때는 `steering_enabled=false→true`로도 해제할 수 있습니다.
+실제 조향 변화율은 D항과 settle 판정에 사용하며 속도 자체로 정지하지 않습니다.
+invalid/stale feedback이나 control stall은 `FEEDBACK_LOST`로 zero→Disable합니다.
+정상 feedback과 차단 뒤 받은 새 command가 확인되면 노드 재시작이나 parameter toggle
+없이 같은 제어주기에서 재활성화할 수 있습니다. `FAULT`는 bit0(Disable)을 제외한
+KEYA 실제 fault bit에만 사용합니다.
 
 `ros2 launch vehicle_console vehicle.launch.py`는 **관측 화면**입니다.
 이 화면을 재시작해도 조향 노드는 재시작되지 않습니다. KEYA 자체 hardware fault도

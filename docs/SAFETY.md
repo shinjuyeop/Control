@@ -232,7 +232,7 @@ flag로 latch되지 않지만, feedback이 끊기면 timeout 경로로 Disable�
 ### 9.3 외부 Torque 조향
 
 - 외부 calibrated wheel-angle PD는 Ki=0, direct target step을 사용한다. saturation은
-  정상이며 damping과 별개로 hard rate ceiling을 검사한다.
+  정상이며 실제 조향속도는 D항과 settle 판정용으로 계속 관측한다.
 - 출력 arm이 허용된 경우, ACTIVE 진입은 **torque0→Enable** 후 새로운 위치 샘플로
   rate가 준비되어야 비영 torque를 보낸다. 모든 ACTIVE 종료는 **torque0→Disable**,
   제어 이력·과거 목표 폐기다. 읽기 전용에서는 이 frame들도 보내지 않는다.
@@ -245,13 +245,11 @@ flag로 latch되지 않지만, feedback이 끊기면 timeout 경로로 Disable�
   단정하지 않는다. 기본 soft margin1°만큼 목표를 안쪽으로 제한하고, 끝부분의 바깥
   방향 torque는 taper/차단한다. 범위 밖에서도 안쪽 recovery는 허용하며,
   각도/encoder 범위 초과만으로 `angle_limit` fault나 Disable을 발생시키지 않는다.
-- Filtered/unfiltered actual rate 중 하나라도120 deg/s 초과,
-  nonfinite controller input, control stall/과도한 위치 샘플 간격은 latched FAULT다. ABI 변경 없이 기존
-  `REASON_MOTOR_FAULT`를 쓰고 `/steering/torque_safety`에서 원인을 구분한다.
-  원인 해결 후 `steering_enabled=false→true` 또는 조향 노드 재시작으로 해제한다.
-  `control_launch vehicle.launch.py`를 완전히 종료·재실행해도 새 노드의 latch는
-  해제된다. fresh 상태·피드백·새 command가 필요하며 이상이 지속되면 다시 latch된다.
-  관측용 `vehicle_console vehicle.launch.py` 재시작에는 이 효과가 없다.
+- 실제 조향속도만으로는 정지하지 않는다. nonfinite controller input,
+  control stall/과도한 위치 샘플 간격은 즉시 zero→Disable하고 `FEEDBACK_LOST`로 이동한다.
+  정상 피드백이 확인되면 `WAIT_CMD`로 자동 복귀하며 차단 뒤 받은 새 command로 재개한다.
+  `/steering/torque_safety`는 활성 원인을 `invalid_input` 또는 `feedback_timeout`으로 표시하고
+  정상 피드백에서 `none`으로 돌아간다.
 - Torque TX 실패 시 zero와 Disable을 시도하고 `CAN_LOST`로 이동한다. stop frame이
   실패하면 다음 tick에서 재시도하며 성공 전에는 재Enable하지 않는다. 버스 단절 시
   실제 zero/Disable 수신은 보장할 수 없다. 이 보호는 하드웨어 차단을 대체하지 않는다.
@@ -290,11 +288,11 @@ flag로 latch되지 않지만, feedback이 끊기면 timeout 경로로 Disable�
 | STM_A→STM_B UART timeout | 새 CRC-valid vehicle frame | 마지막 mode·speed는 새 frame으로 갱신 |
 | EZkontrol handshake 대기 | 새 `0x55` request에 ACK TX 성공 | 그 후 현재 mode 명령 |
 | KEYA CAN·feedback·fault 복구 | CAN·position valid, fault 해제, AUTO와 safety 정상 | fault가 처음 감지된 뒤 수신한 fresh pending command가 필요; 복구 후 수신일 필요는 없음 |
-| Host torque safety latch | 원인 해결 후 조향 노드 재시작 또는 `steering_enabled=false→true` | 새 command와 fresh 상태·피드백 필요; KEYA 자체 fault 해제와 별개 |
+| Host torque feedback stop | 정상 feedback 확인 | 차단 뒤 받은 새 command 필요; 재시작·parameter toggle 불필요 |
 | MCU reboot | RTOS와 peripheral 재초기화 | STM_A는 safety frame 전 stop; STM_B는 engage에서 시작 후 입력 재계산 |
 
-물리 E-stop과 KEYA가 보고한 motor fault에는 software latch나 별도 reset command가
-없습니다. §9.3의 Host torque safety fault에는 별도 latch가 적용됩니다.
+물리 E-stop, KEYA가 보고한 motor fault, §9.3의 Host torque feedback stop에는
+software latch나 별도 reset command가 없습니다.
 STM_A는 E-stop 중에도 fresh non-brake AUTO speed command를 저장할 수 있고,
 조향도 Disable 사건 뒤 들어온 command를 pending으로 저장할 수 있습니다.
 따라서 E-stop 해제만으로 MANUAL pedal이 다시 적용되거나, inhibited 상태 중 받은
@@ -378,8 +376,8 @@ Virtual LCD stale 표시는 상태 관측이며 안전 차단의 증거 또는 �
 2026-09-18 코드 검토에서 아래 항목은 미수정 상태다. 화면의 RUNNING이나 GO만으로
 조향 출력·차량 정지 조건이 모두 충족됐다고 판단하지 않는다.
 
-- TUI의 조향 실행 조건은 raw KEYA fault bits 등을 확인하지만 Host torque
-  `state=FAULT`/`disable_reason`을 직접 검사하지 않는다. 조향이 latch되어도
+- TUI의 조향 실행 조건은 raw KEYA fault bits 등을 확인하지만 Host의 일시적인
+  `FEEDBACK_LOST`/`disable_reason`을 직접 검사하지 않는다. 조향 출력이 차단된 동안에도
   시나리오가 계속되며 종방향 목표를 발행할 수 있다.
 - `RECORD_START`·`WAIT_AUTO`·`COUNTDOWN`에서 조향 설정 응답을 기다리는 동안
   일부 tick은 mode·통신 검사 전에 반환한다. 이 구간의 MANUAL→AUTO 전환을

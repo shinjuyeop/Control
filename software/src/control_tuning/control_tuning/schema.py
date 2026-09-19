@@ -46,8 +46,6 @@ FIELDS = (
           'torque_peak_recovery_ms', '지속 전류 한도의 50% 이하 출력을 이 시간 동안 유지하면 고출력을 다시 사용할 수 있습니다.', 100, integer=True),
     Field('angle_limit_margin_deg', '조향 한계 보호 여유각', 'deg', GROUPS[1],
           'torque_soft_limit_margin_deg', '측정된 조향 범위 안쪽으로 목표를 제한하고, 끝 부근의 바깥 방향 출력을 줄입니다.', 0.1),
-    Field('overspeed_fault_deg_s', '조향 과속 차단 기준', 'deg/s', GROUPS[1],
-          'torque_hard_rate_limit_deg_s', '실제 앞바퀴 조향속도가 초과하면 FAULT로 잠깁니다. 목표각 변화율을 제한하는 값이 아닙니다.', 5.0),
     Field('actuation_mode', '조향 제어 방식', '', GROUPS[2],
           'actuation_mode', '재시작 필요. KEYA 내부 0020도 torque=2 / position=3으로 별도 설정해야 합니다.',
           live=False, choices=('torque', 'position')),
@@ -149,7 +147,7 @@ def encode(values, context):
 def validate_native(s, governor):
     positive = ('torque_full_scale_error_deg', 'torque_settle_angle_deg',
                 'torque_settle_rate_deg_s', 'torque_rate_filter_hz',
-                'torque_soft_limit_margin_deg', 'torque_hard_rate_limit_deg_s',
+                'torque_soft_limit_margin_deg',
                 'can_timeout_ms', 'feedback_timeout_ms', 'mode_timeout_ms',
                 'drive_status_timeout_ms', 'steer_command_timeout_ms')
     if any(not math.isfinite(s[k]) or s[k] <= 0 for k in positive):
@@ -174,8 +172,6 @@ def validate_native(s, governor):
         raise ValueError(f'필터 주파수는 {500.0 / period:g} Hz 이하입니다.')
     if s['torque_settle_angle_deg'] >= s['torque_full_scale_error_deg']:
         raise ValueError('목표 도달 오차는 P항이 최대 명령에 도달하는 오차보다 작아야 합니다.')
-    if s['torque_settle_rate_deg_s'] >= s['torque_hard_rate_limit_deg_s']:
-        raise ValueError('목표 도달 속도는 조향 과속 차단 기준보다 작아야 합니다.')
     bounds = []
     for sign in (-1, 1):
         v = sign * s['command_count_limit'] / s['count_scale']
@@ -199,8 +195,7 @@ def range_hint(field, values, context):
         'peak_recovery_hold_ms': '고출력 허용 시간 이상',
         'rate_filter_cutoff_hz': f'0 초과, {500 / period:g} 이하',
         'settle_error_deg': f'0 초과, {peak / values["p_gain_a_per_deg"]:g} 미만' if values['p_gain_a_per_deg'] > 0 else '0 초과',
-        'settle_rate_deg_s': '0 초과, 조향 과속 차단 기준 미만',
-        'overspeed_fault_deg_s': '목표 도달 속도 초과 · 코드상 고정 상한 없음',
+        'settle_rate_deg_s': '0 초과',
         'angle_limit_margin_deg': '0 초과, 측정된 좌우 한계각 안쪽',
         'torque_feedback_timeout_ms': f'{period * 2}~200',
         'minimum_vehicle_speed_kph': '0 이상',

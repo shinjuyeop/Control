@@ -1,0 +1,985 @@
+EZkontrol_Motor_Settings.xlsx
+
+- 필드 설명
+    1. Controller — 구동 한계와 제어 반응
+    - 기본 개념
+        - 상전류: 컨트롤러와 모터 사이의 전류입니다. 주로 모터가 내는 회전력과 관련됩니다.
+        - 버스전류: 배터리와 컨트롤러 사이의 전류입니다. 배터리 부담과 소비전력에 직접 관련됩니다.
+        - 두 전류는 같지 않습니다. 상전류 제한을 배터리 방전·충전 제한으로 해석하면 안 됩니다.
+        - EZ-C481200의 공개 정격은 최대 상전류 1,200 A, 정격 상전류 480 A, 최대 버스전류 600 A입니다. 이는 컨트롤러 사양이며 차량 전체의 허용값은 아닙니다.
+    - Max phase current(A) — 최대 상전류
+        - 현재값: 800 A
+        - 의미: 모터에 허용하는 상전류의 상한입니다. 저속 가속과 등판에서 낼 수 있는 힘에 큰 영향을 줍니다.
+        - 적정 기준: 모터 허용전류, 컨트롤러 정격, 냉각, 구동계 강도 중 가장 엄격한 조건에 맞춥니다. 컨트롤러의 최대 1,200 A를 연속 운전값으로 쓰는 것은 아닙니다.
+        - 높이면: 다른 제한에 걸리지 않는 범위에서 최대 회전력이 증가하고 발열·구동계 충격도 커집니다.
+        - 낮추면: 최대 회전력이 줄고 가속·등판 성능이 제한되지만 전기적·기계적 부담은 감소합니다.
+    - Max rotor speed(rpm) — 최대 모터 회전수
+        - 현재값: 4,500 rpm
+        - 의미: 모터 회전수의 상한입니다. 타이어 회전수가 아닙니다.
+        - 적정 기준: 모터의 허용 최고 회전수와 감속비, 목표 차속으로 정합니다. 정격 회전수와 기계적 최고 허용 회전수는 구분해야 합니다.
+        - 높이면: 도달 가능한 최고속도가 높아질 수 있지만 전압·출력 한계 때문에 실제 속도가 그대로일 수도 있습니다.
+        - 낮추면: 최고속도가 제한됩니다. 저속 최대 토크가 같은 비율로 줄어드는 것은 아닙니다.
+    - Max bus current(A) — 최대 배터리측 전류
+        - 현재값: 400 A
+        - 의미: 배터리에서 끌어오는 전류의 상한입니다. 이 항목이 회생 충전전류까지 같은 값으로 제한한다고 가정하면 안 됩니다.
+        - 적정 기준: 배터리·배선·퓨즈·접촉기 허용전류를 함께 봅니다. 저장소의 해당 배터리 사양은 연속 150 A, 30초 이하 300 A, 10초 이하 350 A입니다. 같은 팩을 사용한다면 이 조건이 판단 기
+        준입니다. 배터리 사양서 (docs/hardware/51.8V78Ah(14S30P)더블류웍스향배터리팩사양서.pdf)
+        - 높이면: 배터리에서 더 큰 전력을 사용할 수 있지만 전압 강하와 발열이 증가합니다.
+        - 낮추면: 최대 출력이 줄어듭니다. 특히 고속·고부하 구간에서 제한을 체감하기 쉽습니다.
+    - Peak current duration(s) — 피크 (상)전류 허용시간
+        - 현재값: 20 s
+        - 의미: 순간적인 고전류 운전을 허용하는 시간입니다.
+        - 적정 기준: 허용전류와 허용시간을 한 쌍으로 정해야 합니다. EZkontrol 내부의 피크 판정 기준, 복귀 전류, 재허용 조건은 공개 자료만으로 확정하기 어렵습니다.
+        - 높이면: 피크 출력을 더 오래 유지할 수 있지만 열이 더 축적됩니다.
+        - 낮추면: 고출력 유지시간이 짧아집니다.
+        - 주의할 해석: 이 값을 20초로 설정했다고 해서 Max bus current가 정확히 20초 후 특정 전류로 내려간다고 단정할 수는 없습니다.
+    - Control mode — 제어 방식
+        - 현재값: Torque control
+        - 의미: 입력을 어떤 목표로 해석할지 정합니다.
+        - 선택 기준:
+            - Torque control: 주로 전류를 통해 회전력을 조절합니다. 같은 입력이라도 부하에 따라 회전수가 달라집니다.
+            - Speed control: 목표 회전수를 유지하도록 필요한 전류를 조절합니다.
+            - Power control / Position control: 지원 여부와 실제 입력 계약에 맞춰 사용합니다.
+        - 변경 영향: 입력과 모터 반응의 관계가 바뀝니다. 숫자를 높이거나 낮추는 항목은 아닙니다.
+        - CAN 운전에서는 CAN 목표전류·목표회전수와 펌웨어 계약도 함께 봐야 합니다. 제조사 CAN 설명서 (docs/hardware/GoldenMotor_EZkontrol_CAN_Protocol_Instruction_V1.0.pdf)
+    - PWM mode — 인버터 스위칭 방식
+        - 현재값: CPWM
+        - 의미: 모터에 전압을 만들어 주는 스위칭 패턴을 선택합니다.
+        - 선택 기준: 제조사가 해당 모터·펌웨어에 지정한 방식을 따릅니다.
+        - 일반적인 차이:
+            - CPWM: 연속 PWM 방식입니다.
+            - DPWM: 일부 구간에서 스위칭을 줄이는 불연속 PWM 방식으로, 조건에 따라 스위칭 손실을 줄일 수 있습니다.
+        - 변경 영향: 컨트롤러 발열, 전류 파형, 소음 등이 달라질 수 있습니다. DPWM이 모든 운전 구간에서 더 좋은 것은 아닙니다.
+    - Acceleration — 가속 변화 설정
+        - 현재값: 100
+        - 의미: 구동 목표가 증가할 때의 변화 속도 또는 완만함을 정하는 항목으로 보입니다.
+        - 적정 범위: 단위와 계산식 미확인으로 수치 권장 범위를 정할 수 없습니다. 100을 100%, 100 rpm/s 등으로 해석하면 안 됩니다.
+        - 높임·낮춤: 변화율을 저장한다면 높을수록 빠르지만, 소요시간을 저장한다면 반대입니다. 이 펌웨어의 정의 확인이 필요합니다.
+        - 추가 구분: 앱 스로틀과 CAN 명령 모두에 적용되는지도 별도 확인 대상입니다.
+    - Deceleration — 감속 변화 설정
+        - 현재값: 100
+        - 의미: 구동 목표가 감소할 때의 변화 속도 또는 완만함을 정하는 항목으로 보입니다.
+        - 적정 범위: Acceleration과 마찬가지로 단위·계산식이 확인돼야 합니다.
+        - 높임·낮춤: 변화율인지 시간인지에 따라 방향이 달라집니다.
+        - 추가 구분: 목표를 빨리 낮추는 것과 실제 제동토크·회생전류를 만드는 것은 별개입니다.
+    - PI 게인 공통 설명
+        - Kp: 지금 발생한 오차에 즉시 얼마나 강하게 반응할지 정합니다.
+        - Ki: 오차가 계속 남아 있을 때 누적해서 얼마나 보정할지 정합니다.
+        - 아래 영향은 일반적인 PI 제어 원리입니다. EZkontrol의 내부 배율·주기는 공개되지 않아 다른 제어기의 숫자를 그대로 옮길 수 없습니다. TI 모터 제어 설명
+        - 적정 범위는 고정 숫자가 아니라 응답이 충분히 빠르면서 진동·과도한 튐이 없는 구간입니다.
+    - Phase current Kp — 상전류 비례 게인
+        - 현재값: 4
+        - 의미: 목표 상전류와 실제 상전류의 차이에 즉시 반응하는 강도입니다.
+        - 적정 범위: 모터 저항·인덕턴스와 전류제어 주기에 따라 결정합니다.
+        - 높이면: 전류 응답이 빨라질 수 있지만 지나치면 전류 진동·소음이 커집니다.
+        - 낮추면: 반응이 완만해지고 목표전류를 따라가는 속도가 느려질 수 있습니다.
+    - Phase current Ki — 상전류 적분 게인
+        - 현재값: 512
+        - 의미: 계속 남아 있는 전류 오차를 없애는 강도입니다.
+        - 적정 범위: Kp와 함께 조정하며 단독 권장 숫자는 없습니다.
+        - 높이면: 남은 오차를 빨리 없애지만 지나치면 전류가 튀거나 흔들릴 수 있습니다.
+        - 낮추면: 오차 보정이 느려집니다.
+    - Rotor speed Kp — 회전수 비례 게인
+        - 현재값: 2
+        - 의미: 목표 회전수와 실제 회전수가 다를 때 토크를 얼마나 즉시 보정할지 정합니다.
+        - 적정 범위: 차량 관성, 감속비, 부하에 따라 달라집니다.
+        - 높이면: 속도 변화에 강하게 대응하지만 울컥거리거나 속도가 흔들릴 수 있습니다.
+        - 낮추면: 반응이 부드러워질 수 있지만 부하 변화 때 속도 처짐이 커집니다.
+        - 적용 범위: Torque control에서도 속도 제한 과정에 사용되는지는 펌웨어 구현에 따라 다릅니다.
+    - Rotor speed Ki — 회전수 적분 게인
+        - 현재값: 16
+        - 의미: 지속적인 속도 오차를 없애는 강도입니다.
+        - 적정 범위: Rotor speed Kp와 차량 부하를 함께 보고 정합니다.
+        - 높이면: 오르막 등에서 남는 속도 오차를 빨리 보정하지만 과도하면 속도 출렁임이 생깁니다.
+        - 낮추면: 목표속도 회복이 느려집니다.
+    - Bus current Kp — 버스전류 비례 게인
+        - 현재값: 4
+        - 의미: 배터리측 전류의 목표·제한 오차에 즉시 대응하는 강도입니다.
+        - 적정 범위: 배터리와 인버터의 응답 특성에 따라 결정합니다.
+        - 높이면: 전류 제한에 더 빠르게 대응할 수 있지만 토크가 거칠게 변할 수 있습니다.
+        - 낮추면: 개입이 완만해지지만 순간적인 전류 초과가 커질 수 있습니다.
+    - Bus current Ki — 버스전류 적분 게인
+        - 현재값: 256
+        - 의미: 버스전류의 지속적인 오차를 보정합니다.
+        - 적정 범위: Bus current Kp와 함께 결정합니다.
+        - 높이면: 지속적인 오차를 빨리 줄이지만 과도하면 출력이 출렁일 수 있습니다.
+        - 낮추면: 목표·제한 전류에 수렴하는 속도가 느려질 수 있습니다.
+    - Flux weakening Kp — 약자속 비례 게인
+        - 현재값: 4
+        - 의미: 고속에서 전압 한계에 접근할 때 약자속 제어가 즉시 반응하는 강도입니다.
+        - 적정 범위: 모터 특성과 약자속 알고리즘에 따라 결정합니다.
+        - 높이면: 전압 한계 변화에 빠르게 대응하지만 고속 전류·토크 진동이 생길 수 있습니다.
+        - 낮추면: 대응이 느려져 고속 운전에서 제한에 걸리기 쉬울 수 있습니다.
+    - Flux weakening Ki — 약자속 적분 게인
+        - 현재값: 2
+        - 의미: 약자속 제어에서 지속적으로 남는 오차를 보정합니다.
+        - 적정 범위: 약자속 Kp와 함께 결정합니다.
+        - 높이면: 보정이 빨라지지만 과도하면 약자속 전류가 출렁일 수 있습니다.
+        - 낮추면: 고속 상태 변화에 적응하는 속도가 느려질 수 있습니다.
+    1. Battery — 전압 보호
+    - 범위 판단 기준
+        - 저장소의 14S 배터리 사양은 동작 전압 39.2~58.8 V, 충전 정지 58.8 V, 방전 정지 37.8 V입니다.
+        - 팩 전체 전압만으로 가장 약한 셀의 상태까지 알 수는 없습니다. 아래 값은 같은 배터리 사양을 사용한다는 조건으로 해석합니다. 배터리 사양서 (docs/hardware/51.8V78Ah(14S30P)더블류웍스
+        향배터리팩사양서.pdf)
+    - Over voltage shutdown threshold(V) — 과전압 차단값
+        - 현재값: 75 V
+        - 의미: 버스전압이 너무 높아졌을 때 구동을 차단하는 기준입니다.
+        - 적정 기준: 배터리 상한과 컨트롤러 허용전압을 함께 만족해야 합니다. 해당 팩에서는 58.8 V를 중심으로 계측오차·순간 전압상승·회생 중단 동작을 고려해 결정해야 하며, 컨트롤러 최대전압
+        을 그대로 배터리 보호값으로 쓰는 것은 아닙니다.
+        - 높이면: 더 높은 전압까지 차단하지 않습니다.
+        - 낮추면: 더 일찍 차단하지만 정상 만충전압에서도 동작할 수 있습니다.
+    - Under voltage limit threshold(V) — 저전압 출력제한 시작값
+        - 현재값: 40 V
+        - 의미: 배터리 전압이 낮아질 때 전류·출력을 줄이기 시작하는 기준입니다.
+        - 적정 범위 추정: 해당 14S 팩에서 42~44.8 V 부근을 검토 구간으로 삼을 수 있습니다. 셀당 3.0~3.2 V에 해당하며, 부하 중 전압 강하에 따라 조정해야 하는 추정치입니다.
+        - 높이면: 배터리가 덜 소모된 상태부터 출력이 줄어듭니다.
+        - 낮추면: 더 오래 출력을 유지하지만 저전압 차단에 가까워질 때까지 큰 전류를 사용할 수 있습니다.
+    - Under voltage shutdown threshold(V) — 저전압 차단값
+        - 현재값: 36 V
+        - 의미: 전압이 더 떨어지면 구동을 중단하는 기준입니다.
+        - 적정 기준: 사양상 동작 하한 39.2 V를 출발점으로 검토하고, 출력제한 시작값보다 낮게 설정합니다. 37.8 V는 방전 정지 기준이며 정상 운전 목표값이 아닙니다.
+        - 높이면: 더 일찍 정지해 사용 가능한 용량이 줄지만 과방전 여유는 커집니다.
+        - 낮추면: 더 깊게 방전할 수 있지만 배터리 보호회로가 먼저 차단할 가능성이 커집니다.
+    1. Motor — 모터와 센서의 실제 사양
+    - Motor type — 모터 종류
+        - 현재값: BLDCM(Square-Wave)
+        - 의미: 제어기가 사용할 모터 모델·구동 방식을 지정합니다.
+        - 적정 기준: 실제 모터와 설치된 펌웨어에 맞는 종류를 선택합니다.
+        - 변경 영향: 전류 파형, 제어 방식, 효율·소음·발열이 달라질 수 있습니다. 성능을 높이려고 임의로 바꾸는 항목은 아닙니다.
+    - Nominal rotor speed(rpm) — 정격 회전수
+        - 현재값: 0
+        - 의미: 모터가 정격 조건에서 운전하도록 설계된 회전수입니다. 최고속도 제한과 다릅니다.
+        - 적정 기준: 모터 명판·해당 권선 사양의 정격 회전수입니다.
+        - 높임·낮춤: 제어기가 모터 기준속도를 다르게 인식할 수 있습니다. 실제 최고속도가 그대로 따라 바뀐다고 볼 수는 없습니다.
+        - 미확인: 0이 미사용·자동 계산·미설정 중 무엇을 뜻하는지는 펌웨어 확인이 필요합니다.
+    - Pole pairs — 극쌍 수
+        - 현재값: 4
+        - 의미: 회전자의 N극·S극 한 쌍이 몇 개 있는지 나타냅니다. 4극쌍은 8극입니다.
+        - 적정값: 실제 모터의 극쌍 수와 정확히 일치해야 합니다.
+        - 높이면: 같은 전기적 주파수에서 계산되는 기계 회전수가 작아집니다.
+        - 낮추면: 계산되는 기계 회전수가 커집니다.
+        - 잘못 맞추면: 속도 계산과 제어 기준이 틀어질 수 있습니다.
+    - BEMF constant — 역기전력 상수
+        - 현재값: 970
+        - 의미: 모터가 회전할 때 회전수당 얼마나 큰 전압을 만들어내는지 나타내는 상수입니다.
+        - 적정값: 해당 모터 권선의 실측·제조사 값입니다. 앱의 970을 단위 확인 없이 V/rpm으로 읽으면 안 됩니다.
+        - 높이면: 제어기가 같은 회전수에서 더 큰 역기전력이 생긴다고 계산합니다.
+        - 낮추면: 더 작은 역기전력이 생긴다고 계산합니다.
+        - 영향: 실제 모터 특성은 바뀌지 않으며, 모델 오차가 커지면 고속 제어·약자속 동작이 부정확해질 수 있습니다.
+    - Lq constant — q축 인덕턴스
+        - 현재값: 0
+        - 의미: 주로 토크를 만드는 방향에서 전류가 얼마나 빠르게 변할 수 있는지 나타내는 모터 특성입니다.
+        - 적정값: 해당 모터의 측정값을 앱 단위로 환산한 값입니다.
+        - 높이면: 제어기는 전류가 더 천천히 변하는 모터로 인식합니다.
+        - 낮추면: 전류가 더 빨리 변하는 모터로 인식합니다.
+        - 미확인: 0이 실제 0 H를 뜻하는지, 해당 제어 방식에서 미사용인지 확인되지 않았습니다.
+    - Ld constant — d축 인덕턴스
+        - 현재값: 0
+        - 의미: 주로 자속을 조절하는 방향의 전류 변화 특성입니다.
+        - 적정값: 해당 모터 측정값과 앱 단위에 맞춰 정합니다.
+        - 높이면: 제어 모델상 d축 전류 변화가 더 느려집니다.
+        - 낮추면: 더 빨라집니다.
+        - 영향: 약자속·전류 보상 계산에 영향을 줄 수 있습니다. 0의 의미는 Lq와 마찬가지로 미확인입니다.
+    - Main SPF sensor type — 주 회전자 위치·속도 센서
+        - 현재값: Hall
+        - 의미: 주 센서 입력을 어떤 방식으로 해석할지 정합니다.
+        - 적정값: 실제 장착 센서와 일치해야 합니다.
+        - 변경 영향: Hall·엔코더 등 센서 신호 해석 방식이 바뀝니다. 맞지 않으면 위치를 잘못 읽거나 기동하지 못할 수 있습니다.
+    - Main SPF sensor placement — 주 센서 배치각
+        - 현재값: 120°
+        - 의미: Hall 센서 등의 신호가 어떤 전기적 각도 관계로 배치됐는지 지정합니다.
+        - 적정값: 실제 센서 배치입니다. 기계적으로 120° 떨어졌다는 뜻과는 다를 수 있습니다.
+        - 변경 영향: 신호 조합을 회전자 위치로 해석하는 방식이 바뀝니다. 높거나 낮다고 성능이 좋아지는 항목이 아닙니다.
+    - Main SPF sensor phase shift(°) — 주 센서 위상 보정
+        - 현재값: −120°
+        - 의미: 센서가 알려주는 위치와 실제 모터 자계 위치의 차이를 맞춥니다.
+        - 적정값: 해당 모터의 배선·센서 조합에 맞는 학습값 또는 제조사 값입니다.
+        - 높이면·낮추면: 제어에 사용하는 전기적 기준각이 각각 반대 방향으로 이동합니다.
+        - 영향: 맞으면 같은 전류로 효율적인 토크를 내고, 틀리면 소음·발열·토크 저하가 생길 수 있습니다. 부호만으로 진각·지각을 단정하지 않습니다.
+    - Main SPF sensor pulses per revolution(PPR) — 주 센서 회전당 펄스 수
+        - 현재값: 6
+        - 의미: 센서 펄스를 회전량·속도로 환산하는 기준입니다.
+        - 적정값: 센서 종류와 펌웨어의 펄스 집계 방식에 맞춰야 합니다.
+        - 높이면: 동일 펄스 빈도에서 계산속도가 낮아지는 것이 일반적입니다.
+        - 낮추면: 계산속도가 높아지는 것이 일반적입니다.
+        - 주의할 해석: Hall의 6을 곧바로 모터 축 한 바퀴당 6펄스로 단정하면 안 됩니다. 전기적 주기·극쌍 수와의 관계를 확인해야 합니다.
+    - Main SPF sensor revert AB signal — 주 센서 A/B 신호 반전
+        - 현재값: Disable
+        - 의미: A/B 신호의 해석을 뒤집는 옵션입니다.
+        - 적정 기준: 센서와 배선 방향에 맞춥니다.
+        - Enable 영향: 엔코더에서는 방향 해석 등에 영향을 줄 수 있습니다. 정확히 A/B 교환인지 논리 반전인지, Hall에서도 적용되는지는 공개 정의가 부족합니다.
+        - Disable 영향: 해당 보정을 적용하지 않습니다.
+    - Main SPF sensor input capture filter — 주 센서 입력 필터
+        - 현재값: 8
+        - 의미: 센서선의 짧은 잡음을 정상 펄스로 오인하지 않도록 거르는 설정입니다.
+        - 적정 기준: 잡음을 제거하면서 최고 회전수의 정상 펄스까지 지우지 않는 값입니다.
+        - 필터를 강하게 하면: 잡음에 강해지지만 지연·고속 펄스 누락 가능성이 증가합니다.
+        - 약하게 하면: 빠른 신호를 잘 받지만 잡음에 민감해집니다.
+        - 미확인: 숫자 8의 시간 단위와 강도 대응표가 없어 숫자 증가가 항상 필터 강화라는 보장은 없습니다.
+    - Aux SPF sensor type — 보조 위치·속도 센서
+        - 현재값: None
+        - 의미: 보조 센서의 종류를 지정합니다.
+        - 적정값: 보조 센서가 없으면 None, 있으면 실제 종류입니다.
+        - 변경 영향: 보조 센서 입력을 사용하도록 바뀔 수 있습니다. 자동 백업·자동 전환까지 제공한다고 단정할 수는 없습니다.
+    - Aux SPF sensor placement — 보조 센서 배치각
+        - 현재값: 120°
+        - 의미: 보조 센서 신호의 각도 관계입니다.
+        - 적정값: 실제 보조 센서 사양입니다.
+        - 변경 영향: 보조 센서의 위치 해석이 바뀝니다. 보조 센서를 사용하지 않는 구성에서는 통상 운전 영향이 없습니다.
+    - Aux SPF sensor phase shift(°) — 보조 센서 위상 보정
+        - 현재값: −60°
+        - 의미: 보조 센서의 위치 기준과 모터 전기각을 맞춥니다.
+        - 적정값: 해당 센서의 학습값·제조사 값입니다.
+        - 높임·낮춤: 기준각을 반대 방향으로 이동시킵니다. 센서 미사용 상태에서는 통상 영향이 없습니다.
+    - Aux SPF sensor pulses per revolution(PPR) — 보조 센서 펄스 수
+        - 현재값: 6
+        - 의미: 보조 센서 펄스를 회전량으로 환산하는 기준입니다.
+        - 적정값: 센서와 펌웨어 집계 방식에 맞춰 정합니다.
+        - 높임·낮춤: 일반적인 속도 환산에서는 높일수록 계산속도가 작아지고 낮출수록 커집니다. 센서 미사용 시 통상 영향이 없습니다.
+    - Aux SPF sensor revert AB signal — 보조 센서 A/B 반전
+        - 현재값: Disable
+        - 의미: 보조 A/B 신호의 해석을 뒤집는 옵션입니다.
+        - 적정 기준: 실제 배선·회전 방향에 맞춥니다.
+        - 변경 영향: 보조 센서 방향·신호 해석에 영향을 줄 수 있습니다. 구체적인 반전 방식은 미확인입니다.
+    - Aux SPF sensor input capture filter — 보조 센서 입력 필터
+        - 현재값: 8
+        - 의미: 보조 센서의 짧은 잡음을 제거합니다.
+        - 적정 기준: 잡음 억제와 정상 펄스 통과를 함께 만족하는 값입니다.
+        - 강하게/약하게: 강하면 잡음 억제와 지연이 늘고, 약하면 잡음에 민감해집니다. 숫자별 대응은 미확인입니다.
+    - SPF sensor invert PWM signal — PWM 센서 신호 반전
+        - 현재값: Disable
+        - 의미: PWM 방식 위치·속도 센서 신호의 논리 극성을 반전하는 옵션으로 해석됩니다.
+        - 적정 기준: 실제 센서 출력 규격과 맞춥니다.
+        - 변경 영향: PWM 신호의 high/low 또는 듀티 해석이 달라질 수 있습니다.
+        - 구분: Controller의 CPWM/DPWM을 바꾸는 항목이 아닙니다. Hall 구성에서의 적용 여부는 미확인입니다.
+    - Motor temperature sensor type — 모터 온도센서 종류
+        - 현재값: KTY84-130/150
+        - 의미: 센서 저항을 온도로 변환하는 특성표를 선택합니다.
+        - 적정값: 실제 장착 센서와 일치해야 합니다.
+        - 변경 영향: 잘못 선택하면 실제 온도가 같아도 표시온도가 달라져 온도 보호가 부정확해집니다.
+        - 참고: KTY84 계열은 온도가 오르면 저항이 증가하는 센서입니다. NXP 데이터시트
+    - Motor over temperature limit threshold(°C) — 모터 과열 출력제한 시작
+        - 현재값: 130°C
+        - 의미: 모터 온도가 올라갔을 때 출력을 줄이기 시작하는 온도입니다.
+        - 적정 기준: 모터 제조사의 권선·자석 허용온도와 센서 위치로 결정하며, 차단온도보다 낮게 둡니다. 센서 자체의 측정 가능 최고온도를 모터 허용온도로 쓰면 안 됩니다.
+        - 높이면: 더 뜨거워질 때까지 출력을 유지합니다.
+        - 낮추면: 더 일찍 출력을 줄입니다.
+    - Motor over temperature shutdown threshold(°C) — 모터 과열 차단
+        - 현재값: 145°C
+        - 의미: 모터 보호를 위해 구동을 중단하는 온도입니다.
+        - 적정 기준: 모터의 허용온도보다 센서 오차·열 지연을 고려한 여유를 둡니다. 공개된 해당 모터 열 한계가 없으면 확정 숫자를 제시하기 어렵습니다.
+        - 높이면: 운전 지속 범위가 넓어지지만 열손상 여유가 줄어듭니다.
+        - 낮추면: 더 일찍 정지합니다.
+    1. Throttle — 스로틀 신호 해석
+    - 기본 관계
+        - 일반적으로 최소 고장값 < 최소 유효값 < 최대 유효값 < 최대 고장값 순서로 둡니다.
+        - 유효값은 0~100% 명령으로 환산하는 구간이고, 고장값은 비정상 신호를 판단하는 경계입니다.
+        - 전압은 실제 스로틀을 끝까지 움직여 측정한 범위와 전원·센서 오차를 기준으로 정합니다.
+    - Throttle type — 스로틀 종류
+        - 현재값: General
+        - 의미: 연결한 스로틀의 입력 형식을 선택합니다.
+        - 적정값: 실제 페달·레버의 신호 방식과 일치해야 합니다.
+        - 변경 영향: 입력의 중립·방향·유효 범위를 해석하는 방식이 바뀔 수 있습니다. General의 상세 동작은 펌웨어 정의를 따릅니다.
+    - Throttle mode — 스로틀 응답곡선
+        - 현재값: Linear
+        - 의미: 페달을 움직인 양과 구동 명령 사이의 관계입니다.
+        - 적정 기준: 정량적인 입력을 원하면 Linear가 이해하기 쉽습니다. 다른 곡선은 원하는 저속 조작성에 맞춰 선택합니다.
+        - 변경 영향: 같은 페달 위치에서 나오는 명령이 달라집니다. Linear라도 실제 가속도가 페달에 정확히 비례하지는 않습니다.
+    - Throttle not reset check enable — 스로틀 복귀 확인
+        - 현재값: Enable
+        - 의미: 시동·운전 허가 시 스로틀이 놓인 상태인지 확인하는 기능입니다.
+        - 적정 기준: 사람이 조작하는 스로틀에는 일반적으로 Enable이 적합합니다.
+        - Enable: 스로틀이 밟힌 채 시작되는 것을 막는 조건이 추가됩니다.
+        - Disable: 이 확인을 생략합니다. 정확한 재검사 시점은 펌웨어에 따라 다릅니다.
+    - Main throttle min fault threshold(mV) — 주 스로틀 저전압 고장 경계
+        - 현재값: 0 mV
+        - 의미: 이보다 낮은 신호를 비정상으로 판단하는 경계입니다.
+        - 적정 기준: 정상 최소전압보다 낮게 두되, 검출하려는 단락·단선 조건을 구분할 수 있어야 합니다.
+        - 높이면: 낮은 전압을 더 쉽게 고장으로 판단합니다.
+        - 낮추면: 낮은 신호를 더 넓게 허용합니다. 0 V 부근 고장의 검출 여부는 비교 방식·별도 진단에 따라 달라집니다.
+    - Main throttle min reference threshold(mV) — 주 스로틀 0% 기준
+        - 현재값: 800 mV
+        - 의미: 구동 명령이 시작되는 전압입니다.
+        - 적정 기준: 스로틀을 놓았을 때의 최대 관측전압보다 약간 높은 위치로 잡습니다.
+        - 높이면: 페달 초반의 무반응 구간이 커집니다.
+        - 낮추면: 초반부터 반응하지만 놓은 상태의 노이즈에도 명령이 생길 수 있습니다.
+    - Main throttle max reference threshold(mV) — 주 스로틀 100% 기준
+        - 현재값: 3,900 mV
+        - 의미: 최대 구동 명령에 도달하는 전압입니다.
+        - 적정 기준: 끝까지 밟았을 때 실제로 도달 가능한 전압으로 정합니다.
+        - 높이면: 최대 명령에 도달하려면 더 큰 전압이 필요합니다.
+        - 낮추면: 더 일찍 최대 명령에 도달해 페달이 민감하게 느껴질 수 있습니다.
+    - Main throttle max fault threshold(mV) — 주 스로틀 고전압 고장 경계
+        - 현재값: 5,000 mV
+        - 의미: 지나치게 높은 입력전압을 고장으로 판단하는 경계입니다.
+        - 적정 기준: 정상 최대전압보다 높되, 검출할 전원 단락과 구분되도록 정합니다.
+        - 높이면: 높은 신호를 더 넓게 허용합니다.
+        - 낮추면: 고전압 이상을 빨리 검출하지만 정상 최대입력을 고장으로 볼 수 있습니다.
+    - Aux throttle min fault threshold(mV) — 보조 스로틀 저전압 고장 경계
+        - 현재값: 0 mV
+        - 의미: 보조 아날로그 입력의 저전압 고장 경계입니다.
+        - 적정 기준: 보조 입력의 실제 정상 최소전압과 고장 조건에 맞춥니다.
+        - 높이면: 저전압 고장 판정이 민감해집니다.
+        - 낮추면: 더 낮은 입력까지 허용합니다.
+    - Aux throttle min reference threshold(mV) — 보조 스로틀 0% 기준
+        - 현재값: 800 mV
+        - 의미: 보조 입력의 유효 명령이 시작되는 전압입니다.
+        - 적정 기준: 보조 센서의 놓인 상태 전압과 오차에 맞춥니다.
+        - 높이면: 무반응 구간이 커집니다.
+        - 낮추면: 더 낮은 입력부터 반응합니다.
+    - Aux throttle max reference threshold(mV) — 보조 스로틀 100% 기준
+        - 현재값: 3,900 mV
+        - 의미: 보조 입력을 최대 명령으로 해석하는 전압입니다.
+        - 적정 기준: 보조 센서가 실제 도달하는 최대전압입니다.
+        - 높이면: 최대 명령에 필요한 입력이 커집니다.
+        - 낮추면: 더 일찍 최대 명령에 도달합니다.
+    - Aux throttle max fault threshold(mV) — 보조 스로틀 고전압 고장 경계
+        - 현재값: 5,000 mV
+        - 의미: 보조 입력의 고전압 고장 경계입니다.
+        - 적정 기준: 정상 최대전압과 고장전압을 구분하도록 정합니다.
+        - 높이면: 허용 범위가 넓어집니다.
+        - 낮추면: 고전압 판정이 민감해집니다.
+        - 보조 입력 공통 주의: 이 입력이 회생제동·이중 스로틀·다른 명령 중 무엇으로 사용되는지는 별도 계약 확인이 필요합니다. 이름만으로 가변 회생 입력이라고 확정할 수 없습니다.
+    1. Gear — 방향과 운전 단계별 제한
+    - 비율 항목 공통 기준
+        - 일반적인 운전 제한 용도로는 0~100% 안에서 필요한 한도를 선택합니다. 이는 앱 입력 허용범위를 확정한 것이 아닙니다.
+        - 실제 명령은 대체로 전역 제한에 기어 비율을 적용하고 다른 보호·명령 제한도 함께 받습니다.
+        - 비율을 높여도 그만큼 항상 전류를 쓰는 것은 아닙니다.
+        - 0%의 정확한 처리와 CAN 운전 시 적용 여부는 펌웨어 확인 대상입니다.
+    - Direction positive or negative — 기본 방향 기준
+        - 현재값: Positive
+        - 의미: 시스템에서 정방향으로 해석하는 방향 기준입니다.
+        - 적정값: 차량의 전진 방향과 맞춰 정합니다.
+        - 변경 영향: 전진·후진의 해석이 반대로 바뀔 수 있습니다. 힘이나 최고속도를 조절하는 항목은 아닙니다.
+    - Neutral gear enable — 중립 사용
+        - 현재값: Disable
+        - 의미: 기어 입력에서 중립 상태를 사용할지 정합니다.
+        - 적정 기준: 방향 스위치·VCU의 중립 운용 방식과 맞춥니다.
+        - Enable: 중립 상태를 사용하는 논리가 활성화됩니다.
+        - Disable: 중립 처리 방식이 달라집니다. 어떤 입력 조합이 중립인지 함께 확인해야 합니다.
+    - Gear mode — 기어 입력 방식
+        - 현재값: BD
+        - 의미: 기어 스위치 신호를 해석하는 방식입니다.
+        - 적정값: 실제 스위치 배선과 입력 진리표에 맞는 모드입니다.
+        - 변경 영향: 같은 배선 신호에서도 선택되는 기어가 달라질 수 있습니다.
+        - 미확인: BD의 정확한 약어와 입력 조합별 동작은 공개 자료만으로 확정하지 못했습니다.
+    - Default gear — 기본 기어
+        - 현재값: Middle gear
+        - 의미: 별도 기어 선택이 없을 때 사용하는 기본 단계입니다.
+        - 적정 기준: 기본 상태에서 허용하려는 성능과 기어 입력 동작을 기준으로 선택합니다.
+        - 변경 영향: 기본 적용되는 전류·회전수 비율 묶음이 바뀝니다.
+    - Parking gear mode — 주차 상태 처리
+        - 현재값: Disable
+        - 의미: 주차 입력·잠금·해제 조건을 선택하는 항목입니다.
+        - 적정 기준: 주차 스위치와 제동·운전 허가 로직에 맞춥니다.
+        - 변경 영향: 운전 허가·차단·해제 조건이 달라질 수 있습니다.
+        - 구분: P 모드를 선택했다고 기계식 주차브레이크가 자동으로 걸리는 것은 아닙니다.
+    - Sport gear phase current ratio(%) — 스포츠 상전류 비율
+        - 현재값: 100%
+        - 의미: 스포츠 단계의 최대 회전력 한도를 정합니다.
+        - 기준: 전역 상전류 한도 안에서 필요한 비율을 선택합니다.
+        - 높이면/낮추면: 스포츠 단계의 최대 토크가 증가/감소합니다.
+    - High gear phase current ratio(%) — 고단 상전류 비율
+        - 현재값: 100%
+        - 의미: 고단의 최대 회전력 한도입니다.
+        - 기준: 고단에서 허용할 가속·등판력에 맞춥니다.
+        - 높이면/낮추면: 고단 최대 토크가 증가/감소합니다.
+    - Middle gear phase current ratio(%) — 중단 상전류 비율
+        - 현재값: 100%
+        - 의미: 중단의 최대 회전력 한도입니다.
+        - 기준: 중단에서 허용할 가속·등판력에 맞춥니다.
+        - 높이면/낮추면: 중단 최대 토크가 증가/감소합니다.
+    - Low gear phase current ratio(%) — 저단 상전류 비율
+        - 현재값: 100%
+        - 의미: 저단의 최대 회전력 한도입니다.
+        - 기준: 저속 조작성과 필요한 출발·등판력을 함께 봅니다.
+        - 높이면/낮추면: 저단 최대 토크가 증가/감소합니다. 저속 운전이라고 반드시 토크까지 작아야 하는 것은 아닙니다.
+    - Reverse gear phase current ratio(%) — 후진 상전류 비율
+        - 현재값: 100%
+        - 의미: 후진에서 허용하는 최대 회전력입니다.
+        - 기준: 후진에 필요한 힘과 조작성에 맞춥니다.
+        - 높이면/낮추면: 후진 최대 토크가 증가/감소합니다.
+    - Sport gear rotor speed ratio(%) — 스포츠 회전수 비율
+        - 현재값: 100%
+        - 의미: 스포츠 단계의 회전수 상한 비율입니다.
+        - 기준: 스포츠 단계 목표 최고속도에 맞춥니다.
+        - 높이면/낮추면: 회전수·차속 상한이 증가/감소합니다.
+    - High gear rotor speed ratio(%) — 고단 회전수 비율
+        - 현재값: 100%
+        - 의미: 고단의 회전수 상한 비율입니다.
+        - 기준: 고단 목표 최고속도에 맞춥니다.
+        - 높이면/낮추면: 고단 최고속도 상한이 증가/감소합니다.
+    - Middle gear rotor speed ratio(%) — 중단 회전수 비율
+        - 현재값: 100%
+        - 의미: 중단의 회전수 상한 비율입니다.
+        - 기준: 중단 목표 최고속도에 맞춥니다.
+        - 높이면/낮추면: 중단 최고속도 상한이 증가/감소합니다.
+    - Low gear rotor speed ratio(%) — 저단 회전수 비율
+        - 현재값: 100%
+        - 의미: 저단의 회전수 상한 비율입니다.
+        - 기준: 저속 운전의 목표 최고속도에 맞춥니다.
+        - 높이면/낮추면: 저단 최고속도 상한이 증가/감소합니다.
+    - Reverse gear rotor speed ratio(%) — 후진 회전수 비율
+        - 현재값: 100%
+        - 의미: 후진 최고속도에 대응하는 회전수 상한입니다.
+        - 기준: 차량에서 허용하려는 후진 속도로 정합니다.
+        - 높이면/낮추면: 후진 최고속도 상한이 증가/감소합니다.
+    - Sport gear bus current ratio(%) — 스포츠 버스전류 비율
+        - 현재값: 100%
+        - 의미: 스포츠 단계에서 사용할 배터리측 전류 한도입니다.
+        - 기준: 배터리·전력계통 허용 범위 안에서 정합니다.
+        - 높이면/낮추면: 스포츠 단계의 사용 가능 전력과 배터리 부담이 증가/감소합니다.
+    - High gear bus current ratio(%) — 고단 버스전류 비율
+        - 현재값: 100%
+        - 의미: 고단의 배터리측 전류 한도입니다.
+        - 기준: 고단에서 필요한 출력에 맞춥니다.
+        - 높이면/낮추면: 고단 출력 한도가 증가/감소합니다.
+    - Middle gear bus current ration(%) — 중단 버스전류 비율
+        - 현재값: 100%
+        - 의미: 중단의 배터리측 전류 한도입니다. ration은 보내주신 표기를 유지했습니다.
+        - 기준: 중단에서 필요한 출력에 맞춥니다.
+        - 높이면/낮추면: 중단 출력 한도가 증가/감소합니다.
+    - Low gear bus current ratio(%) — 저단 버스전류 비율
+        - 현재값: 100%
+        - 의미: 저단의 배터리측 전류 한도입니다.
+        - 기준: 저속 운전 중 필요한 출력과 배터리 부담에 맞춥니다.
+        - 높이면/낮추면: 저단 출력 한도가 증가/감소합니다.
+    - Reverse gear bus current ratio(%) — 후진 버스전류 비율
+        - 현재값: 100%
+        - 의미: 후진의 배터리측 전류 한도입니다.
+        - 기준: 후진에 필요한 출력에 맞춥니다.
+        - 높이면/낮추면: 후진 출력 한도와 배터리 부담이 증가/감소합니다.
+    1. Flux weakening — 약자속
+    - 기본 개념
+        - 고속에서는 모터의 역기전력이 커져 배터리 전압만으로 전류를 밀어 넣기 어려워집니다.
+        - 약자속은 유효 자속을 줄여 더 높은 회전수에서 운전하도록 돕습니다. 추가 전류·발열이 발생하고 모터에 따라 자석의 비가역적인 자력 저하 한계도 고려해야 합니다. TI 약자속 제어 설명
+    - Flux weakening current(A) — 약자속 전류
+        - 현재값: 5 A
+        - 의미: 약자속에 사용하는 전류의 설정값입니다. 구동 토크를 만드는 전류와 역할이 다릅니다.
+        - 적정 기준: 목표속도를 달성하는 데 필요한 최소 수준을 모터 제조사의 약자속·감자 한도 안에서 정합니다. 수치 상한은 해당 모터 자료가 필요합니다.
+        - 높이면: 고속 운전 범위가 넓어질 수 있지만 발열이 증가하고 토크에 사용할 전류 여유가 줄 수 있습니다.
+        - 낮추면: 약자속 효과와 추가 발열이 줄어듭니다.
+        - 미확인: 정확히 목표값인지 상한값인지, 0의 처리 방식은 펌웨어 정의가 필요합니다.
+    - Flux weakening reference ratio(%) — 약자속 기준 비율
+        - 현재값: 95%
+        - 의미: 약자속 제어가 사용하는 기준 비율입니다.
+        - 적정 범위: 비율의 분모와 내부 계산식이 공개되지 않아 확정할 수 없습니다.
+        - 조건부 해석: 전압 이용률 기준이라면 높일수록 전압 한계에 더 가까이 간 뒤 약자속이 개입하고, 낮출수록 더 일찍 개입하는 방식일 수 있습니다.
+        - 구분: 95%를 모터 자속을 95% 줄인다는 뜻으로 해석하면 안 됩니다.
+    1. EBS — 전기 제동·회생제동
+    - EBS reference current(A) — 전기제동 기준전류
+        - 현재값: 0 A
+        - 의미: EBS 작동 시 제동 강도를 정하는 전류 기준입니다.
+        - 적정 기준: 원하는 감속과 실제 배터리 충전전류를 함께 보고 정합니다. 이 필드의 전류를 배터리 충전전류와 1:1로 놓을 근거는 없습니다.
+        - 해당 배터리의 연속 충전 한도는 39 A지만, 이를 곧바로 EBS 설정 39 A로 옮기는 것은 아닙니다.
+        - 높이면: 일반적으로 제동토크와 회생 가능 전력이 증가합니다.
+        - 낮추면: 전기제동이 약해집니다.
+        - 0 해석: 전류 기준은 0입니다. 브레이크 입력에 의한 구동 차단 같은 다른 동작까지 없어지는지는 별개입니다.
+    - EBS max voltage(V) — EBS 허용 최대전압
+        - 현재값: 58 V
+        - 의미: 전압이 높을 때 EBS를 제한·중단하기 위한 경계입니다.
+        - 적정 기준: 배터리 충전 상한보다 계측오차와 동작 지연에 대한 여유를 확보합니다. 해당 팩에서는 58.8 V보다 낮은 영역에서 결정해야 합니다.
+        - 높이면: 높은 충전상태에서도 EBS를 더 오래 허용할 수 있지만 과전압 여유가 줄어듭니다.
+        - 낮추면: 회생 가능 구간이 줄고 EBS가 더 일찍 제한될 수 있습니다.
+        - 미확인: 경계에서 전류를 점진적으로 줄이는지 즉시 끊는지는 확인되지 않았습니다.
+    - EBS min rotor speed(rpm) — EBS 최소 회전수
+        - 현재값: 20 rpm
+        - 의미: EBS를 허용하는 최저 모터 회전수 기준입니다.
+        - 적정 기준: 실제로 안정적인 제동이 가능한 최소속도로 정합니다. 최소한 기계식 브레이크가 담당해야 하는 저속·정지 영역과 연결해서 봐야 합니다.
+        - 높이면: 더 높은 속도에서 EBS가 끝나므로 저속 전기제동 구간이 줄어듭니다.
+        - 낮추면: 더 낮은 속도까지 EBS를 허용할 수 있습니다.
+        - 구분: 낮은 회전수까지 토크가 생기는 것과 배터리로 유의미한 전력이 회수되는 것은 다릅니다.
+    - EBS auto mode enable — EBS 자동 개입
+        - 현재값: Disable
+        - 의미: 별도의 브레이크 조작 외에 자동 조건으로 EBS를 개입시키는 기능입니다.
+        - 적정 기준: 운전자가 페달을 놓았을 때 어떤 감속을 기대하는지와 제어권에 맞춰 선택합니다.
+        - Enable: 펌웨어의 자동 조건에 따라 전기제동이 발생할 수 있습니다.
+        - Disable: 자동 모드를 사용하지 않습니다.
+        - 미확인: 자동 조건이 스로틀 해제인지, 회전수 조건인지, 둘의 조합인지는 해당 펌웨어 확인이 필요합니다.
+    1. Hold — 정차 유지
+    - Hold current(A) — 정차 유지 전류
+        - 현재값: 0 A
+        - 의미: 정차 유지 기능에서 모터에 사용하는 전류 기준입니다.
+        - 적정 기준: 경사·차량 중량·감속비에 필요한 유지토크와 모터의 정지 상태 열 한계를 함께 봅니다.
+        - 높이면: 버틸 수 있는 힘이 커질 수 있지만 정지 중에도 모터·컨트롤러가 가열됩니다.
+        - 낮추면: 유지력이 줄고 열 부담이 감소합니다.
+        - 구분: 전원이 꺼져도 유지되는 기계식 주차브레이크와는 다릅니다.
+    - ARB enable — 밀림 방지
+        - 현재값: Disable
+        - 의미: 경사로 등에서 의도하지 않은 차량 밀림을 억제하는 기능입니다.
+        - 적정 기준: 정차·출발 상태를 어떻게 판단할지, Hold와 어떻게 연동할지 확인해 선택합니다.
+        - Enable: 조건이 맞으면 모터가 밀림을 억제하도록 개입할 수 있습니다.
+        - Disable: 이 자동 기능을 사용하지 않습니다.
+        - 미확인: 개입 속도·유지시간·해제 조건은 공개 자료만으로 확정하기 어렵습니다.
+    1. Self-learning — 모터 자동 학습
+    - Self-learning reference D — 학습 D 기준
+        - 현재값: 2,000
+        - 의미: 모터 자동 학습에 사용하는 내부 기준값입니다.
+        - 적정값: 해당 모터·펌웨어의 제조사 지정값입니다.
+        - 높임·낮춤: 학습 과정의 자극이나 계산 조건이 달라질 수 있지만 단위·정의가 공개되지 않아 방향을 확정할 수 없습니다.
+        - 구분: 2,000을 2,000 A나 2,000 rpm으로 읽으면 안 됩니다.
+    - Self-learning reference Q — 학습 Q 기준
+        - 현재값: 50
+        - 의미: 자동 학습의 또 다른 내부 기준값입니다.
+        - 적정값: 해당 모터·펌웨어의 지정값입니다.
+        - 높임·낮춤: 정확한 동작·단위가 미확인입니다. 명칭만으로 일반 운전 q축 전류값이라고 단정하지 않습니다.
+        - 구분: 이 두 값은 평상시 가속 감도를 조절하는 항목이 아닙니다.
+    1. Meter — 속도 표시·계기 신호
+    - Meter type — 계기판 방식
+        - 현재값: Hall
+        - 의미: 연결된 계기판에 맞는 속도 신호 방식을 선택합니다.
+        - 적정값: 계기판 입력 규격과 일치해야 합니다.
+        - 변경 영향: 속도 신호의 출력·해석 방식이 바뀝니다.
+        - 구분: Motor 메뉴의 회전자 Hall 센서 선택과는 별개입니다.
+    - Rotor speed pulses per revolution(PPR) — 계기용 회전당 펄스 수
+        - 현재값: 12
+        - 의미: 계기판과 주고받는 회전 신호의 펄스 수 기준입니다.
+        - 적정값: 계기판이 기대하는 펄스 수와 일치해야 합니다.
+        - 높임·낮춤: 출력 펄스 수 설정이라면 높일수록 출력 빈도가 늘고, 입력 환산값이라면 같은 빈도에서 계산속도가 줄어듭니다.
+        - 미확인: 이 필드의 정확한 적용 지점이 확인되지 않아 표시속도 변화 방향을 단정하지 않습니다.
+    - Tire diameter(cm) — 타이어 지름
+        - 현재값: 47 cm
+        - 의미: 바퀴 회전을 이동거리·속도로 바꾸는 기준입니다.
+        - 적정값: 실제 하중을 받은 타이어의 굴림둘레를 측정해 둘레 ÷ π로 환산한 지름이 가장 정확합니다.
+        - 높이면: 같은 바퀴 회전수에서 표시속도·거리가 커집니다.
+        - 낮추면: 표시속도·거리가 작아집니다.
+        - 구분: 실제 차량 속도가 바뀌는 것은 아닙니다.
+    - Transmitting ratio(%) — 동력전달비
+        - 현재값: 460%
+        - 의미: 모터 회전수와 바퀴 회전수의 관계를 속도 계산에 반영합니다.
+        - 적정값: 실제 전체 감속비를 앱의 정의에 맞게 입력합니다.
+        - 조건부 해석: 100% = 1:1, 모터 회전수 ÷ 바퀴 회전수 정의라면 460%는 4.6:1입니다.
+        - 이 정의에서 높이면: 같은 모터 회전수의 표시속도가 낮아집니다.
+        - 낮추면: 표시속도가 높아집니다.
+        - 미확인: 백분율의 방향·환산 정의는 앱 동작과 대조해야 합니다.
+    - Speed unit — 속도 단위
+        - 현재값: km/h
+        - 의미: 속도를 표시하는 단위입니다.
+        - 적정값: 사용하는 단위에 맞춰 선택합니다.
+        - 변경 영향: km/h와 mph 등의 숫자 표기가 달라집니다. 실제 속도는 바뀌지 않습니다.
+    - Speed factor(%) — 속도 보정 비율
+        - 현재값: 100%
+        - 의미: 계산한 속도에 추가로 적용하는 보정값입니다.
+        - 적정 기준: 타이어·감속비가 맞으면 100%를 기준으로 하며 실측 오차만 보정합니다.
+        - 높이면: 일반적인 곱셈 보정 방식에서는 표시속도가 커집니다.
+        - 낮추면: 표시속도가 작아집니다.
+        - 구분: 잘못된 감속비를 임의의 보정값으로 가리는 용도보다는 실제 계기 오차를 맞추는 용도입니다.
+    1. Communication — 통신
+    - TCS mode
+        - 현재값: 0
+        - 의미: 공개 정의 미확인입니다.
+        - 적정값: 해당 펌웨어·시스템에서 지정한 모드입니다.
+        - 높임·낮춤: 기능 선택 코드이므로 크기 비교에 의미가 없습니다.
+        - 구분: 이름만 보고 Traction Control System이라고 확정할 수 없습니다.
+    - Bluetooth login password — 블루투스 로그인 비밀번호
+        - 현재값: 사용자 제공 비밀번호
+        - 의미: 앱의 장치 접근 인증에 사용하는 값입니다.
+        - 적정 기준: 앱이 허용하는 형식 안에서 관리 가능한 비밀번호를 사용합니다.
+        - 변경 영향: 이후 접속에 필요한 비밀번호가 달라집니다. 모터 성능과는 무관합니다.
+    - RS485 communication protocol — RS485 프로토콜
+        - 현재값: 0
+        - 의미: RS485에서 사용하는 메시지 규칙을 선택합니다.
+        - 적정값: 연결 장치가 사용하는 규칙과 일치해야 합니다.
+        - 변경 영향: 통신 호환성이 달라집니다. 숫자가 크다고 빠르거나 좋은 것은 아닙니다.
+        - 미확인: 코드 0을 곧바로 비활성화로 해석할 근거는 부족합니다.
+    - CAN communication protocol — CAN 프로토콜·속도
+        - 현재값: 2
+        - 의미: CAN 메시지 방식과 통신속도를 지정합니다.
+        - 확인된 값:
+            - 2: 해당 EZkontrol MCU–VCU 프로토콜, 250 kbit/s
+            - 102: 같은 프로토콜 계열, 500 kbit/s
+        - 적정값: 연결된 모든 CAN 장치의 비트레이트와 프로토콜을 맞춥니다.
+        - 변경 영향: 2→102는 비트 전송속도를 바꾸는 것이며 상태 메시지 발행주기가 자동으로 두 배 빨라진다는 뜻은 아닙니다. 제조사 CAN 설명서 (docs/hardware/
+        GoldenMotor_EZkontrol_CAN_Protocol_Instruction_V1.0.pdf)
+    - Part number — CAN 장치 식별값
+        - 현재값: 239
+        - 의미: CAN에서 컨트롤러를 구분하는 식별값입니다. 239는 16진수 0xEF입니다.
+        - 적정값: VCU가 사용하는 CAN ID 규칙과 일치하고 같은 버스의 다른 장치와 충돌하지 않아야 합니다.
+        - 높임·낮춤: 성능 변화는 없고 통신 식별값이 달라집니다. VCU 쪽도 대응하지 않으면 통신이 끊길 수 있습니다. 제조사 CAN 설명서 (docs/hardware/
+        GoldenMotor_EZkontrol_CAN_Protocol_Instruction_V1.0.pdf)
+    1. Line contactor — 접촉기·외부 출력 제어
+    - Contactor mode — 접촉기 출력 모드
+        - 현재값: LCON
+        - 의미: 관련 출력이 어떤 조건과 용도로 동작할지 선택합니다.
+        - 적정값: 실제 접촉기·릴레이 배선과 제어 용도에 맞춥니다.
+        - 변경 영향: 전원 접촉기 제어 또는 온도 조건에 따른 출력 등 동작 목적이 달라질 수 있습니다.
+        - 미확인: LCON/RCON 각각의 상세 시퀀스는 제조사 회로·펌웨어 정의가 필요합니다.
+    - Contactor coil voltage(V) — 접촉기 코일 전압
+        - 현재값: 48 V
+        - 의미: 접촉기를 붙이는 저전력 코일의 정격에 맞추는 값입니다. 주접점이 통과시키는 모터 전력과는 별개입니다.
+        - 적정값: 실제 코일 명판 전압과 맞춥니다.
+        - 높임·낮춤: PWM 코일 구동에 반영되는 방식이라면 공급 에너지·유지력이 달라질 수 있지만 내부 환산은 미확인입니다.
+        - 실제 코일 전압이 과하면: 코일 발열이 증가합니다.
+        - 부족하면: 접촉기가 붙지 않거나 떨릴 수 있습니다.
+    - Controller over temperature threshold(°C) — 컨트롤러 온도 연동 출력 기준
+        - 현재값: 80°C
+        - 의미: 이 메뉴의 온도 연동 모드에서 컨트롤러 온도를 기준으로 출력을 동작시키는 경계로 해석됩니다.
+        - 적정값: 출력에 연결한 팬·펌프·릴레이의 목적과 필요한 냉각 시작온도로 정합니다.
+        - 높이면/낮추면: 온도 초과로 켜지는 모드에서는 더 늦게/일찍 켜집니다.
+        - 구분: 이 값을 컨트롤러 자체의 내부 과열 차단온도라고 단정하면 안 됩니다. LCON 모드에서 적용되는지도 확인이 필요합니다.
+    - Motor over temperature threshold contactor on(°C) — 모터 온도에 따른 출력 켜짐 기준
+        - 현재값: 90°C
+        - 의미: 모터 온도가 기준을 넘을 때 관련 출력을 켜는 온도입니다.
+        - 적정값: 냉각 장치 등 실제 연결된 부하의 작동 목적에 맞춥니다.
+        - 높이면: 해당 온도 연동 모드에서 더 늦게 켜집니다.
+        - 낮추면: 더 일찍 켜집니다.
+        - 구분: Motor 메뉴의 출력제한·구동차단 온도와 다른 항목입니다.
+    1. Buzzer — 소리 알림
+    - Buzzer enable — 부저 사용
+        - 현재값: Enable
+        - 의미: 부저 알림을 사용할지 정합니다.
+        - 적정 기준: 장치 상태·고장을 소리로 알려야 하는지에 따라 선택합니다.
+        - Enable: 펌웨어가 지정한 조건에서 소리가 납니다.
+        - Disable: 부저 알림을 사용하지 않습니다. 통상 고장 보호 기능 자체를 끄는 설정은 아닙니다.
+    1. Factory settings — 장치 식별·공장 보정
+    - 공통 기준
+        - 이 메뉴에는 장치 식별값, 제어기의 기준값, 센서 보정계수, 측정 표시값이 섞여 있습니다.
+        - 보정계수는 정확한 측정값을 얻기 위한 값입니다. 출력을 높이는 일반 튜닝값이 아닙니다.
+        - 계수가 곱셈에 쓰이는지 나눗셈에 쓰이는지 공개되지 않았으므로 숫자를 높였을 때 표시전류·전압이 어느 방향으로 바뀌는지 단정하지 않습니다.
+    - SN — 일련번호
+        - 현재값: 2032024122
+        - 의미: 장치를 식별하는 번호입니다.
+        - 적정값: 제조 시 부여된 고유값입니다.
+        - 변경 영향: 식별·관리 정보가 달라집니다. 성능 향상과 관계없습니다.
+    - Nominal voltage(V) — 장치 정격전압
+        - 현재값: 48 V
+        - 의미: 컨트롤러의 전압 등급·내부 기준값입니다.
+        - 적정값: 실제 컨트롤러 모델의 제조사 설정입니다.
+        - 높임·낮춤: 내부 기준 계산에 영향을 줄 수 있지만 실제 부품의 내압은 바뀌지 않습니다.
+        - 구분: 배터리의 현재 측정전압이 아닙니다.
+    - Nominal phase current(A) — 공장 상전류 기준
+        - 현재값: 1,200 A
+        - 의미: 공장 설정에 사용되는 상전류 기준값입니다.
+        - 적정값: 해당 컨트롤러의 공장 보정값입니다.
+        - 높임·낮춤: 전류 환산·제한 기준에 영향을 줄 수 있지만 내부 사용 방식은 미확인입니다.
+        - 구분: 이 항목에 1,200 A가 표시돼도 1,200 A 연속 운전 가능을 뜻하지 않습니다. EZ-C481200 공개 정격 상전류는 480 A입니다. 제조사 매뉴얼
+    - Current factor — 전류 기준계수
+        - 현재값: 90
+        - 의미: 전류 관련 내부 환산·보정에 사용하는 계수입니다.
+        - 적정값: 제조사 교정값입니다.
+        - 높임·낮춤: 측정·제어 기준이 달라질 수 있지만 계산식이 없어 방향과 적정 범위를 제시할 수 없습니다.
+        - 구분: 90% 출력을 뜻한다고 해석하면 안 됩니다.
+    - Phase current U factor — U상 전류 보정계수
+        - 현재값: 26280
+        - 의미: U상 전류 센서 신호를 실제 전류로 환산하는 보정값입니다.
+        - 적정값: 기준 전류계로 교정한 장치별 값입니다.
+        - 높임·낮춤: 표시전류와 내부 피드백이 달라질 수 있습니다. 부정확해지면 실제 전류와 제어기가 인식하는 전류가 어긋납니다.
+    - Phase current V factor — V상 전류 보정계수
+        - 현재값: 25660
+        - 의미: V상 전류 측정의 보정값입니다.
+        - 적정값: V상 센서의 개별 교정값입니다. U상과 숫자가 같아야 하는 것은 아닙니다.
+        - 높임·낮춤: V상 전류 해석이 달라집니다. 계산식이 없어 증가·감소 방향은 미확인입니다.
+    - Bus current factor — 버스전류 보정계수
+        - 현재값: 17763
+        - 의미: 배터리측 전류 측정의 환산계수입니다.
+        - 적정값: 기준 전류계와 일치하도록 교정한 값입니다.
+        - 높임·낮춤: 버스전류 표시와 이를 이용하는 제어·보호가 달라질 수 있습니다.
+        - 영향: 실제보다 작게 인식하면 허용전류를 넘길 수 있고, 크게 인식하면 출력이 일찍 제한될 수 있습니다.
+    - Bus voltage factor — 버스전압 보정계수
+        - 현재값: 3155
+        - 의미: 배터리측 전압 측정의 환산계수입니다.
+        - 적정값: 기준 전압계와 일치하도록 교정한 값입니다.
+        - 높임·낮춤: 표시전압과 과전압·저전압·EBS 판단에 영향을 줄 수 있습니다.
+        - 구분: 표시전압만 보기 좋게 조절하는 값이 아닙니다.
+    - Phase current U(A) — U상 전류 표시·교정 항목
+        - 현재값: 0 A
+        - 의미: U상 전류의 측정 또는 공장 교정에 사용하는 항목입니다.
+        - 적정 기준: 측정 표시라면 실제 전류와 일치해야 하고, 교정 입력이라면 기준 계측값을 사용합니다.
+        - 높임·낮춤: 측정값이면 직접 조절하는 설정이 아닙니다. 교정 입력이면 보정 결과가 바뀔 수 있습니다.
+        - 미확인: 이 화면에서 실시간 측정값인지 교정 입력값인지는 확인되지 않았습니다.
+    - Phase current V(A) — V상 전류 표시·교정 항목
+        - 현재값: 0 A
+        - 의미: V상 전류의 측정·교정 관련 항목입니다.
+        - 적정 기준: 실제 계측값과 일치해야 합니다.
+        - 높임·낮춤: 설정 가능한 교정 입력인지 여부에 따라 달라집니다. 전류 명령값으로 해석하면 안 됩니다.
+    - Bus current(A) — 버스전류 표시·교정 항목
+        - 현재값: 0 A
+        - 의미: 배터리측 전류의 측정·교정 관련 항목입니다.
+        - 적정 기준: 실제 배터리 전류와 일치해야 합니다.
+        - 높임·낮춤: 읽기 전용이면 설정 대상이 아니며, 교정 입력이라면 센서 환산 결과에 영향을 줄 수 있습니다.
+        - 구분: Max bus current와 다른 항목입니다.
+    - Bus voltage(V) — 버스전압 표시·교정 항목
+        - 현재값: 0 V
+        - 의미: 배터리측 전압의 측정·교정 관련 항목입니다.
+        - 적정 기준: 실제 단자전압과 일치하는 계측·교정값입니다.
+        - 높임·낮춤: 읽기 전용 표시인지 교정 입력인지에 따라 달라집니다.
+        - 구분: 이 화면의 0 V만으로 실제 배터리 전압이 0 V라고 판단할 수 없습니다. Monitor의 실시간 전압과 구분해야 합니다.
+
+- 20260908 값
+
+    **Controller**
+    Max phase current(A) : 800
+    Max rotor speed(rpm) : 4500
+    Max bus current(A) : 400
+    Peak current duration(s) : 20
+    Control mode : Torque control
+    PWM mode : CPWM
+    Acceleration : 100
+    Deceleration : 100
+    Phase current Kp : 4
+    Phase current Ki : 512
+    Rotor speed Kp : 2
+    Rotor speed Ki : 16
+    Bus current Kp : 4
+    Bus current Ki : 256
+    Flux weakening Kp : 4
+    Flux weakening Ki : 2
+
+    **Battery**
+    Over voltage shutdown threshold(V) : 75
+    Under voltage limit threshold(V) : 40
+    Under voltage shutdown threshold(V) : 36
+
+    **Motor**
+    Motor type : BLDCM(Square-Wave)
+    Nominal rotor speed(rpm) : 0
+    Pole pairs : 4
+    BEMF constant : 970
+    Lq constant : 0
+    Ld constant : 0
+    Main SPF sensor type : Hall
+    Main SPF sensor placement : 120 (°)
+    Main SPF sensor phase shift(°) : -120 (°)
+    Main SPF sensor pulses per revolution(PPR) : 6
+    Main SPF sensor revert AB signal : Disable
+    Main SPF sensor input capture filter : 8
+    Aux SPF sensor type : None
+    Aux SPF sensor placement : 120 (°)
+    Aux SPF sensor phase shift(°) : -60 (°)
+    Aux SPF sensor pulses per revolution(PPR) : 6
+    Aux SPF sensor revert AB signal : Disable
+    Aux SPF sensor input capture filter : 8
+    SPF sensor invert PWM signal : Disable
+    Motor temperature sensor type : KTY84-130/150
+    Motor over temperature limit threshold(°C) : 130
+    Motor over temperature shutdown threshold(°C) : 145
+
+    **Throttle**
+    Throttle type : General
+    Throttle mode : Linear
+    Throttle not reset check enable : Enable
+    Main throttle min fault threshold(mV) : 0
+    Main throttle min reference threshold(mV) : 800
+    Main throttle max reference threshold(mV) : 3900
+    Main throttle max fault threshold(mV) : 5000
+    Aux throttle min fault threshold(mV) : 0
+    Aux throttle min reference threshold(mV) : 800
+    Aux throttle max reference threshold(mV) : 3900
+    Aux throttle max fault threshold(mV) : 5000
+
+    **Gear**
+    Direction positive or negative : Positive
+    Neutral gear enable : Disable
+    Gear mode : BD
+    Default gear : Middle gear
+    Parking gear mode : Disable
+    Sport gear phase current ratio(%) : 100
+    High gear phase current ratio(%) : 100
+    Middle gear phase current ratio(%) : 100
+    Low gear phase current ratio(%) : 100
+    Reverse gear phase current ratio(%) : 100
+    Sport gear rotor speed ratio(%) : 100
+    High gear rotor speed ratio(%) : 100
+    Middle gear rotor speed ratio(%) : 100
+    Low gear rotor speed ratio(%) : 100
+    Reverse gear rotor speed ratio(%) : 100
+    Sport gear bus current ratio(%) : 100
+    High gear bus current ratio(%) : 100
+    Middle gear bus current ration(%) : 100
+    Low gear bus current ratio(%) : 100
+    Reverse gear bus current ratio(%) : 100
+
+    **Flux weakening**
+    Flux weakening current(A) : 5
+    Flux weakening reference ratio(%) : 95
+
+    **EBS**
+    EBS reference current(A) : 0
+    EBS max voltage(V) : 58
+    EBS min rotor speed(rpm) : 20
+    EBS auto mode enable : Disable
+
+    **Hold**
+    Hold current(A) : 0
+    ARB enable : Disable
+
+    **Self-learning**
+    Self-learning reference D : 2000
+    Self-learning reference Q : 50
+
+    **Meter**
+    Meter type : Hall
+    Rotor speed pulses per revolution(PPR) : 12
+    Tire diameter(cm) : 47
+    Transmitting ratio(%) : 460
+    Speed unit : km/h
+    Speed factor(%) : 100
+
+    **Communication**
+    TCS mode : 0
+    Bluetooth login password : [REDACTED]
+    RS485 communication protocol : 0
+    CAN communication protocol : 2
+    Part number : 239
+
+    **Line contactor**
+    Contactor mode : LCON
+    Contactor coil voltage(V) : 48
+    Controller over temperature threshold(°C) : 80
+    Motor over temperature threshold contactor on(°C) : 90
+
+    **Buzzer**
+    Buzzer enable : Enable
+
+    **Factory settings**
+    SN : 2032024122
+    Nominal voltage(V) : 48
+    Nominal phase current(A) : 1200
+    Current factor : 90
+    Phase current U factor : 26280
+    Phase current V factor : 25660
+    Bus current factor : 17763
+    Bus voltage factor : 3155
+    Phase current U(A) : 0
+    Phase current V(A) : 0
+    Bus current(A) : 0
+    Bus voltage(V) : 0
+
+
+**Controller**
+Max phase current(A) : 800
+Max rotor speed(rpm) : 4500
+Max bus current(A) : 400
+Peak current duration(s) : 20
+Control mode : Torque control
+PWM mode : CPWM
+Acceleration : 100
+Deceleration : 100
+Phase current Kp : 4
+Phase current Ki : 512
+Rotor speed Kp : 2
+Rotor speed Ki : 16
+Bus current Kp : 4
+Bus current Ki : 256
+Flux weakening Kp : 4
+Flux weakening Ki : 2
+
+**Battery**
+Over voltage shutdown threshold(V) : 75
+Under voltage limit threshold(V) : 40
+Under voltage shutdown threshold(V) : 36
+
+**Motor**
+Motor type : BLDCM(Square-Wave)
+Nominal rotor speed(rpm) : 0
+Pole pairs : 4
+BEMF constant : 970
+Lq constant : 0
+Ld constant : 0
+Main SPF sensor type : Hall
+Main SPF sensor placement : 120 (°)
+Main SPF sensor phase shift(°) : -120 (°)
+Main SPF sensor pulses per revolution(PPR) : 6
+Main SPF sensor revert AB signal : Disable
+Main SPF sensor input capture filter : 8
+Aux SPF sensor type : None
+Aux SPF sensor placement : 120 (°)
+Aux SPF sensor phase shift(°) : -60 (°)
+Aux SPF sensor pulses per revolution(PPR) : 6
+Aux SPF sensor revert AB signal : Disable
+Aux SPF sensor input capture filter : 8
+SPF sensor invert PWM signal : Disable
+Motor temperature sensor type : KTY84-130/150
+Motor over temperature limit threshold(°C) : 130
+Motor over temperature shutdown threshold(°C) : 145
+
+**Throttle**
+Throttle type : General
+Throttle mode : Linear
+Throttle not reset check enable : Enable
+Main throttle min fault threshold(mV) : 0
+Main throttle min reference threshold(mV) : 800
+Main throttle max reference threshold(mV) : 3900
+Main throttle max fault threshold(mV) : 5000
+Aux throttle min fault threshold(mV) : 0
+Aux throttle min reference threshold(mV) : 800
+Aux throttle max reference threshold(mV) : 3900
+Aux throttle max fault threshold(mV) : 5000
+
+**Gear**
+Direction positive or negative : Positive
+Neutral gear enable : Disable
+Gear mode : BD
+Default gear : Middle gear
+Parking gear mode : Disable
+Sport gear phase current ratio(%) : 100
+High gear phase current ratio(%) : 100
+Middle gear phase current ratio(%) : 100
+Low gear phase current ratio(%) : 100
+Reverse gear phase current ratio(%) : 100
+Sport gear rotor speed ratio(%) : 100
+High gear rotor speed ratio(%) : 100
+Middle gear rotor speed ratio(%) : 100
+Low gear rotor speed ratio(%) : 100
+Reverse gear rotor speed ratio(%) : 100
+Sport gear bus current ratio(%) : 100
+High gear bus current ratio(%) : 100
+Middle gear bus current ration(%) : 100
+Low gear bus current ratio(%) : 100
+Reverse gear bus current ratio(%) : 100
+
+**Flux weakening**
+Flux weakening current(A) : 5
+Flux weakening reference ratio(%) : 95
+
+**EBS**
+EBS reference current(A) : 0
+EBS max voltage(V) : 58
+EBS min rotor speed(rpm) : 20
+EBS auto mode enable : Disable
+
+**Hold**
+Hold current(A) : 0
+ARB enable : Disable
+
+**Self-learning**
+Self-learning reference D : 2000
+Self-learning reference Q : 50
+
+**Meter**
+Meter type : Hall
+Rotor speed pulses per revolution(PPR) : 12
+Tire diameter(cm) : 47
+Transmitting ratio(%) : 460
+Speed unit : km/h
+Speed factor(%) : 100
+
+**Communication**
+TCS mode : 0
+Bluetooth login password : [REDACTED]
+RS485 communication protocol : 0
+CAN communication protocol : 2
+Part number : 239
+
+**Line contactor**
+Contactor mode : LCON
+Contactor coil voltage(V) : 48
+Controller over temperature threshold(°C) : 80
+Motor over temperature threshold contactor on(°C) : 90
+
+**Buzzer**
+Buzzer enable : Enable
+
+**Factory settings**
+SN : 2032024122
+Nominal voltage(V) : 4
+Nominal phase current(A) : 1200
+Current factor : 90
+Phase current U factor : 26280
+Phase current V factor : 25660
+Bus current factor : 17763
+Bus voltage factor : 3155
+Phase current U(A) : 0
+Phase current V(A) : 0
+Bus current(A) : 0
+Bus voltage(V) : 0

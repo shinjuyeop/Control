@@ -67,8 +67,8 @@ Foxglove(8765), Vehicle(8766), HIL(8767)은 서로 다른 기본 포트를 사�
 자동으로 띄우지 않는다. 구동 launch는 `control_launch/vehicle.launch.py`, 관측만
 시작하는 launch는 **`vehicle_console/vehicle.launch.py`**다.
 
-관측용 Vehicle Console을 재시작해도 조향 노드나 torque fault latch는 초기화되지
-않는다. 조향 복구는 [구동 launch 문서](../control_launch/README.md#조향-잠금과-재시작)를 따른다.
+관측용 Vehicle Console 재시작은 조향 상태에 영향을 주지 않는다. 조향 복구는
+[구동 launch 문서](../control_launch/README.md#조향-정지와-자동-복구)를 따른다.
 HIL의 Scenarios는 벤치 시험 기능이며 실차 입력 응답·경로 추종 TUI는
 [vehicle_test_scenarios](../vehicle_test_scenarios/README.md)에서 실행한다.
 

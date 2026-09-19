@@ -76,7 +76,6 @@ SteeringActuatorNode::SteeringActuatorNode(
   torque.settle_rate_rad_s = declare_parameter("torque_settle_rate_deg_s", 0.5) * kDegToRad;
   torque.rate_filter_hz = declare_parameter("torque_rate_filter_hz", 10.0);
   torque.soft_limit_margin_rad = declare_parameter("torque_soft_limit_margin_deg", 1.0) * kDegToRad;
-  torque.hard_rate_limit_rad_s = declare_parameter("torque_hard_rate_limit_deg_s", 120.0) * kDegToRad;
   torque.feedback_timeout_sec =
     integer_parameter("torque_feedback_timeout_ms", 100, 1, 200, startup_only) / 1000.0;
   const int torque_period_ms = integer_parameter("torque_control_period_ms", 20, 10, 50, startup_only);
@@ -229,19 +228,17 @@ void SteeringActuatorNode::stopMotor()
   }
 }
 
-void SteeringActuatorNode::torqueFault(TorqueSafetyFault fault)
+void SteeringActuatorNode::torqueSafetyStop(TorqueSafetyFault fault)
 {
-  if (torque_fault_latched_ == TorqueSafetyFault::NONE) {
-    RCLCPP_ERROR(get_logger(),
-      "Torque safety stop: %s. After resolving the cause, restart steering_actuator_node "
-      "(stop and relaunch vehicle.launch.py), or set steering_enabled=false then true. "
-      "Fresh status and a new command are required to resume.",
+  if (torque_safety_condition_ != fault) {
+    RCLCPP_WARN(get_logger(),
+      "Torque feedback stop: %s. Output resumes after healthy feedback and a new command.",
       torqueSafetyFaultName(fault));
   }
-  torque_fault_latched_ = fault;
-  requestImmediateDisable(SteeringDisableReason::MOTOR_FAULT);
-  disable_reason_ = SteeringDisableReason::MOTOR_FAULT;
-  state_ = SteeringState::FAULT;
+  torque_safety_condition_ = fault;
+  requestImmediateDisable(SteeringDisableReason::FEEDBACK_INVALID);
+  disable_reason_ = SteeringDisableReason::FEEDBACK_INVALID;
+  state_ = SteeringState::FEEDBACK_LOST;
 }
 
 rcl_interfaces::msg::SetParametersResult SteeringActuatorNode::onParameters(
@@ -274,7 +271,6 @@ rcl_interfaces::msg::SetParametersResult SteeringActuatorNode::onParameters(
       else if (name == "torque_settle_rate_deg_s") candidate.settle_rate_rad_s = p.as_double() * kDegToRad;
       else if (name == "torque_rate_filter_hz") candidate.rate_filter_hz = p.as_double();
       else if (name == "torque_soft_limit_margin_deg") candidate.soft_limit_margin_rad = p.as_double() * kDegToRad;
-      else if (name == "torque_hard_rate_limit_deg_s") candidate.hard_rate_limit_rad_s = p.as_double() * kDegToRad;
       else throw std::invalid_argument(name + " is startup-only");
       tuning_changed = true;
     }
@@ -289,7 +285,7 @@ rcl_interfaces::msg::SetParametersResult SteeringActuatorNode::onParameters(
     stopMotor();
     if (tuning_changed) torque_controller_.configure(candidate);
     steering_enabled_ = enabled;
-    if (!enabled) torque_fault_latched_ = TorqueSafetyFault::NONE;
+    if (!enabled) torque_safety_condition_ = TorqueSafetyFault::NONE;
     enterWaitCommand();
   }
   result.successful = true;
@@ -345,6 +341,9 @@ void SteeringActuatorNode::applyMode(uint8_t mode_value)
   if (mode_value == static_cast<uint8_t>(DriveMode::MANUAL)) drive_mode_ = DriveMode::MANUAL;
   else if (mode_value == static_cast<uint8_t>(DriveMode::AUTO)) drive_mode_ = DriveMode::AUTO;
   else drive_mode_ = DriveMode::UNKNOWN;
+  if (torqueMode() && drive_mode_ != DriveMode::AUTO) {
+    torque_safety_condition_ = TorqueSafetyFault::NONE;
+  }
   if (drive_mode_ != DriveMode::AUTO &&
     (!was_received || previous_mode != drive_mode_))
   {
@@ -555,19 +554,26 @@ void SteeringActuatorNode::controlTick()
   const bool feedback_valid = !feedback_timeout_ && !can_timeout_;
   // Keep MANUAL motion out of AUTO rate history. Calibration limits shape the
   // target and outward torque; crossing them does not latch a fault.
-  if (torqueMode() && feedback_valid && drive_mode_ == DriveMode::AUTO) {
-    const auto fault = torque_controller_.observeFeedback(
-      actual_wheel_angle_deg_ * kDegToRad, seconds(motor.last_position_feedback));
-    if (fault != TorqueSafetyFault::NONE && steering_enabled_) torqueFault(fault);
+  if (torqueMode() && drive_mode_ == DriveMode::AUTO) {
+    if (feedback_valid) {
+      const auto fault = torque_controller_.observeFeedback(
+        actual_wheel_angle_deg_ * kDegToRad, seconds(motor.last_position_feedback));
+      torque_safety_condition_ = fault;
+      if (fault != TorqueSafetyFault::NONE && steering_enabled_) torqueSafetyStop(fault);
+    } else if (!can_timeout_) {
+      torque_safety_condition_ = !motor.position_valid || !std::isfinite(actual_wheel_angle_deg_) ?
+        TorqueSafetyFault::INVALID_INPUT : TorqueSafetyFault::FEEDBACK_TIMEOUT;
+    } else {
+      torque_safety_condition_ = TorqueSafetyFault::NONE;
+    }
   }
   // Even freshly queued feedback must not conceal an outer-loop scheduling stall.
   if (torqueMode() && state_ == SteeringState::ACTIVE &&
     dt > torque_controller_.config().feedback_timeout_sec)
   {
-    torqueFault(TorqueSafetyFault::FEEDBACK_TIMEOUT);
+    torqueSafetyStop(TorqueSafetyFault::FEEDBACK_TIMEOUT);
   }
-  const bool motor_fault = (motor.fault_bits & static_cast<uint16_t>(~uint16_t{1})) != 0 ||
-    (torqueMode() && torque_fault_latched_ != TorqueSafetyFault::NONE);
+  const bool motor_fault = (motor.fault_bits & static_cast<uint16_t>(~uint16_t{1})) != 0;
   steer_command_timeout_ = state_ == SteeringState::ACTIVE &&
     (!std::isfinite(steer_age_ms) || steer_age_ms > steer_command_timeout_ms_ ||
     (torqueMode() && age_now > torque_command_deadline_));
@@ -601,7 +607,8 @@ void SteeringActuatorNode::controlTick()
     if (state_ != SteeringState::WAIT_CMD && state_ != SteeringState::ACTIVE) {
       disable_reason_ = SteeringDisableReason::NONE;
       state_ = SteeringState::WAIT_CMD;
-    } else if (state_ == SteeringState::WAIT_CMD) {
+    }
+    if (state_ == SteeringState::WAIT_CMD) {
       disable_reason_ = SteeringDisableReason::NONE;
       entered_active_this_tick = tryEnterActiveFromPendingCommand(now);
     } else if (pending_command_valid_) {
@@ -618,7 +625,7 @@ void SteeringActuatorNode::controlTick()
       torque_output_ = torque_controller_.update(target_wheel_angle_deg_ * kDegToRad,
         0.0, seconds(age_now));  // No target derivative kick on a step.
       if (torque_output_.fault != TorqueSafetyFault::NONE) {
-        torqueFault(torque_output_.fault);
+        torqueSafetyStop(torque_output_.fault);
       } else if (enabled_commanded_) {
         const auto raw = keyaTorqueCommand(torque_output_.command_raw, torque_direction_sign_);
         if (can_driver_->sendTorqueCommand(raw)) {
@@ -771,7 +778,7 @@ void SteeringActuatorNode::publishTorqueState()
   publish_bool(torque_peak_limited_pub_, torque_output_.peak_limited);
   publish_bool(torque_rate_ready_pub_, torque_output_.rate_ready);
   std_msgs::msg::String safety;
-  safety.data = torqueSafetyFaultName(torque_fault_latched_);
+  safety.data = torqueSafetyFaultName(torque_safety_condition_);
   torque_safety_pub_->publish(safety);
 }
 

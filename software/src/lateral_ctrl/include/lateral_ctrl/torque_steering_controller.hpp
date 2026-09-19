@@ -18,7 +18,6 @@ struct TorqueSteeringConfig
   double settle_rate_rad_s{0.5 * 3.14159265358979323846 / 180.0};
   double rate_filter_hz{10.0};
   double soft_limit_margin_rad{1.0 * 3.14159265358979323846 / 180.0};
-  double hard_rate_limit_rad_s{120.0 * 3.14159265358979323846 / 180.0};
   double feedback_timeout_sec{0.1};
   double control_period_sec{0.02};
   // Derived from the measured calibration range, never extrapolated mechanical stops.
@@ -28,7 +27,7 @@ struct TorqueSteeringConfig
 };
 
 // ANGLE_LIMIT is retained for enum compatibility but is no longer raised.
-enum class TorqueSafetyFault { NONE, INVALID_INPUT, FEEDBACK_TIMEOUT, ANGLE_LIMIT, RATE_LIMIT };
+enum class TorqueSafetyFault { NONE, INVALID_INPUT, FEEDBACK_TIMEOUT, ANGLE_LIMIT };
 const char * torqueSafetyFaultName(TorqueSafetyFault fault);
 
 struct TorqueSteeringOutput

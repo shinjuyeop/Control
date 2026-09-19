@@ -10,7 +10,7 @@ void TorqueSteeringConfig::validate() const
 {
   for (double value : {full_scale_error_rad, peak_duration_sec, peak_recovery_sec,
       settle_angle_rad, settle_rate_rad_s, rate_filter_hz, soft_limit_margin_rad,
-      hard_rate_limit_rad_s, feedback_timeout_sec, control_period_sec})
+      feedback_timeout_sec, control_period_sec})
   {
     if (!std::isfinite(value) || value <= 0.0) {
       throw std::invalid_argument("torque scales, periods and safety limits must be finite and positive");
@@ -22,7 +22,7 @@ void TorqueSteeringConfig::validate() const
     !std::isfinite(min_angle_rad) || !std::isfinite(max_angle_rad) ||
     min_angle_rad >= 0.0 || max_angle_rad <= 0.0 ||
     soft_limit_margin_rad >= std::min(-min_angle_rad, max_angle_rad) ||
-    settle_angle_rad >= full_scale_error_rad || settle_rate_rad_s >= hard_rate_limit_rad_s ||
+    settle_angle_rad >= full_scale_error_rad ||
     control_period_sec < 0.01 || control_period_sec > 0.05 ||
     feedback_timeout_sec < 2.0 * control_period_sec || feedback_timeout_sec > 0.2 ||
     peak_duration_sec < control_period_sec || peak_duration_sec > 5.0 ||
@@ -39,7 +39,6 @@ const char * torqueSafetyFaultName(TorqueSafetyFault fault)
     case TorqueSafetyFault::INVALID_INPUT: return "invalid_input";
     case TorqueSafetyFault::FEEDBACK_TIMEOUT: return "feedback_timeout";
     case TorqueSafetyFault::ANGLE_LIMIT: return "angle_limit";
-    case TorqueSafetyFault::RATE_LIMIT: return "rate_limit";
   }
   return "invalid_input";
 }
@@ -78,13 +77,8 @@ TorqueSafetyFault TorqueSteeringController::observeFeedback(double angle, double
       const double alpha = -std::expm1(-2.0 * 3.14159265358979323846 * config_.rate_filter_hz * dt);
       rate_rad_s_ += alpha * (unfiltered_rate_rad_s_ - rate_rad_s_);
       rate_ready_ = true;
-      // The hard ceiling sees the unfiltered rate, so a low LPF cannot hide overspeed.
       if (!std::isfinite(unfiltered_rate_rad_s_) || !std::isfinite(rate_rad_s_)) {
         feedback_fault_ = TorqueSafetyFault::INVALID_INPUT;
-      } else if (std::abs(unfiltered_rate_rad_s_) > config_.hard_rate_limit_rad_s ||
-        std::abs(rate_rad_s_) > config_.hard_rate_limit_rad_s)
-      {
-        feedback_fault_ = TorqueSafetyFault::RATE_LIMIT;
       }
     }
   }

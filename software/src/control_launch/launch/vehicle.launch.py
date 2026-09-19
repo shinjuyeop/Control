@@ -18,10 +18,9 @@ hil_command_generator는 Planning 대역 시험 노드이므로 실차 launch에
 launch가 뜨면 바로 구동 가능한 상태가 되므로, 전원 인가 전에 KEYA 배선과
 E-stop을 먼저 확인한다.
 
-Torque 조향의 120 deg/s 초과 등으로 발생한 Host FAULT 잠금은 조향 노드
-메모리에만 보관한다. 기존 launch를 완전히 종료하고 재실행하면 초기화되며,
-유효한 상태·피드백과 새 /vehicle/command를 받은 뒤에만 다시 Enable한다.
-과속이나 KEYA fault가 계속되면 재실행 뒤에도 다시 정지한다.
+Torque 조향의 invalid/stale feedback과 control stall은 `FEEDBACK_LOST`로 정지한다.
+정상 feedback과 차단 뒤 받은 새 `/vehicle/command`가 확인되면 노드 재시작 없이
+자동 복구한다. `FAULT`는 KEYA bit0(Disable)을 제외한 실제 fault bit에만 사용한다.
 
 can0는 launch 전에 올라와 있어야 한다. 조향 노드는 SocketCAN을 시작 시 한
 번만 열고 실패해도 재시도하지 않으므로, can0가 늦으면 조향만 조용히 CAN이

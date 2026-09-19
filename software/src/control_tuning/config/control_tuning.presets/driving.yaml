@@ -2,10 +2,10 @@
 schema_version: 1
 condition: driving
 label: 주행
-saved_at: '2026-09-18T12:19:05.291202+00:00'
+saved_at: '2026-09-19T06:29:06.770309+00:00'
 current_reference_a: 20.0
 values:
-  p_gain_a_per_deg: 4.0
+  p_gain_a_per_deg: 2.4
   d_gain_a_per_deg_s: 0.08
   settle_error_deg: 0.1
   settle_rate_deg_s: 0.5
@@ -15,7 +15,6 @@ values:
   peak_budget_ms: 1000
   peak_recovery_hold_ms: 5000
   angle_limit_margin_deg: 1.0
-  overspeed_fault_deg_s: 120.0
   actuation_mode: torque
   minimum_vehicle_speed_kph: 0.5
   steering_command_timeout_ms: 200

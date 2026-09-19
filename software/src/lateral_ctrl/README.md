@@ -25,7 +25,7 @@ P·D는 각각 `A/deg`, `A/(deg/s)`의 명령 환산 단위로 표시한다. 기
 Torque는 LEFT-positive road-wheel target을 직접 받고, `P=peak/error_full_scale*error`,
 `D=-Kd*measured_rate`를 계산한다. Ki=0, 기본 full-scale-error=0.5°로 작은 오차에도
 높은 torque를 사용하며, 실제각 차분의 LPF로 damping한다. raw peak/sustained와 시간
-예산, calibrated 위치 한계·바깥 방향 차단, 실제 과속·freshness 보호는 별도로 적용한다.
+예산, calibrated 위치 한계·바깥 방향 차단, feedback freshness 보호는 별도로 적용한다.
 정수 A인 current telemetry는 진단용이다. saturation은 fault가 아니다.
 
 실차에서 바로 사용할 **전체 parameter/default 표, 부호 검증, 최초 raw200 bring-up,
@@ -141,14 +141,14 @@ ABI에 넣지 않은 최종 브레이크 명령입니다.
 | 5 | `BRAKE` | Disable | `/vehicle/command.brake_engage=true` |
 | 6 | `CAN_LOST` | Disable | KEYA CAN 통신 timeout |
 | 7 | `FEEDBACK_LOST` | Disable | position feedback timeout |
-| 8 | `FAULT` | Disable | KEYA fault 또는 Host torque safety fault |
+| 8 | `FAULT` | Disable | bit0(Disable)을 제외한 KEYA 실제 fault |
 
 모터가 Enable될 수 있는 상태는 `ACTIVE`뿐입니다. 안전 입력, MANUAL 전환, CAN
 손실, 모터 fault 또는 명령 timeout이 발생하면 노드는 과거 target과 pending
 command를 폐기하고 모터를 Disable합니다. 조건이 복구되어도 과거 목표를 되살리지
 않고, 차단 사건 이후 받은 fresh pending `/vehicle/command`가 필요합니다.
 차단 중 받은 명령도 복구 시점에 fresh하면 사용될 수 있습니다. Host torque
-safety latch는 [별도 복구 절차](TORQUE_CONTROL.md#안전-동작)를 따릅니다.
+feedback stop은 정상 feedback과 새 command로 자동 복구됩니다.
 
 정지 상태의 조향 부하를 줄이기 위해 `/drive/status`의 `part1_valid=true`이고
 유한한 `abs(speed_mps) >= minimum_steering_speed_kph / 3.6`일 때 조향을 허용합니다.
@@ -163,7 +163,7 @@ safety latch는 [별도 복구 절차](TORQUE_CONTROL.md#안전-동작)를 따�
 
 기본 control tick은 20 ms, 즉 50 Hz입니다. `position` 모드의 `ACTIVE`에서는
 rate limit을 적용한 position 명령을 매 tick 보냅니다. 현재 YAML의 `torque` 모드는
-direct target을 PD로 제어하고 실제 조향속도 120 deg/s 초과를 fault로 latch합니다. `/vehicle/command`의 기본 timeout은 200 ms이므로
+direct target을 PD로 제어하며 실제 조향속도는 D항과 settle 판정에 사용합니다. `/vehicle/command`의 기본 timeout은 200 ms이므로
 실제 발행자는 이보다 충분히 빠르게 명령을 계속 보내야 합니다.
 header stamp가 0이거나 timeout보다 오래됐거나 `steering_target_rad`가 nonfinite인
 명령도 즉시 모터를 Disable하고 과거 target을 폐기합니다. 공개 상태에는 기존

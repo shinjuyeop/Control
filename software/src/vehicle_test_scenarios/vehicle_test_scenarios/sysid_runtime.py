@@ -23,6 +23,7 @@ from tf2_msgs.msg import TFMessage
 
 from .scenario_runner import ScenarioSetpoint
 from .steering_control import SteeringControl
+from .steering_fault_advice import steering_fault_advice
 from .sysid_profiles import (
     COUNTDOWN_SEC, TAIL_SEC, ROUTE_FINISH_DISTANCE_M, ROUTE_STOP_SPEED_MPS,
     RunSettings, baseline, default_run_settings, input_setpoint,
@@ -553,6 +554,9 @@ class SysidNode(Node):
                 'rpm': drive[1].motor_rpm if drive else None,
                 'current': drive[1].phase_current_a if drive else None,
                 'steering': math.degrees(steering[1].actual_wheel_angle_rad) if steering else None,
+                'steering_advice': steering_fault_advice(
+                    steering[1] if steering else None,
+                    fresh=bool(steering and now - steering[0] <= 1.0)),
                 'output': self.output, 'rows': rows, 'drivers': list(self.driver_rows),
                 'optional_topics': set(topics) - set(self.required_topics_for(route_input)),
                 'issues': self.issues(now) + (

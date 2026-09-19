@@ -99,6 +99,19 @@ def test_choice_labels_remain_readable_in_narrow_two_column_settings():
             assert ('↕' in rendered) == editing
 
 
+def test_fault_panel_shows_cause_and_action_without_truncating_at_narrow_width():
+    from vehicle_test_scenarios.steering_fault_advice import SteeringFaultAdvice
+    from vehicle_test_scenarios.sysid_tui import steering_advice_panel
+    advice = (SteeringFaultAdvice('KEYA 저전압 (0x0010)',
+                                 '정지·MANUAL에서 전원과 접지를 점검하고 새 fault 응답으로 해제를 확인하세요.'),)
+    output = StringIO()
+    Console(file=output, width=71, force_terminal=False).print(steering_advice_panel(advice))
+    rendered = output.getvalue()
+    assert '저전압' in rendered
+    assert '0x0010' in rendered
+    assert '확인하세요.' in rendered
+
+
 def test_notices_are_in_vehicle_state_and_help_has_no_duplicate_status():
     from types import SimpleNamespace
     from vehicle_test_scenarios.sysid_tui import MenuState, dashboard, footer_panel, handle_key

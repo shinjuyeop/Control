@@ -115,17 +115,18 @@ TEST(TorqueSteeringController, TaperAffectsOnlyOutwardEffort)
   EXPECT_EQ(c.update(0.0, 0.0, 1.02).command_raw, -cfg.peak_limit_raw);
 }
 
-TEST(TorqueSteeringController, HardRateSafetyCannotBeFilteredAway)
+TEST(TorqueSteeringController, HighRateRemainsTelemetryWithoutFault)
 {
   TorqueSteeringConfig cfg;
   cfg.rate_filter_hz = 0.01;
   TorqueSteeringController c(cfg);
   c.observeFeedback(0.0, 1.0);
-  EXPECT_EQ(c.observeFeedback(3 * rad, 1.02), TorqueSafetyFault::RATE_LIMIT);
-  EXPECT_EQ(c.observeFeedback(3 * rad, 1.02), TorqueSafetyFault::RATE_LIMIT);
+  EXPECT_EQ(c.observeFeedback(3 * rad, 1.02), TorqueSafetyFault::NONE);
+  EXPECT_EQ(c.observeFeedback(3 * rad, 1.02), TorqueSafetyFault::NONE);
   const auto out = c.update(10 * rad, 0.0, 1.02);
-  EXPECT_EQ(out.fault, TorqueSafetyFault::RATE_LIMIT);
-  EXPECT_EQ(out.command_raw, 0);
+  EXPECT_EQ(out.fault, TorqueSafetyFault::NONE);
+  EXPECT_NE(out.command_raw, 0);
+  EXPECT_NEAR(out.unfiltered_rate_rad_s, 150.0 * rad, 1e-12);
 }
 
 TEST(TorqueSteeringController, ResetRequiresFreshRateHistory)
@@ -232,6 +233,9 @@ TEST(TorqueSteeringController, InvalidConfigurationIsRejected)
   EXPECT_THROW(cfg.validate(), std::invalid_argument);
   cfg = {};
   cfg.feedback_timeout_sec = 0.01;
+  EXPECT_THROW(cfg.validate(), std::invalid_argument);
+  cfg = {};
+  cfg.settle_rate_rad_s = 0.0;
   EXPECT_THROW(cfg.validate(), std::invalid_argument);
   cfg = {};
   cfg.peak_duration_sec = 5.0;
