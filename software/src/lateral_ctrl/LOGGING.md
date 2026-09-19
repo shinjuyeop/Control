@@ -8,7 +8,7 @@ Ouster LiDAR·IMU 패킷 및 메타데이터도 함께 녹화한다.
 - 녹화: `launch/mcap_logging.launch.py`
 - 변환: `scripts/mcap_to_csv.py` (`ros2 run`으로 실행)
 - 원본은 항상 mcap — CSV는 파생물이라 나중에 필요한 필드가 생겨도 원본에서 다시 뽑으면 됨.
-  mcap은 Foxglove에서 바로 열림.
+  mcap은 Foxglove에서 바로 열림. recorder는 MCAP `zstd_fast` preset으로 기록한다.
 
 ## 시나리오 TUI의 녹화와 구분
 

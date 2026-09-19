@@ -488,7 +488,7 @@ bus voltage·driver temperature는 500 ms 간격으로 번갈아 조회합니다
 - motor-axis diagnostic scaling: `10000 count/rev`
 - 조향 calibration은 raw KEYA count를 중앙 등가각으로 직접 환산하며
   `software/src/lateral_ctrl/config/steering_motor_calibration.yaml`이 소유
-- 명령 범위: `-3279..3279 count`(nominal 약 `-27.83..25.92 deg`), feedback은 클램프하지 않음
+- 명령 범위: `-5300..5300 count`(nominal 약 `-28.33..28.03 deg`), feedback은 클램프하지 않음
 
 Torque mode는 같은 canonical `/vehicle/command.steering_target_rad`를 직접 PD에
 전달한다. `torque_control_period_ms` 기본20 ms, 위치 timeout은

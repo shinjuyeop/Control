@@ -4,17 +4,19 @@
 #   v = motor_position_count / count_scale
 #   equivalent_deg = k1*v + k2*v^2 + k3*v^3 + k4*v^4 + k5*v^5
 #
-# Positive count and positive angle mean left turn. This nominal-centered shape
-# comes from direct left/right wheel-hub IMU measurements; it is not absolute
-# toe or mounting-yaw calibration. Commands stay inside the measured count
-# range, while feedback conversion is not clamped.
-revision: "keya-steering-20260821-r3"
+# Positive count and positive angle mean left turn. The nominal-centered curve
+# fits the 2026-09-19 left/right wheel-hub gyro-integral Ackermann equivalent
+# over -5357..5357 count (max fit error 0.050 deg). K-City body-IMU/GNSS
+# curvature is a separate driving cross-check, not absolute toe calibration.
+# The command limit is inside the observed -5480..5357 count range; feedback
+# is not clamped. Recorded extrema do not establish mechanical stop clearance.
+revision: "keya-steering-20260919-gyro-r1"
 count_scale: 3500.0
-equivalent_k1_deg: 45.36712598527852
-equivalent_k2_deg: -3.534573536433758
-equivalent_k3_deg: -44.4281013734926
-equivalent_k4_deg: 2.7876017898037944
-equivalent_k5_deg: 28.96220619772027
-command_count_limit: 3279
+equivalent_k1_deg: 20.801783967214856
+equivalent_k2_deg: -0.016893521554765867
+equivalent_k3_deg: -7.409984217512384
+equivalent_k4_deg: -0.02066649605375595
+equivalent_k5_deg: 2.8146092208162923
+command_count_limit: 5300
 # Raw motor-axis diagnostic conversion only.
 counts_per_rev: 10000.0

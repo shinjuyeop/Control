@@ -25,8 +25,10 @@ SYSID_TOPICS = (
     "/planning/route_context",
     "/planning/target_path",
     "/planning/target_speed",
+
     "/vehicle/command",
     "/sysid/scenario",
+
     "/steering/status",
     "/steering/angle",
     "/steering/actuation_mode",
@@ -45,27 +47,45 @@ SYSID_TOPICS = (
     "/steering/torque_settled",
     "/steering/torque_rate_ready",
     "/steering/torque_safety",
+
     "/drive/status",
     "/brake/status",
     "/vehicle/state",
     "/vehicle/wheel_twist",
+
     "/imu/data",
     "/imu/data_raw",
     "/ebimu/status",
+
+    "/left/imu/data",
+    "/left/imu/data_raw",
+    "/left/imu/mag",
+    "/left/imu/temperature",
+    "/left/ebimu/status",
+
+    "/right/imu/data",
+    "/right/imu/data_raw",
+    "/right/imu/mag",
+    "/right/imu/temperature",
+    "/right/ebimu/status",
+
     "/gnss/fix",
     "/gnss/fix_velocity",
     "/gnss/status",
     "/gnss/status_verbose",
     "/localization/odometry",
     "/localization/odometry_gnss",
+
     "/perception/camera/left/source/image_raw/compressed",
     "/perception/camera/left/source/camera_info",
     "/perception/camera/right/source/image_raw/compressed",
     "/perception/camera/right/source/camera_info",
+
     "/lidar_points",
     "/ouster/lidar_packets",
     "/ouster/imu_packets",
     "/ouster/metadata",
+
     "/tf",
     "/tf_static",
     "/diagnostics",
@@ -120,6 +140,7 @@ def _make_record_process(context):
             cmd=[
                 "ros2", "bag", "record",
                 "--storage", "mcap",
+                "--storage-preset-profile", "zstd_fast",
                 *SYSID_TOPICS,
             ],
             cwd=base_dir,

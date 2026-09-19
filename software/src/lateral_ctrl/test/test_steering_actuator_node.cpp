@@ -92,10 +92,10 @@ protected:
   {
     rclcpp::NodeOptions options;
     std::vector<rclcpp::Parameter> parameters{
-      {"count_scale", 3500.0}, {"equivalent_k1_deg", 45.36712598527852},
-      {"equivalent_k2_deg", -3.534573536433758}, {"equivalent_k3_deg", -44.4281013734926},
-      {"equivalent_k4_deg", 2.7876017898037944}, {"equivalent_k5_deg", 28.96220619772027},
-      {"command_count_limit", 3279}, {"counts_per_rev", 10000.0},
+      {"count_scale", 3500.0}, {"equivalent_k1_deg", 20.801783967214856},
+      {"equivalent_k2_deg", -0.016893521554765867}, {"equivalent_k3_deg", -7.409984217512384},
+      {"equivalent_k4_deg", -0.02066649605375595}, {"equivalent_k5_deg", 2.8146092208162923},
+      {"command_count_limit", 5300}, {"counts_per_rev", 10000.0},
       {"actuation_mode", mode}, {"hardware_can_enabled", true},
       {"actuator_output_enabled", armed}, {"torque_direction_sign", sign}};
     parameters.insert(parameters.end(), extra.begin(), extra.end());
@@ -215,9 +215,9 @@ TEST_F(SteeringNodeTest, ManualSteeringOutsideAutoEnvelopeDoesNotLatchAndCanRetu
   Peer::drive(*node, 0);
   expectStop();
   can->frames.clear();
-  // Recorded MANUAL return turn: the motor was already disabled before the
-  // encoder crossed -3279. Returning to center must not leave a new AUTO latch.
-  for (const int32_t count : {-3247, -3292, -3398, 0}) {
+  // A MANUAL return turn can pass the -5300 command bound after output is disabled.
+  // Returning to center must not leave a new AUTO latch.
+  for (const int32_t count : {-5247, -5292, -5398, 0}) {
     can->fresh(count); Peer::tick(*node);
     EXPECT_EQ(Peer::fault(*node), TorqueSafetyFault::NONE);
     EXPECT_EQ(Peer::state(*node), SteeringState::DISABLED);

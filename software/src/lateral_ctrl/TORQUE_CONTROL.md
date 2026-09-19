@@ -159,9 +159,10 @@ Host current loop가 아니다. 실제 peak 지속 오차는 control tick jitter
   fault는 기존 state machine을 사용한다. 출력이 잠기면 zero/disable도 보내지 않는다.
 - Torque의 command는 원래 header stamp의 남은 유효시간만 사용한다. future stamp,
   nonfinite target은 reject한다. 예전 목표를 재사용하지 않는다.
-- Calibration 범위 `[-3279,+3279] count` = 약 `[-27.8275,+25.9178]°`를 목표각과
-  바깥 방향 torque 제한에 사용한다. 이는 **계측 범위**이며 확인된 기계 end-stop이 아니다.
-  목표는 기본 margin으로 `[-26.8275,+24.9178]°` 안쪽에 제한한다.
+- 명령 범위 `[-5300,+5300] count` = 약 `[-28.3280,+28.0332]°`를 목표각과
+  바깥 방향 torque 제한에 사용한다. 2026-09-19 관측 count 범위 안의
+  **설정된 명령 범위**이며 확인된 기계 end-stop이 아니다. 목표는 기본 1° margin으로
+  `[-27.3280,+27.0332]°` 안쪽에 제한한다.
   margin 내에서 바깥쪽 torque는 선형 taper, 경계에서는 차단하고 안쪽 회복 torque는
   허용한다. 실제 각도나 encoder count가 이 범위를 넘었다는 이유로 `angle_limit`
   fault를 발생시키거나 Disable하지 않는다. 범위 밖에서도 바깥 방향 torque는

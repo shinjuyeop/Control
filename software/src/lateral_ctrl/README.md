@@ -294,15 +294,19 @@ ros2 launch lateral_ctrl steering_bench_test.launch.py \
 | `mode_timeout_ms` | 1500 | `/drive/status` timeout |
 | `drive_status_timeout_ms` | 500 | 조향 속력 허용에 사용하는 `/drive/status` 수신 timeout |
 | `steer_command_timeout_ms` | 200 | `ACTIVE`에서 `/vehicle/command` timeout |
-| `command_count_limit` | 3279 | 명령 가능한 KEYA raw count 절댓값. nominal 중앙 등가각 약 -27.83°..+25.92° |
+| `command_count_limit` | 5300 | 명령 가능한 KEYA raw count 절댓값. 새 중앙 등가각 약 -28.33°..+28.03° |
 | `minimum_steering_speed_kph` | YAML 0.0 / 코드 1.0 | 조향 허용 최저 차속; YAML은 정지 시험용 임시 설정 |
 | `max_steering_rate_deg_s` | 60.0 | position 모드 목표각 변화율 제한; torque 안전 한계와 별개 |
 | `tracking_control_enabled` | false | 중앙 등가각 tracking 보정 |
 
 count-to-angle 계수와 `counts_per_rev`는
 `config/steering_motor_calibration.yaml` 한 파일이 소유합니다. Control, active HIL,
-Gazebo CAN bridge가 같은 값을 사용합니다. 2026-08-21 조향 캘리브레이션 계측에서
-얻은 full 5차 `k1..k5` nominal-centered shape이며 절대 toe 보정값은 아닙니다.
+Gazebo CAN bridge가 같은 값을 사용합니다. 2026-09-19 좌·우 휠 허브 IMU의
+gyro 적분으로 얻은 중앙 등가각을 full 5차 `k1..k5`에 맞춘 nominal-centered
+shape입니다. 같은 날 K-City 주행의 GNSS 속도·차체 IMU 곡률로 교차 확인했으며,
+절대 toe 보정값은 아닙니다. 2026-09-19 락투락 측정에서 관측된 count는
+약 -5480..+5357이고 명령 상한은 그 안의 ±5300으로 설정했습니다.
+관측 끝단만으로 기계적 end-stop 여유는 확인되지 않았습니다.
 
 벤치 시퀀스의 기본값은 다음과 같습니다.
 
