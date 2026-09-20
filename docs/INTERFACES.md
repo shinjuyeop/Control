@@ -32,6 +32,8 @@ CAN, Dashboard CAN, Arduino LCD/touch와 HIL UNO USB의 데이터 계약과
 | `command_governor` | STM_A | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 500 ms | AUTO 속도·brake |
 | `command_governor` | STM_B | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 적용 안 함 | brake만 저장 |
 | `command_governor` | 조향 노드 | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 200 ms | ACTIVE 조향 freshness |
+| `command_governor` | 종방향 노드 | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 200 ms | torque 허용 조건의 목표 차속·brake |
+| 종방향 노드 | STM_A | ROS 2 | `/drive/torque_command` | `DriveTorqueCommand` | 20 ms | STM_A에서 200 ms | AUTO torque control 요청. 없거나 stale이면 speed control |
 | STM_A | Host·조향·상태·진단 | ROS 2 | `/drive/status` | `DriveActuatorStatus` | 20 ms | 조향에서 1500 ms | mode·gear·구동 진단 |
 | STM_B | Host·조향·상태·진단 | ROS 2 | `/brake/status` | `BrakeActuatorStatus` | 50 ms 및 원인 변경 시 | 조향에서 별도 timeout 없음 | brake·E-stop 원인 |
 | 조향 노드 | Host·상태·진단 | ROS 2 | `/steering/status` | `SteeringActuatorStatus` | 20 ms | 상태 통합에서 별도 timeout 없음 | 조향 상태·진단 |
@@ -47,7 +49,7 @@ CAN, Dashboard CAN, Arduino LCD/touch와 HIL UNO USB의 데이터 계약과
 | UNO R4 | ST7796S LCD | SPI | MSP4030/MSP4031 | logical 480×320 화면 | 적용 상태 변경 시 | 없음 | local display output |
 | FT6336U | UNO R4 | I2C | address `0x38` | 최대 2점 raw touch | 20 ms polling | read 실패 시 1 s 재시도 | local navigation input |
 | HIL Console | UNO R4 | USB Serial | newline ASCII, 115200 | `HIL_LCD`, `HIL_TOUCH`, `VT D/M/U/C` | 보고 200/100 ms | Virtual Touch 1 s | HIL-only virtual HMI |
-| STM_A | EZkontrol | FDCAN1 | `0x0C01EFD0` | handshake ACK 또는 command | 50 ms command | 명시적 TX timeout 없음 | AUTO speed / MANUAL torque |
+| STM_A | EZkontrol | FDCAN1 | `0x0C01EFD0` | handshake ACK 또는 command | 50 ms command | 명시적 TX timeout 없음 | AUTO speed(기본) 또는 Host 요청 시 AUTO torque / MANUAL torque |
 | EZkontrol | STM_A | FDCAN1 | `0x1801D0EF`, `0x1802D0EF` | Part I/II status | 외부 장치 설정 | 200 ms validity | 진단 validity에만 사용 |
 | 조향 노드 | KEYA | SocketCAN | `0x06000001` | enable/disable/position/torque/query | 기본 20 ms | position 500 ms / torque 위치 100 ms | node ID 기본값 1 |
 | KEYA | 조향 노드 | SocketCAN | `0x05800001`, `0x07000001` | query response, heartbeat | 외부 장치 설정 | CAN·position 각 500 ms | ID는 node ID에 따라 변함 |
@@ -60,7 +62,9 @@ CAN, Dashboard CAN, Arduino LCD/touch와 HIL UNO USB의 데이터 계약과
 | Topic | Publisher | Subscriber | Type | Rate | QoS | 설명 |
 |---|---|---|---|---:|---|---|
 | `/planning/command` | Planning (production은 별도 상위 패키지), 실차 시험 `vehicle_test_scenario_runner`, HIL `hil_command_generator` 중 하나 | `command_governor` | `kaiev26_msgs/msg/ActuatorCommand` | 시험 명령원 20 Hz | default | Planning 의도 명령 |
-| `/vehicle/command` | `command_governor` (유일 발행자) | STM_A, STM_B, `steering_actuator_node` | `kaiev26_msgs/msg/ActuatorCommand` | 입력 연동; HIL 20 Hz | default | 속도·조향·최종 brake 명령 |
+| `/vehicle/command` | `command_governor` (유일 발행자) | STM_A, STM_B, `steering_actuator_node`, `longitudinal_actuator_node` | `kaiev26_msgs/msg/ActuatorCommand` | 입력 연동; HIL 20 Hz | default | 속도·조향·최종 brake 명령 |
+| `/drive/torque_command` | `/longitudinal_actuator_node` | STM_A | `kaiev26_msgs/msg/DriveTorqueCommand` | 50 Hz | default | AUTO에서 EZkontrol torque control 요청과 상전류 목표. STM_A 200 ms timeout 시 speed control 복귀 |
+| `/longitudinal/state`, `/longitudinal/*` | `/longitudinal_actuator_node` | 기록, 관측 도구 | `std_msgs/String`, `Float32`, `Bool` | 50 Hz | default | torque 허용 상태와 전류 성분(ff·p·i·한계) |
 | `/drive/status` | `/stm_a_node` | 조향 노드, `vehicle_state_publisher_node`, `diagnostics_publisher`, 관측 도구 | `kaiev26_msgs/msg/DriveActuatorStatus` | 50 Hz | default | mode·gear·구동 명령 및 EZkontrol 진단 |
 | `/brake/status` | `/stm_b_node` | 조향 노드, `vehicle_state_publisher_node`, `diagnostics_publisher`, 관측 도구 | `kaiev26_msgs/msg/BrakeActuatorStatus` | 20 Hz + 변경 시 | default | 브레이크 command와 stop reason |
 | `/steering/status` | `/steering_actuator_node` | `vehicle_state_publisher_node`, `diagnostics_publisher`, 관측 도구 | `kaiev26_msgs/msg/SteeringActuatorStatus` | 50 Hz | Keep Last 10, reliable, volatile | 조향 상태 머신·timeout·모터 진단 |
@@ -295,12 +299,20 @@ STM_A Control task가 handshake 이후 nominal 50 ms마다 송신합니다.
 
 | Byte | Field | Encoding | 설명 |
 |---:|---|---|---|
-| 0..1 | phase-current target | `(A + 3200) / 0.1`, little-endian | AUTO·MANUAL 한계 480 A |
-| 2..3 | motor RPM target/limit | `rpm + 32000`, little-endian | 전진 +4500, 후진 -1500 rpm clamp |
+| 0..1 | phase-current target | `(A + 3200) / 0.1`, little-endian | speed control에서 한계 480 A, torque control에서 목표(AUTO는 Host 명령을 ±480 A로 clamp) |
+| 2..3 | motor RPM target/limit | `rpm + 32000`, little-endian | speed control에서 목표, torque control에서 상한. 전진 +4500, 후진 -1500 rpm clamp |
 | 4 bit 0 | RUNNING | `1=RUN`, `0=HALTED` | 정지 조건에서 0 |
-| 4 bit 1 | control mode | `1=speed`, `0=torque` | AUTO speed, MANUAL torque |
+| 4 bit 1 | control mode | `1=speed`, `0=torque` | AUTO 기본 speed; 신선한 `/drive/torque_command(torque_mode=true)`가 있으면 AUTO torque; MANUAL torque |
 | 5..6 | reserved | 0 | - |
 | 7 | life counter | `uint8` | command frame마다 증가, wrap 허용 |
+
+AUTO torque control은 Host `longitudinal_actuator_node`가 `/drive/torque_command`를
+50 Hz로 보낼 때만 사용됩니다. STM_A는 마지막 수신 후 200 ms 안의 `torque_mode=true`
+명령만 인정하고, 전류를 ±480 A, RPM 상한을 0..4500으로 자른 뒤, `CURRENT_SPEED`가
+0.3 m/s 미만이면 음의(회생) 전류를 0으로 만듭니다. 조건이 깨지면 다음 50 ms
+주기부터 speed control 명령으로 돌아가며 handshake나 재시작은 없습니다.
+`brake_engage`, Host command 500 ms timeout, STM_B 정지 요청의 HALTED 판단은 torque
+명령과 무관하게 그대로 적용됩니다.
 
 ### 6.4 Status Part I
 

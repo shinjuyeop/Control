@@ -119,7 +119,7 @@ Queue, semaphore, mutex, software timer는 생성하지 않습니다. ISR→Task
 |---|---|---|---|---:|
 | `Control` | EZkontrol command / HALTED | absolute 50 ms; handshake 대기 10 ms | `Realtime` (48) | 512 |
 | `Inputs` | 페달 ADC 8회 평균, mode·gear GPIO | absolute 50 ms | `High` (40) | 256 |
-| `uROS` | Agent 상태, command 수신, status 발행 | 상태 머신; running 후 5 ms delay, status 목표 20 ms | `Normal` (24) | 1536 |
+| `uROS` | Agent 상태, command·torque command 수신, status 발행 | 상태 머신; running 후 5 ms delay, status 목표 20 ms | `Normal` (24) | 1536 |
 | `BRx` | safety frame parse, timeout·stop 계산 | 작업 후 1 ms delay | `High1` (41) | 256 |
 | `BTx` | vehicle status / drive detail 송신 | absolute 20 ms / detail 100 ms | `Low` (8) | 256 |
 | `PerfMon` | runtime snapshot 집계 | 약 1 Hz | `Low` (8) | 256 |
@@ -158,6 +158,7 @@ LPUART1(`PA2`/`PA3`) custom transport가 별도의 micro-ROS Agent에 연결됩�
 | Topic | Type | Callback | 설명 |
 |---|---|---|---|
 | `/vehicle/command` | `kaiev26_msgs/msg/ActuatorCommand` | `cb_cmd` | `speed_target_mps`, `brake_engage` 사용 |
+| `/drive/torque_command` | `kaiev26_msgs/msg/DriveTorqueCommand` | `cb_torque_cmd` | AUTO torque control 요청. `torque_mode`, `phase_current_target_a`(±480 A clamp), `motor_rpm_limit`(0..4500) |
 
 ### Publishers
 
@@ -171,14 +172,19 @@ LPUART1(`PA2`/`PA3`) custom transport가 별도의 micro-ROS Agent에 연결됩�
 
 STM_A는 handshake ACK가 CAN TX FIFO에 들어가기 전에는 traction command를 보내지
 않습니다. 완료 후 `Control` Task가 AUTO speed-control 또는 MANUAL torque-control
-command를 50 ms nominal 주기로 보냅니다.
+command를 50 ms nominal 주기로 보냅니다. AUTO에서 마지막 수신 후 200 ms 안의
+`/drive/torque_command(torque_mode=true)`가 있으면 그 상전류 목표와 RPM 상한으로
+torque-control command를 보내고, 없으면 speed-control로 돌아갑니다. torque 명령의
+음의 전류는 `CURRENT_SPEED`가 0.3 m/s 미만이면 0으로 잘라 후진 구동을 막습니다.
 
 - command: `0x0C01EFD0`
 - status Part I: `0x1801D0EF`
 - status Part II: `0x1802D0EF`
 - 전진 motor RPM 한계: `4500`
 - 후진 motor RPM 한계: `-1500`
-- AUTO phase-current 한계: `480 A`
+- AUTO phase-current 한계: `480 A` (speed-control의 한도이자 torque-control 명령의 clamp)
+- AUTO torque command timeout: `200 ms` (`DRIVE_TORQUE_COMMAND_TIMEOUT_MS`)
+- AUTO torque 회생 허용 최저 차속: `0.3 m/s` (`TORQUE_REGEN_MIN_SPEED_MPS`)
 - MANUAL torque-current 한계: `480 A`
 
 Part I의 motor RPM 원본은 `/drive/status.motor_rpm`에 그대로 발행합니다. 차량 속도는
@@ -236,6 +242,7 @@ sequenceDiagram
     Motor->>A: Part I 0x55 handshake request
     A->>Motor: 0xAA handshake ACK
     Host->>A: /vehicle/command
+    Host-->>A: /drive/torque_command (AUTO torque, 선택)
     B->>A: Safety status UART (20 ms)
     A->>A: mode + command freshness + safety 판단
     A->>Motor: CAN speed/torque 또는 HALTED (50 ms)
@@ -248,6 +255,12 @@ sequenceDiagram
 AUTO 속도는 `speed_target_mps`를 타이어 지름 `0.47 m`, 감속비 `4.60`으로
 motor RPM에 변환합니다. MANUAL에서는 pedal percentage를 torque current로
 변환하고 물리 gear로 부호를 정합니다.
+
+AUTO torque control은 Host `longitudinal_ctrl`의 `/drive/torque_command`를 그대로
+전달하는 경로입니다. STM_A는 전류·RPM 상한 clamp, 200 ms freshness, 정지 근처 회생
+절단만 수행하고 속도 루프를 계산하지 않습니다. `/drive/status`의
+`commanded_phase_current_a`·`commanded_motor_rpm`은 실제로 나간 값이고, EZkontrol
+Part II의 `controller_control_mode`가 실제 적용된 모드입니다.
 
 ### 8.5 안전 동작
 

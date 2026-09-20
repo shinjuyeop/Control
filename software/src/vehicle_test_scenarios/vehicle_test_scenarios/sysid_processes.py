@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 import yaml
 from std_msgs.msg import String
 from control_tuning.storage import SettingsStore
-from .sysid_capture import ParameterCapture, TORQUE_TOPICS
+from .sysid_capture import ParameterCapture, TORQUE_TOPICS, LONGITUDINAL_TOPICS
 
 
 DEFAULT_RECORDS_ROOT = next((
@@ -41,7 +41,7 @@ RECORD_TOPICS = (
     '/sysid/odometry', '/sysid/odometry_gnss', '/sysid/route_context',
     '/sysid/target_path', '/sysid/target_speed', '/sysid/route_command',
     '/sysid/route_enabled', '/sysid/tf',
-    '/parameter_events', '/sysid/control_parameters', *TORQUE_TOPICS,
+    '/parameter_events', '/sysid/control_parameters', *TORQUE_TOPICS, *LONGITUDINAL_TOPICS,
 )
 RECORDER_CODE = """
 import sys, json

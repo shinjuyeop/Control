@@ -2,8 +2,9 @@
 실차 구동 스택 통합 launch.
 
 구동에 필요한 것만 띄운다: 차량·INS 기준 정적 TF, STM_A/B micro-ROS Agent,
-command_governor, steering_actuator와 vehicle_state_publisher package의 상태 합성,
-diagnostics_publisher, auto_dashboard_summary를 실행한다.
+command_governor, steering_actuator, longitudinal_actuator(종방향 torque control)와
+vehicle_state_publisher package의 상태 합성, diagnostics_publisher,
+auto_dashboard_summary를 실행한다.
 관측 화면은 별도 실행한다: `ros2 launch vehicle_console vehicle.launch.py` 또는
 `ros2 launch foxglove foxglove_bridge.launch.py`.
 
@@ -107,6 +108,10 @@ def generate_launch_description():
         get_package_share_directory("lateral_ctrl"),
         "launch", "steering_actuator.launch.py",
     )
+    longitudinal_launch = os.path.join(
+        get_package_share_directory("longitudinal_ctrl"),
+        "launch", "longitudinal_actuator.launch.py",
+    )
     baud = LaunchConfiguration("agent_baud")
     return LaunchDescription([
         DeclareLaunchArgument("stm_a_port", default_value="/dev/stm_a"),
@@ -125,6 +130,19 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument("actuation_mode", default_value="", choices=["", "position", "torque"]),
         DeclareLaunchArgument("steering_enabled", default_value=""),
+        DeclareLaunchArgument(
+            "longitudinal", default_value="true",
+            description="종방향 torque 노드(longitudinal_actuator_node)를 함께 띄운다.",
+        ),
+        DeclareLaunchArgument(
+            "longitudinal_torque", default_value="", choices=["", "true", "false"],
+            description="빈 값은 longitudinal_actuator.yaml(기본 false). true면 시작부터 AUTO에서 "
+                        "EZkontrol torque control을 사용한다. 실행 중에는 ros2 param set으로 바꾼다.",
+        ),
+        DeclareLaunchArgument(
+            "longitudinal_speed_source", default_value="", choices=["", "drive_status", "gnss"],
+            description="종방향 차속 피드백 원천. 빈 값은 YAML(drive_status).",
+        ),
         DeclareLaunchArgument(
             "can_interface", default_value="can0",
             description="KEYA SocketCAN 인터페이스.",
@@ -149,6 +167,18 @@ def generate_launch_description():
                 "actuator_output_enabled": "true",
             }.items(),
             condition=IfCondition(LaunchConfiguration("steering")),
+        ),
+        # 종방향 torque control. torque_control_enabled=false이면 torque_mode=false만
+        # 발행하므로 STM_A는 기존 EZkontrol speed control을 유지한다. 예전 STM_A 펌웨어는
+        # /drive/torque_command를 구독하지 않으므로 어느 쪽이든 동작이 바뀌지 않는다.
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(longitudinal_launch),
+            launch_arguments={
+                "torque_control_enabled": LaunchConfiguration("longitudinal_torque"),
+                "speed_source": LaunchConfiguration("longitudinal_speed_source"),
+                "tuning_preset": LaunchConfiguration("tuning_preset"),
+            }.items(),
+            condition=IfCondition(LaunchConfiguration("longitudinal")),
         ),
         Node(
             package="vehicle_state_publisher",

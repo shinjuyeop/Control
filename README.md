@@ -47,6 +47,7 @@ Control/
 │   └── src/
 │       ├── longitudinal_mpc/        # 실험용 MPC, COLCON_IGNORE로 빌드 제외
 │       ├── lateral_ctrl/            # KEYA 조향 액추에이터 제어
+│       ├── longitudinal_ctrl/       # EZkontrol torque control 종방향 속도 루프
 │       ├── command_governor/        # /planning/command → /vehicle/command 단일 발행자
 │       ├── vehicle_state_publisher/ # 차량 상태·wheel twist·diagnostics 발행
 │       ├── control_launch/          # 실차 구동 통합 launch (vehicle.launch.py)
@@ -77,9 +78,10 @@ Control/
 | 구성요소 | 현재 역할 |
 |---|---|
 | `lateral_ctrl` | `/vehicle/command`와 STM 상태를 사용한 KEYA 조향 모터 제어 및 `/steering/status` |
+| `longitudinal_ctrl` | `/vehicle/command` 목표 차속과 `/drive/status`로 상전류 명령 `/drive/torque_command` 생성. STM_A가 AUTO에서 EZkontrol torque control로 전환 |
 | `command_governor` | `/planning/command`를 정합성 게이트 후 `/vehicle/command`로 재발행하는 유일한 발행자. 현재 패스스루이며 형상(속도 상한·램프·축간 협조)은 이후 단계 |
 | `vehicle_state_publisher` | status 3종을 `/vehicle/state`, `/vehicle/wheel_twist`, `/diagnostics`로 변환 |
-| `control_launch` | 실차 구동 스택 통합 `vehicle.launch.py` (Agent 2개 + 거버너 + 조향 + 상태 통합) |
+| `control_launch` | 실차 구동 스택 통합 `vehicle.launch.py` (Agent 2개 + 거버너 + 조향 + 종방향 + 상태 통합) |
 | `control_tuning` | P·D 명령 전류 단위 편집, 출력·운용·timeout 설정, 저장과 실행 중 적용 |
 | `vehicle_test_scenarios` | production Planning 대신 `/planning/command`를 발행하는 실차 입력 응답·K-City 경로 추종 TUI 및 headless 시험 시나리오 |
 | `vehicle_console` | KAI Vehicle Console: 단일 frontend·공용 Web/ROS/runtime, Vehicle read-only 및 HIL backend |
@@ -172,7 +174,8 @@ bench([HIL runbook](docs/HIL_RUNBOOK.md)), 조향 단독
 실행([command_governor](software/src/command_governor/README.md))입니다.
 과거의 종방향 패키지 골격 `longitudinal_ctrl`은 노드가 채워진 적 없이
 `command_governor`로 대체되었습니다. 종방향 하드 한도는 계속 STM_A 펌웨어에
-있습니다.
+있습니다. 새 `longitudinal_ctrl`은 그 위에서 EZkontrol torque control용 상전류를
+계산하며, 기본은 꺼져 있어 `longitudinal_torque:=true` 또는 `ros2 param set`으로 켭니다.
 
 ## 시험 기본값과 이전 폴더
 
@@ -224,6 +227,8 @@ TUI는 `ros2 run vehicle_test_scenarios vehicle_test_scenario_runner`로 실행�
 | [control_launch](software/src/control_launch/README.md) | 실차 통합 launch, 재시작, 조이스틱 텔레옵 |
 | [control_tuning](software/src/control_tuning/README.md) | 공통 파라미터 TUI, A 단위 P·D, 저장 파일·적용·재시작 |
 | [Torque control](software/src/lateral_ctrl/TORQUE_CONTROL.md) | 현재 YAML과 코드 기본값, 조향 fault 복구 |
+| [longitudinal_ctrl](software/src/longitudinal_ctrl/README.md) | 종방향 torque control 노드, 허용 조건, 파라미터 |
+| [종방향 torque control 분석·시험](docs/LONGITUDINAL_TORQUE_CONTROL_20260920.md) | 9월 20일 기록 분석, 플랜트 식별, EZ 설정 제안, 실차 시험 케이스 |
 | [Logging](software/src/lateral_ctrl/LOGGING.md) | 독립 MCAP 기록과 TUI 기록의 구분, CSV 변환 |
 | [UNO dashboard](firmware/UNO_R4_DASHBOARD/README.md) | native·AUTO CAN 표시와 touch |
 | [Vehicle wiring](docs/vehicle-wiring/README.md) | 배선도 편집 |

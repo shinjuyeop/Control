@@ -134,6 +134,9 @@ P·D·전류 한도의 화면 단위 환산값도 함께 기록한다.
 여부, 필터 전후 각속도, `torque_safety` 등 상세 토픽을 기존 recorder에서 함께 기록한다.
 별도 `mcap_logging.launch.py`를 동시에 실행할 필요가 없다. Position 모드처럼 발행되지 않는
 상세 토픽에는 데이터가 없으며, 시험 중 변경이 없으면 parameter event가 없을 수도 있다.
+종방향 torque control 노드(`longitudinal_actuator_node`)가 있으면 `/drive/torque_command`와
+`/longitudinal/*`(상태, 목표·추정 차속, ff/p/i 전류, 포화·회생 제한)도 함께 녹화하고 그 파라미터를
+`control_parameters.yaml`에 기록한다. 노드가 없으면 `absent`로 남기고 Run을 막지 않는다.
 MCAP OFF에서는 파라미터 조회·파일 저장도 수행하지 않는다.
 
 현재 TUI의 조향 software fault 감지, 조향 설정 대기 중 mode·통신 검사,

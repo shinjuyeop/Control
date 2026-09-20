@@ -34,6 +34,7 @@
 #include <rclc/executor.h>
 #include <kaiev26_msgs/msg/actuator_command.h>
 #include <kaiev26_msgs/msg/drive_actuator_status.h>
+#include <kaiev26_msgs/msg/drive_torque_command.h>
 #include "rmw_microros/rmw_microros.h"
 
 bool cubemx_transport_open(struct uxrCustomTransport *transport);
@@ -84,6 +85,12 @@ enum {
 #define VEHICLE_TX_PERIOD_MS 20u
 #define DRIVE_DETAIL_TX_PERIOD_MS 100u
 #define HOST_COMMAND_TIMEOUT_MS 500u
+/* Host torque 명령(/drive/torque_command)의 유효시간. 이 시간 안에 새 명령이 없으면
+ * AUTO는 기존 speed control 경로로 되돌아간다. Host 노드는 50 Hz로 발행한다. */
+#define DRIVE_TORQUE_COMMAND_TIMEOUT_MS 200u
+/* torque control에서 음의(회생) 전류를 허용하는 최저 차속. 정지 근처의 음의 전류는
+ * 제동이 아니라 후진 구동이 되므로 STM_A가 마지막으로 0으로 자른다. */
+#define TORQUE_REGEN_MIN_SPEED_MPS 0.3f
 #define MOTOR_FEEDBACK_TIMEOUT_MS 200u
 #define MOTOR_RPM_ZERO_HOLD_SAMPLES 2u
 #define AGENT_PING_PERIOD_MS 500u
@@ -154,6 +161,13 @@ static volatile uint8_t s_command_received = 0u;
 static volatile uint8_t s_command_timeout = 1u;
 static volatile uint8_t s_command_brake_engage = 1u;
 static volatile uint32_t s_last_command_tick = 0u;
+/* Host torque 명령. cb_torque_cmd가 갱신하고 Control task가 freshness와 함께 읽는다.
+ * 전류는 수신 시 ±AUTO_PHASE_LIMIT_A로, RPM 상한은 0..RPM_FWD_MAX로 이미 잘려 있다. */
+static volatile uint8_t s_torque_cmd_mode = 0u;
+static volatile float s_torque_cmd_current_a = 0.0f;
+static volatile int32_t s_torque_cmd_rpm_limit = 0;
+static volatile uint8_t s_torque_cmd_received = 0u;
+static volatile uint32_t s_last_torque_cmd_tick = 0u;
 static volatile uint8_t s_motor_handshake_done = 0u;
 static volatile uint32_t s_motor_handshake_count = 0u;
 static volatile uint8_t s_tractive_commanded = 0u;
@@ -184,17 +198,21 @@ static rcl_allocator_t s_ros_allocator;
 static rclc_support_t s_ros_support;
 static rcl_node_t s_ros_node;
 static rcl_subscription_t s_ros_sub_cmd;
+static rcl_subscription_t s_ros_sub_torque_cmd;
 static rcl_publisher_t s_ros_pub_drive_status;
 static rclc_executor_t s_ros_executor;
 static uint8_t s_ros_support_initialized = 0u;
 static uint8_t s_ros_node_initialized = 0u;
 static uint8_t s_ros_sub_cmd_initialized = 0u;
+static uint8_t s_ros_sub_torque_cmd_initialized = 0u;
 static uint8_t s_ros_publisher_initialized = 0u;
 static uint8_t s_ros_executor_initialized = 0u;
 
 static kaiev26_msgs__msg__ActuatorCommand s_cmd_msg;
+static kaiev26_msgs__msg__DriveTorqueCommand s_torque_cmd_msg;
 static kaiev26_msgs__msg__DriveActuatorStatus s_status_msg;
 static char s_cmd_frame_id[16];
+static char s_torque_cmd_frame_id[16];
 static char s_status_frame_id[4];
 /* USER CODE END Variables */
 /* Definitions for Control */
@@ -246,6 +264,7 @@ static void send_motor_can(int32_t rpm, float curr_a, uint8_t run_command,
                            uint8_t speed_control);
 static HAL_StatusTypeDef send_motor_handshake_ack(void);
 static void cb_cmd(const void *message);
+static void cb_torque_cmd(const void *message);
 static void reset_host_command_state(void);
 static void init_ros_message_buffers(void);
 static uint8_t create_ros_entities(void);
@@ -411,10 +430,40 @@ void StartControl(void *argument)
     {
       if (MODE == 1u)
       {
-        /* 자율주행: PC 속도 명령을 Speed control로 전달한다. */
-        float wrpm = COMMAND_SPEED * 60.0f / (3.14159f * TIRE_DIAM_M);
-        int32_t mrpm = (int32_t)(wrpm * GEAR_RATIO);
-        send_motor_can(mrpm, AUTO_PHASE_LIMIT_A, 1u, 1u);
+        /* Host torque 명령이 신선하고 torque_mode이면 상전류 목표를 Torque control로
+         * 보낸다. 그렇지 않으면 기존대로 PC 속도 명령을 Speed control로 전달한다.
+         * 정지·timeout 판단(drive_permitted)은 위에서 이미 끝났고 두 경로에 공통이다. */
+        const uint32_t now = HAL_GetTick();
+        uint8_t torque_mode = 0u;
+        float torque_current = 0.0f;
+        int32_t torque_rpm_limit = RPM_FWD_MAX;
+        taskENTER_CRITICAL();
+        if ((s_torque_cmd_received != 0u) && (s_torque_cmd_mode != 0u) &&
+            (age_since(now, s_last_torque_cmd_tick) < DRIVE_TORQUE_COMMAND_TIMEOUT_MS))
+        {
+          torque_mode = 1u;
+          torque_current = s_torque_cmd_current_a;
+          if (s_torque_cmd_rpm_limit > 0) torque_rpm_limit = s_torque_cmd_rpm_limit;
+        }
+        taskEXIT_CRITICAL();
+
+        if (torque_mode != 0u)
+        {
+          /* 회생(음의 전류)은 전진 주행 중에만 허용한다. 정지 근처에서는 0으로 잘라
+           * Host 오동작이 후진 구동으로 이어지지 않게 한다. */
+          if ((torque_current < 0.0f) && (CURRENT_SPEED < TORQUE_REGEN_MIN_SPEED_MPS))
+          {
+            torque_current = 0.0f;
+          }
+          send_motor_can(torque_rpm_limit, torque_current, 1u, 0u);
+        }
+        else
+        {
+          /* 자율주행 기본 경로: PC 속도 명령을 Speed control로 전달한다. */
+          float wrpm = COMMAND_SPEED * 60.0f / (3.14159f * TIRE_DIAM_M);
+          int32_t mrpm = (int32_t)(wrpm * GEAR_RATIO);
+          send_motor_can(mrpm, AUTO_PHASE_LIMIT_A, 1u, 1u);
+        }
       }
       else
       {
@@ -865,17 +914,25 @@ static void reset_host_command_state(void)
   s_command_timeout = 1u;
   s_command_brake_engage = 1u;
   s_last_command_tick = 0u;
+  s_torque_cmd_mode = 0u;
+  s_torque_cmd_current_a = 0.0f;
+  s_torque_cmd_rpm_limit = 0;
+  s_torque_cmd_received = 0u;
+  s_last_torque_cmd_tick = 0u;
   taskEXIT_CRITICAL();
 }
 
 static void init_ros_message_buffers(void)
 {
   memset(&s_cmd_msg, 0, sizeof(s_cmd_msg));
+  memset(&s_torque_cmd_msg, 0, sizeof(s_torque_cmd_msg));
   memset(&s_status_msg, 0, sizeof(s_status_msg));
 
   /* micro-ROS string 역직렬화는 동적 할당 대신 수명 고정 버퍼를 사용한다. */
   s_cmd_msg.header.frame_id.data = s_cmd_frame_id;
   s_cmd_msg.header.frame_id.capacity = sizeof(s_cmd_frame_id);
+  s_torque_cmd_msg.header.frame_id.data = s_torque_cmd_frame_id;
+  s_torque_cmd_msg.header.frame_id.capacity = sizeof(s_torque_cmd_frame_id);
   s_status_msg.header.frame_id.data = s_status_frame_id;
   s_status_msg.header.frame_id.capacity = sizeof(s_status_frame_id);
 }
@@ -886,10 +943,12 @@ static uint8_t create_ros_entities(void)
   memset(&s_ros_support, 0, sizeof(s_ros_support));
   s_ros_node = rcl_get_zero_initialized_node();
   s_ros_sub_cmd = rcl_get_zero_initialized_subscription();
+  s_ros_sub_torque_cmd = rcl_get_zero_initialized_subscription();
   s_ros_pub_drive_status = rcl_get_zero_initialized_publisher();
   s_ros_executor = rclc_executor_get_zero_initialized_executor();
 
   s_cmd_msg.header.frame_id.size = 0u;
+  s_torque_cmd_msg.header.frame_id.size = 0u;
   s_status_msg.header.frame_id.size = 0u;
 
   if (rclc_support_init(&s_ros_support, 0, NULL, &s_ros_allocator) != RCL_RET_OK) {
@@ -911,6 +970,14 @@ static uint8_t create_ros_entities(void)
   }
   s_ros_sub_cmd_initialized = 1u;
 
+  if (rclc_subscription_init_default(
+          &s_ros_sub_torque_cmd, &s_ros_node,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(kaiev26_msgs, msg, DriveTorqueCommand),
+          "/drive/torque_command") != RCL_RET_OK) {
+    return 0u;
+  }
+  s_ros_sub_torque_cmd_initialized = 1u;
+
   if (rclc_publisher_init_default(
           &s_ros_pub_drive_status, &s_ros_node,
           ROSIDL_GET_MSG_TYPE_SUPPORT(kaiev26_msgs, msg, DriveActuatorStatus),
@@ -919,8 +986,9 @@ static uint8_t create_ros_entities(void)
   }
   s_ros_publisher_initialized = 1u;
 
+  /* handle 2개: /vehicle/command, /drive/torque_command */
   if (rclc_executor_init(
-          &s_ros_executor, &s_ros_support.context, 1, &s_ros_allocator) != RCL_RET_OK) {
+          &s_ros_executor, &s_ros_support.context, 2, &s_ros_allocator) != RCL_RET_OK) {
     return 0u;
   }
   s_ros_executor_initialized = 1u;
@@ -928,6 +996,11 @@ static uint8_t create_ros_entities(void)
   if (rclc_executor_add_subscription(
           &s_ros_executor, &s_ros_sub_cmd, &s_cmd_msg, &cb_cmd,
           ON_NEW_DATA) != RCL_RET_OK) {
+    return 0u;
+  }
+  if (rclc_executor_add_subscription(
+          &s_ros_executor, &s_ros_sub_torque_cmd, &s_torque_cmd_msg,
+          &cb_torque_cmd, ON_NEW_DATA) != RCL_RET_OK) {
     return 0u;
   }
   RuntimeStatsRos_Init(&s_runtime_ros, &s_ros_node,
@@ -957,6 +1030,12 @@ static void destroy_ros_entities(void)
         rcl_publisher_fini(&s_ros_pub_drive_status, &s_ros_node);
     (void)fini_result;
     s_ros_publisher_initialized = 0u;
+  }
+  if (s_ros_sub_torque_cmd_initialized != 0u) {
+    const rcl_ret_t fini_result =
+        rcl_subscription_fini(&s_ros_sub_torque_cmd, &s_ros_node);
+    (void)fini_result;
+    s_ros_sub_torque_cmd_initialized = 0u;
   }
   if (s_ros_sub_cmd_initialized != 0u) {
     const rcl_ret_t fini_result =
@@ -1283,6 +1362,32 @@ static void cb_cmd(const void *message)
   s_command_received = 1u;
   s_command_timeout = 0u;
   s_last_command_tick = now;
+  taskEXIT_CRITICAL();
+}
+
+/* Host torque 명령. 전류는 ±AUTO_PHASE_LIMIT_A, RPM 상한은 0..RPM_FWD_MAX로 잘라
+ * 저장한다. 회생 허용 여부와 정지 판단은 Control task가 매 주기 다시 결정한다. */
+static void cb_torque_cmd(const void *message)
+{
+  const kaiev26_msgs__msg__DriveTorqueCommand *cmd =
+      (const kaiev26_msgs__msg__DriveTorqueCommand *)message;
+  if (!isfinite(cmd->phase_current_target_a) ||
+      !isfinite(cmd->motor_rpm_limit)) return;
+
+  const float current_a = fmaxf(-AUTO_PHASE_LIMIT_A,
+                                fminf(cmd->phase_current_target_a,
+                                      AUTO_PHASE_LIMIT_A));
+  int32_t rpm_limit = 0;
+  if (cmd->motor_rpm_limit > 0.0f) {
+    rpm_limit = (int32_t)fminf(cmd->motor_rpm_limit, (float)RPM_FWD_MAX);
+  }
+  const uint32_t now = HAL_GetTick();
+  taskENTER_CRITICAL();
+  s_torque_cmd_mode = cmd->torque_mode ? 1u : 0u;
+  s_torque_cmd_current_a = current_a;
+  s_torque_cmd_rpm_limit = rpm_limit;
+  s_torque_cmd_received = 1u;
+  s_last_torque_cmd_tick = now;
   taskEXIT_CRITICAL();
 }
 

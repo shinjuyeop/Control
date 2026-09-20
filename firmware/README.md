@@ -62,6 +62,10 @@ MCU 핀 이름과 ST morpho 헤더 번호를 함께 적습니다.
 `hil_command_generator`가 그 자리를 대신합니다.
 
 - STM_A는 `speed_target_mps`와 `brake_engage`를 직접 받습니다.
+- STM_A는 Host `longitudinal_ctrl`의 `/drive/torque_command`(`DriveTorqueCommand`)도
+  받습니다. 200 ms 안의 `torque_mode=true` 명령이 있으면 AUTO에서 EZkontrol을
+  torque control로 구동하고, 없으면 speed control로 돌아갑니다. 정지 판단은
+  바뀌지 않습니다.
 - STM_B는 같은 메시지의 `brake_engage`를 독립적으로 받습니다.
 - STM_B는 물리 모드 상태를 STM_A의 UART vehicle-status frame에서 받습니다.
 - STM_B는 물리 E-stop과 AUTO의 `brake_engage`를 OR한 최종

@@ -13,8 +13,8 @@ ros2 launch control_launch vehicle.launch.py
 ```
 
 `can0`는 먼저 250 kbit/s로 준비되어 있어야 합니다. 이 launch는 차량 TF,
-STM_A/B Agent, `command_governor`, `steering_actuator_node`, 차량 상태·wheel twist,
-`diagnostics_publisher`, `auto_dashboard_summary`를 실행합니다.
+STM_A/B Agent, `command_governor`, `steering_actuator_node`, `longitudinal_actuator_node`,
+차량 상태·wheel twist, `diagnostics_publisher`, `auto_dashboard_summary`를 실행합니다.
 센서 드라이버, Planning, 시나리오 TUI와 관측 화면은 별도로 실행합니다.
 `/planning/command` 명령원은 하나만 실행하며 `/vehicle/command`는 governor가 발행합니다.
 
@@ -27,6 +27,9 @@ STM_A/B Agent, `command_governor`, `steering_actuator_node`, 차량 상태·whee
 | `can_interface` | `can0` | 조향 CAN 인터페이스 |
 | `actuation_mode` | 빈 값 | 선택한 프리셋 사용; `position`/`torque`로 override 가능 |
 | `steering_enabled` | 빈 값 | 조향 설정 기본값 사용, 현재 `true` |
+| `longitudinal` | `true` | 종방향 torque 노드 실행 |
+| `longitudinal_torque` | 빈 값 | YAML 기본(`false`) 사용. `true`면 시작부터 AUTO에서 EZkontrol torque control. 실행 중 `ros2 param set /longitudinal_actuator_node torque_control_enabled true` |
+| `longitudinal_speed_source` | 빈 값 | YAML 기본(`drive_status`). `gnss`는 `/gnss/fix_velocity` |
 | `tuning_preset` | `driving` | `driving`(주행) / `airborne`(공중) / `ground_stationary`(접지 정지) |
 | `control_tuning_file` | 제어 설정 경로 | 기본 `Control/software/src/control_tuning/config/control_tuning.yaml`; `KAI_CONTROL_TUNING_FILE`로 변경 가능 |
 
@@ -39,6 +42,16 @@ TUI에서 `S`로 저장한 값은 기존 launch를 완전히 종료하고 같은
 현재 조향 YAML은 하드웨어 출력을 허용하고 최소 차속을 `0 km/h`로 설정합니다.
 AUTO·fresh 상태·새 명령 등 조향 조건은 계속 적용됩니다. KEYA 내부 mode는 Host가
 설정하지 않으며 torque 운용 시 Parameter 0020=2를 별도로 맞춰야 합니다.
+
+## 종방향 torque control
+
+`longitudinal_actuator_node`는 기본으로 `torque_mode=false`만 발행해 STM_A가 기존
+EZkontrol speed control을 쓰게 둡니다. `longitudinal_torque:=true`로 시작하거나
+실행 중 파라미터를 켜면 AUTO·전진·fresh 명령·fault 없음 조건에서 상전류 명령으로
+바뀌고, 조건이 깨지면 즉시 speed control로 돌아갑니다. STM_A 펌웨어가
+`/drive/torque_command`를 구독하는 버전이어야 하며, 예전 펌웨어에서는 켜도 변화가
+없습니다. [longitudinal_ctrl](../longitudinal_ctrl/README.md)과
+[시험 케이스](../../../docs/LONGITUDINAL_TORQUE_CONTROL_20260920.md)를 참고하십시오.
 
 ## 조향 정지와 자동 복구
 

@@ -19,11 +19,27 @@ TORQUE_TOPICS = (
     '/steering/torque_peak_limited', '/steering/torque_settled',
     '/steering/torque_rate_ready', '/steering/torque_safety',
 )
+LONGITUDINAL = 'longitudinal_actuator_node'
+LONGITUDINAL_TOPICS = (
+    '/drive/torque_command', '/longitudinal/state', '/longitudinal/torque_active',
+    '/longitudinal/target_speed', '/longitudinal/shaped_target_speed', '/longitudinal/filtered_target_speed',
+    '/longitudinal/target_accel',
+    '/longitudinal/speed', '/longitudinal/speed_raw', '/longitudinal/speed_error',
+    '/longitudinal/current_ff', '/longitudinal/current_p', '/longitudinal/current_i',
+    '/longitudinal/current_unsaturated', '/longitudinal/current_command', '/longitudinal/regen_cap',
+    '/longitudinal/speed_rejected_total', '/longitudinal/saturated', '/longitudinal/slew_limited',
+    '/longitudinal/regen_blocked', '/longitudinal/stopped',
+)
 REQUIRED_PARAMETERS = {
     STEERING: set(READ_NAMES[STEERING]) | {'torque_direction_sign', 'max_steering_rate_deg_s',
                                          'steering_enabled', 'hardware_can_enabled', 'actuator_output_enabled'},
     GOVERNOR: {'input_topic', 'output_topic', 'input_timeout_ms'},
+    LONGITUDINAL: {'torque_control_enabled', 'speed_source', 'current_gain_mps2_per_a',
+                   'rolling_resistance_mps2', 'speed_damping_per_s', 'kp_a_per_mps', 'ki_a_per_m',
+                   'max_drive_current_a', 'max_regen_current_a', 'current_slew_a_per_s'},
 }
+# 종방향 노드는 예전 launch에 없을 수 있다. 없으면 'absent'로 기록하고 Run을 막지 않는다.
+OPTIONAL_NODES = frozenset({LONGITUDINAL})
 
 
 def wall_time():
@@ -33,8 +49,9 @@ def wall_time():
 class ParameterCapture:
     """Non-blocking service state machine. Calls no parameter setters."""
 
-    def __init__(self, node, condition, *, timeout=5.0):
+    def __init__(self, node, condition, *, timeout=5.0, optional_wait=1.0):
         self.node, self.started, self.timeout = node, time.monotonic(), timeout
+        self.optional_wait = min(optional_wait, timeout)
         self.finished = False
         self.document = {
             'schema_version': 1, 'capture_stage': 'recorder_ready_before_run',
@@ -68,6 +85,11 @@ class ParameterCapture:
                 if request['stage'] == 'waiting':
                     if count == 1 and request['listing'].service_is_ready() and request['getter'].service_is_ready():
                         request.update(stage='list', future=request['listing'].call_async(ListParameters.Request()))
+                    elif count == 0 and name in OPTIONAL_NODES and time.monotonic() - self.started > self.optional_wait:
+                        self.document['nodes']['/' + name] = {'status': 'absent',
+                                                              'note': '실행 중인 노드가 없어 조회하지 않았습니다.'}
+                        request['stage'] = 'done'
+                        continue
                 elif request['future'].done():
                     response = request['future'].result()
                     if request['stage'] == 'list':
@@ -105,7 +127,7 @@ class ParameterCapture:
                 self._error(name, '실제 파라미터 조회 시간 초과')
         if all(request['stage'] == 'done' for request in self.requests.values()):
             self.finished = True
-            complete = all(entry['status'] == 'complete' for entry in self.document['nodes'].values())
+            complete = all(entry['status'] in ('complete', 'absent') for entry in self.document['nodes'].values())
             self.document.update(status='complete' if complete else 'incomplete', completed_at=wall_time())
         return self.finished
 

@@ -18,6 +18,7 @@
   <exec_depend>micro_ros_agent</exec_depend>
   <exec_depend>command_governor</exec_depend>
   <exec_depend>lateral_ctrl</exec_depend>
+  <exec_depend>longitudinal_ctrl</exec_depend>
   <exec_depend>vehicle_state_publisher</exec_depend>
   <exec_depend>kaiev26_description</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>

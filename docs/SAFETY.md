@@ -122,7 +122,9 @@ STM_A Control task는 이 값에 더해 AUTO Host command freshness를 검사합
 | AUTO command 미수신 또는 age ≥ 500 ms | 저장 속도를 0으로 지우고 HALTED |
 | AUTO `brake_engage=true` | 저장 속도를 0으로 지우고 HALTED |
 | MANUAL 정상 | 페달 기반 torque command |
-| AUTO 정상 | Host 속도 기반 speed command |
+| AUTO 정상 | Host 속도 기반 speed command. 200 ms 이내의 `/drive/torque_command(torque_mode=true)`가 있으면 Host 상전류 기반 torque command |
+| AUTO torque 명령 미수신·age ≥ 200 ms·`torque_mode=false` | speed command로 복귀 (HALTED 아님) |
+| AUTO torque 명령의 음의 전류, `CURRENT_SPEED` < 0.3 m/s | 전류 0으로 절단 (후진 구동 방지) |
 
 EZkontrol Part I/II age 200 ms는 status validity에만 사용됩니다. status가 끊겨도
 현재 traction stop 조건에는 들어가지 않습니다.
@@ -305,6 +307,8 @@ fresh 명령으로 AUTO traction·조향이 재활성화될 수 있습니다.
 | Dashboard/Side/RF E-stop | STM_B | GPIO low | 서보 engage, safety bit 1 | 세 입력 high | STM_B `app_freertos.c` |
 | AUTO Host brake | 두 STM·조향 | `brake_engage=true` | traction HALTED, 서보 engage, 조향 Disable | false command 또는 MANUAL 전환; false command 목표를 즉시 pending으로 사용 가능 | 두 STM·조향 |
 | STM_A Host command 중단 | STM_A | 미수신 또는 ≥500 ms | AUTO HALTED, speed=0 | 새 valid command | STM_A `app_freertos.c` |
+| STM_A Host torque command 중단 | STM_A | 미수신 또는 ≥200 ms | AUTO speed control로 복귀 (traction 유지) | 새 `torque_mode=true` command | STM_A `app_freertos.c` |
+| 종방향 torque 허용 조건 위반 | `longitudinal_actuator_node` | MANUAL·E-stop·stop_request·fault·brake·stale·gear·음의 목표 | `torque_mode=false`, 0 A 발행 → STM_A speed control | 조건 회복 시 실측 전류에서 bumpless 재진입 | `longitudinal_actuator_node.cpp` |
 | 조향 command 중단 | 조향 | ACTIVE age >200 ms | KEYA Disable, `WAIT_CMD` | 새 command | `steering_actuator_node.cpp` |
 | STM_B→STM_A UART 중단 | STM_A | invalid 또는 ≥100 ms | traction HALTED | 새 CRC-valid frame | STM_A `app_freertos.c` |
 | STM_A→STM_B UART 중단 | STM_B | ≥200 ms | frame invalid, dashboard 표시 fault | 새 CRC-valid frame | STM_B `app_freertos.c` |

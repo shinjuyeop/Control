@@ -1,0 +1,52 @@
+longitudinal_actuator_node:
+  ros__parameters:
+    # false면 항상 torque_mode=false를 발행해 STM_A가 기존 EZkontrol speed control을 쓴다.
+    # 실행 중 ros2 param set으로 바꿀 수 있어 같은 Run 안에서 두 방식을 비교할 수 있다.
+    torque_control_enabled: false
+    # 차속 피드백 원천. drive_status: /drive/status.speed_mps(RPM, spike 제거·2 Hz LPF)
+    # gnss: /gnss/fix_velocity 수평 속도. 시작 시에만 읽는다.
+    speed_source: "drive_status"
+    gnss_velocity_topic: "/gnss/fix_velocity"
+    publish_period_ms: 20            # /drive/torque_command 발행 주기. STM_A timeout 200 ms
+    command_timeout_ms: 200          # /vehicle/command가 이보다 오래되면 torque 해제
+    drive_status_timeout_ms: 200     # /drive/status가 이보다 오래되면 torque 해제
+    feedback_timeout_ms: 300         # 유효 차속 샘플이 이보다 오래되면 torque 해제
+
+    # torque control에서 EZkontrol에 같이 보내는 회전수 상한 = max(형상 목표 + margin, floor).
+    # margin <= 0이면 STM_A 기본(전진 4500 rpm). STM_A와 같은 타이어·감속비를 쓴다.
+    speed_limit_margin_mps: 2.0
+    speed_limit_floor_mps: 3.0
+    tire_diameter_m: 0.47
+    gear_ratio: 4.6
+
+    # ---- 플랜트 (2026-09-20 오전 18개 기록 식별값, R2=0.81) ----
+    # dv/dt = current_gain * I_phase - rolling_resistance - speed_damping * v
+    # 정속 유지 전류 ≈ 45 + 5.6·v A (실측 36 + 6.3·v A와 일치)
+    current_gain_mps2_per_a: 0.00512
+    rolling_resistance_mps2: 0.228
+    speed_damping_per_s: 0.0288
+    feedforward_accel_scale: 1.0
+    feedforward_resistance_scale: 1.0
+
+    # ---- PI (ωn = 1.0 rad/s, ζ = 1.0 기준) ----
+    kp_a_per_mps: 380.0
+    ki_a_per_m: 190.0
+    integrator_limit_a: 150.0
+
+    # ---- 목표 형상 ----
+    accel_limit_mps2: 1.0
+    decel_limit_mps2: 1.0
+    tracking_error_limit_mps: 1.0
+
+    # ---- 출력 한계 ----
+    max_drive_current_a: 300.0
+    max_regen_current_a: 80.0          # 0이면 감속 시 타력(0 A)만 사용
+    regen_bus_current_limit_a: 35.0    # 배터리 연속 충전 39 A 사양 안쪽
+    current_slew_a_per_s: 800.0
+    regen_min_speed_mps: 0.5
+    stop_speed_mps: 0.3
+
+    # ---- 차속 추정 ----
+    speed_filter_hz: 2.0
+    speed_jump_reject_mps: 1.0
+    speed_jump_reject_max_samples: 8

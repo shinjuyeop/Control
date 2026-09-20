@@ -93,7 +93,9 @@ STM_A는 종방향 구동과 차량의 물리 모드·기어·가속 페달 입�
 - PA0 ADC로 가속 페달을 읽고 0~100%로 변환합니다.
 - PA8 모드 스위치와 PA9 기어 스위치를 읽습니다.
 - AUTO에서는 `/vehicle/command.speed_target_mps`를 EZkontrol speed-control
-  명령으로 변환합니다.
+  명령으로 변환합니다. Host `longitudinal_ctrl`이 `/drive/torque_command`로
+  신선한 torque 요청을 보내는 동안은 그 상전류 목표를 torque-control 명령으로
+  보냅니다(200 ms timeout 시 speed-control 복귀).
 - MANUAL에서는 물리 페달과 기어를 torque-control 명령으로 변환합니다.
 - EZkontrol handshake와 CAN 명령·Part I/II 상태 수신을 담당합니다.
 - `/drive/status`로 모드, 기어, 속도, 명령 freshness와 모터 진단을 발행합니다.
@@ -162,6 +164,9 @@ pinout·전압·renderer 세부사항은
   `hil_command_generator`가 대역입니다. 두 시험 발행자는 동시에 실행하지 않습니다.
 - `lateral_ctrl/steering_actuator_node`가 KEYA 모터의 SocketCAN 소유자가 되어
   조향을 제어합니다.
+- `longitudinal_ctrl/longitudinal_actuator_node`가 `/vehicle/command`의 목표 차속과
+  `/drive/status` 피드백으로 상전류 명령(`/drive/torque_command`)을 만듭니다.
+  `torque_control_enabled=false`(기본)이면 STM_A는 EZkontrol speed control을 유지합니다.
 - `vehicle_state_publisher` package가 status 3종을 처리합니다.
   `vehicle_state_publisher_node`는 `/vehicle/state`와 유효한 구동·조향 관측 기반
   `/vehicle/wheel_twist`를 20 Hz로 발행하고, 별도 `diagnostics_publisher`는
@@ -213,7 +218,9 @@ Planning / Motion Control (별도 상위 패키지)
           └─ /vehicle/command: ActuatorCommand
               ├─ STM_A: speed_target_mps, brake_engage
               ├─ STM_B: brake_engage
-              └─ steering_actuator_node: steering_target_rad, brake_engage
+              ├─ steering_actuator_node: steering_target_rad, brake_engage
+              └─ longitudinal_actuator_node: speed_target_mps, brake_engage
+                  └─ /drive/torque_command: DriveTorqueCommand ─> STM_A (AUTO torque control)
 ```
 
 - STM_A는 AUTO일 때만 Host 속도 명령을 사용합니다. MANUAL의 종방향 목표는
@@ -236,6 +243,9 @@ flowchart LR
     DS --> L
     BS --> L
     L --> SS["/steering/status"]
+    DS --> LG["longitudinal_actuator_node"]
+    BS --> LG
+    LG -->|"/drive/torque_command"| A
     DS --> F["vehicle_state_publisher"]
     BS --> F
     SS --> F
@@ -261,7 +271,7 @@ UNO의 local navigation으로만 이어지며, 점선 USB 경로는 HIL 전용 �
 
 | 구분 | MANUAL (`0`) | AUTO (`1`) |
 |---|---|---|
-| 종방향 목표 | STM_A의 물리 페달과 기어 | `/vehicle/command.speed_target_mps` |
+| 종방향 목표 | STM_A의 물리 페달과 기어 | `/vehicle/command.speed_target_mps`; torque control 시 Host `/drive/torque_command`의 상전류 |
 | Host command timeout | traction 판단에 적용하지 않음 | 500 ms에 traction HALTED |
 | Host `brake_engage` | STM_A traction과 STM_B 서보 판단에서 제외 | traction HALTED 및 서보 engage |
 | 물리 E-stop | STM_B 서보 engage, STM_A traction HALTED | 동일 |
@@ -343,6 +353,7 @@ ARM 이후 발행합니다. Web 조작권은 한 브라우저에만 주며 heart
 | 물리 E-stop 판독과 브레이크 PWM | STM_B |
 | STM 간 safety/vehicle 상태 교환 | STM_A·STM_B USART1 |
 | KEYA 조향 제어와 조향 timeout | Host `lateral_ctrl` |
+| 종방향 속도 루프(상전류 명령)와 torque 허용 조건 | Host `longitudinal_ctrl` |
 | `/vehicle/state`·`/vehicle/wheel_twist` 합성 | Host `vehicle_state_publisher/vehicle_state_publisher_node` |
 | status 3종의 `/diagnostics` 요약 | Host `vehicle_state_publisher/diagnostics_publisher` |
 | `/vehicle/command` 단일 발행과 명령 정합성 게이트 | Host `command_governor` |
