@@ -45,7 +45,14 @@ ros2 launch control_launch vehicle.launch.py tuning_preset:=airborne
 `ip -details link show can0`로 확인한다. AUTO에서 명령이 없으면 STM_A는 HALTED,
 조향은 명령 대기다. MANUAL의 물리 페달 경로는 별도로 동작한다.
 
-공통 제어 설정은 `ros2 run control_tuning control_tuning_tui`로 편집한다.
+공통 제어 설정을 편집하려면 별도 터미널에서 Control Tuning을 실행한다.
+
+```bash
+cd ~/KAI_ws
+si
+ros2 run control_tuning control_tuning_tui
+```
+
 상단에서 **주행 / 공중**를 선택하면 조향 응답·출력 제한·보호·운용·수신 시간
 분류가 나타난다. `S`는 선택한 프리셋 YAML을 저장하고, 해당 프리셋으로 다음 launch를
 실행할 때 반영된다. 실행 중 Torque 튜닝은 MANUAL·정지 상태에서 `A → Enter`로
