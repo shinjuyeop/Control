@@ -19,5 +19,6 @@ setup(
     license='TODO: License declaration',
     entry_points={'console_scripts': [
         'control_tuning_tui = control_tuning.tui:main',
+        'longitudinal_calibration = control_tuning.longitudinal_runtime:main',
     ]},
 )

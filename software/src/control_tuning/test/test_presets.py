@@ -15,7 +15,7 @@ def test_presets_save_in_independent_files_with_individual_backups(store):
                                  'peak_current_command_a': 12.0007})
         document = yaml.safe_load(presets.path_for(condition).read_text())
         assert document['condition'] == condition
-        assert document['values']['p_gain_a_per_deg'] == 32 + i * 4
+        assert document['lateral']['p_gain_a_per_deg'] == 32 + i * 4
     assert not store.path.exists()  # Saving one preset must not change the shared base.
     assert not presets.legacy_path.exists()
     reread = PresetStore(store)
@@ -59,7 +59,7 @@ def test_preset_load_checks_reference_completeness_and_filename(store):
     with pytest.raises(ValueError, match='환산 기준'):
         presets.load('airborne')
     document['current_reference_a'] = 20
-    document['values'].pop('p_gain_a_per_deg')
+    document['lateral'].pop('p_gain_a_per_deg')
     path.write_text(yaml.safe_dump(document))
     presets.reload()
     with pytest.raises(ValueError):
@@ -70,28 +70,15 @@ def test_preset_load_checks_reference_completeness_and_filename(store):
         presets.reload()
 
 
-def test_legacy_presets_remain_readable_and_move_individually_on_save(store):
+def test_legacy_preset_requires_explicit_longitudinal_migration(store):
     presets = PresetStore(store)
     legacy = {'schema_version': 1, 'presets': {
-        c: {'current_reference_a': 20, 'values': {**store.saved, 'p_gain_a_per_deg': 32 + i * 4}}
-        for i, c in enumerate(CONDITION_KEYS)}}
+        'driving': {'current_reference_a': 20, 'values': store.saved}}}
     presets.legacy_path.parent.mkdir(parents=True)
     presets.legacy_path.write_text(yaml.safe_dump(legacy))
-    original = presets.legacy_path.read_bytes()
-    presets.reload()
-    assert presets.load('driving')['p_gain_a_per_deg'] == 32
-    assert not presets.directory.exists()  # Reading never migrates or writes.
-    presets.save('airborne', {**presets.load('airborne'), 'p_gain_a_per_deg': 44})
-    assert presets.legacy_path.read_bytes() == original
-    reread = PresetStore(store)
-    assert reread.load('airborne')['p_gain_a_per_deg'] == 44
-    assert reread.load('driving')['p_gain_a_per_deg'] == 32
-    assert not reread.path_for('driving').exists()
-    legacy['presets']['driving']['values']['p_gain_a_per_deg'] = 50
-    presets.legacy_path.write_text(yaml.safe_dump(legacy))
-    with pytest.raises(ValueError, match='외부'):
-        reread.load('driving')
-    assert reread.load('airborne')['p_gain_a_per_deg'] == 44
+    with pytest.raises(ValueError, match='v2'):
+        presets.reload()
+    assert not presets.directory.exists()
 
 
 def test_selection_is_required_and_empty_slot_opens_editor_immediately(store):
@@ -151,7 +138,7 @@ def test_empty_condition_starts_from_startup_not_previous_condition(store, edito
     editor.key('enter')
     assert editor.modal['action'] == 'preset_switch'
     editor.key('enter')
-    assert editor.preset_condition == 'ground_stationary'
+    assert editor.preset_condition == 'driving'
     assert editor.draft == store.saved
     assert editor.preset_baseline == store.saved
     assert not editor.preset_dirty

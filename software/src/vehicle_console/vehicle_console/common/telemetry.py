@@ -5,6 +5,8 @@ import time
 from collections import defaultdict, deque
 
 from diagnostic_msgs.msg import DiagnosticArray
+from std_msgs.msg import Float32MultiArray
+from control_tuning.longitudinal import STATUS_TOPIC, decode_status
 from kaiev26_msgs.msg import (ActuatorCommand, BrakeActuatorStatus, DriveActuatorStatus, RuntimeStats, SteeringActuatorStatus)
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
@@ -18,6 +20,7 @@ RATE_WINDOW_SECONDS = 5.0
 VEHICLE_TOPICS = (
     (ActuatorCommand, "/vehicle/command"),
     (DriveActuatorStatus, "/drive/status"),
+    (Float32MultiArray, STATUS_TOPIC),
     (SteeringActuatorStatus, "/steering/status"),
     (BrakeActuatorStatus, "/brake/status"),
     *((RuntimeStats, topic) for topic in BOARDS),
@@ -66,6 +69,11 @@ class ObserverNode(Node):
         )
 
     def receive(self, topic, data):
+        if topic == STATUS_TOPIC:
+            try:
+                data = decode_status(data['data'])
+            except (KeyError, ValueError):
+                return
         now = time.monotonic()
         self.samples[topic] = (now, data)
         if topic == "/diagnostics":

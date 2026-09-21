@@ -48,7 +48,7 @@ SYSID_TOPICS = (
     "/steering/torque_rate_ready",
     "/steering/torque_safety",
 
-    "/drive/status",
+    "/drive/status", "/drive/longitudinal_status", "/drive/longitudinal_config",
     "/brake/status",
     "/vehicle/state",
     "/vehicle/wheel_twist",

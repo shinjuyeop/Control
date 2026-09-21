@@ -15,6 +15,8 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from std_srvs.srv import Trigger
+from std_msgs.msg import Float32MultiArray
+from control_tuning.longitudinal import AIRBORNE, STATUS_TOPIC, config_wire
 from rosidl_runtime_py.set_message import set_message_fields
 from starlette.websockets import WebSocketDisconnect
 
@@ -56,6 +58,9 @@ def vehicle(tmp_path):
                             name="drive", hardware_id="STM_A", level=DiagnosticStatus.WARN,
                             message="CAN observation", values=[KeyValue(key="part1", value="valid")],
                         )])
+                    elif msg_type is Float32MultiArray:
+                        msg = Float32MultiArray(data=[1., 1., 17., 1., 1., *config_wire(AIRBORNE),
+                                                      .2, 1.6, .3, 1.9, 1.9, 0., 0., 0., 1., 0.])
                     elif msg_type is ActuatorCommand:
                         msg = msg_type(speed_target_mps=1.5, steering_target_rad=0.2)
                     elif msg_type is DriveActuatorStatus:
@@ -123,9 +128,14 @@ def test_live_stale_reconnect_and_runtime_mapping(vehicle):
     client, _, control = vehicle
     with client.websocket_connect("ws://localhost/ws", headers={"origin": "http://localhost"}) as ws:
         control["publish"] = True
-        state = receive(ws, lambda s: len(s["topics"]) == 7)
+        state = receive(ws, lambda s: {topic for _, topic in VEHICLE_TOPICS} <= s["topics"].keys())
         assert state["topics"]["/vehicle/command"]["data"]["speed_target_mps"] == 1.5
         assert state["topics"]["/drive/status"]["data"]["speed_mps"] == pytest.approx(1.42)
+        lon = state["topics"][STATUS_TOPIC]["data"]
+        assert lon["config"]["control_mode"] == "torque"
+        assert lon["source"] == "HOST_OVERRIDE"
+        assert lon["p_current_a"] == pytest.approx(1.6)
+        assert lon["i_current_a"] == pytest.approx(.3)
         for name, topic in (("STM_A", "/stm_a/runtime_stats"), ("STM_B", "/stm_b/runtime_stats")):
             assert state["runtime"][name]["topic"] == topic
             assert state["runtime"][name]["status"] == "ok"

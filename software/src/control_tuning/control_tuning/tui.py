@@ -11,6 +11,7 @@ import yaml
 from rich.console import Console
 from rich.text import Text
 
+from .longitudinal import LONGITUDINAL
 from .schema import (FIELDS, GROUPS, STEERING, GOVERNOR, decode, decode_node,
                      encode, equivalent)
 from .storage import SettingsStore
@@ -77,7 +78,7 @@ class Editor:
     def live_values(self, runtime):
         values = {}
         if runtime:
-            for name in (STEERING, GOVERNOR):
+            for name in (STEERING, GOVERNOR, LONGITUDINAL):
                 native = runtime.fresh_values(name)
                 if native:
                     try:
@@ -101,12 +102,24 @@ class Editor:
         normalized = decode({n: {**self.store.saved_native[n], **p} for n, p in native.items()})
         if runtime is None:
             raise ValueError('오프라인에서는 저장만 가능합니다. ROS 환경에서 실행하십시오.')
+        if self.field.node == LONGITUDINAL:
+            reason = runtime.longitudinal.reason()
+            if reason:
+                raise ValueError(reason)
+            status = runtime.longitudinal.fresh()
+            actual = status['config']
+            changed = [f for f in FIELDS if f.node == LONGITUDINAL and
+                       not equivalent(normalized[f.key], actual[f.key])]
+            self.modal = dict(action='apply_longitudinal', expected=status['revision'],
+                              normalized=native[LONGITUDINAL],
+                              rows=[(f.label + ' ' + f.unit, actual[f.key], normalized[f.key]) for f in changed])
+            return
         reason = runtime.apply_reason(self.store.saved_native[STEERING])
         if reason:
             raise ValueError(reason)
         actual = runtime.fresh_values(STEERING)
         live = decode_node(STEERING, actual)
-        changed = [f for f in FIELDS if f.live and not equivalent(normalized[f.key], live[f.key])]
+        changed = [f for f in FIELDS if f.live and f.node == STEERING and not equivalent(normalized[f.key], live[f.key])]
         if not changed:
             self.tell('조향 튜닝이 이미 일치합니다. 운용·수신 시간 제한은 프리셋 저장 후 해당 프리셋으로 재시작하세요.')
             return
@@ -176,7 +189,10 @@ class Editor:
     def confirm(self, runtime):
         modal, self.modal = self.modal, None
         action = modal['action']
-        if action == 'apply':
+        if action == 'apply_longitudinal':
+            runtime.begin_longitudinal_apply(modal['normalized'], modal['expected'])
+            self.tell('STM_A 종방향 일괄 적용·readback 확인 중')
+        elif action == 'apply':
             runtime.begin_apply(modal['normalized'], self.store.saved_native[STEERING], modal['expected'])
             self.tell('조향 튜닝 일괄 적용 중 · 응답과 실제 적용값을 확인합니다.')
         elif action == 'reload':
@@ -241,7 +257,7 @@ class Editor:
                     self.selected = (self.selected - 1) % len(self.fields)
             elif key in ('down', 'scroll_down'):
                 self.selected = (self.selected + 1) % len(self.fields)
-            elif key in ('1', '2', '3', '4'):
+            elif key in tuple(str(i + 1) for i in range(len(GROUPS))):
                 self.group, self.selected = int(key) - 1, 0
             elif key == 'enter':
                 if self.field.choices:

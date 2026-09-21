@@ -380,3 +380,22 @@ ros2 topic echo /stm_a/runtime_stats --once --qos-reliability best_effort
 RuntimeStats 적용 firmware의 LPUART1과 Agent는 모두 **460800 baud**를 사용합니다.
 이전 115200 firmware를 사용할 때만 launch에 `agent_baud:=115200`을 지정하십시오.
 보드 간 USART1과 STM_TEST/Arduino serial은 115200으로 유지합니다.
+
+
+## AUTO longitudinal mode
+
+기존 Speed 및 MANUAL 동작은 보존된다. `Core/Src/longitudinal_controller.c`는
+기존 20 Hz Control task에서 호출하는 positive-current PI다. 새 task는 없다.
+부팅 기본은 speed/DEFAULT, driving gain은 MCAP first-test candidate다.
+PC→RAM calibration과 5 Hz readback은 [wire 계약](../../docs/INTERFACES.md#longitudinal-calibration-v1),
+reset/feedback/전류 정책과 시험 절차는 [실측 보고서](../../docs/reports/2026-09-21_longitudinal_torque_pi.md)를 따른다.
+
+Host 알고리즘/상태 전이 테스트 (HAL/ROS/보드 불필요):
+
+```bash
+gcc -std=c11 -Wall -Wextra -Werror -ICore/Inc tests/longitudinal_controller_test.c Core/Src/longitudinal_controller.c -lm -o /tmp/kai_longitudinal_test
+/tmp/kai_longitudinal_test
+```
+
+Torque는 forward만 지원한다. feedback <200 ms가 아니면 HALTED, 복구 뒤 새 명령이 필요하다.
+Speed reverse와 MANUAL pedal은 기존 계약이며 Torque 설정의 8 A airborne cap과 무관하다.

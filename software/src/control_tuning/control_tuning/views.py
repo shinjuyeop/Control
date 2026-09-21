@@ -95,7 +95,7 @@ def _review(editor, visible):
         operation = {'quit': '종료', 'reload': '파일 다시 읽기',
                      'preset_switch': f'{condition_label(modal.get("condition"))} 프리셋으로 변경'}[action]
         return Text(f'{operation}\n\n저장하지 않은 수정값을 버립니다.', style='yellow')
-    title = '현재 조향에 적용'
+    title = 'STM_A 종방향에 적용 · first-test candidate' if action == 'apply_longitudinal' else '현재 조향에 적용'
     table = _table(('항목', None), ('이전', 12), ('변경 후', 12))
     count = max(1, visible - 2)
     offset = min(editor.modal_offset, max(0, len(modal['rows']) - count))
@@ -115,7 +115,7 @@ def _keys(editor, choosing):
     if editor.help:
         return ('L 현재값   B 기본값   X 저장값   R 조회   F 파일 다시 읽기\n'
                 '? 도움말 닫기   Q 종료')
-    return ('1–4 분류   ↑↓ 항목   Enter 수정   P 프리셋   ? 도움말   Q 종료\n'
+    return ('1–7 분류   ↑↓ 항목   Enter 수정   P 프리셋   ? 도움말   Q 종료\n'
             'S 프리셋 저장   A 현재 적용')
 
 
@@ -146,7 +146,10 @@ def layout(editor, runtime, width, height):
     header.add_column(ratio=1)
     header.add_column(justify='right')
     state = connection + (f' · 재시작 항목 차이 {pending}' if pending else '')
-    header.add_row(Text('CONTROL TUNING', style='bold'), Text(state, style='dim'))
+    if runtime and hasattr(runtime, 'longitudinal'):
+        lon = runtime.longitudinal.fresh()
+        state += f' · STM_A {lon["source"]}' if lon else ' · STM_A 대기'
+    header.add_row(Text('CONTROL TUNING · Torque first-test candidate', style='bold'), Text(state, style='dim'))
     view['header'].update(Group(Padding(header, (0, 1)), Rule(style='bright_black')))
     preset_row = Table.grid(expand=True)
     preset_row.add_column(ratio=1)
@@ -162,14 +165,19 @@ def layout(editor, runtime, width, height):
     view['preset'].update(Padding(preset_row, (0, 1)))
     tabs = Text()
     for index, label in enumerate(GROUPS):
+        if width < 132 and index != editor.group:
+            continue
         tabs.append(f' {index + 1} {label} ',
                     style='bold black on cyan' if not choosing and not editor.modal and index == editor.group else 'dim')
         if index < len(GROUPS) - 1:
             tabs.append(' ')
+    if width < 132:
+        tabs.append('  1–7 / ←→ 분류 선택', style='dim')
     view['tabs'].update(Padding(tabs, (0, 1)))
     if editor.modal:
         body = _review(editor, visible)
-        notes = {'apply': '조향 튜닝만 적용합니다. 운용·수신 시간은 저장 후 해당 프리셋으로 재시작하세요.',
+        notes = {'apply_longitudinal': '종방향 전체를 MANUAL·정지·무전류에서 RAM에 적용합니다. 재부팅 시 DEFAULT로 돌아갑니다.',
+                 'apply': '조향 튜닝만 적용합니다. 운용·수신 시간은 저장 후 해당 프리셋으로 재시작하세요.',
                  'preset_switch': '보관하려면 Esc로 돌아가 S로 저장하세요.',
                  'quit': '보관하려면 Esc로 돌아가 S로 저장하세요.',
                  'reload': '보관하려면 Esc로 돌아가 S로 저장하세요.'}

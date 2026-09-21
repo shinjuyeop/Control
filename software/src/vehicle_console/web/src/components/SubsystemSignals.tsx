@@ -88,8 +88,8 @@ export function DriveFlow() {
           },
           {
             label: "STM_A",
-            value: `${fmt(drive.commanded_motor_rpm, 0)} RPM`,
-            detail: "모터 명령 생성",
+            value: drive.controller_control_mode === 0 ? `${fmt(drive.commanded_phase_current_a, 1)} A` : `${fmt(drive.commanded_motor_rpm, 0)} RPM`,
+            detail: drive.controller_control_mode === 0 ? "Torque 전류 명령 · RPM 상한" : "Speed RPM 명령 · 전류 한도",
             status: reception(state, online, "/drive/status"),
           },
         ];

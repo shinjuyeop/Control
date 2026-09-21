@@ -73,8 +73,8 @@ def test_tui_adopts_running_launch_preset_and_preserves_operator_choice(paramete
     from vehicle_test_scenarios.sysid_tui import MenuState
     _, steering, _, capture = parameter_nodes
     steering.declare_parameter('tuning_preset', 'airborne')
-    document = capture('ground_stationary')
-    assert document['test_condition']['key'] == 'ground_stationary'
+    document = capture('stationary')
+    assert document['test_condition']['key'] == 'stationary'
     assert document['nodes']['/steering_actuator_node']['ros__parameters']['tuning_preset'] == 'airborne'
     node = SysidNode()
     executor = SingleThreadedExecutor()
@@ -88,9 +88,9 @@ def test_tui_adopts_running_launch_preset_and_preserves_operator_choice(paramete
         assert node.launch_preset == 'airborne'
         menu.adopt_launch_preset(node.snapshot()['launch_preset'])
         assert menu.run_settings().test_condition == 'airborne'
-        menu.test_condition = 'ground_stationary'
+        menu.test_condition = 'stationary'
         menu.adopt_launch_preset('airborne')
-        assert menu.run_settings().test_condition == 'ground_stationary'
+        assert menu.run_settings().test_condition == 'stationary'
     finally:
         executor.remove_node(steering)
         executor.shutdown()
@@ -110,7 +110,7 @@ def test_missing_parameter_is_explicit_not_filled_from_yaml(parameter_nodes):
 
 def test_snapshot_unavailable_node_times_out_and_cleans_clients(parameter_nodes):
     reader, _, _, _ = parameter_nodes
-    capture = ParameterCapture(reader, 'ground_stationary', timeout=0)
+    capture = ParameterCapture(reader, 'stationary', timeout=0)
     capture.started -= 1
     assert capture.tick()
     assert capture.document['status'] == 'incomplete'

@@ -39,7 +39,7 @@ ros2 launch control_launch vehicle.launch.py
 ros2 launch control_launch vehicle.launch.py tuning_preset:=airborne
 
 # 접지 정지 시험
-ros2 launch control_launch vehicle.launch.py tuning_preset:=ground_stationary
+ros2 launch control_launch vehicle.launch.py tuning_preset:=driving
 ```
 
 옵션 없이 실행하면 **주행 프리셋(`driving`)**을 사용한다. 매번 튜닝 TUI를 열 필요는 없다.
@@ -49,17 +49,20 @@ ros2 launch control_launch vehicle.launch.py tuning_preset:=ground_stationary
 조향은 명령 대기다. MANUAL의 물리 페달 경로는 별도로 동작한다.
 
 공통 제어 설정은 `ros2 run control_tuning control_tuning_tui`로 편집한다.
-상단에서 **주행 / 공중 / 접지 정지**를 선택하면 조향 응답·출력 제한·보호·운용·수신 시간
+상단에서 **주행 / 공중**를 선택하면 조향 응답·출력 제한·보호·운용·수신 시간
 분류가 나타난다. `S`는 선택한 프리셋 YAML을 저장하고, 해당 프리셋으로 다음 launch를
 실행할 때 반영된다. 실행 중 Torque 튜닝은 MANUAL·정지 상태에서 `A → Enter`로
 적용할 수 있다. 운용·수신 시간은 저장 후 기존 launch를 완전히 종료하고 같은 프리셋으로
 다시 실행한다. [저장 경로·단위·조작 안내](../software/src/control_tuning/README.md)를 따른다.
 
-세 프리셋은 저장돼 있다. 공중은 P=1 A/deg, D=0.04 A/(deg/s), 최대/지속 명령=2/1 A,
-고출력 허용/회복=200/2000 ms인 초기 시험 후보이며, 접지 정지·주행은 기존 초기값이다.
-조건별 검증값은 아니며, 저장 위치는
-Control의 `software/src/control_tuning/config/control_tuning.presets/`다.
-공중 프리셋을 저장해도 옵션 없는 다음 실행은 계속 주행 프리셋을 사용한다.
+두 프리셋 `airborne`/`driving`은 schema v2로 lateral/longitudinal/governor/timeouts를 보관한다.
+종방향은 first-test candidate이며 실차 성능 검증값이 아니다. 새 STM_A는 부팅 시 speed DEFAULT,
+launch는 MANUAL 정지·무전류에서 선택한 calibration을 한 번 적용하고 readback을 확인한다.
+실패/timeout이면 현재 모드를 확인하고 TUI Longitudinal에서 A로 적용한다.
+공중 Torque는 8 A/RPM300, 주행 Torque는 480 A/RPM4500이다. Speed fallback의 기존
+480 A 경로는 그대로이므로 공중 Torque 제한이 Speed에 적용된다고 가정하지 않는다.
+[airborne/A-B 절차와 실제 초기값](reports/2026-09-21_longitudinal_torque_pi.md)을 확인한다.
+접지 정지는 별도 calibration preset이 아니라 시나리오 시험 조건이다.
 
 시나리오 TUI에서는 오른쪽 설정의 `MCAP 녹화`와 `시험 조건`에서 Enter를 누른 뒤
 ↑↓로 고르고 Enter로 확정한다. 시험 조건은 기록용이며 제어 프리셋을 적용하지 않는다.

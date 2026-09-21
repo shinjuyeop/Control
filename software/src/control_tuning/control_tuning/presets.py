@@ -6,8 +6,19 @@ import fcntl
 import yaml
 
 from .conditions import CONDITIONS, CONDITION_KEYS, condition_label
-from .schema import BY_KEY, STEERING, decode, encode, equivalent
+from .schema import BY_KEY, STEERING, FIELDS, GOVERNOR, decode, encode, equivalent
+from .longitudinal import LONGITUDINAL
 from .storage import SettingsStore, fingerprint, read_document
+
+
+def sections(values):
+    result = {name: {} for name in ('lateral', 'longitudinal', 'governor', 'timeouts')}
+    for field in FIELDS:
+        section = ('longitudinal' if field.node == LONGITUDINAL else
+                   'governor' if field.node == GOVERNOR else
+                   'timeouts' if 'timeout' in field.key else 'lateral')
+        result[section][field.key] = values[field.key]
+    return result
 
 
 class PresetStore:
@@ -27,14 +38,16 @@ class PresetStore:
             token = fingerprint(path)
             if token is not None:
                 entry = read_document(path)
-                if entry.get('schema_version') != 1 or entry.get('condition') != condition:
-                    raise ValueError(f'{path}: schema_version=1과 올바른 condition이 필요합니다.')
+                if entry.get('schema_version') != 2 or entry.get('condition') != condition:
+                    raise ValueError(f'{path}: schema_version=2와 올바른 condition (v1은 명시적 변환 필요)이 필요합니다.')
             else:
                 if legacy is None:
                     legacy = read_document(self.legacy_path) or {'schema_version': 1, 'presets': {}}
                     if legacy.get('schema_version') != 1 or not isinstance(legacy.get('presets'), dict):
                         raise ValueError('기존 프리셋 파일 형식을 확인하세요. schema_version=1이 필요합니다.')
                 entry = legacy['presets'].get(condition)
+                if entry is not None:
+                    raise ValueError('schema v1 프리셋: v2로 명시적 변환하고 longitudinal 값을 선택하세요.')
             if entry is not None and not isinstance(entry, dict):
                 raise ValueError(f'{condition_label(condition)} 프리셋 형식이 올바르지 않습니다.')
             if fingerprint(path) != token or (token is None and fingerprint(self.legacy_path) != legacy_token):
@@ -45,7 +58,7 @@ class PresetStore:
 
     def path_for(self, condition):
         if condition not in CONDITIONS:
-            raise ValueError('주행 / 공중 / 접지 정지 중에서 프리셋을 선택하세요.')
+            raise ValueError('주행 / 공중 중에서 프리셋을 선택하세요.')
         return self.directory / f'{condition}.yaml'
 
     def entry(self, condition):
@@ -59,7 +72,7 @@ class PresetStore:
             raise ValueError('프리셋 파일이 외부에서 변경되었습니다. F로 다시 읽으세요.')
 
     def normalize(self, values):
-        if not isinstance(values, dict) or set(values) != set(BY_KEY):
+        if not isinstance(values, dict) or not set(BY_KEY).issubset(values):
             raise ValueError(f'프리셋에는 현재 편집 항목 {len(BY_KEY)}개의 값이 모두 필요합니다.')
         native = encode(values, self.settings.saved_native[STEERING])
         return decode({name: {**self.settings.base[name], **parameters}
@@ -73,7 +86,8 @@ class PresetStore:
         reference = self.settings.saved_native[STEERING]['keya_protection_current_a']
         if not equivalent(entry.get('current_reference_a'), reference):
             raise ValueError('프리셋과 현재 설정의 전류 환산 기준이 다릅니다.')
-        return self.normalize(entry.get('values'))
+        return self.normalize({key: value for section in ('lateral', 'longitudinal', 'governor', 'timeouts')
+                               for key, value in entry.get(section, {}).items()})
 
     def save(self, condition, values):
         self.entry(condition)
@@ -86,12 +100,12 @@ class PresetStore:
             if self.settings.has_external_change():
                 raise ValueError('저장 파일이 외부에서 변경되었습니다. F로 다시 읽으세요.')
             document = {
-                'schema_version': 1,
+                'schema_version': 2,
                 'condition': condition,
                 'label': condition_label(condition),
                 'saved_at': datetime.now(timezone.utc).isoformat(),
                 'current_reference_a': self.settings.saved_native[STEERING]['keya_protection_current_a'],
-                'values': normalized,
+                **sections(normalized),
             }
             content = ('# tuning_preset으로 선택한 다음 launch에 적용됩니다. 실행 중 적용은 TUI의 A를 사용합니다.\n' +
                        yaml.safe_dump(document, sort_keys=False, allow_unicode=True)).encode('utf-8')

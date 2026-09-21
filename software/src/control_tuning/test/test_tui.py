@@ -24,11 +24,11 @@ def test_preset_selector_is_first_and_cannot_be_skipped(store, width, height):
         output.seek(0)
         output.truncate(0)
         text = '\n'.join(screen.display)
-        assert '공중' in text and '접지 정지' in text and '주행' in text
+        assert '공중' in text and '주행' in text and '접지 정지' not in text
         if key == 'enter':
-            assert text.index('프리셋  ') < text.index('1 조향 응답')
+            assert text.index('프리셋  ') < text.index('1 Lateral 응답')
         else:
-            assert all(label not in text for label in ('1 조향 응답', '2 출력', '3 운용', '4 수신'))
+            assert all(label not in text for label in ('1 Lateral 응답', '2 Lateral 출력', '3 System 운용', '4 System timeout'))
         assert '선택 안 함' not in text
         assert '가져올 값 확인' not in text
         assert '프리셋 수정 20' not in text

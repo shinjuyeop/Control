@@ -2,7 +2,7 @@
 
 from dataclasses import asdict, dataclass, replace
 import math
-from control_tuning.conditions import CONDITIONS, condition_document
+from control_tuning.conditions import TEST_CONDITIONS, condition_document
 
 from .scenario_runner import (
     ScenarioConfig,
@@ -176,7 +176,7 @@ class RunSettings:
     test_condition: str = 'unspecified'
 
     def __post_init__(self):
-        if self.test_condition not in (*CONDITIONS, 'unspecified'):
+        if self.test_condition not in (*TEST_CONDITIONS, 'unspecified'):
             raise ValueError('지원하지 않는 시험 조건입니다.')
         if self.scenario not in SCENARIO_BY_KEY:
             raise ValueError(f'지원하지 않는 시나리오입니다: {self.scenario}')

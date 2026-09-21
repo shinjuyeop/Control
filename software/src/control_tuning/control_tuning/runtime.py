@@ -9,6 +9,8 @@ from rclpy.node import Node
 from rclpy.parameter import Parameter, parameter_value_to_python
 from rclpy.qos import qos_profile_sensor_data
 
+from .longitudinal import LONGITUDINAL
+from .longitudinal_runtime import LongitudinalClient
 from .schema import (STEERING, GOVERNOR, READ_NAMES, LIVE_NAMES,
                      equivalent, encode, validate_native)
 
@@ -32,6 +34,7 @@ def stop_reason(drive, steering, now):
 class TuningNode(Node):
     def __init__(self):
         super().__init__('control_tuning', enable_rosout=False)
+        self.longitudinal = LongitudinalClient(self)
         self.values = {}
         self.received = {}
         self.errors = {}
@@ -56,6 +59,9 @@ class TuningNode(Node):
         self.steering = (time.monotonic(), msg)
 
     def fresh_values(self, node):
+        if node == LONGITUDINAL:
+            status = self.longitudinal.fresh()
+            return status['config'] if status else None
         if time.monotonic() - self.received.get(node, -10) > 4.0:
             return None
         return self.values.get(node)
@@ -136,8 +142,19 @@ class TuningNode(Node):
                               started=time.monotonic(), draft=dict(draft),
                               context=dict(context), expected=dict(expected))
 
+    def begin_longitudinal_apply(self, draft, revision):
+        self.longitudinal.begin(draft, revision)
+        self.result = None
+        self.operation = dict(stage='longitudinal')
+
     def _advance(self, now):
         op = self.operation
+        if op['stage'] == 'longitudinal':
+            self.longitudinal.tick()
+            if self.longitudinal.result:
+                self._finish(*self.longitudinal.result)
+                self.longitudinal.result = None
+            return
         future = op['future']
         if not future.done():
             if now - op['started'] > 3.0:

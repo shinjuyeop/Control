@@ -13,7 +13,7 @@ TeamKAI-DL 차량의 KEYA 조향 액추에이터를 제어하는 ROS 2 Humble �
 설정을 Host가 자동 변경하거나 검증하지 않는다.
 
 Launch는 `params_file` 위에 `control_tuning_file`의 기존 공통 설정과
-`tuning_preset` 프리셋(기본 `driving`)을 읽는다. 다른 조건은 `airborne` / `ground_stationary`다.
+`tuning_preset` 프리셋(기본 `driving`)을 읽는다. 다른 조건은 `airborne`다.
 프리셋은 `control_tuning.presets/`의 조건별 YAML에 저장한다. 현재 기본은 `torque`이며,
 명시적 `actuation_mode:=position`/`torque`가 프리셋보다
 우선한다. 기존 HIL은 position 모델에 맞춰 position을 명시한다.

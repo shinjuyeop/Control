@@ -2,10 +2,12 @@
 
 from dataclasses import dataclass
 import math
+from .longitudinal import LONGITUDINAL, validate_config
 
 STEERING = 'steering_actuator_node'
 GOVERNOR = 'command_governor'
-GROUPS = ('조향 응답', '출력 제한·보호', '운용 설정', '수신 시간 제한')
+GROUPS = ('Lateral 응답', 'Lateral 출력', 'System 운용', 'System timeout',
+          'Longitudinal PI', 'Longitudinal 전류', 'Governor')
 
 
 @dataclass(frozen=True)
@@ -63,13 +65,40 @@ FIELDS = (
           'mode_timeout_ms', '/drive/status의 모드 수신 단절 기준입니다.', 50, live=False, integer=True),
     Field('drive_status_timeout_ms', '차속 피드백 수신 제한', 'ms', GROUPS[3],
           'drive_status_timeout_ms', '조향 허용 판단에 사용하는 차속의 수신 단절 기준입니다.', 10, live=False, integer=True),
-    Field('governor_input_timeout_ms', '상위 명령 유효시간', 'ms', GROUPS[3],
+    Field('governor_input_timeout_ms', '상위 명령 유효시간', 'ms', GROUPS[6],
           'input_timeout_ms', '/planning/command의 생성 시각을 검사합니다. 너무 오래되거나 미래 시각인 명령을 중계하지 않습니다.',
           10, node=GOVERNOR, live=False),
 )
+FIELDS += (
+    Field('control_mode', '종방향 모드', '', GROUPS[4], 'control_mode',
+          'A: STM_A MANUAL·정지·페달 해제·무전류에서만 적용. Torque 값은 first-test candidate.',
+          node=LONGITUDINAL, choices=('speed', 'torque')),
+    Field('speed_kp_a_per_mps', '속도 Kp', 'A/(m/s)', GROUPS[4], 'speed_kp_a_per_mps',
+          'MCAP 기반 first-test candidate. A는 MANUAL·정지·무전류에서 STM_A readback까지 확인합니다.', 10, node=LONGITUDINAL),
+    Field('speed_ki_a_per_mps_s', '속도 Ki', 'A/(m/s*s)', GROUPS[4], 'speed_ki_a_per_mps_s',
+          'MCAP 기반 first-test candidate. A는 MANUAL·정지·무전류에서 STM_A readback까지 확인합니다.', 1, node=LONGITUDINAL),
+    Field('speed_deadband_mps', '속도 deadband', 'm/s', GROUPS[4], 'speed_deadband_mps',
+          'MCAP 기반 first-test candidate. A는 MANUAL·정지·무전류에서 STM_A readback까지 확인합니다.', 0.01, node=LONGITUDINAL),
+    Field('speed_hysteresis_mps', 'Coast 해제 오차', 'm/s', GROUPS[4], 'speed_hysteresis_mps',
+          'MCAP 기반 first-test candidate. A는 MANUAL·정지·무전류에서 STM_A readback까지 확인합니다.', 0.01, node=LONGITUDINAL),
+    Field('max_drive_current_a', '최대 구동 전류', 'A', GROUPS[5], 'max_drive_current_a',
+          'MCAP 기반 first-test candidate. A는 MANUAL·정지·무전류에서 STM_A readback까지 확인합니다.', 10, node=LONGITUDINAL),
+    Field('integrator_limit_a', '적분 상한', 'A', GROUPS[5], 'integrator_limit_a',
+          'MCAP 기반 first-test candidate. A는 MANUAL·정지·무전류에서 STM_A readback까지 확인합니다.', 5, node=LONGITUDINAL),
+    Field('current_slew_up_a_s', '전류 상승률', 'A/s', GROUPS[5], 'current_slew_up_a_s',
+          'MCAP 기반 first-test candidate. A는 MANUAL·정지·무전류에서 STM_A readback까지 확인합니다.', 100, node=LONGITUDINAL),
+    Field('current_slew_down_a_s', '전류 하강률', 'A/s', GROUPS[5], 'current_slew_down_a_s',
+          'MCAP 기반 first-test candidate. A는 MANUAL·정지·무전류에서 STM_A readback까지 확인합니다.', 100, node=LONGITUDINAL),
+    Field('reapply_current_a', '재인가 저전류 구간', 'A', GROUPS[5], 'reapply_current_a',
+          'MCAP 기반 first-test candidate. A는 MANUAL·정지·무전류에서 STM_A readback까지 확인합니다.', 1, node=LONGITUDINAL),
+    Field('reapply_slew_a_s', '재인가 상승률', 'A/s', GROUPS[5], 'reapply_slew_a_s',
+          'MCAP 기반 first-test candidate. A는 MANUAL·정지·무전류에서 STM_A readback까지 확인합니다.', 20, node=LONGITUDINAL),
+    Field('motor_rpm_limit', 'Torque RPM 상한', 'rpm', GROUPS[5], 'motor_rpm_limit',
+          'MCAP 기반 first-test candidate. A는 MANUAL·정지·무전류에서 STM_A readback까지 확인합니다.', 100, node=LONGITUDINAL),
+)
 BY_KEY = {f.key: f for f in FIELDS}
-OWNED = {node: {f.native for f in FIELDS if f.node == node} for node in (STEERING, GOVERNOR)}
-LIVE_NAMES = tuple(f.native for f in FIELDS if f.live)
+OWNED = {node: {f.native for f in FIELDS if f.node == node} for node in (STEERING, GOVERNOR, LONGITUDINAL)}
+LIVE_NAMES = tuple(f.native for f in FIELDS if f.live and f.node == STEERING)
 # Read these as well so conversions, limits and concurrent edits use actual node values.
 CONTEXT_NAMES = (
     'keya_protection_current_a', 'torque_control_period_ms', 'count_scale',
@@ -112,7 +141,7 @@ def decode(native):
 
 def encode(values, context):
     """Convert amperes to existing ROS parameters; preserve P when changing peak."""
-    result = {STEERING: {}, GOVERNOR: {}}
+    result = {STEERING: {}, GOVERNOR: {}, LONGITUDINAL: {}}
     for f in FIELDS:
         value = values[f.key]
         if f.choices:
@@ -141,6 +170,7 @@ def encode(values, context):
     s['torque_full_scale_error_deg'] = s['torque_peak_limit_raw'] * scale / values['p_gain_a_per_deg']
     s['torque_kd'] = values['d_gain_a_per_deg_s'] / scale * 180.0 / math.pi
     validate_native({**context, **s}, result[GOVERNOR])
+    validate_config(result[LONGITUDINAL])
     return result
 
 
@@ -184,6 +214,16 @@ def validate_native(s, governor):
 
 def range_hint(field, values, context):
     """Controller acceptance bounds, not experimentally verified tuning guidance."""
+    if field.node == LONGITUDINAL:
+        return {
+            'control_mode': 'speed / torque; MANUAL·정지에서 A',
+            'speed_kp_a_per_mps': '0 초과 ~ 1000', 'speed_ki_a_per_mps_s': '0~200',
+            'max_drive_current_a': '0 초과 ~ 480', 'integrator_limit_a': '0~최대 구동 전류',
+            'current_slew_up_a_s': '0 초과 ~ 9600', 'current_slew_down_a_s': '0 초과 ~ 9600',
+            'speed_deadband_mps': '0~0.2', 'speed_hysteresis_mps': 'deadband 초과 ~ 0.5',
+            'reapply_current_a': '0~최대 구동 전류', 'reapply_slew_a_s': '0 초과 ~ 상승률',
+            'motor_rpm_limit': '100~4500',
+        }[field.key]
     peak = values['peak_current_command_a']
     period = context['torque_control_period_ms']
     hints = {

@@ -62,7 +62,7 @@ GO/NO-GO 원인을 표시한다.
 기록용 표시이므로 차속·조향 설정·차량 모드를 자동으로 바꾸지 않는다.
 조건별 **제어** 프리셋은 [Control Tuning](../control_tuning/README.md) 상단에서 먼저 선택하고
 편집하며 `S`로 조건별 YAML에 저장한다. 기본 구동 launch는 주행 프리셋을 사용하고
-공중·접지 정지는 `tuning_preset:=airborne` / `ground_stationary`로 실행한다. 자동 선택된 시험 조건이
+공중은 `tuning_preset:=airborne`, 주행은 `driving`으로 실행한다. 접지 정지는 별도 프리셋이 아닌 시험 조건이다. 자동 선택된 시험 조건이
 실제 환경과 일치하는지 확인한 후 실행한다. 실제 파라미터 기록에는 launch 프리셋 이름도 포함된다.
 TUI는 alternate screen을 사용하므로 실행 중에는 이전 셸 명령과 로그가 보이지 않고,
 종료하면 원래 화면이 복원된다. 상단 상태, 모든 NO-GO 항목, 전체 시험·파라미터,

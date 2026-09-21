@@ -13,3 +13,5 @@
 | 2026-09-20 | [현장 시험 계획](2026-09-20_field_test_plan.md) |
 | 2026-09-20 | [횡방향 PD 비교시험](2026-09-20_lateral_pd_experiments.md) |
 | 2026-09-21 | [Competition 조향 복구 정책·구현 기록](2026-09-21_steering_availability.md) |
+
+- [2026-09-21 AUTO Torque PI, MCAP baseline, calibration 및 A/B 절차](2026-09-21_longitudinal_torque_pi.md)

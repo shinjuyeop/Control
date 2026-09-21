@@ -409,6 +409,8 @@ export function DriveTelemetry({
   online: boolean;
 }) {
   const d = received(state, online, "/drive/status");
+  const lon = received(state, online, "/drive/longitudinal_status");
+  const config = (lon.config ?? {}) as Record<string, unknown>;
   const source = (topic: string) => (
     <Source name={topic} sample={state.topics[topic]} online={online} />
   );
@@ -420,6 +422,18 @@ export function DriveTelemetry({
       title="구동 보드 관측"
       eyebrow="STM_A / DRIVE STATUS"
     >
+      <div className="telemetry-group">
+        <span className="eyebrow">AUTO LONGITUDINAL · FIRST-TEST CANDIDATE</span>
+        <Fact label="속도루프 모드" value={String(config.control_mode ?? "—").toUpperCase()} />
+        <Fact label="Calibration 출처" value={String(lon.source ?? "—")} />
+        <Fact label="Kp / Ki" value={`${fmt(config.speed_kp_a_per_mps)} / ${fmt(config.speed_ki_a_per_mps_s)}`} />
+        <Fact label="PI P / I" value={`${fmt(lon.p_current_a)} / ${fmt(lon.i_current_a)} A`} />
+        <Fact label="PI 최종 전류" value={fmt(lon.current_command_a)} unit="A" />
+        <Fact label="속도 오차" value={fmt(lon.speed_error_mps, 2)} unit="m/s" />
+        <Fact label="포화 / Anti-windup / Coast" value={`${fmt(lon.saturated, 0)} / ${fmt(lon.anti_windup, 0)} / ${fmt(lon.coasting, 0)}`} />
+        <Fact label="종방향 허용 상태" value={enumText(["허용", "비활성", "피드백 단절", "새 명령 대기", "역방향 미지원", "정지"], lon.inhibit)} />
+        {source("/drive/longitudinal_status")}
+      </div>
       <Fact
         label="모터 RPM"
         value={num(d.motor_rpm, !!d.part1_valid)}
@@ -439,7 +453,7 @@ export function DriveTelemetry({
         unit="RPM"
       />
       <Fact
-        label="STM_A 명령 상전류"
+        label={d.controller_control_mode === 1 ? "Speed 전류 한도" : "Torque 전류 명령"}
         value={fmt(d.commanded_phase_current_a)}
         unit="A"
       />

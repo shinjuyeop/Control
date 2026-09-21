@@ -84,7 +84,7 @@ def test_choice_labels_remain_readable_in_narrow_two_column_settings():
         menu.selected_key = 'steering_step'
         menu.focus = 'parameters'
         menu.field_index = len(menu.selected_spec.fields) + 1
-        menu.test_condition = 'ground_stationary'
+        menu.test_condition = 'stationary'
         for editing in (False, True):
             if editing:
                 handle_key(menu, 'enter')

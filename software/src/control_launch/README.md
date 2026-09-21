@@ -27,7 +27,7 @@ STM_A/B Agent, `command_governor`, `steering_actuator_node`, 차량 상태·whee
 | `can_interface` | `can0` | 조향 CAN 인터페이스 |
 | `actuation_mode` | 빈 값 | 선택한 프리셋 사용; `position`/`torque`로 override 가능 |
 | `steering_enabled` | 빈 값 | 조향 설정 기본값 사용, 현재 `true` |
-| `tuning_preset` | `driving` | `driving`(주행) / `airborne`(공중) / `ground_stationary`(접지 정지) |
+| `tuning_preset` | `driving` | `driving`(주행) / `airborne`(공중) |
 | `control_tuning_file` | 제어 설정 경로 | 기본 `Control/software/src/control_tuning/config/control_tuning.yaml`; `KAI_CONTROL_TUNING_FILE`로 변경 가능 |
 
 공통 파라미터는 `ros2 run control_tuning control_tuning_tui`로 수정합니다.

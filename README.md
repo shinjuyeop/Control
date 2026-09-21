@@ -92,11 +92,10 @@ Control/
 튜닝을 일괄 적용합니다. 시나리오의 속도·진폭·주기는 기존 시나리오 TUI에서 수정합니다.
 [Control Tuning 사용법](software/src/control_tuning/README.md)을 참고하십시오.
 
-Control Tuning은 상단에서 주행·공중·접지 정지 프리셋을 먼저 선택한 뒤 편집합니다.
+Control Tuning은 상단에서 주행·공중 프리셋을 먼저 선택한 뒤 편집합니다.
 `S`로 조건별 YAML에 프리셋을 저장하고, `P`로 다른 프리셋을 선택합니다.
 시작 설정과 프리셋은 `software/src/control_tuning/config/`에 저장해 Git으로 함께 관리합니다.
-기본 구동 launch는 주행 프리셋을 사용하며, 다른 조건은 `tuning_preset:=airborne` 또는
-`tuning_preset:=ground_stationary`로 선택합니다. 실제 시험 조건은 시나리오 TUI 오른쪽의
+기본 구동 launch는 주행 프리셋을 사용하며, 다른 조건은 `tuning_preset:=airborne`으로 선택합니다. 실제 시험 조건은 시나리오 TUI 오른쪽의
 `시험 조건`에서 Enter → ↑↓ → Enter로 별도로 선택합니다. 녹화에는 실행 노드에서
 조회한 실제 제어 파라미터와 시험 중 변경 이벤트, 토크 상세 토픽도 함께 남깁니다.
 
@@ -277,3 +276,5 @@ PR 본문은 다음 형식을 사용합니다.
 
 -
 ```
+
+AUTO 종방향 Speed/Torque PI 및 first-test calibration은 [구현·실측 보고서](docs/reports/2026-09-21_longitudinal_torque_pi.md)를 따릅니다.

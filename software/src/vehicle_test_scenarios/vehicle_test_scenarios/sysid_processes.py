@@ -29,7 +29,7 @@ DEFAULT_RECORDS_ROOT = next((
 
 RECORD_TOPICS = (
     '/planning/command', '/vehicle/command', '/sysid/scinario',
-    '/drive/status', '/steering/status', '/steering/angle', '/brake/status',
+    '/drive/status', "/drive/longitudinal_status", "/drive/longitudinal_config", '/steering/status', '/steering/angle', '/brake/status',
     '/vehicle/state', '/vehicle/wheel_twist',
     '/gnss/fix', '/gnss/fix_velocity', '/gnss/status', '/gnss/status_verbose',
     '/imu/data', '/imu/data_raw', '/ebimu/status', '/tf', '/tf_static', '/diagnostics',

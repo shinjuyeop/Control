@@ -586,3 +586,63 @@ Float32다. 후자는 KEYA Parameter 0003과 매뉴얼의 80% 식으로 계산�
 - KEYA 내부 watchdog 시간과 현재 position command의 keep-alive 보장
 - STM_A·STM_B PCB connector 기준 실제 배선 및 signal ground
 - `BrakeActuatorStatus`와 `/vehicle/state` input freshness 정책
+
+
+## Longitudinal calibration v1
+
+STM_A AUTO longitudinal config/status uses `std_msgs/msg/Float32MultiArray` with
+empty `layout.dim` and `layout.data_offset=0`. The bounded MCU buffers accept the exact
+v1 payload length. Unsupported version/length/nonfinite/config ranges are rejected;
+malformed DDS sequences that cannot deserialize have no acknowledgment. No message
+or generated micro-ROS library changes are needed. Existing DriveActuatorStatus is unchanged.
+
+`/drive/longitudinal_config`: reliable, volatile (never transient-local), 15 floats:
+
+| Index | Field |
+|---|---|
+| 0 | version=1 |
+| 1 | request_id: integer 1…16777215 |
+| 2 | expected_revision: integer 0…16777215 |
+| 3 | control_mode: 0=speed, 1=torque (different from EZ feedback bit!) |
+| 4–14 | Kp, Ki, max_drive_current, integrator_limit, slew_up, slew_down, deadband, hysteresis, reapply_current, reapply_slew, motor_rpm_limit |
+
+Current fields are phase amperes; Kp A/(m/s), Ki A/(m/s*s), slew A/s,
+deadband/hysteresis m/s, RPM motor rpm. Field order is defined by
+`control_tuning.longitudinal.CONFIG_KEYS` and `Long_EncodeConfig`.
+
+STM_A validates the complete request, then hands it to a one-slot mailbox. The next
+Control cycle checks MANUAL, fresh Part I/II <200 ms, |speed|≤0.05 m/s, pedal=0,
+|commanded phase|<0.1 A and |actual phase|≤1 A. Under one FreeRTOS critical section,
+expected_revision must equal applied revision; then all config fields/revision/source
+commit together and PI resets. A rejected request never waits for future motion state.
+Duplicate last-applied request ID is idempotent. Revision exhaustion requires reboot.
+IDs/revisions use the exact integer range of float32; they are not authorization tokens.
+Use the existing trusted vehicle ROS domain, not an untrusted network.
+
+`/drive/longitudinal_status`: best effort, 5 Hz, 27 floats:
+
+| Index | Field |
+|---|---|
+| 0 | version=1 |
+| 1 | applied revision; boot=0 |
+| 2 | last request ID; malformed request=0 |
+| 3 | result: 0=idle, 1=applied, 2=invalid, 3=unsafe, 4=revision conflict, 5=busy |
+| 4 | calibration source: 0=DEFAULT, 1=HOST_OVERRIDE |
+| 5–16 | active config in CONFIG_KEYS order, including mode |
+| 17–21 | speed error, P, I/integrator state, unsaturated current, final PI current |
+| 22–25 | saturated, anti-windup, coasting, feedback valid (0/1) |
+| 26 | inhibit: 0=OK, 1=disabled, 2=feedback loss, 3=wait fresh command, 4=reverse unsupported, 5=stop |
+
+Read actual CAN-transmitted current/RPM and actual phase/bus current from `/drive/status`.
+In speed mode its commanded_phase_current_a is a limit, not commanded torque.
+PI status final current is the controller output before CAN quantization, not measured current.
+MANUAL leaves the pedal path unchanged and resets PI. Safety gates bypass slew to zero/HALTED.
+After Torque feedback recovery, a command received after recovery is required.
+Agent reconnect preserves RAM calibration but clears host commands/pending requests;
+MCU reboot restores source DEFAULT/revision 0/mode speed. Host clients do not auto-replay overrides.
+
+The TUI compares the matching request ID, revision and full float32 readback before
+reporting success. Partial updates across lateral and longitudinal are not represented
+as one transaction: A applies the selected subsystem. For calibration, test procedure,
+range rationale and recorder coverage see
+[the implementation report](reports/2026-09-21_longitudinal_torque_pi.md).

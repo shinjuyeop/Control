@@ -217,3 +217,19 @@ def test_selected_preset_is_required_and_other_conditions_are_ignored(store, nod
     path.write_text(path.read_text().replace('current_reference_a: 20.0', 'current_reference_a: 10.0'))
     with pytest.raises(ValueError, match='환산 기준'):
         load_launch_overrides(store.path, node, **kwargs)
+
+
+@pytest.mark.parametrize('condition', CONDITION_KEYS)
+def test_vehicle_launch_passes_selected_longitudinal_config(store, monkeypatch, condition):
+    presets = PresetStore(store)
+    presets.save(condition, {**store.saved, 'control_mode': 'torque', 'speed_kp_a_per_mps': 180.})
+    source = Path(__file__).resolve().parents[2] / 'control_launch/launch/vehicle.launch.py'
+    spec = importlib.util.spec_from_file_location('longitudinal_launch', source)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, 'Node', lambda **kwargs: kwargs)
+    context = LaunchContext()
+    context.launch_configurations.update(control_tuning_file=str(store.path), tuning_preset=condition)
+    node = module._longitudinal(context)[0]
+    assert node['parameters'][0]['control_mode'] == 'torque'
+    assert node['parameters'][0]['speed_kp_a_per_mps'] == 180.

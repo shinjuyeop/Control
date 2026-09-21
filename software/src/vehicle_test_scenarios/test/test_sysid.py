@@ -127,7 +127,7 @@ def test_test_condition_must_be_selected_and_never_changes_scenario_commands():
     handle_key(menu, 'enter', busy=True)
     assert menu.edit_field is None and menu.test_condition == 'airborne'
     edit_choice(menu, 1, 'down', 'enter')
-    assert menu.test_condition == 'ground_stationary'
+    assert menu.test_condition == 'stationary'
     assert active.test_condition == 'airborne'
     assert menu.run_settings().to_scenario_config() == before
     assert active.document()['test_condition'] == {
@@ -135,7 +135,7 @@ def test_test_condition_must_be_selected_and_never_changes_scenario_commands():
     edit_choice(menu, 1, 'down', 'enter')
     assert menu.test_condition == 'driving'
     edit_choice(menu, 1, 'up', 'enter')
-    assert menu.test_condition == 'ground_stationary'
+    assert menu.test_condition == 'stationary'
     with pytest.raises(ValueError):
         replace(active, test_condition='inferred_from_speed')
 

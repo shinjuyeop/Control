@@ -62,6 +62,14 @@ def _governor(context, config):
     )]
 
 
+def _longitudinal(context):
+    return [Node(package='control_tuning', executable='longitudinal_calibration',
+                 name='longitudinal_calibration', output='screen',
+                 parameters=[load_launch_overrides(
+                     LaunchConfiguration('control_tuning_file').perform(context),
+                     'stm_a_longitudinal', LaunchConfiguration('tuning_preset').perform(context))])]
+
+
 def _agent(name, port, baud):
     return Node(
         package="micro_ros_agent",
@@ -114,7 +122,7 @@ def generate_launch_description():
         DeclareLaunchArgument("agent_baud", default_value="460800"),
         DeclareLaunchArgument("control_tuning_file", default_value=str(default_settings_path())),
         DeclareLaunchArgument("tuning_preset", default_value="driving", choices=list(CONDITION_KEYS),
-                              description="주행 / 공중 / 접지 정지 제어 프리셋"),
+                              description="주행 / 공중 제어 프리셋"),
         DeclareLaunchArgument(
             "agents", default_value="true",
             description="STM_A/B micro-ROS Agent를 함께 띄운다. 이미 따로 실행 중이면 false.",
@@ -133,6 +141,7 @@ def generate_launch_description():
         _robot_state_publisher(),
         _agent("stm_a_agent", LaunchConfiguration("stm_a_port"), baud),
         _agent("stm_b_agent", LaunchConfiguration("stm_b_port"), baud),
+        OpaqueFunction(function=_longitudinal),
         # /vehicle/command의 유일한 발행자. stateless라 respawn으로 복구한다.
         OpaqueFunction(function=_governor, kwargs={"config": governor_config}),
         # 조향 armed 기본값을 launch 인자로 명시해, lateral_ctrl 쪽 기본값이

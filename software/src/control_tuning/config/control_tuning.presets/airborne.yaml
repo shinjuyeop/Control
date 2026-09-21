@@ -1,10 +1,10 @@
-# tuning_preset으로 선택한 다음 launch에 적용됩니다. 실행 중 적용은 TUI의 A를 사용합니다.
-schema_version: 1
+schema_version: 2
 condition: airborne
 label: 공중
 saved_at: '2026-09-18T10:54:07.563098+00:00'
 current_reference_a: 20.0
-values:
+calibration_note: First-test candidate; vehicle performance not validated
+lateral:
   p_gain_a_per_deg: 2.0
   d_gain_a_per_deg_s: 0.05999999999999999
   settle_error_deg: 0.05
@@ -17,10 +17,25 @@ values:
   angle_limit_margin_deg: 1.0
   actuation_mode: torque
   minimum_vehicle_speed_kph: 0.0
+longitudinal:
+  control_mode: torque
+  speed_kp_a_per_mps: 8.0
+  speed_ki_a_per_mps_s: 1.0
+  speed_deadband_mps: 0.05
+  speed_hysteresis_mps: 0.12
+  max_drive_current_a: 8.0
+  integrator_limit_a: 3.0
+  current_slew_up_a_s: 40.0
+  current_slew_down_a_s: 160.0
+  reapply_current_a: 2.0
+  reapply_slew_a_s: 10.0
+  motor_rpm_limit: 300.0
+governor:
+  governor_input_timeout_ms: 200.0
+timeouts:
   steering_command_timeout_ms: 200
   can_timeout_ms: 500
   position_feedback_timeout_ms: 500
   torque_feedback_timeout_ms: 100
   mode_timeout_ms: 1500
   drive_status_timeout_ms: 500
-  governor_input_timeout_ms: 200.0

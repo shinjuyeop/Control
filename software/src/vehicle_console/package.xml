@@ -7,6 +7,7 @@
   <license>TODO: License declaration</license>
   <buildtool_depend>ament_python</buildtool_depend>
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>control_tuning</exec_depend>
   <exec_depend>kaiev26_msgs</exec_depend>
   <exec_depend>diagnostic_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>
