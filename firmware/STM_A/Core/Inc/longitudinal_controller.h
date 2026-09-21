@@ -45,6 +45,10 @@ void Long_ApplyConfiguration(LongCalibration *state, const LongRequest *request,
 
 /* RAM default is the existing speed path; gains are driving first-test candidates. */
 LongConfig Long_DefaultConfig(void);
+typedef struct { int32_t rpm; float current; } LongMotorCommand;
+/* AUTO Speed uses the same configured current/RPM envelope as AUTO Torque.
+ * The CAN sender still applies the separate physical forward/reverse limits. */
+LongMotorCommand Long_SpeedCommand(const LongConfig *config, int32_t target_rpm);
 bool Long_DecodeRequest(const float *data, size_t count, LongRequest *request);
 void Long_EncodeConfig(const LongConfig *config, float *data);
 bool Long_CanConfigure(bool manual, bool feedback_valid, float speed,

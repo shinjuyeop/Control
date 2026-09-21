@@ -64,16 +64,20 @@ v3는 `steering`, `drive`, `governor`, `timeouts`로 구분한다. 설정키는 
 | 값 | airborne | driving |
 |---|---:|---:|
 | mode | torque | torque |
-| Kp / Ki | 8 / 1 | 180 / 12 |
-| max / integrator A | 8 / 3 | 480 / 120 |
-| slew up / down A/s | 40 / 160 | 2400 / 4800 |
+| Kp / Ki | 15 / 2 | 180 / 12 |
+| max / integrator A | 20 / 6 | 480 / 120 |
+| slew up / down A/s | 120 / 400 | 2400 / 4800 |
 | deadband / hysteresis m/s | 0.05 / 0.12 | 0.05 / 0.12 |
-| reapply band A / slew A/s | 2 / 10 | 20 / 200 |
-| RPM ceiling | 300 | 4500 |
+| reapply band A / slew A/s | 5 / 40 | 20 / 200 |
+| RPM ceiling | 600 | 4500 |
 
 [실측 근거·단위·airborne/A-B 절차](../../../docs/reports/2026-09-21_longitudinal_torque_pi.md)를 따른다.
-STM_A boot는 **speed/DEFAULT**다. Speed fallback은 기존 480 A current-limit 경로이므로
-airborne Torque의 8 A/RPM300 설정이 Speed에도 적용된다고 가정하지 않는다.
+STM_A boot는 **speed/DEFAULT**다. `drive_current_limit_a`/`drive_motor_speed_limit_rpm`은
+Speed/Torque 공통 envelope다. airborne는 두 AUTO mode 모두 20 A/600 rpm,
+driving은 480 A/4500 rpm이다. Speed에서는 current-limit field와 signed target RPM 범위,
+Torque에서는 PI 전류 상한과 EZ RPM ceiling으로 쓰며 최종 물리 forward/reverse clamp는 별도다.
+PI gain·적분·deadband/coast·slew/reapply는 Torque 전용이다. MANUAL pedal은 기존 경로를 쓴다.
+이 공통 envelope 동작에는 수정된 STM_A firmware가 필요하다. 그 이후 값 조정은 저장·구동 스택 재시작으로 반영한다.
 
 ```bash
 cd ~/KAI_ws

@@ -81,7 +81,7 @@ FIELDS += (
     Field('drive_coast_release_error_mps', '구동 타력 해제 오차', 'm/s', GROUPS[2], 'speed_hysteresis_mps',
           '구동 Torque 모드 전용입니다. MCAP 기반 초기 시험 후보이며 S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 0.01, node=LONGITUDINAL),
     Field('drive_current_limit_a', '구동 전류 한도', 'A', GROUPS[3], 'max_drive_current_a',
-          '구동 Torque 모드 전용입니다. MCAP 기반 초기 시험 후보이며 S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 10, node=LONGITUDINAL),
+          'Speed/Torque 공통 구동 한도입니다. Torque에서는 PI 상전류 명령 상한, Speed에서는 EZ 내부 속도제어의 전류 한도입니다.', 10, node=LONGITUDINAL),
     Field('drive_integrator_limit_a', '구동 적분 전류 한도', 'A', GROUPS[3], 'integrator_limit_a',
           '구동 Torque 모드 전용입니다. MCAP 기반 초기 시험 후보이며 S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 5, node=LONGITUDINAL),
     Field('drive_current_slew_up_a_s', '구동 전류 상승률', 'A/s', GROUPS[3], 'current_slew_up_a_s',
@@ -93,7 +93,7 @@ FIELDS += (
     Field('drive_reapply_current_slew_a_s', '구동 재인가 전류 상승률', 'A/s', GROUPS[3], 'reapply_slew_a_s',
           '구동 Torque 모드 전용입니다. MCAP 기반 초기 시험 후보이며 S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 20, node=LONGITUDINAL),
     Field('drive_motor_speed_limit_rpm', '구동 모터 회전수 한도', 'rpm', GROUPS[3], 'motor_rpm_limit',
-          '구동 Torque 모드 전용입니다. MCAP 기반 초기 시험 후보이며 S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 100, node=LONGITUDINAL),
+          'Speed/Torque 공통 RPM 한도입니다. Torque에서는 EZ 모터 회전수 상한, Speed에서는 목표 RPM 범위를 제한합니다. 최종 전진/후진 물리 한도는 펌웨어에 별도로 적용됩니다.', 100, node=LONGITUDINAL),
 )
 BY_KEY = {f.key: f for f in FIELDS}
 OWNED = {node: {f.native for f in FIELDS if f.node == node} for node in (STEERING, GOVERNOR, LONGITUDINAL)}

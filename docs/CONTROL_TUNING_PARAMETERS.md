@@ -8,7 +8,7 @@ TUI/프리셋/정규화된 MCAP 분석값에는 같은 canonical key를 사용�
 ## 이름 규칙
 
 - `steering_`: KEYA 조향 제어 또는 조향 허용 판단에 사용하는 설정.
-- `drive_`: STM_A AUTO 구동 속도 PI와 phase-current 출력 설정.
+- `drive_`: STM_A AUTO Speed/Torque 공통 구동 envelope와 Torque 속도 PI 설정.
 - `governor_`: 상위 명령의 유효성 검사.
 - `kp`, `ki`, `kd`: P/I/D 게인. `_a_per_deg`, `_a_per_mps` 등은 출력 전류와 오차의 단위를 표현한다.
 - `limit_a`: 명령/적분 전류 한도. MCAP의 실측 `phase_current_a` 또는 `motor_current_a`와 구분한다.
@@ -17,7 +17,7 @@ TUI/프리셋/정규화된 MCAP 분석값에는 같은 canonical key를 사용�
 
 특히 `steering_torque_feedback_timeout_ms`는 **조향 Torque 모드의 위치 피드백·샘플 간격·
 제어 지연 제한**이다. 구동 STM_A의 `MOTOR_FEEDBACK_TIMEOUT_MS=200`은 별도 firmware 상수다.
-이번 이름 변경으로 편집 항목을 추가하거나 값을 바꾸지 않았다.
+이 두 timeout은 별도 계약이며 이번 envelope 변경에서도 값을 바꾸지 않는다.
 
 ## 새 이름과 기존 연결
 
@@ -63,8 +63,18 @@ TUI 상세에는 새 설정키와 기존 연결을 함께 표시한다.
 조향 P/D·전류 한도는 physical-unit TUI 값과 native parameter 값 사이에 변환이 있다.
 예를 들어 조향 `steering_kp_a_per_deg`는 `torque_full_scale_error_deg`에 단순 이름 변경으로
 저장하지 않는다. 기존 peak current/reference 환산식을 그대로 사용한다.
-구동 current limit은 Torque 모드에서 PI 출력 상한이다. native Speed fallback의
-기존 480 A current-limit 경로는 이 변경으로 달라지지 않는다.
+`drive_current_limit_a`와 `drive_motor_speed_limit_rpm`은 **AUTO Speed/Torque 공통 envelope**다.
+
+| 항목 | Speed Control | Torque Control |
+|---|---|---|
+| `drive_current_limit_a` | EZ native speed-control current limit field | PI phase-current command ceiling |
+| `drive_motor_speed_limit_rpm` | signed target motor RPM의 ±preset 범위 | EZ torque-mode motor RPM ceiling |
+
+CAN 송신부의 최종 전진 4500 / 후진 1500 rpm 물리 clamp는 별도로 유지한다.
+Driving 480 A/4500 rpm에서 기존 Speed baseline CAN 명령은 동일하다.
+Airborne는 Kp15/Ki2, 20 A/600 rpm의 first-test candidate이며 두 AUTO mode에 같은 envelope를 쓴다.
+나머지 speed PI, 적분 한도, deadband/coast, current slew/reapply 항목은 Torque 전용이다.
+MANUAL pedal/gear는 이 AUTO envelope의 영향을 받지 않는다.
 
 ## 프리셋 schema v3
 
@@ -117,7 +127,8 @@ TUI는 현재값 조회·편집·S 저장만 한다. **A 즉시 적용 기능은
   host `decode_status()`가 기존 `config`와 새 이름의 `display_values`를 함께 제공한다.
   Console과 MCAP 분석에서 새 이름을 쓴다. 새 Console은 기존 서버의 `config`도 읽을 수 있다.
 - 기존 Drive/SteeringActuatorStatus, `/drive/status`, `/steering/status` 토픽명과 실측 필드는 바꾸지 않았다.
-  기존 펌웨어·MCAP 타입 호환성을 위해 micro-ROS 재생성이나 flash는 필요하지 않다.
+  이름/MCAP 타입 변경 때문에 micro-ROS를 재생성할 필요는 없다. 단, **Speed/Torque 공통 envelope 동작은 수정된 STM_A firmware를 flash해야 한다.**
+  이전 firmware의 config readback만으로 Speed 경로가 preset current/RPM 한도를 준수한다고 판단하지 않는다.
 
 `longitudinal_analysis.read_bag()`는 실제 MCAP JSON snapshot도 정규화해
 `parameter_captures`로 반환한다. 원본 parameter events와 MCU config도 함께 남겨

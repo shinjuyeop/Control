@@ -10,6 +10,12 @@ LongConfig Long_DefaultConfig(void)
                      2400.0f, 4800.0f, 0.05f, 0.12f, 20.0f, 200.0f, 4500.0f};
 }
 
+LongMotorCommand Long_SpeedCommand(const LongConfig *c, int32_t target_rpm)
+{
+  return (LongMotorCommand){
+    (int32_t)clamp((float)target_rpm, -c->rpm_limit, c->rpm_limit), c->max_current};
+}
+
 bool Long_DecodeRequest(const float *d, size_t count, LongRequest *r)
 {
   if (count != LONG_REQUEST_COUNT) return false;

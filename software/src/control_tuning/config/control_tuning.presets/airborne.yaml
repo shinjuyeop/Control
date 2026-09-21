@@ -19,17 +19,17 @@ steering:
   steering_min_vehicle_speed_kph: 0.0
 drive:
   drive_control_mode: torque
-  drive_speed_kp_a_per_mps: 8.0
-  drive_speed_ki_a_per_mps_s: 1.0
+  drive_speed_kp_a_per_mps: 15.0
+  drive_speed_ki_a_per_mps_s: 2.0
   drive_speed_deadband_mps: 0.05
   drive_coast_release_error_mps: 0.12
-  drive_current_limit_a: 8.0
-  drive_integrator_limit_a: 3.0
-  drive_current_slew_up_a_s: 40.0
-  drive_current_slew_down_a_s: 160.0
-  drive_reapply_current_band_a: 2.0
-  drive_reapply_current_slew_a_s: 10.0
-  drive_motor_speed_limit_rpm: 300.0
+  drive_current_limit_a: 20.0
+  drive_integrator_limit_a: 6.0
+  drive_current_slew_up_a_s: 120.0
+  drive_current_slew_down_a_s: 400.0
+  drive_reapply_current_band_a: 5.0
+  drive_reapply_current_slew_a_s: 40.0
+  drive_motor_speed_limit_rpm: 600.0
 governor:
   governor_command_timeout_ms: 200.0
 timeouts:

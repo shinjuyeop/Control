@@ -3,6 +3,13 @@
 #include <math.h>
 #include <stdint.h>
 
+/* Final hardware envelope, independent of AUTO preset and MANUAL pedal mode. */
+static inline int32_t EZkontrol_ClampRpm(int32_t rpm, int32_t forward_max, int32_t reverse_max)
+{
+  return rpm >= 0 ? (int32_t)fmin((float)rpm, (float)forward_max)
+                  : (int32_t)fmax((float)rpm, (float)-reverse_max);
+}
+
 /* Existing STM_A CAN 0x0C01EFD0 contract, shared by native Speed, AUTO PI and
  * MANUAL. Keep the deployed bit1 contract despite the 2023 instruction wording. */
 static inline void EZkontrol_EncodeCommand(int32_t clamped_rpm, float current,

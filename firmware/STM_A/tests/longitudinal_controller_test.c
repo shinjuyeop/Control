@@ -3,11 +3,46 @@
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 
 static void near(float a, float b) { assert(fabsf(a-b) < .001f); }
 
+static void test_speed_envelope(void)
+{
+  const LongConfig driving = Long_DefaultConfig();
+  LongConfig airborne = driving;
+  airborne.max_current = 20; airborne.rpm_limit = 600;
+  const int32_t targets[] = {0, 1, 600, 2000, 4500, 6000, -1, -600, -1500, -4500, -6000};
+  for (size_t i=0; i<sizeof(targets)/sizeof(targets[0]); ++i) {
+    int32_t target = targets[i];
+    LongMotorCommand command = Long_SpeedCommand(&driving, target);
+    int32_t actual = EZkontrol_ClampRpm(command.rpm, 4500, 1500);
+    int32_t old_rpm = target > 4500 ? 4500 : target < -1500 ? -1500 : target;
+    uint8_t previous[8], current[8];
+    EZkontrol_EncodeCommand(old_rpm, 480, 1, 1, 42, previous);
+    EZkontrol_EncodeCommand(actual, command.current, 1, 1, 42, current);
+    assert(memcmp(previous, current, sizeof(current)) == 0);
+    near(command.current,480);
+    assert(actual >= -1500 && actual <= 4500 && current[4] == 3);
+
+    command = Long_SpeedCommand(&airborne, target);
+    actual = EZkontrol_ClampRpm(command.rpm, 4500, 1500);
+    assert(actual == (target > 600 ? 600 : target < -600 ? -600 : target));
+    near(command.current,20);
+    EZkontrol_EncodeCommand(actual,command.current,1,1,42,current);
+    assert(current[4] == 3 && ((unsigned)current[1]*256+current[0]) == 32200);
+  }
+  // Final physical clamp also serves MANUAL, independently of the AUTO preset.
+  assert(EZkontrol_ClampRpm(4500,4500,1500) == 4500);
+  assert(EZkontrol_ClampRpm(-4500,4500,1500) == -1500);
+  uint8_t manual[8];
+  EZkontrol_EncodeCommand(EZkontrol_ClampRpm(4500,4500,1500),480,1,0,0,manual);
+  assert(manual[4] == 1 && ((unsigned)manual[1]*256+manual[0]) == 36800);
+}
+
 int main(void)
 {
+  test_speed_envelope();
   LongConfig c = Long_DefaultConfig();
   LongController s = {0};
   assert(c.mode == LONG_SPEED && c.max_current == 480);

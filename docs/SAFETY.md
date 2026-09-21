@@ -39,7 +39,7 @@
 | STM_B→STM_A safety UART | STM_A | 100 ms timeout이면 traction stop |
 | STM_A→STM_B vehicle UART | STM_B | 200 ms timeout이면 frame invalid와 dashboard 표시 fault |
 | EZkontrol handshake | STM_A | ACK 성공 전 traction command 금지 |
-| EZkontrol Part I/II age | STM_A | 200 ms 이후 status valid false |
+| EZkontrol Part I/II age | STM_A | 200 ms 이후 status valid false; AUTO Torque는 PI reset·0 A/HALTED |
 | `/diagnostics` level/message | Console·Foxglove | 관측과 기록에만 사용; 제어 입력이나 차단 조건이 아님 |
 | KEYA CAN·position age | 조향 노드 | 각 500 ms 이후 Disable |
 | KEYA fault bits | 조향 노드 | HARD latch / RECOVERABLE bounded recovery / INFO 기록만; §9.2 |
@@ -122,10 +122,15 @@ STM_A Control task는 이 값에 더해 AUTO Host command freshness를 검사합
 | AUTO command 미수신 또는 age ≥ 500 ms | 저장 속도를 0으로 지우고 HALTED |
 | AUTO `brake_engage=true` | 저장 속도를 0으로 지우고 HALTED |
 | MANUAL 정상 | 페달 기반 torque command |
-| AUTO 정상 | Host 속도 기반 speed command |
+| AUTO Speed 정상 | Host 속도→RPM에 active current/RPM envelope 적용, EZ Speed command |
+| AUTO Torque 정상 | Host 속도→STM_A 20 Hz PI, active current/RPM envelope 안에서 Torque command |
 
-EZkontrol Part I/II age 200 ms는 status validity에만 사용됩니다. status가 끊겨도
-현재 traction stop 조건에는 들어가지 않습니다.
+EZkontrol Part I/II age는 200 ms부터 status invalid로 표시합니다.
+AUTO Speed와 MANUAL은 status stale 자체만으로 새 traction stop 조건을 추가하지 않습니다.
+AUTO Torque는 STM_A가 속도루프를 담당하므로 두 Part 모두 fresh해야 합니다.
+하나라도 freshness를 잃으면 PI inhibit·history reset 후 0 A/HALTED를 명령합니다.
+feedback 복구를 Control task가 확인한 뒤 pre-recovery command를 폐기하고 새 Host command를 요구합니다.
+Host timeout/물리 E-stop/STM_B safety gate는 각 mode의 기존 계약대로 별도 적용됩니다.
 
 ## 6. E-stop 동작
 
@@ -210,9 +215,11 @@ FDCAN을 재시작합니다. Arduino는 fresh complete snapshot이 300 ms 없으
 
 ### 9.1 EZkontrol
 
-Handshake ACK 전에는 STM_A가 traction command를 보내지 않습니다. 그러나
-handshake 완료 뒤 Part I/II 수신이 중단되면 200 ms 후 진단 valid flag만
-false가 되고, traction command 송신은 계속됩니다. CAN TX 실패 시 해당 호출의
+Handshake ACK 전에는 STM_A가 traction command를 보내지 않습니다.
+handshake 완료 뒤 Part I/II 수신이 중단되면 200 ms부터 해당 valid flag가 false가 됩니다.
+AUTO Speed와 MANUAL은 그 이유만으로 command 송신을 중단하지 않습니다.
+AUTO Torque는 history를 reset하고 0 A/HALTED를 보내며, fresh Part I/II 복구를 확인한 뒤
+받은 새 Host command와 정상 safety 조건이 필요합니다. CAN TX 실패 시 해당 호출의
 `tractive_commanded`는 false로 기록되지만 별도 latch나 재시도 상태 머신은
 없습니다.
 
@@ -289,7 +296,7 @@ KEYA bit 의미·reset·Host 분류의 전체 표와 전이는
 | Host command 500 ms 중단 | 페달 경로 유지 | HALTED | 변화 없음 | 변화 없음 | 별도 200 ms timeout |
 | STM_B→STM_A UART 100 ms 중단 | HALTED | HALTED | 해당 없음 | 해당 없음 | 직접 입력 아님 |
 | STM_A→STM_B UART 200 ms 중단 | 직접 영향 없음 | 직접 영향 없음 | 자동 engage 안 함 | 마지막 mode로 판단 | `/drive/status` 1500 ms 후 Disable |
-| EZkontrol status 200 ms 중단 | command 계속 송신 | command 계속 송신 | 해당 없음 | 해당 없음 | 직접 입력 아님 |
+| EZkontrol status 200 ms 중단 | command 계속 송신 | Speed: 기존 송신 유지 / Torque: PI reset·0 A/HALTED | 해당 없음 | 해당 없음 | 직접 입력 아님 |
 | KEYA CAN 500 ms / position feedback 500 ms (torque 100 ms) 중단 | 이미 Disable | Disable | 해당 없음 | 해당 없음 | Disable |
 
 ## 11. 복구 및 재활성화
@@ -325,7 +332,7 @@ fresh 명령으로 AUTO traction·조향이 재활성화될 수 있습니다.
 | STM_B→STM_A UART 중단 | STM_A | invalid 또는 ≥100 ms | traction HALTED | 새 CRC-valid frame | STM_A `app_freertos.c` |
 | STM_A→STM_B UART 중단 | STM_B | ≥200 ms | frame invalid, dashboard 표시 fault | 새 CRC-valid frame | STM_B `app_freertos.c` |
 | Dashboard CAN/Arduino 중단 | STM_B·Arduino | bus-off 또는 fresh snapshot ≥300 ms | 표시 `CAN LOST`/stale, safety 영향 없음 | FDCAN 재시작 + 새 complete snapshot | STM_B `dashboard_can.c`, UNO firmware |
-| EZkontrol status 중단 | STM_A | Part별 age ≥200 ms | status valid=false | 해당 Part 새 frame | STM_A `app_freertos.c` |
+| EZkontrol status 중단 | STM_A | Part별 age ≥200 ms | status valid=false; AUTO Torque는 PI reset·0 A/HALTED | Speed: 해당 Part 새 frame / Torque: 두 Part fresh 복구 확인 뒤 새 Host command | STM_A `app_freertos.c` |
 | KEYA CAN 중단 | 조향 | age >500 ms | KEYA Disable | reopen·새 fault/position 확인 이후 새 command | 조향 node/driver |
 | MANUAL→AUTO | 세 제어 경로 | mode 0→1 | STM_A와 조향은 MANUAL 중 수신한 fresh command를 사용할 수 있음 | 조건 충족 | STM_A·STM_B·조향 |
 | AUTO→MANUAL | 세 제어 경로 | mode 1→0 | 조향 Disable, Host brake 원인 제거 | AUTO 재진입 + MANUAL 진입 뒤 받은 fresh pending command | STM_A·STM_B·조향 |
@@ -386,8 +393,8 @@ Virtual LCD stale 표시는 상태 관측이며 안전 차단의 증거 또는 �
 - [ ] STM_B→STM_A UART를 끊었을 때 100 ms 후 traction이 HALTED되는지 확인
 - [ ] STM_A→STM_B UART를 끊었을 때 현재는 brake가 자동 engage되지 않음을 확인하고
   요구사항과 비교
-- [ ] EZkontrol Part I/II를 중단했을 때 valid flag와 현재 traction 지속 동작을
-  확인하고 요구사항과 비교
+- [ ] EZkontrol Part I/II를 중단해 Speed의 기존 validity 동작과 Torque의
+  0 A/HALTED·history reset·복구 뒤 새 Host command 요구를 각각 확인
 - [ ] KEYA CAN, position feedback, mode, command를 각각 중단해 설정 timeout 후
   Disable되는지 확인
 - [ ] AUTO→MANUAL→AUTO 전환 후 과거 speed·steering target으로 재출발하지

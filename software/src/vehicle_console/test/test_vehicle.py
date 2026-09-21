@@ -134,7 +134,7 @@ def test_live_stale_reconnect_and_runtime_mapping(vehicle):
         lon = state["topics"][STATUS_TOPIC]["data"]
         assert lon["config"]["control_mode"] == "torque"  # v1 compatibility
         assert lon["display_values"]["drive_control_mode"] == "torque"
-        assert lon["display_values"]["drive_speed_kp_a_per_mps"] == 8.
+        assert lon["display_values"]["drive_speed_kp_a_per_mps"] == 15.
         assert lon["source"] == "HOST_OVERRIDE"
         assert lon["p_current_a"] == pytest.approx(1.6)
         assert lon["i_current_a"] == pytest.approx(.3)

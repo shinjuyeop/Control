@@ -78,7 +78,6 @@ enum {
 #define RPM_REV_MAX   1500
 #define AUTO_SPEED_MAX_MPS \
   ((float)RPM_FWD_MAX * 3.14159f * TIRE_DIAM_M / (60.0f * GEAR_RATIO))
-#define AUTO_PHASE_LIMIT_A 480.0f
 #define MANUAL_TORQUE_LIMIT_A 480.0f
 #define PEDAL_ADC_MIN 560
 #define PEDAL_ADC_MAX 3000
@@ -439,11 +438,12 @@ void StartControl(void *argument)
       if (MODE == 1u)
       {
         if (s_long_calibration.config.mode == LONG_SPEED) {
-          /* Native Speed Control A/B baseline: unchanged RPM/current-limit path. */
+          /* Native speed loop with the active preset envelope; driving stays 480 A/4500 RPM. */
           Long_Reset(&s_long_controller);
           float wrpm = COMMAND_SPEED * 60.0f / (3.14159f * TIRE_DIAM_M);
           int32_t mrpm = (int32_t)(wrpm * GEAR_RATIO);
-          send_motor_can(mrpm, AUTO_PHASE_LIMIT_A, 1u, 1u);
+          const LongMotorCommand command = Long_SpeedCommand(&s_long_calibration.config, mrpm);
+          send_motor_can(command.rpm, command.current, 1u, 1u);
         } else if (s_long_inhibit == LONG_OK && COMMAND_SPEED > 0.0f) {
           const float ceiling = s_long_calibration.config.rpm_limit * 3.14159f * TIRE_DIAM_M / (60.0f * GEAR_RATIO);
           float current = Long_Update(&s_long_controller, &s_long_calibration.config,
@@ -1282,9 +1282,7 @@ static void send_motor_can(int32_t rpm, float curr_a, uint8_t run_command,
 {
   FDCAN_TxHeaderTypeDef hdr;
   uint8_t d[8];
-  int32_t clamped_rpm = rpm >= 0
-                          ? (int32_t)fmin((float)rpm, (float)RPM_FWD_MAX)
-                          : (int32_t)fmax((float)rpm, (float)-RPM_REV_MAX);
+  const int32_t clamped_rpm = EZkontrol_ClampRpm(rpm, RPM_FWD_MAX, RPM_REV_MAX);
 
   hdr.Identifier = 0x0C01EFD0UL;
   hdr.IdType = FDCAN_EXTENDED_ID;

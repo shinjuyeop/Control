@@ -69,8 +69,8 @@ ros2 run control_tuning control_tuning_tui
 종방향은 first-test candidate이며 실차 성능 검증값이 아니다. 새 STM_A는 부팅 시 speed DEFAULT,
 launch는 MANUAL 정지·무전류에서 선택한 calibration을 한 번 적용하고 readback을 확인한다.
 실패/timeout이면 현재 모드와 정지 상태를 확인하고 선택한 프리셋으로 구동 스택을 재시작한다.
-공중 Torque는 8 A/RPM300, 주행 Torque는 480 A/RPM4500이다. Speed fallback의 기존
-480 A 경로는 그대로이므로 공중 Torque 제한이 Speed에 적용된다고 가정하지 않는다.
+공중은 Speed/Torque 모두 20 A/RPM600, 주행은 모두 480 A/RPM4500의 active envelope를 사용한다.
+최종 전진/후진 물리 RPM clamp와 MANUAL pedal 경로는 별도이며 그대로 유지한다.
 [airborne/A-B 절차와 실제 초기값](reports/2026-09-21_longitudinal_torque_pi.md)을 확인한다.
 접지 정지는 별도 calibration preset이 아니라 시나리오 시험 조건이다.
 

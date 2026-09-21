@@ -123,3 +123,27 @@ def test_longitudinal_preset_edits_are_saved_without_applying(editor, store):
     saved = editor.presets.load('airborne')
     assert saved['drive_control_mode'] == 'torque'
     assert '다음 구동 스택 실행' in editor.message
+
+
+def test_checked_in_drive_envelopes_and_launch_mapping():
+    from control_tuning.storage import SettingsStore
+    from control_tuning.presets import PresetStore, load_launch_overrides
+    from control_tuning.longitudinal import LONGITUDINAL
+    settings = SettingsStore()
+    presets = PresetStore(settings)
+    airborne = presets.load('airborne')
+    expected = {
+        'drive_control_mode':'torque', 'drive_speed_kp_a_per_mps':15.,
+        'drive_speed_ki_a_per_mps_s':2., 'drive_speed_deadband_mps':.05,
+        'drive_coast_release_error_mps':.12, 'drive_current_limit_a':20.,
+        'drive_integrator_limit_a':6., 'drive_current_slew_up_a_s':120.,
+        'drive_current_slew_down_a_s':400., 'drive_reapply_current_band_a':5.,
+        'drive_reapply_current_slew_a_s':40., 'drive_motor_speed_limit_rpm':600.,
+    }
+    assert {k:airborne[k] for k in expected} == expected
+    native = load_launch_overrides(settings.path,LONGITUDINAL,'airborne')
+    assert native == AIRBORNE
+    assert request_data(native,1,0)[6] == 20.
+    assert request_data(native,1,0)[14] == 600.
+    driving = load_launch_overrides(settings.path,LONGITUDINAL,'driving')
+    assert driving == {**DEFAULT,'control_mode':'torque'}

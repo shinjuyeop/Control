@@ -102,19 +102,21 @@ v6은 `a≈0.00438 I−0.256`, net a/I 중앙값 약 **0.00342 (m/s²)/A**였다
 | 항목 | driving candidate | airborne candidate | 첫 ground 조정 범위/근거 |
 |---|---:|---:|---|
 | control_mode | torque | torque | Speed A/B는 같은 프리셋에서 speed 선택 |
-| Kp A/(m/s) | **180** | **8** | 120–260; gain≈0.0044에서 P-only 시정수≈1.26 s, error 2 m/s에서 360 A |
-| Ki A/(m/s·s) | **12** | **1** | 4–30; Kp/Ki=15 s, 작은 적분으로 시작. MCAP에서 정확히 동정한 값 아님 |
-| max drive A | **480** | **8** | 기존 command capability 유지; airborne 한도를 driving에 사용하지 않음 |
-| integrator limit A | **120** | **3** | 60–160 후보; 지속 drag 보상, overspeed debt 제거 |
-| slew up A/s | **2400** | **40** | 1600–4800; 480 A까지 이상적 0.2 s, 정상 full acceleration을 느리게 제한하지 않음 |
-| slew down A/s | **4800** | **160** | 2400–9600; 480→0 A를 0.1 s에 감축 가능 |
+| Kp A/(m/s) | **180** | **15** | 120–260; gain≈0.0044에서 P-only 시정수≈1.26 s, error 2 m/s에서 360 A |
+| Ki A/(m/s·s) | **12** | **2** | 4–30; Kp/Ki=15 s, 작은 적분으로 시작. MCAP에서 정확히 동정한 값 아님 |
+| max drive A | **480** | **20** | 기존 command capability 유지; airborne 한도를 driving에 사용하지 않음 |
+| integrator limit A | **120** | **6** | 60–160 후보; 지속 drag 보상, overspeed debt 제거 |
+| slew up A/s | **2400** | **120** | 1600–4800; 480 A까지 이상적 0.2 s, 정상 full acceleration을 느리게 제한하지 않음 |
+| slew down A/s | **4800** | **400** | 2400–9600; 480→0 A를 0.1 s에 감축 가능 |
 | deadband m/s | **0.05** | **0.05** | 0.03–0.08; 적분 noise 억제 |
 | coast release hysteresis m/s | **0.12** | **0.12** | 0.08–0.18, deadband보다 커야 함 |
-| reapply low-current band A | **20** | **2** | coast 뒤 이 구간만 별도 상승률 |
-| reapply slew A/s | **200** | **10** | driving 첫 20 A 약 0.1 s; 이후 fast slew |
-| Torque motor RPM ceiling | **4500** | **300** | airborne 약 1.6 m/s 환산, PI target도 ceiling 이하로 clamp |
+| reapply low-current band A | **20** | **5** | coast 뒤 이 구간만 별도 상승률 |
+| reapply slew A/s | **200** | **40** | driving 첫 20 A 약 0.1 s; 이후 fast slew |
+| Torque motor RPM ceiling | **4500** | **600** | airborne 약 3.2 m/s 환산, PI target도 ceiling 이하로 clamp |
 
-Kp/한도/빠른 slew는 native의 빠른 가속을 보존하기 위한 선택이다. 성능 동등성을
+Driving Kp/한도/빠른 slew는 native의 빠른 가속을 보존하기 위한 선택이다.
+Airborne는 기능 관찰을 위해 기존 8 A/300 rpm에서 20 A/600 rpm, Kp15/Ki2로 상향한
+first-test candidate이며 실제 가속 성능 평가용이 아니다. 성능 동등성을
 실측으로 입증한 숫자는 아니다. 매우 낮은 airborne 전류는 기능 확인용이며 공중 가속도로
 차량 성능을 평가하지 않는다. 실제 가속이 기준보다 느려지면 matched condition에서
 current tracking, target ramp, saturation, P/I를 확인하고 이 범위에서 한 변수씩 조정한다.
@@ -123,8 +125,10 @@ current tracking, target ramp, saturation, P/I를 확인하고 이 범위에서 
 
 `Decision speed → Governor validity → STM_A StartControl (20 Hz) → EZkontrol`
 
-- `speed`: 기존 m/s→wheel RPM→motor RPM, current field=480 A limit, bit1=1.
-  부호 있는 AUTO reverse도 그대로다. 이 경로에는 새 PI/current limit을 섞지 않는다.
+- `speed`: 기존 m/s→wheel RPM→motor RPM 환산 뒤 active RPM envelope를 적용하고,
+  current field는 active current limit을 사용한다. bit1=1과 native EZ 속도루프를 유지한다.
+  driving 480 A/4500 rpm의 CAN baseline과 최종 reverse 1500 rpm 물리 clamp는 동일하다.
+  PI/anti-windup/slew는 이 경로에 적용하지 않는다.
 - `torque`: `e=target−measured`, `P=Kp e`, `I_next=clamp(I+Ki e dt,0,Imax)`.
   error deadband 안에서는 I 증가/감소를 멈추고 기존 I를 유지한다.
   upper/lower output clamp 및 slew-up saturation을 더 악화하는 적분은 하지 않는다.
@@ -229,7 +233,7 @@ python3 -m control_tuning.longitudinal_analysis \
 2. 빌드된 STM_A를 식별해서 flash한 뒤 status/Part I/II와 통신 복귀만 먼저 확인한다.
    Console default speed/source DEFAULT를 확인한다.
 3. `tuning_preset:=airborne`로 구동 stack을 실행한다. TUI 구동응답·구동출력에서
-   Torque/8 A/Kp8/Ki1/RPM300 및 HOST_OVERRIDE readback을 확인한다.
+   Torque/20 A/Kp15/Ki2/RPM600 및 HOST_OVERRIDE readback을 확인한다.
 4. Control scenario recorder로 `/drive/status`, command/brake, longitudinal status를 기록한다.
    첫 낮은 목표 0.3→0.6 m/s에서 방향·RPM·feedback·P/I·실제 current를 확인한다.
    이 작업을 수행한 agent는 movement command를 발행하지 않았다.
@@ -238,8 +242,8 @@ python3 -m control_tuning.longitudinal_analysis \
 6. 제어된 bench 조건에서 feedback loss→HALTED→feedback 복구→새 command 이후 재개를 확인한다.
    실제 drive status mode가 Torque인지, 0 current에서 bus current/바퀴가 어떻게 반응하는지 확인한다.
 7. MANUAL 정지·무전류에서 mode=speed로 적용하고 fallback을 확인한다.
-   **Speed fallback은 기존 480 A limit/원래 RPM 경로**다. airborne 8 A/RPM300 설정은
-   Torque 경로 전용이므로 Speed 시험은 별도의 작은 목표/짧은 시간으로 수행한다.
+   Speed도 active airborne envelope **20 A/RPM600**을 사용한다. 실제 readback과
+   `/drive/status`의 commanded current-limit/RPM을 확인한다. MANUAL pedal은 AUTO envelope와 별도다.
 
 ## 8. 첫 driving A/B와 최종 freeze
 
@@ -298,3 +302,63 @@ DFU device 없음이었고 `/dev/stm_a`도 없었다. **STM_A/STM_B 모두 flash
 변경 중심: STM_A PI/RTOS 연결/CAN encoder, control_tuning schema/preset/runtime/TUI/analysis,
 control_launch helper, Console telemetry/UI, Control record topic 목록, scenario condition 분리,
 관련 tests/README/INTERFACES/이 보고서. 변경 전체 목록은 해당 commit의 file list로 확인한다.
+
+
+## 후속 calibration/envelope 정리
+
+`drive_current_limit_a`/`drive_motor_speed_limit_rpm`은 AUTO Speed/Torque 공통 envelope다.
+Airborne는 위 표의 새 후보, driving은 기존 값을 유지한다. 20 Hz PI, anti-windup,
+coast/reapply, freshness 200 ms, native ABI v1 및 schema v3 naming/migration은 변경하지 않았다.
+TUI는 S 저장 후 같은 프리셋으로 구동 스택을 재시작하는 흐름이다.
+
+새 RPM LPF/평균/median/delta clamp는 추가하지 않았다. 기존 zero-dropout hold만 유지한다.
+첫 실제 Torque MCAP에서 raw RPM/RPM 환산 speed/GNSS/body speed/PI current를 함께 비교해
+피드백 이상 원인을 별도로 판단한다. driving Speed CAN baseline과 signed reverse physical clamp는
+host 회귀 테스트로 확인한다. 실차 movement command나 고출력 시험은 이번 cleanup의 범위가 아니다.
+
+
+후속 작업 검증 결과:
+
+- Host C: active Speed current/RPM envelope, driving의 기존 CAN 프레임 동일성
+  (forward/zero/reverse 11개 target), reverse physical 1500 rpm, MANUAL 송신 단계,
+  기존 Torque PI/anti-windup/coast/slew/reapply/feedback inhibit 테스트 통과.
+- ROS domain 229를 기본으로 분리해 Control Tuning/시나리오 **245 tests passed**.
+  v3 preset, v2 migration, conflicting alias, MCAP normalization 및 실제 CAN/output-disabled
+  launch 저장·재시작 경로를 포함한다. Console Vehicle API **22 tests passed** (별도 domain 216).
+- `control_tuning`, `control_launch` 빌드 성공. STM_A Release 빌드 성공:
+  **FLASH 116336 B (22.19%), RAM 118072 B (90.08%)**. 기존 newlib `_gettimeofday` 경고 외 링크 성공.
+- HIL STM_A `/dev/hil_a`, ST-Link **0025002B3234511137333934**를 SWD에서
+  `stm_a_node`/`/drive/status`, 3.29 V, device 0x469로 식별한 뒤 flash했다.
+  **Download verified successfully / MCU Reset** 확인. STM_B/STM_TEST는 flash하지 않았다.
+- flash 후 `/drive/status` 87개와 longitudinal status 10개를 수신했다.
+  각각 약 42.9 Hz/4.88 Hz, Part I/II valid, MANUAL/FWD·pedal0·speed0·current0 A였다.
+  boot calibration은 **speed/DEFAULT, 480 A/4500 rpm**이다. 이 관측은 통신 복귀 증거이며
+  airborne 20 A/600 rpm의 실제 구동 응답을 검증한 것은 아니다.
+- 실제 motor movement command/AUTO 주행/고출력 시험은 수행하지 않았다.
+  다음 시험은 airborne를 선택해 저장한 뒤 정지 상태에서 같은 preset으로 구동 스택을
+  재시작하고 HOST_OVERRIDE readback을 확인한다. Speed/Torque 모두 current/RPM envelope,
+  실제 current tracking, coast/reapply, raw RPM와 독립 GNSS/body speed를 비교한다.
+
+이번 후속 cleanup의 변경 파일:
+
+```text
+docs/ARCHITECTURE.md
+docs/CONTROL_TUNING_PARAMETERS.md
+docs/INTERFACES.md
+docs/SAFETY.md
+docs/VEHICLE_RUNBOOK.md
+docs/reports/2026-09-21_longitudinal_torque_pi.md
+firmware/STM_A/Core/Inc/longitudinal_controller.h
+firmware/STM_A/Core/Src/app_freertos.c
+firmware/STM_A/Core/Src/longitudinal_controller.c
+firmware/STM_A/README.md
+firmware/STM_A/tests/longitudinal_controller_test.c
+firmware/common/ezkontrol_command.h
+software/src/control_launch/launch/vehicle.launch.py
+software/src/control_tuning/README.md
+software/src/control_tuning/config/control_tuning.presets/airborne.yaml
+software/src/control_tuning/control_tuning/longitudinal.py
+software/src/control_tuning/control_tuning/schema.py
+software/src/control_tuning/test/test_longitudinal.py
+software/src/vehicle_console/test/test_vehicle.py
+```

@@ -92,14 +92,34 @@ STM_A는 종방향 구동과 차량의 물리 모드·기어·가속 페달 입�
 
 - PA0 ADC로 가속 페달을 읽고 0~100%로 변환합니다.
 - PA8 모드 스위치와 PA9 기어 스위치를 읽습니다.
-- AUTO에서는 `/vehicle/command.speed_target_mps`를 EZkontrol speed-control
-  명령으로 변환합니다.
+- AUTO에서는 `/vehicle/command.speed_target_mps`를 선택한 Speed/Torque 경로로 제어합니다.
+  두 경로 모두 active preset의 current/RPM envelope를 사용합니다.
 - MANUAL에서는 물리 페달과 기어를 torque-control 명령으로 변환합니다.
 - EZkontrol handshake와 CAN 명령·Part I/II 상태 수신을 담당합니다.
 - `/drive/status`로 모드, 기어, 속도, 명령 freshness와 모터 진단을 발행합니다.
 - STM_B에 모드·기어·속도를 보내고 STM_B의 최종 브레이크 요청을 받습니다.
 - STM_B safety frame 단절, STM_B 브레이크 요청, AUTO Host brake 또는 AUTO Host
   명령 timeout 조건에서 traction을 HALTED로 명령합니다.
+
+AUTO 종방향은 기존 20 Hz `StartControl`에서 다음 두 경로를 선택합니다.
+
+```text
+Speed Control: Host target speed → target motor RPM → preset current/RPM envelope
+               → EZkontrol native Speed Control
+Torque Control: Host target speed → STM_A 20 Hz Speed PI → anti-windup/coast/current slew
+                → phase-current target → EZkontrol Torque Control
+MANUAL: physical pedal/gear → 기존 direct Torque Control
+```
+
+`drive_current_limit_a`는 Speed에서 EZ 내부 속도제어 current limit, Torque에서 PI 전류 상한입니다.
+`drive_motor_speed_limit_rpm`은 Speed target RPM과 Torque RPM ceiling에 공통으로 적용합니다.
+최종 전진 4500 / 후진 1500 rpm 물리 clamp는 CAN 송신부에서 별도로 유지합니다.
+따라서 driving Speed의 480 A/4500 rpm baseline은 동일하고 airborne는 20 A/600 rpm입니다.
+MANUAL pedal/gear는 AUTO preset envelope를 사용하지 않습니다.
+
+Torque는 Part I/II freshness <200 ms를 요구하며, 상실 시 history reset·0 A/HALTED 후
+feedback 복구를 확인한 다음 받은 fresh Host command로만 재개합니다.
+Speed에서 Part I/II stale 자체는 기존처럼 status validity에만 반영됩니다.
 
 구현 기준: `firmware/STM_A/Core/Src/app_freertos.c`
 

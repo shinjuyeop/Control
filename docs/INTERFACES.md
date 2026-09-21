@@ -47,8 +47,8 @@ CAN, Dashboard CAN, Arduino LCD/touch와 HIL UNO USB의 데이터 계약과
 | UNO R4 | ST7796S LCD | SPI | MSP4030/MSP4031 | logical 480×320 화면 | 적용 상태 변경 시 | 없음 | local display output |
 | FT6336U | UNO R4 | I2C | address `0x38` | 최대 2점 raw touch | 20 ms polling | read 실패 시 1 s 재시도 | local navigation input |
 | HIL Console | UNO R4 | USB Serial | newline ASCII, 115200 | `HIL_LCD`, `HIL_TOUCH`, `VT D/M/U/C` | 보고 200/100 ms | Virtual Touch 1 s | HIL-only virtual HMI |
-| STM_A | EZkontrol | FDCAN1 | `0x0C01EFD0` | handshake ACK 또는 command | 50 ms command | 명시적 TX timeout 없음 | AUTO speed / MANUAL torque |
-| EZkontrol | STM_A | FDCAN1 | `0x1801D0EF`, `0x1802D0EF` | Part I/II status | 외부 장치 설정 | 200 ms validity | 진단 validity에만 사용 |
+| STM_A | EZkontrol | FDCAN1 | `0x0C01EFD0` | handshake ACK 또는 command | 50 ms command | 명시적 TX timeout 없음 | AUTO Speed/Torque / MANUAL direct torque |
+| EZkontrol | STM_A | FDCAN1 | `0x1801D0EF`, `0x1802D0EF` | Part I/II status | 외부 장치 설정 | 200 ms validity | AUTO Torque: PI reset·0 A/HALTED; Speed/MANUAL: 기존 validity 의미 |
 | 조향 노드 | KEYA | SocketCAN | `0x06000001` | enable/disable/position/torque/query | 기본 20 ms | position 500 ms / torque 위치 100 ms | node ID 기본값 1 |
 | KEYA | 조향 노드 | SocketCAN | `0x05800001`, `0x07000001` | query response, heartbeat | 외부 장치 설정 | CAN·position 각 500 ms | ID는 node ID에 따라 변함 |
 | Host Agent | 각 STM | LPUART1 serial, 460800 8N1 | micro-ROS XRCE-DDS | ROS 2 serialization | event-driven | Agent ping 500/100 ms | 보드별 Agent 1개 |
@@ -328,9 +328,10 @@ nonzero RPM으로 최대 2회 hold한 뒤, 타이어 지름 `0.47 m`, 감속비 
 | 3..5 | fault bits | 24-bit little-endian 원본 |
 | 6..7 | 현재 코드에서 사용하지 않음 | - |
 
-Part I과 Part II는 마지막 수신 후 200 ms 미만일 때 각각 valid입니다. 이 timeout은
-현재 `/drive/status` validity에만 반영되고 traction을 직접 HALTED로 바꾸지는
-않습니다.
+Part I과 Part II는 마지막 수신 후 200 ms 미만일 때 각각 valid입니다.
+AUTO Speed/MANUAL에서는 이 freshness가 기존 status validity에 반영됩니다.
+AUTO Torque에서는 둘 중 하나라도 stale이면 PI history reset·0 A/HALTED로 inhibit하며,
+두 Part의 fresh 복구를 확인한 뒤 받은 새 Host command가 필요합니다.
 
 구현 위치:
 
@@ -659,6 +660,23 @@ silently selecting a value. All managed values remain required.
 
 Node-scoped ROS parameter names and `/parameter_events` keep their native names/units.
 The MCU array ABI remains v1. Its host decoder adds canonical `display_values` while
-retaining the existing `config` object for old clients. No topic/message type or
-firmware rollout is required. Control Tuning remains read-only with respect to runtime:
+retaining the existing `config` object for old clients. The topic/message types remain unchanged. The naming adapter needs no firmware
+rollout, but the shared AUTO Speed/Torque envelope requires the updated STM_A firmware. Control Tuning remains read-only with respect to runtime:
 S saves the selected preset for the next control-stack launch.
+
+
+### AUTO drive envelope semantics
+
+The ABI v1 `max_drive_current_a` and `motor_rpm_limit` fields (canonical
+`drive_current_limit_a`, `drive_motor_speed_limit_rpm`) apply to both AUTO modes.
+Speed uses them as the EZ native current-limit field and symmetric signed target-RPM
+envelope. Torque uses them as PI phase-current ceiling and EZ torque-mode RPM ceiling.
+The final sender still clamps forward to 4500 rpm and reverse to 1500 rpm.
+MANUAL pedal/gear bypasses this AUTO calibration envelope.
+
+Airborne first-test candidate: Kp15/Ki2, 20 A, integral6 A, slew120/400 A/s,
+reapply5 A at40 A/s, RPM600, deadband0.05/release0.12 m/s.
+Driving remains 480 A/RPM4500 with unchanged gains and CAN baseline.
+PI gains, integral, deadband/coast and slew/reapply remain Torque-only. Firmware
+Part I/II freshness is 200 ms: Speed status validity semantics stay unchanged;
+Torque resets/inhibits to 0 A/HALTED and requires a Host command received after feedback recovery.
