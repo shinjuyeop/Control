@@ -641,8 +641,9 @@ After Torque feedback recovery, a command received after recovery is required.
 Agent reconnect preserves RAM calibration but clears host commands/pending requests;
 MCU reboot restores source DEFAULT/revision 0/mode speed. Host clients do not auto-replay overrides.
 
-The TUI compares the matching request ID, revision and full float32 readback before
-reporting success. Partial updates across lateral and longitudinal are not represented
-as one transaction: A applies the selected subsystem. For calibration, test procedure,
+The launch calibration helper compares the matching request ID, revision and full float32
+readback before reporting success. The TUI only observes current settings and saves presets;
+it does not send calibration or parameter writes. Saved values take effect on the next
+control-stack launch with that preset. For calibration, test procedure,
 range rationale and recorder coverage see
 [the implementation report](reports/2026-09-21_longitudinal_torque_pi.md).

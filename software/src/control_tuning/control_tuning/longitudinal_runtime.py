@@ -1,4 +1,4 @@
-"""Explicit RAM calibration request and MCU readback, shared by TUI and startup."""
+"""Launch-time RAM calibration request and MCU readback."""
 import secrets
 import time
 
@@ -103,7 +103,7 @@ def main(args=None):
                 client.begin(config, client.fresh()['revision'])
                 attempted = True
         node.get_logger().error('프리셋 미적용/미확인: ' + (client.reason() or 'readback 대기') +
-                                '; 현재 STM_A readback을 확인하고 MANUAL 정지에서 TUI A로 적용하세요.')
+                                '; 현재 STM_A readback과 정지 상태를 확인하고 선택한 프리셋으로 구동 스택을 재시작하세요.')
         return 1
     finally:
         node.destroy_node()

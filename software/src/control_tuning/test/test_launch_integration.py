@@ -19,6 +19,7 @@ from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 
 from control_tuning.runtime import TuningNode
+from control_tuning.tui import Editor
 from control_tuning.schema import STEERING, GOVERNOR
 from control_tuning.storage import SettingsStore
 from control_tuning.presets import PresetStore, load_launch_overrides
@@ -108,7 +109,7 @@ def test_launch_helpers_layer_profile_before_explicit_overrides(store, monkeypat
             assert node['respawn'] is True
 
 
-def test_actual_nodes_save_apply_restart_and_cli_priority(store, monkeypatch, tmp_path):
+def test_actual_nodes_save_then_restart_and_cli_priority(store, monkeypatch, tmp_path):
     if os.environ.get('CONTROL_TUNING_LAUNCH_TESTS') != '1':
         pytest.skip('Opt in with CONTROL_TUNING_LAUNCH_TESTS=1 after building lateral_ctrl and command_governor')
     for package in ('lateral_ctrl', 'command_governor', 'control_tuning'):
@@ -162,30 +163,31 @@ def test_actual_nodes_save_apply_restart_and_cli_priority(store, monkeypatch, tm
             if until():
                 return
         logs = '\n'.join(p.read_text() for p in tmp_path.glob('*.log'))
-        pytest.fail(f'Actual-node condition timed out: {client.errors}, {client.result}\n{logs}')
+        pytest.fail(f'Actual-node condition timed out: {client.errors}\n{logs}')
 
     try:
         with launch('command_governor', 'command_governor.launch.py'):
             with launch('lateral_ctrl', 'steering_actuator.launch.py',
                         'hardware_can_enabled:=false', 'actuator_output_enabled:=false'):
-                pump(lambda: client.fresh_values(STEERING) and client.fresh_values(GOVERNOR)
-                     and not client.apply_reason(store.saved_native[STEERING]))
+                pump(lambda: client.fresh_values(STEERING) and client.fresh_values(GOVERNOR))
                 assert client.values[STEERING]['torque_full_scale_error_deg'] == .3
                 assert client.values[STEERING]['minimum_steering_speed_kph'] == 1.
                 assert client.values[GOVERNOR]['input_timeout_ms'] == 250.
-                client.begin_apply({**preset, 'p_gain_a_per_deg': 48.},
-                                   store.saved_native[STEERING], dict(client.values[STEERING]))
-                pump(lambda: client.result is not None)
-                assert client.result[0], client.result
-                assert client.values[STEERING]['torque_full_scale_error_deg'] == .25
-                assert presets.load('driving')['p_gain_a_per_deg'] == 40.
+                editor = Editor(store)
+                editor.key('enter')
+                editor.draft['p_gain_a_per_deg'] = 48.
+                editor.key('s', client)
+                presets.reload()
+                assert presets.load('driving')['p_gain_a_per_deg'] == 48.
+                client.tick(force=True)
+                pump(lambda: not client.requests)
+                assert client.values[STEERING]['torque_full_scale_error_deg'] == .3
             client.received.pop(STEERING, None)
             with launch('lateral_ctrl', 'steering_actuator.launch.py',
                         'hardware_can_enabled:=false', 'actuator_output_enabled:=false',
                         'actuation_mode:=position'):
                 pump(lambda: client.fresh_values(STEERING) and client.values[STEERING]['actuation_mode'] == 'position')
-                assert client.values[STEERING]['torque_full_scale_error_deg'] == .3
-                assert 'Position' in client.apply_reason(store.saved_native[STEERING])
+                assert client.values[STEERING]['torque_full_scale_error_deg'] == .25
         client.received.clear()
         with launch('command_governor', 'command_governor.launch.py', 'tuning_preset:=airborne'):
             with launch('lateral_ctrl', 'steering_actuator.launch.py',

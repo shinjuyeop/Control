@@ -54,16 +54,20 @@ ros2 run control_tuning control_tuning_tui
 ```
 
 상단에서 **주행 / 공중**를 선택하면 **1 조향응답 · 2 조향출력 · 3 구동응답 ·
-4 구동출력 · 5 명령검사 · 6 운용설정 · 7 수신제한**이 한 행에 나타난다.
-80열 이상 터미널에서 ←→로 이동하거나 숫자 1–7로 바로 선택한다. `S`는 선택한 프리셋 YAML을 저장하고, 해당 프리셋으로 다음 launch를
-실행할 때 반영된다. 실행 중 Torque 튜닝은 MANUAL·정지 상태에서 `A → Enter`로
-적용할 수 있다. 운용·수신 시간은 저장 후 기존 launch를 완전히 종료하고 같은 프리셋으로
-다시 실행한다. [저장 경로·단위·조작 안내](../software/src/control_tuning/README.md)를 따른다.
+4 구동출력 · 5 수신제한**이 터미널 폭에 맞춰 간격을 두고 한 행에 나타난다.
+80열 이상 터미널에서 ←→로 이동하거나 숫자 1–5로 바로 선택한다.
+조향 제어 방식은 조향응답, 조향 허용 최소 차속은 조향출력에 있다.
+상위 명령 유효시간은 다른 수신 제한과 함께 편집한다.
+
+`S`는 선택한 프리셋 YAML만 저장한다. TUI에서 실행 중인 제어값을 직접 적용하는 기능은 없다.
+현재값을 확인하며 편집·저장한 뒤, MANUAL 정지 상태에서 기존 구동 스택을 종료하고
+같은 `tuning_preset`으로 다시 실행한다. TUI만 다시 여는 것으로 적용되지는 않는다.
+[저장 경로·단위·조작 안내](../software/src/control_tuning/README.md)를 따른다.
 
 두 프리셋 `airborne`/`driving`은 schema v2로 lateral/longitudinal/governor/timeouts를 보관한다.
 종방향은 first-test candidate이며 실차 성능 검증값이 아니다. 새 STM_A는 부팅 시 speed DEFAULT,
 launch는 MANUAL 정지·무전류에서 선택한 calibration을 한 번 적용하고 readback을 확인한다.
-실패/timeout이면 현재 모드를 확인하고 TUI의 구동응답·구동출력 분류에서 A로 적용한다.
+실패/timeout이면 현재 모드와 정지 상태를 확인하고 선택한 프리셋으로 구동 스택을 재시작한다.
 공중 Torque는 8 A/RPM300, 주행 Torque는 480 A/RPM4500이다. Speed fallback의 기존
 480 A 경로는 그대로이므로 공중 Torque 제한이 Speed에 적용된다고 가정하지 않는다.
 [airborne/A-B 절차와 실제 초기값](reports/2026-09-21_longitudinal_torque_pi.md)을 확인한다.

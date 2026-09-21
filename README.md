@@ -88,8 +88,8 @@ Control/
 ## 공통 제어 설정
 
 `ros2 run control_tuning control_tuning_tui`에서 공통 파라미터를 편집합니다.
-`S`는 선택한 프리셋을 저장하고, `A`는 MANUAL·정지 상태에서 torque
-튜닝을 일괄 적용합니다. 시나리오의 속도·진폭·주기는 기존 시나리오 TUI에서 수정합니다.
+`S`는 선택한 프리셋을 저장하고, 해당 프리셋으로 구동 스택을 다시 실행할 때 반영합니다.
+TUI는 현재값을 조회하며 실행 중인 제어값을 직접 변경하지 않습니다. 시나리오의 속도·진폭·주기는 기존 시나리오 TUI에서 수정합니다.
 [Control Tuning 사용법](software/src/control_tuning/README.md)을 참고하십시오.
 
 Control Tuning은 상단에서 주행·공중 프리셋을 먼저 선택한 뒤 편집합니다.

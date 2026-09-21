@@ -6,7 +6,7 @@ from .longitudinal import LONGITUDINAL, validate_config
 
 STEERING = 'steering_actuator_node'
 GOVERNOR = 'command_governor'
-GROUPS = ('조향응답', '조향출력', '구동응답', '구동출력', '명령검사', '운용설정', '수신제한')
+GROUPS = ('조향응답', '조향출력', '구동응답', '구동출력', '수신제한')
 
 
 @dataclass(frozen=True)
@@ -19,12 +19,14 @@ class Field:
     help: str
     step: float = 0.0
     node: str = STEERING
-    live: bool = True
     integer: bool = False
     choices: tuple = ()
 
 
 FIELDS = (
+    Field('actuation_mode', '조향 제어 방식', '', GROUPS[0],
+          'actuation_mode', '재시작 필요. KEYA 내부 0020도 torque=2 / position=3으로 별도 설정해야 합니다.',
+          choices=('torque', 'position')),
     Field('p_gain_a_per_deg', 'P 게인', 'A/deg', GROUPS[0],
           'torque_full_scale_error_deg',
           '높일수록 목표각을 더 강하게 따라갑니다. 최대 전류 명령을 바꿔도 P 게인은 유지됩니다.', 1.6),
@@ -47,57 +49,54 @@ FIELDS = (
           'torque_peak_recovery_ms', '지속 전류 한도의 50% 이하 출력을 이 시간 동안 유지하면 고출력을 다시 사용할 수 있습니다.', 100, integer=True),
     Field('angle_limit_margin_deg', '조향 한계 보호 여유각', 'deg', GROUPS[1],
           'torque_soft_limit_margin_deg', '측정된 조향 범위 안쪽으로 목표를 제한하고, 끝 부근의 바깥 방향 출력을 줄입니다.', 0.1),
-    Field('actuation_mode', '조향 제어 방식', '', GROUPS[5],
-          'actuation_mode', '재시작 필요. KEYA 내부 0020도 torque=2 / position=3으로 별도 설정해야 합니다.',
-          live=False, choices=('torque', 'position')),
-    Field('minimum_vehicle_speed_kph', '조향 허용 최소 차속', 'km/h', GROUPS[5],
-          'minimum_steering_speed_kph', '0이면 정지 상태에서도 조향합니다. 최근에 수신한 유효한 차속 피드백은 계속 필요합니다.', 0.1, live=False),
-    Field('steering_command_timeout_ms', '조향 명령 수신 제한', 'ms', GROUPS[6],
-          'steer_command_timeout_ms', '/vehicle/command가 이 시간 이상 오래되면 조향 명령을 만료시킵니다.', 10, live=False, integer=True),
-    Field('can_timeout_ms', 'CAN 수신 제한', 'ms', GROUPS[6],
-          'can_timeout_ms', 'KEYA CAN frame 수신 단절 기준입니다.', 10, live=False, integer=True),
-    Field('position_feedback_timeout_ms', '위치 피드백 수신 제한', 'ms', GROUPS[6],
-          'feedback_timeout_ms', '위치 피드백 수신 제한입니다. torque에서는 torque 피드백 제한과 작은 값이 적용됩니다.', 10, live=False, integer=True),
-    Field('torque_feedback_timeout_ms', '토크 제어 피드백 제한', 'ms', GROUPS[6],
-          'torque_feedback_timeout_ms', 'Torque 위치 피드백·샘플 간격·제어 지연의 제한입니다. 제어 주기의 2배 이상, 200 ms 이하.', 10, live=False, integer=True),
-    Field('mode_timeout_ms', '차량 모드 수신 제한', 'ms', GROUPS[6],
-          'mode_timeout_ms', '/drive/status의 모드 수신 단절 기준입니다.', 50, live=False, integer=True),
-    Field('drive_status_timeout_ms', '차속 피드백 수신 제한', 'ms', GROUPS[6],
-          'drive_status_timeout_ms', '조향 허용 판단에 사용하는 차속의 수신 단절 기준입니다.', 10, live=False, integer=True),
+    Field('minimum_vehicle_speed_kph', '조향 허용 최소 차속', 'km/h', GROUPS[1],
+          'minimum_steering_speed_kph', '0이면 정지 상태에서도 조향합니다. 최근에 수신한 유효한 차속 피드백은 계속 필요합니다.', 0.1),
     Field('governor_input_timeout_ms', '상위 명령 유효시간', 'ms', GROUPS[4],
           'input_timeout_ms', '/planning/command의 생성 시각을 검사합니다. 너무 오래되거나 미래 시각인 명령을 중계하지 않습니다.',
-          10, node=GOVERNOR, live=False),
+          10, node=GOVERNOR),
+    Field('steering_command_timeout_ms', '조향 명령 수신 제한', 'ms', GROUPS[4],
+          'steer_command_timeout_ms', '/vehicle/command가 이 시간 이상 오래되면 조향 명령을 만료시킵니다.', 10, integer=True),
+    Field('can_timeout_ms', 'CAN 수신 제한', 'ms', GROUPS[4],
+          'can_timeout_ms', 'KEYA CAN frame 수신 단절 기준입니다.', 10, integer=True),
+    Field('position_feedback_timeout_ms', '위치 피드백 수신 제한', 'ms', GROUPS[4],
+          'feedback_timeout_ms', '위치 피드백 수신 제한입니다. torque에서는 torque 피드백 제한과 작은 값이 적용됩니다.', 10, integer=True),
+    Field('torque_feedback_timeout_ms', '토크 제어 피드백 제한', 'ms', GROUPS[4],
+          'torque_feedback_timeout_ms', 'Torque 위치 피드백·샘플 간격·제어 지연의 제한입니다. 제어 주기의 2배 이상, 200 ms 이하.', 10, integer=True),
+    Field('mode_timeout_ms', '차량 모드 수신 제한', 'ms', GROUPS[4],
+          'mode_timeout_ms', '/drive/status의 모드 수신 단절 기준입니다.', 50, integer=True),
+    Field('drive_status_timeout_ms', '차속 피드백 수신 제한', 'ms', GROUPS[4],
+          'drive_status_timeout_ms', '조향 허용 판단에 사용하는 차속의 수신 단절 기준입니다.', 10, integer=True),
+
 )
 FIELDS += (
     Field('control_mode', '종방향 모드', '', GROUPS[2], 'control_mode',
-          'A: STM_A MANUAL·정지·페달 해제·무전류에서만 적용. Torque 값은 first-test candidate.',
+          'S로 저장하고 선택한 프리셋으로 구동 스택을 재시작합니다. Torque 값은 초기 시험 후보입니다.',
           node=LONGITUDINAL, choices=('speed', 'torque')),
     Field('speed_kp_a_per_mps', '속도 Kp', 'A/(m/s)', GROUPS[2], 'speed_kp_a_per_mps',
-          'MCAP 기반 first-test candidate. A는 MANUAL·정지·무전류에서 STM_A readback까지 확인합니다.', 10, node=LONGITUDINAL),
+          'MCAP 기반 초기 시험 후보입니다. S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 10, node=LONGITUDINAL),
     Field('speed_ki_a_per_mps_s', '속도 Ki', 'A/(m/s*s)', GROUPS[2], 'speed_ki_a_per_mps_s',
-          'MCAP 기반 first-test candidate. A는 MANUAL·정지·무전류에서 STM_A readback까지 확인합니다.', 1, node=LONGITUDINAL),
+          'MCAP 기반 초기 시험 후보입니다. S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 1, node=LONGITUDINAL),
     Field('speed_deadband_mps', '속도 deadband', 'm/s', GROUPS[2], 'speed_deadband_mps',
-          'MCAP 기반 first-test candidate. A는 MANUAL·정지·무전류에서 STM_A readback까지 확인합니다.', 0.01, node=LONGITUDINAL),
+          'MCAP 기반 초기 시험 후보입니다. S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 0.01, node=LONGITUDINAL),
     Field('speed_hysteresis_mps', 'Coast 해제 오차', 'm/s', GROUPS[2], 'speed_hysteresis_mps',
-          'MCAP 기반 first-test candidate. A는 MANUAL·정지·무전류에서 STM_A readback까지 확인합니다.', 0.01, node=LONGITUDINAL),
+          'MCAP 기반 초기 시험 후보입니다. S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 0.01, node=LONGITUDINAL),
     Field('max_drive_current_a', '최대 구동 전류', 'A', GROUPS[3], 'max_drive_current_a',
-          'MCAP 기반 first-test candidate. A는 MANUAL·정지·무전류에서 STM_A readback까지 확인합니다.', 10, node=LONGITUDINAL),
+          'MCAP 기반 초기 시험 후보입니다. S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 10, node=LONGITUDINAL),
     Field('integrator_limit_a', '적분 상한', 'A', GROUPS[3], 'integrator_limit_a',
-          'MCAP 기반 first-test candidate. A는 MANUAL·정지·무전류에서 STM_A readback까지 확인합니다.', 5, node=LONGITUDINAL),
+          'MCAP 기반 초기 시험 후보입니다. S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 5, node=LONGITUDINAL),
     Field('current_slew_up_a_s', '전류 상승률', 'A/s', GROUPS[3], 'current_slew_up_a_s',
-          'MCAP 기반 first-test candidate. A는 MANUAL·정지·무전류에서 STM_A readback까지 확인합니다.', 100, node=LONGITUDINAL),
+          'MCAP 기반 초기 시험 후보입니다. S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 100, node=LONGITUDINAL),
     Field('current_slew_down_a_s', '전류 하강률', 'A/s', GROUPS[3], 'current_slew_down_a_s',
-          'MCAP 기반 first-test candidate. A는 MANUAL·정지·무전류에서 STM_A readback까지 확인합니다.', 100, node=LONGITUDINAL),
+          'MCAP 기반 초기 시험 후보입니다. S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 100, node=LONGITUDINAL),
     Field('reapply_current_a', '재인가 저전류 구간', 'A', GROUPS[3], 'reapply_current_a',
-          'MCAP 기반 first-test candidate. A는 MANUAL·정지·무전류에서 STM_A readback까지 확인합니다.', 1, node=LONGITUDINAL),
+          'MCAP 기반 초기 시험 후보입니다. S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 1, node=LONGITUDINAL),
     Field('reapply_slew_a_s', '재인가 상승률', 'A/s', GROUPS[3], 'reapply_slew_a_s',
-          'MCAP 기반 first-test candidate. A는 MANUAL·정지·무전류에서 STM_A readback까지 확인합니다.', 20, node=LONGITUDINAL),
+          'MCAP 기반 초기 시험 후보입니다. S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 20, node=LONGITUDINAL),
     Field('motor_rpm_limit', 'Torque RPM 상한', 'rpm', GROUPS[3], 'motor_rpm_limit',
-          'MCAP 기반 first-test candidate. A는 MANUAL·정지·무전류에서 STM_A readback까지 확인합니다.', 100, node=LONGITUDINAL),
+          'MCAP 기반 초기 시험 후보입니다. S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 100, node=LONGITUDINAL),
 )
 BY_KEY = {f.key: f for f in FIELDS}
 OWNED = {node: {f.native for f in FIELDS if f.node == node} for node in (STEERING, GOVERNOR, LONGITUDINAL)}
-LIVE_NAMES = tuple(f.native for f in FIELDS if f.live and f.node == STEERING)
 # Read these as well so conversions, limits and concurrent edits use actual node values.
 CONTEXT_NAMES = (
     'keya_protection_current_a', 'torque_control_period_ms', 'count_scale',
@@ -215,7 +214,7 @@ def range_hint(field, values, context):
     """Controller acceptance bounds, not experimentally verified tuning guidance."""
     if field.node == LONGITUDINAL:
         return {
-            'control_mode': 'speed / torque; MANUAL·정지에서 A',
+            'control_mode': 'speed / torque; 저장 후 재시작',
             'speed_kp_a_per_mps': '0 초과 ~ 1000', 'speed_ki_a_per_mps_s': '0~200',
             'max_drive_current_a': '0 초과 ~ 480', 'integrator_limit_a': '0~최대 구동 전류',
             'current_slew_up_a_s': '0 초과 ~ 9600', 'current_slew_down_a_s': '0 초과 ~ 9600',

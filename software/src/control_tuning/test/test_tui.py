@@ -39,7 +39,7 @@ def test_preset_selector_is_first_and_cannot_be_skipped(store, width, height):
         renderer.redraw(layout(editor, None, width, height), 0)
         assert not output.getvalue()
     assert editor.preset_condition == 'airborne'
-    assert 'S 프리셋 저장' in text
+    assert 'S 저장' in text
     assert 'P 게인' in text and 'A/deg' in text and 'A/(deg/s)' in text
 
 
@@ -64,12 +64,13 @@ def test_edit_save_and_discard(store, editor):
 
 
 def test_startup_mode_and_invalid_edits(store, editor):
-    editor.key('6')
+    editor.key('1')
     editor.key('enter')
     assert editor.draft['actuation_mode'] == 'position'
     editor.key('a')
-    assert editor.error and '오프라인' in editor.message
+    assert editor.modal is None and not editor.error
     editor.key('1')
+    editor.key('down')
     editor.commit(0)
     editor.key('s')
     assert editor.error and editor.modal is None
@@ -86,6 +87,7 @@ def test_terminal_navigation_scroll_and_incremental_updates(store, editor, width
     renderer = ScreenRenderer(console)
     screen = pyte.Screen(width, height)
     stream = pyte.Stream(screen)
+    editor.key('1')
     for group in range(len(GROUPS)):
         if group:
             editor.key('right')
@@ -100,8 +102,10 @@ def test_terminal_navigation_scroll_and_incremental_updates(store, editor, width
             tabs = next(line for line in screen.display if '1 조향응답' in line)
             assert all(f'{i + 1} {label}' in tabs for i, label in enumerate(GROUPS))
             assert f'[{group + 1} {GROUPS[group]}]' in tabs
-            assert 'A 현재 적용' in text and 'Q 종료' in text
-            assert 'S 프리셋 저장' in text
+            keys = next(line for line in screen.display if '←→ 분류' in line)
+            assert all(hint in keys for hint in ('↑↓ 항목', 'Enter 수정', 'S 저장', 'P 프리셋', '? 도움말', 'Q 종료'))
+            assert 'A 현재 적용' not in text
+            assert 'S 저장' in text
             assert '오프라인' in text
             assert editor.field.label in text  # full label remains in the help panel
             assert editor.field.native in text  # ROS name must be visible without opening help
@@ -114,6 +118,7 @@ def test_terminal_navigation_scroll_and_incremental_updates(store, editor, width
     editor.key('left')
     assert editor.group == len(GROUPS) - 1
     editor.key('1')
+    editor.key('down')
     editor.key('enter')
     renderer.redraw(layout(editor, None, width, height), 0)
     stream.feed(output.getvalue())
@@ -121,12 +126,10 @@ def test_terminal_navigation_scroll_and_incremental_updates(store, editor, width
     assert '\x1b[2J' not in output.getvalue()
 
 
-def test_modal_review_scroll_and_terminal_cleanup(store, editor):
-    for f in editor.fields:
-        editor.draft[f.key] += f.step
-    # Apply retains the review list; save is now a direct per-preset write.
-    editor.modal = dict(action='apply', rows=[(f.label, store.saved[f.key], editor.draft[f.key])
-                                            for f in editor.fields])
+def test_discard_confirmation_and_terminal_cleanup(store, editor):
+    editor.commit(40)
+    editor.key('q')
+    assert editor.modal['action'] == 'quit'
     output = StringIO()
     console = Console(file=output, force_terminal=True, width=80, height=24)
     with pytest.raises(RuntimeError):
@@ -134,8 +137,6 @@ def test_modal_review_scroll_and_terminal_cleanup(store, editor):
             raise RuntimeError('test cleanup')
     assert ENTER_TUI in output.getvalue()
     assert output.getvalue().endswith(LEAVE_TUI)
-    editor.key('down')
-    assert editor.modal_offset == 1
     editor.key('escape')
     assert editor.modal is None
     assert editor.preset_dirty
@@ -149,6 +150,8 @@ def test_80_column_screen_has_aligned_units_and_details_next_to_table(store, edi
     header = next(line for line in lines if '항목' in line and '단위' in line)
     unit_column = cell_len(header[:header.index('단위')])
     for f in editor.fields:
+        if not f.unit:
+            continue
         row = next(line for line in lines if f.label in line and f.unit in line and '프리셋 저장값' not in line)
         assert cell_len(row[:row.index(f.unit)]) == unit_column
     assert next(i for i, line in enumerate(lines) if 'ROS:' in line) < 20

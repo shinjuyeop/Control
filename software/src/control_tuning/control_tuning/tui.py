@@ -13,7 +13,7 @@ from rich.text import Text
 
 from .longitudinal import LONGITUDINAL
 from .schema import (FIELDS, GROUPS, STEERING, GOVERNOR, decode, decode_node,
-                     encode, equivalent)
+                     equivalent)
 from .storage import SettingsStore
 from .conditions import CONDITION_KEYS, condition_label
 from .presets import PresetStore
@@ -34,7 +34,6 @@ class Editor:
         self.selected = 0
         self.editing = None
         self.modal = None
-        self.modal_offset = 0
         self.message = ''
         self.error = False
         self.help = False
@@ -68,7 +67,7 @@ class Editor:
             value = int(value) if f.integer else float(value)
         candidate = {**self.draft, f.key: value}
         # Single-field edits may temporarily violate coupled limits; validate the
-        # complete batch at review/save/apply so either edit order is possible.
+        # complete batch at save so either edit order is possible.
         if not f.choices and (not math.isfinite(value) or value < 0):
             raise ValueError('0 이상의 유한한 숫자를 입력하십시오.')
         self.draft = candidate
@@ -87,44 +86,13 @@ class Editor:
                         pass
         return values
 
-    def review(self, action, runtime):
-        self.modal_offset = 0
-        if action in ('quit', 'reload'):
-            if self.preset_dirty:
-                self.modal = dict(action=action)
-            elif action == 'quit':
-                self.done = True
-            else:
-                self.reload()
-            return
-        self.require_preset()
-        native = encode(self.draft, self.store.saved_native[STEERING])
-        normalized = decode({n: {**self.store.saved_native[n], **p} for n, p in native.items()})
-        if runtime is None:
-            raise ValueError('오프라인에서는 저장만 가능합니다. ROS 환경에서 실행하십시오.')
-        if self.field.node == LONGITUDINAL:
-            reason = runtime.longitudinal.reason()
-            if reason:
-                raise ValueError(reason)
-            status = runtime.longitudinal.fresh()
-            actual = status['config']
-            changed = [f for f in FIELDS if f.node == LONGITUDINAL and
-                       not equivalent(normalized[f.key], actual[f.key])]
-            self.modal = dict(action='apply_longitudinal', expected=status['revision'],
-                              normalized=native[LONGITUDINAL],
-                              rows=[(f.label + ' ' + f.unit, actual[f.key], normalized[f.key]) for f in changed])
-            return
-        reason = runtime.apply_reason(self.store.saved_native[STEERING])
-        if reason:
-            raise ValueError(reason)
-        actual = runtime.fresh_values(STEERING)
-        live = decode_node(STEERING, actual)
-        changed = [f for f in FIELDS if f.live and f.node == STEERING and not equivalent(normalized[f.key], live[f.key])]
-        if not changed:
-            self.tell('조향 튜닝이 이미 일치합니다. 운용·수신 시간 제한은 프리셋 저장 후 해당 프리셋으로 재시작하세요.')
-            return
-        self.modal = dict(action='apply', expected=dict(actual), normalized=normalized,
-                          rows=[(f.label + ' ' + f.unit, live[f.key], normalized[f.key]) for f in changed])
+    def review(self, action):
+        if self.preset_dirty:
+            self.modal = dict(action=action)
+        elif action == 'quit':
+            self.done = True
+        else:
+            self.reload()
 
     def reload(self):
         store = SettingsStore(self.store.path, *self.store.base_paths)
@@ -184,18 +152,12 @@ class Editor:
             return
         values = self.presets.save(condition, self.draft)
         self.draft, self.preset_baseline = dict(values), dict(values)
-        self.tell(f'{condition_label(condition)} 프리셋 저장 완료 · 다음 실행에 반영 / 현재 적용은 A')
+        self.tell(f'{condition_label(condition)} 프리셋 저장 완료 · 다음 구동 스택 실행에 반영')
 
-    def confirm(self, runtime):
+    def confirm(self):
         modal, self.modal = self.modal, None
         action = modal['action']
-        if action == 'apply_longitudinal':
-            runtime.begin_longitudinal_apply(modal['normalized'], modal['expected'])
-            self.tell('STM_A 종방향 일괄 적용·readback 확인 중')
-        elif action == 'apply':
-            runtime.begin_apply(modal['normalized'], self.store.saved_native[STEERING], modal['expected'])
-            self.tell('조향 튜닝 일괄 적용 중 · 응답과 실제 적용값을 확인합니다.')
-        elif action == 'reload':
+        if action == 'reload':
             self.reload()
         elif action == 'preset_switch':
             values, created = self.preset_values(modal['condition'])
@@ -207,18 +169,11 @@ class Editor:
 
     def key(self, key, runtime=None):
         try:
-            if runtime and runtime.operation:
-                self.tell('적용 결과 확인 중입니다. 완료 후 편집·종료할 수 있습니다.')
-                return
             if self.modal:
                 if key == 'escape':
                     self.modal = None
                 elif key == 'enter':
-                    self.confirm(runtime)
-                elif key in ('down', 'page_down', 'scroll_down') and self.modal.get('rows'):
-                    self.modal_offset = min(len(self.modal['rows']) - 1, self.modal_offset + 1)
-                elif key in ('up', 'page_up', 'scroll_up') and self.modal.get('rows'):
-                    self.modal_offset = max(0, self.modal_offset - 1)
+                    self.confirm()
                 return
             if self.selecting_preset or self.preset_condition is None:
                 if key in ('right', 'down', '\t'):
@@ -231,7 +186,7 @@ class Editor:
                     self.selecting_preset = False
                     self.tell('')
                 elif key.lower() in ('q', 'f'):
-                    self.review('quit' if key.lower() == 'q' else 'reload', runtime)
+                    self.review('quit' if key.lower() == 'q' else 'reload')
                 else:
                     self.tell('←→로 프리셋을 고른 뒤 Enter를 누르세요.')
                 return
@@ -272,7 +227,7 @@ class Editor:
                 self.tell('선택 항목을 저장값으로 되돌렸습니다.')
             elif lower == 'b':
                 self.draft[self.field.key] = decode(self.store.base)[self.field.key]
-                self.tell('선택 항목의 기본 YAML 값을 가져왔습니다. 저장·적용은 별도입니다.')
+                self.tell('선택 항목의 기본 YAML 값을 가져왔습니다. 저장 후 다음 실행에 반영됩니다.')
             elif lower == 'l':
                 values = self.live_values(runtime)
                 if self.field.key not in values:
@@ -286,8 +241,8 @@ class Editor:
                 self.open_presets()
             elif lower == 's':
                 self.save_preset()
-            elif lower in ('a', 'q', 'f'):
-                self.review({'a': 'apply', 'q': 'quit', 'f': 'reload'}[lower], runtime)
+            elif lower in ('q', 'f'):
+                self.review({'q': 'quit', 'f': 'reload'}[lower])
             elif key == '?':
                 self.help = not self.help
         except (ValueError, KeyError, OSError, OverflowError, yaml.YAMLError) as error:
@@ -336,10 +291,6 @@ def main(argv=None):
                 if runtime:
                     ros.spin_once(runtime, timeout_sec=0.0)
                     runtime.tick()
-                    if runtime.result:
-                        success, message = runtime.result
-                        editor.tell(message, not success)
-                        runtime.result = None
                 if select.select([sys.stdin], [], [], 0.02)[0]:
                     key = read_key(sys.stdin.fileno())
                     if key == 'eof':

@@ -1,7 +1,6 @@
 import math
 import struct
 import time
-from types import SimpleNamespace
 
 import pytest
 import rclpy
@@ -113,20 +112,12 @@ def test_ros_apply_waits_for_matching_mcu_readback(monkeypatch):
         rclpy.shutdown()
 
 
-def test_longitudinal_preset_edit_save_apply_review(editor, store):
+def test_longitudinal_preset_edits_are_saved_without_applying(editor, store):
     editor.key('3')
     editor.commit('torque')
+    editor.key('a')
+    assert editor.modal is None
     editor.key('s')
     saved = editor.presets.load('airborne')
     assert saved['control_mode'] == 'torque'
-    class Runtime:
-        operation = None
-        longitudinal = SimpleNamespace(reason=lambda:'', fresh=lambda:dict(revision=3,config=DEFAULT))
-        def begin_longitudinal_apply(self, config, revision):
-            self.applied = (config,revision)
-    runtime = Runtime()
-    editor.key('a',runtime)
-    assert editor.modal['action'] == 'apply_longitudinal'
-    editor.key('enter',runtime)
-    assert runtime.applied[0]['control_mode'] == 'torque'
-    assert runtime.applied[1] == 3
+    assert '다음 구동 스택 실행' in editor.message

@@ -107,7 +107,7 @@ class PresetStore:
                 'current_reference_a': self.settings.saved_native[STEERING]['keya_protection_current_a'],
                 **sections(normalized),
             }
-            content = ('# tuning_preset으로 선택한 다음 launch에 적용됩니다. 실행 중 적용은 TUI의 A를 사용합니다.\n' +
+            content = ('# tuning_preset으로 선택한 다음 구동 스택 실행에 적용됩니다. 저장은 현재 실행값을 바꾸지 않습니다.\n' +
                        yaml.safe_dump(document, sort_keys=False, allow_unicode=True)).encode('utf-8')
             if path.exists():
                 SettingsStore._replace(path.with_suffix('.yaml.bak'), path.read_bytes())

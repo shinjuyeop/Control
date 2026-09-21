@@ -166,7 +166,7 @@ critical section이 concurrent host 변경/torn config를 막는다. unsafe 요�
 
 Boot는 `DEFAULT`, revision=0, **speed**와 driving candidate gains다. Host가 적용하면
 `HOST_OVERRIDE`. Agent reconnect만으로 RAM을 덮어쓰지 않으며 명령은 기존처럼 reset한다.
-MCU reboot는 DEFAULT로 돌아간다. TUI는 status/request/revision/full config의 실제 wire 값을
+MCU reboot는 DEFAULT로 돌아간다. launch의 calibration helper는 status/request/revision/full config의 실제 wire 값을
 비교한다. readback timeout이면 적용 여부 미확인으로 보고 자동 재전송하지 않는다.
 
 Schema v2는 `lateral`, `longitudinal`, `governor`, `timeouts`로 분리했다.
@@ -176,10 +176,10 @@ checked-in 프리셋은 **airborne/driving 둘**이며 lateral 수치는 작업 
 쓰되 사용자 조향값을 덮어쓰지 않는다. 접지 정지는 `stationary` 시험 annotation이며 preset이 아니다.
 
 TUI는 80열 이상에서 `1 조향응답 · 2 조향출력 · 3 구동응답 · 4 구동출력 ·
-5 명령검사 · 6 운용설정 · 7 수신제한`을 한 행에 표시하며 `1–7`/←→로 고른다.
-구동응답·구동출력의 A는 종방향 전체를, 조향응답·조향출력의 A는 기존 조향 튜닝을
-적용한다. 서로 다른 제어기를 하나의 atomic transaction처럼 표시하지 않는다.
-S는 파일 저장, A는 RAM/실행값 변경이다. System/Governor는 저장 후 restart 항목이다.
+5 수신제한`을 폭에 맞춰 간격을 두고 한 행에 표시하며 `1–5`/←→로 고른다.
+조향 제어 방식은 조향응답, 최소 허용 차속은 조향출력, 상위 명령 유효시간은 수신제한에 있다.
+후속 UI 변경으로 A 즉시 적용 기능을 제거했다. TUI는 현재값 조회·편집·S 파일 저장만 하며,
+선택한 프리셋으로 구동 스택을 재시작할 때 반영한다. MCU RAM calibration 계약은 유지한다.
 
 `control_launch vehicle.launch.py`는 선택한 longitudinal preset을 별도 one-shot helper로
 적용한다. 15 s 안에 safe state/readback을 확보하지 못하면 오류를 표시하고 종료한다.
