@@ -37,9 +37,6 @@ ros2 launch control_launch vehicle.launch.py
 ```bash
 # 공중 시험
 ros2 launch control_launch vehicle.launch.py tuning_preset:=airborne
-
-# 접지 정지 시험
-ros2 launch control_launch vehicle.launch.py tuning_preset:=driving
 ```
 
 옵션 없이 실행하면 **주행 프리셋(`driving`)**을 사용한다. 매번 튜닝 TUI를 열 필요는 없다.
