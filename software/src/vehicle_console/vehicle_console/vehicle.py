@@ -1,4 +1,4 @@
-"""Read-only Vehicle profile: canonical subscriptions, no HIL imports or writers."""
+"""Vehicle monitoring with explicit Host steering HARD-latch acknowledgment."""
 
 import argparse
 import asyncio
@@ -8,14 +8,15 @@ import time
 
 import rclpy
 from ament_index_python.packages import get_package_share_directory
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import HTTPException, Request, WebSocket, WebSocketDisconnect
+from std_srvs.srv import Trigger
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.signals import SignalHandlerOptions
 
 from .common.profiles import VEHICLE
 from .common.telemetry import ObserverNode
 from .common.web import (accept_websocket, add_web_arguments, create_web_app,
-                  mount_frontend, positive_number, stream_states)
+                  mount_frontend, positive_number, same_origin, stream_states)
 
 
 # Same observation thresholds as the former Qt Vehicle Dashboard. Diagnostics
@@ -35,19 +36,14 @@ class VehicleObserver(ObserverNode):
             # standard parameter-events publisher; there are no command publishers.
             start_parameter_services=False, enable_rosout=False,
         )
-        self.diagnostics = {}
+        self.clear_fault_client = self.create_client(Trigger, "/steering/clear_fault_latch")
+        self.clear_fault_future = None
 
     def receive(self, topic, data):
         # Header stamps and raw RuntimeStats duplicate the rendered observations.
         # Keep every status field consumed by the shared instruments, and retain
         # diagnostics values for detailed inspection without a second request API.
         data = {key: value for key, value in data.items() if key != "header"}
-        if topic == "/diagnostics":
-            now = time.monotonic()
-            for status in data["status"]:
-                # Independent DiagnosticArray publishers must not overwrite each
-                # other or keep a missing source alive through another source.
-                self.diagnostics[(status["hardware_id"], status["name"])] = (now, status)
         super().receive(topic, data)
 
     def snapshot(self):
@@ -56,12 +52,6 @@ class VehicleObserver(ObserverNode):
         for topic in ("/stm_a/runtime_stats", "/stm_b/runtime_stats"):
             if topic in topics:
                 topics[topic] = {**topics[topic], "data": {}}
-        if "/diagnostics" in topics:
-            topics["/diagnostics"]["data"] = {"status": [
-                {**status, "age_ms": round((now - received) * 1000),
-                 "fresh": now - received < self.stale_seconds["/diagnostics"]}
-                for received, status in self.diagnostics.values()
-            ]}
         return dict(type="state", **VEHICLE.metadata(), time=time.time(), topics=topics,
                     runtime=runtime_payload(self.runtime_health.snapshot(now)))
 
@@ -124,6 +114,34 @@ def create_app(static_dir, *, allowed_hosts=(), update_hz=5.0, stale_seconds=Non
     async def health():
         return dict(service="vehicle_console", **VEHICLE.metadata(), update_hz=update_hz)
 
+    @app.post("/api/steering/clear-fault-latch")
+    async def clear_fault_latch(request: Request):
+        # Only this fixed service is exposed. Preserve Host/Origin protection;
+        # callers cannot choose a ROS service, message, or motion command.
+        if not same_origin(request.headers):
+            raise HTTPException(403, "same-origin operator request required")
+        node = app.state.observer
+        if node.clear_fault_future is not None:
+            raise HTTPException(409, "fault latch clear is already pending")
+        client = node.clear_fault_client
+        if not client.service_is_ready():
+            raise HTTPException(503, "steering latch clear service is unavailable")
+        future = client.call_async(Trigger.Request())
+        node.clear_fault_future = future
+        try:
+            deadline = time.monotonic() + 3.0
+            while not future.done():
+                if time.monotonic() >= deadline:
+                    raise HTTPException(504, "clear result unknown: service response timed out; check steering state")
+                await asyncio.sleep(0.01)
+            result = future.result()
+            return dict(success=result.success, message=result.message)
+        finally:
+            if not future.done():
+                client.remove_pending_request(future)
+                future.cancel()
+            node.clear_fault_future = None
+
     @app.websocket("/ws")
     async def websocket(ws: WebSocket):
         if not await accept_websocket(ws):
@@ -139,7 +157,7 @@ def create_app(static_dir, *, allowed_hosts=(), update_hz=5.0, stale_seconds=Non
                 message = await ws.receive()
                 if message["type"] == "websocket.disconnect":
                     break
-                await ws.close(code=1008, reason="Vehicle profile is read only")
+                await ws.close(code=1008, reason="Vehicle telemetry WebSocket is read only")
                 break
         except WebSocketDisconnect:
             pass

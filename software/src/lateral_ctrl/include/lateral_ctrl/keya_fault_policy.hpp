@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 
@@ -47,20 +48,18 @@ struct KeyaFaults {
   }
 };
 
-// Pure policy; callers supply monotonic seconds and fresh fault + position evidence.
-// No ROS, I/O, or motor commands here. A latch requires operator investigation/restart.
+// Pure policy: monotonic time, no I/O. Only hardware HARD bits can latch.
 class KeyaRecoveryPolicy
 {
 public:
-  unsigned max_attempts{3};
-  double clear_hold_sec{0.5}, retry_sec{1.0}, persistence_sec{30.0}, healthy_reset_sec{60.0};
+  double clear_hold_sec{0.5}, retry_sec{1.0};
   bool recovering{false}, latched{false};
-  unsigned attempts{0};
-  uint64_t total_attempts{0};
+  uint64_t attempts{0}, total_attempts{0};
   uint16_t reason_bits{0};
   const char * latch_reason{"none"};
+  double last_recovery_sec{-1.0};
 
-  // Returns true only on recovery completion: caller must discard ALL queued targets.
+  // True on recovery completion: caller must discard all queued targets.
   bool update(uint16_t raw, bool fresh, double now) {
     const KeyaFaults faults(raw);
     if (faults.hard) {
@@ -71,44 +70,45 @@ public:
     if (latched) { recovering = false; return false; }
     if (faults.recoverable && !recovering) {
       recovering = true;
-      started_ = now;
       clear_since_ = -1;
-      healthy_since_ = -1;
       reason_bits = faults.recoverable;
-      consumeAttempt(now);
+      attempts = 0;
+      recordAttempt(now);  // Initial zero/Disable reset for this episode.
     }
     if (recovering) {
-      // Cached faults are not persistence evidence. CAN-disconnect needs Enable:
-      // waiting in MANUAL for an eligible command must not spend a wall-time budget.
-      // Its actual Enable attempts remain bounded below.
-      if (!fresh || !(faults.recoverable & ~uint16_t{0x4000})) started_ = now;
       reason_bits |= faults.recoverable;
-      if (now - started_ >= persistence_sec) {
-        latched = true; recovering = false; latch_reason = "persistent_fault";
-        return false;
-      }
       if (!fresh || faults.recoverable) clear_since_ = -1;
       else if (clear_since_ < 0) clear_since_ = now;
       else if (now - clear_since_ >= clear_hold_sec) {
-        recovering = false; healthy_since_ = now; return true;
+        recovering = false;
+        last_recovery_sec = now;
+        return true;
       }
-    } else if (fresh) {
-      if (healthy_since_ < 0) healthy_since_ = now;
-      if (now - healthy_since_ >= healthy_reset_sec) attempts = 0;
-    } else healthy_since_ = -1;
+    }
     return false;
   }
   bool probeDue(double now) const {
-    return recovering && !latched && now - last_attempt_ >= retry_sec;
+    return recovering && !latched && now - last_attempt_ >= retry_delay_sec_;
   }
-  bool consumeAttempt(double now) {
-    if (attempts >= max_attempts) {
-      latched = true; recovering = false; latch_reason = "retry_exhausted";
-      return false;
-    }
-    ++attempts; ++total_attempts; last_attempt_ = now; return true;
+  void recordAttempt(double now) {
+    ++attempts;
+    ++total_attempts;
+    last_attempt_ = now;
+    // Rate limit attempts indefinitely; never convert a retry statistic to FAULT.
+    retry_delay_sec_ = attempts == 1 ? retry_sec :
+      std::min(std::max(5.0, retry_sec), retry_delay_sec_ * 2.0);
+  }
+  double retryDelaySec() const { return retry_delay_sec_; }
+  // The node must check MANUAL/stop/freshness/active bits before acknowledging.
+  void acknowledgeHardLatch() {
+    latched = recovering = false;
+    latch_reason = "none";
+    attempts = 0;
+    last_attempt_ = retry_delay_sec_ = 0;
+    clear_since_ = -1;
+    // Keep lifetime count, last reason and last recovery time for diagnosis.
   }
 private:
-  double started_{0}, last_attempt_{0}, clear_since_{-1}, healthy_since_{-1};
+  double last_attempt_{0}, retry_delay_sec_{0}, clear_since_{-1};
 };
 }  // namespace lateral_ctrl

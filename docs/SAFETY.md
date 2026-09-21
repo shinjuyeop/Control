@@ -231,12 +231,17 @@ KEYA bit 의미·reset·Host 분류의 전체 표와 전이는
 - INFO(bit0/5/13/15)는 원본에 보존하되 단독 차단하지 않는다. CAN 운용이 전제다.
 - 매뉴얼상 Enable reset인 bit14에 한해 안전조건·fresh command/feedback이 있을 때
   제한된 zero/현재위치→Enable probe. HARD, 다른 recoverable 동시 활성에서는 금지한다.
-- episode Disable 및 probe를 합쳐 최대 3 attempts. fresh fault(bit14 단독 제외) 연속 30초 또는 budget 초과는
-  FAULT latch. 건강한 feedback 연속 60초 후에만 budget을 초기화한다.
+- RECOVERABLE은 횟수·지속시간 때문에 영구 latch하지 않는다. 조건이 남으면 Disable 유지,
+  bit14 reset probe는 기본 1→2→4→5초 backoff로 계속 시도한다. attempt count는 통계다.
+- HARD만 Host latch한다. `/steering/clear_fault_latch`(std_srvs/Trigger)로 명시적으로
+  acknowledge한다. MANUAL·유효 차속 |v|≤0.05 m/s·fresh drive/brake 상태·E-stop/brake 해제·
+  fresh CAN/position/fault·active HARD=0·reconnect 미진행·movement/probe 미실행·stop TX 완료가
+  필요하다. 거부 사유를 반환하며 성공해도 zero/Disable·목표/이력 폐기·WAIT_CMD까지만 수행한다.
+  그 이후 생성된 fresh command와 AUTO·나머지 safety 조건으로만 재활성화한다.
 - SocketCAN open/receive/write 실패 및 CAN 500 ms timeout은 100 ms~5 s backoff로
   자동 reopen. 새 fault·position 확인 후 pending을 폐기하고 새 command를 요구한다.
 - raw fault는 close에도 보존한다. fault freshness를 별도 추적하여 stale clear 비트로
-  Enable하거나 cached fault의 통신 단절 시간을 persistent fault로 승격하지 않는다.
+  Enable하지 않는다. RECOVERABLE persistence나 retry exhaustion 승격 자체가 없다.
 - Position 모드 TX 실패도 즉시 Disable/CAN_LOST로 처리한다.
 
 ### 9.3 외부 Torque 조향
@@ -298,12 +303,12 @@ KEYA bit 의미·reset·Host 분류의 전체 표와 전이는
 | STM_A→STM_B UART timeout | 새 CRC-valid vehicle frame | 마지막 mode·speed는 새 frame으로 갱신 |
 | EZkontrol handshake 대기 | 새 `0x55` request에 ACK TX 성공 | 그 후 현재 mode 명령 |
 | KEYA recoverable / SocketCAN 복구 | §9.2의 bounded recovery / 새 CAN·position·fault 확인 | 복구 완료 이후 생성·수신한 fresh command만 허용 |
-| KEYA HARD / retry·persistence 승격 | 원인 점검·필요한 장치 reset 후 운영자가 Host 재시작 | 자동복구 금지 |
+| KEYA HARD | 실제 fault 해제 후 MANUAL·정지·fresh evidence에서 clear_fault_latch로 acknowledge | ack 전 old/pending 폐기; ack 이후 생성된 fresh command 필요 |
 | Host torque feedback stop | 정상 feedback 확인 | 차단 뒤 받은 새 command 필요; 재시작·parameter toggle 불필요 |
 | MCU reboot | RTOS와 peripheral 재초기화 | STM_A는 safety frame 전 stop; STM_B는 engage에서 시작 후 입력 재계산 |
 
 물리 E-stop과 §9.3의 Host torque feedback stop에는 software latch가 없습니다.
-KEYA HARD/복구 budget 초과에는 §9.2의 latch가 있습니다.
+KEYA HARD에만 §9.2의 Host latch가 있습니다. RECOVERABLE에는 영구 Host latch가 없습니다.
 STM_A는 E-stop 중에도 fresh non-brake AUTO speed command를 저장할 수 있고,
 조향도 Disable 사건 뒤 들어온 command를 pending으로 저장할 수 있습니다.
 따라서 E-stop 해제만으로 MANUAL pedal이 다시 적용되거나, inhibited 상태 중 받은
@@ -345,10 +350,13 @@ fresh 명령으로 AUTO traction·조향이 재활성화될 수 있습니다.
 `software/src/vehicle_state_publisher/vehicle_state_publisher/diagnostics_publisher.py`입니다.
 
 조향 노드도 `/diagnostics`의 `steering/safety`로 원본 fault hex, 활성 bit별 이름/등급,
-복구 reason/attempt/latch, reconnect, command/CAN/position/fault age와 마지막 Disable 원인을
+복구 reason/attempt/total/성공 시각/latch와 clearable/거부 사유, reconnect, command/CAN/position/fault age와 마지막 Disable 원인을
 발행한다. Console Steering과 Diagnostics에서 이 정책 결과를 표시한다. MANUAL 무명령은
 정상, AUTO 무명령은 WAITING FOR COMMAND, recoverable은 RECOVERING으로 구별한다.
 메시지/enum wire 계약은 유지하며 recovery hold는 WAIT_CMD + MOTOR_FAULT다.
+Console은 Steering 페이지에서 HARD latch 확인·해제 요청을 제공한다. 상태 판단은 조향
+서비스가 다시 수행하며 GUI가 KEYA fault를 지우거나 Enable하지 않는다. `/diagnostics`는
+공용 observer의 `(hardware_id, name)`별 캐시와 독립 수신 age로 병합한다.
 
 ### 12.2 Dashboard와 HIL Virtual HMI의 안전 경계
 

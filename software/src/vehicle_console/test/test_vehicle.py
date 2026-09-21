@@ -14,6 +14,7 @@ import pytest
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
+from std_srvs.srv import Trigger
 from rosidl_runtime_py.set_message import set_message_fields
 from starlette.websockets import WebSocketDisconnect
 
@@ -89,11 +90,11 @@ def receive(ws, predicate, timeout=8):
     raise AssertionError("Vehicle Web state did not reach the expected observation")
 
 
-def test_vehicle_starts_without_hil_and_owns_only_subscriptions(vehicle):
+def test_vehicle_starts_without_hil_and_only_exposes_fault_acknowledgment(vehicle):
     client, node, _ = vehicle
     assert {s.topic_name for s in node.subscriptions} >= {topic for _, topic in VEHICLE_TOPICS}
     assert {p.topic_name for p in node.publishers} <= {"/parameter_events"}
-    assert not list(node.clients)
+    assert [c.srv_name for c in node.clients] == ["/steering/clear_fault_latch"]
     assert not list(node.services)
     subprocess.run([sys.executable, "-c", """
 import sys
@@ -211,7 +212,7 @@ def test_vehicle_browser_overview_stale_reconnect_and_responsive(vehicle, tmp_pa
     client, node, control = vehicle
     with browser_session(client) as page:
         expect(page.get_by_role("heading", name="Overview", exact=True)).to_be_visible()
-        expect(page.locator(".profile-label")).to_have_text("VEHICLE · READ ONLY")
+        expect(page.locator(".profile-label")).to_have_text("VEHICLE · MONITOR + FAULT ACK")
         expect(page.locator(".vehicle-overview")).to_contain_text("NO DATA")
         expect(page.get_by_role("button", name="Bench Reset")).to_have_count(0)
         expect(page.locator("#control-dock")).to_have_count(0)
@@ -260,3 +261,143 @@ def test_vehicle_browser_overview_stale_reconnect_and_responsive(vehicle, tmp_pa
         expect(page.locator(".vehicle-overview")).to_contain_text("7 / 7 LIVE", timeout=8000)
         assert {p.topic_name for p in node.publishers} <= {"/parameter_events"}
         print(f"Vehicle browser images: {tmp_path}")
+
+
+def test_steering_diagnostics_survive_other_publishers_and_age_independently(vehicle, monkeypatch):
+    import vehicle_console.common.telemetry as telemetry
+    from types import SimpleNamespace
+    _, node, _ = vehicle
+    now = [100.0]
+    monkeypatch.setattr(telemetry, 'time', SimpleNamespace(monotonic=lambda: now[0]))
+    node.receive('/diagnostics', {'status': [dict(
+        hardware_id='KEYA', name='steering/safety', level=2, message='HARD FAULT', values=[])]})
+    now[0] = 102.0
+    node.receive('/diagnostics', {'status': [dict(
+        hardware_id='STM_A', name='drive', level=0, message='ok', values=[])]})
+    rows = {row['name']: row for row in node.topic_snapshot(now[0])['/diagnostics']['data']['status']}
+    assert rows['steering/safety']['fresh']
+    assert rows['drive']['fresh']
+    now[0] = 103.1
+    rows = {row['name']: row for row in node.topic_snapshot(now[0])['/diagnostics']['data']['status']}
+    assert not rows['steering/safety']['fresh']
+    assert rows['drive']['fresh']
+    node.receive('/diagnostics', {'status': [dict(
+        hardware_id='KEYA', name='steering/safety', level=0, message='MANUAL', values=[])]})
+    rows = {row['name']: row for row in node.topic_snapshot(now[0])['/diagnostics']['data']['status']}
+    assert rows['steering/safety']['fresh']
+    assert rows['steering/safety']['message'] == 'MANUAL'
+    assert len(rows) == 2
+
+
+def test_latch_clear_requires_same_origin_and_available_service(vehicle):
+    client, _, _ = vehicle
+    for origin in ('https://hostile.example', '', 'http://localhost:9999'):
+        response = client.post('/api/steering/clear-fault-latch', headers={'origin': origin})
+        assert response.status_code == 403
+    response = client.post('/api/steering/clear-fault-latch', headers={'origin': 'http://localhost'})
+    assert response.status_code == 503
+
+
+@pytest.mark.parametrize('success', [False, True])
+def test_latch_clear_forwards_actual_ros_service_result(vehicle, success):
+    client, node, _ = vehicle
+    requests = []
+    message = ('Fault latch cleared. Steering moved to WAITING FOR COMMAND; no Enable sent.'
+               if success else 'rejected: active HARD fault hall_failure (0x0800)')
+    def callback(request, response):
+        requests.append(request)
+        response.success = success
+        response.message = message
+        return response
+    service = node.create_service(Trigger, '/steering/clear_fault_latch', callback)
+    try:
+        assert node.clear_fault_client.wait_for_service(timeout_sec=2)
+        response = client.post('/api/steering/clear-fault-latch', headers={'origin': 'http://localhost'})
+        assert response.status_code == 200
+        assert response.json() == {'success': success, 'message': message}
+        assert len(requests) == 1
+        assert node.clear_fault_future is None
+    finally:
+        node.destroy_service(service)
+
+
+def test_latch_clear_does_not_overlap_or_retry_on_timeout(vehicle):
+    import concurrent.futures
+    from rclpy.task import Future
+    client, node, _ = vehicle
+    future = Future()
+    requests = []
+    class PendingClient:
+        def service_is_ready(self): return True
+        def call_async(self, request):
+            requests.append(request)
+            return future
+        def remove_pending_request(self, pending): assert pending is future
+    node.clear_fault_client = PendingClient()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as worker:
+        first = worker.submit(client.post, '/api/steering/clear-fault-latch',
+                              headers={'origin': 'http://localhost'})
+        deadline = time.monotonic() + 2
+        while not requests and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert requests
+        second = client.post('/api/steering/clear-fault-latch', headers={'origin': 'http://localhost'})
+        assert second.status_code == 409
+        assert first.result(timeout=4).status_code == 504
+    assert len(requests) == 1
+    assert node.clear_fault_future is None
+    assert future.cancelled()
+
+
+def test_vehicle_browser_hard_latch_clear_success_rejection_and_stale(vehicle):
+    from browser_support import browser_session
+    from playwright.sync_api import expect
+    client, node, control = vehicle
+    control['publish'] = True
+    reply = [False, 'rejected: vehicle is not stopped']
+    calls = []
+    def clear(request, response):
+        calls.append(request)
+        response.success, response.message = reply
+        return response
+    service = node.create_service(Trigger, '/steering/clear_fault_latch', clear)
+    clearable, enabled, message = [False], [True], ['HARD FAULT']
+    def report():
+        if enabled[0]:
+            node.receive('/diagnostics', {'status': [dict(
+                name='steering/safety', hardware_id='KEYA', level=2, message=message[0],
+                values=[dict(key=k, value=v) for k, v in {
+                    'raw_fault_bits': '0x0800', 'fault_bit_11': 'hall_failure / HARD',
+                    'hard_fault_latched': 'true',
+                    'hard_fault_clearable': str(clearable[0]).lower(),
+                    'hard_fault_clear_reason': 'ready for operator acknowledgment' if clearable[0] else 'active HARD fault hall_failure (0x0800)',
+                    'recovery_attempts': '7',
+                }.items()])]})
+    timer = node.create_timer(0.1, report)
+    try:
+        assert node.clear_fault_client.wait_for_service(timeout_sec=2)
+        with browser_session(client) as page:
+            page.get_by_role('navigation').get_by_role('button', name='Steering', exact=True).click()
+            panel = page.get_by_role('region', name='Steering fault acknowledgment')
+            button = page.get_by_role('button', name='CLEAR HARD FAULT LATCH')
+            expect(panel).to_contain_text('LATCHED')
+            expect(panel).to_contain_text('active HARD fault hall_failure')
+            expect(button).to_be_disabled()
+            expect(page.locator('.board-telemetry')).to_contain_text('HARD FAULT')
+            clearable[0] = True
+            expect(button).to_be_enabled()
+            button.click()
+            expect(panel).to_contain_text('Clear rejected: vehicle is not stopped')
+            reply[:] = [True, 'Fault latch cleared. Steering moved to WAITING FOR COMMAND; no Enable sent.']
+            button.click()
+            expect(panel).to_contain_text('Fault latch cleared.')
+            expect(panel).to_contain_text('LATCHED')  # No optimistic local state change.
+            assert len(calls) == 2
+            message[0] = 'RECOVERING'
+            expect(page.locator('.board-telemetry')).to_contain_text('RECOVERING')
+            enabled[0] = False
+            expect(button).to_be_disabled(timeout=5000)
+            expect(panel).to_contain_text('UNKNOWN / STALE')
+    finally:
+        node.destroy_timer(timer)
+        node.destroy_service(service)

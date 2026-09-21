@@ -45,10 +45,13 @@ AUTO·fresh 상태·새 명령 등 조향 조건은 계속 적용됩니다. KEYA
 실제 조향 변화율은 D항과 settle 판정에 사용하며 속도 자체로 정지하지 않습니다.
 invalid/stale feedback이나 control stall은 `FEEDBACK_LOST`로 zero→Disable합니다.
 정상 feedback과 차단 뒤 받은 새 command가 확인되면 노드 재시작이나 parameter toggle
-없이 같은 제어주기에서 재활성화할 수 있습니다. `FAULT`는 bit0(Disable)을 제외한
-KEYA 실제 fault bit에만 사용합니다.
+없이 같은 제어주기에서 재활성화할 수 있습니다. KEYA RECOVERABLE은 횟수·지속시간으로
+영구 latch하지 않으며 fresh evidence와 복구 이후 생성된 새 명령으로 재개합니다.
+HARD만 FAULT latch하고 실제 고장이 해제된 후 MANUAL·정지·fresh feedback 조건에서
+`/steering/clear_fault_latch`(std_srvs/Trigger)로 운영자가 acknowledge합니다.
 
-`ros2 launch vehicle_console vehicle.launch.py`는 **관측 화면**입니다.
+`ros2 launch vehicle_console vehicle.launch.py`는 관측과 명시적 **HARD latch acknowledgment**를
+제공합니다. Clear 버튼은 Enable이나 주행 명령을 보내지 않습니다.
 이 화면을 재시작해도 조향 노드는 재시작되지 않습니다. KEYA 자체 hardware fault도
 Host 재시작만으로 해제된다고 보장하지 않습니다.
 [조향 복구 계약](../lateral_ctrl/TORQUE_CONTROL.md),

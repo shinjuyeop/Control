@@ -93,11 +93,8 @@ SteeringActuatorNode::SteeringActuatorNode(
   tracking_enabled_ = get_parameter("tracking_control_enabled").as_bool();
   control_period_ms_ = declare_parameter("control_period_ms", 20);
   if (torqueMode()) control_period_ms_ = torque_period_ms;
-  recovery_.max_attempts = integer_parameter("keya_recovery_max_attempts", 3, 1, 10, startup_only);
   recovery_.clear_hold_sec = integer_parameter("keya_recovery_clear_hold_ms", 500, 100, 10000, startup_only) / 1000.0;
   recovery_.retry_sec = integer_parameter("keya_recovery_retry_ms", 1000, 500, 10000, startup_only) / 1000.0;
-  recovery_.persistence_sec = integer_parameter("keya_recovery_persistence_ms", 30000, 1000, 300000, startup_only) / 1000.0;
-  recovery_.healthy_reset_sec = integer_parameter("keya_recovery_healthy_reset_ms", 60000, 1000, 600000, startup_only) / 1000.0;
   can_timeout_ms_ = declare_parameter("can_timeout_ms", 500);
   feedback_timeout_ms_ = declare_parameter("feedback_timeout_ms", 500);
   mode_timeout_ms_ = declare_parameter("mode_timeout_ms", 1500);
@@ -163,6 +160,10 @@ SteeringActuatorNode::SteeringActuatorNode(
   angle_pub_ = create_publisher<std_msgs::msg::Float32>(angle_topic, 10);
   target_motor_count_pub_ =
     create_publisher<std_msgs::msg::Int32>(target_motor_count_topic, 10);
+  clear_fault_service_ = create_service<std_srvs::srv::Trigger>(
+    "/steering/clear_fault_latch",
+    [this](const std::shared_ptr<std_srvs::srv::Trigger::Request>,
+      std::shared_ptr<std_srvs::srv::Trigger::Response> response) { clearFaultLatch(*response); });
   safety_pub_ = create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/diagnostics", 10);
   status_pub_ = create_publisher<kaiev26_msgs::msg::SteeringActuatorStatus>(status_topic, 10);
   enable_commanded_pub_ = create_publisher<std_msgs::msg::Bool>(enable_commanded_topic, 10);
@@ -376,6 +377,8 @@ void SteeringActuatorNode::onDriveStatus(
 {
   // 물리 모드 스위치 상태는 STM_A의 drive status로 전달된다.
   applyMode(input->mode);
+  drive_speed_mps_ = input->speed_mps;
+  drive_speed_valid_ = input->part1_valid && std::isfinite(input->speed_mps);
   drive_speed_permits_steering_ =
     driveSpeedPermitsSteering(
     input->speed_mps, input->part1_valid,
@@ -389,6 +392,7 @@ void SteeringActuatorNode::onDriveStatus(
 void SteeringActuatorNode::onBrakeStatus(
   const kaiev26_msgs::msg::BrakeActuatorStatus::SharedPtr input)
 {
+  last_brake_status_time_ = std::chrono::steady_clock::now();
   // 물리 E-stop 상태는 STM_B의 brake status 원인 bit로 전달된다.
   setEstop(
     (input->stop_reason_bits &
@@ -539,6 +543,90 @@ void SteeringActuatorNode::reconnectCan(std::chrono::steady_clock::time_point no
   reconnect_delay_ms_ = std::min(5000, reconnect_delay_ms_ * 2);
 }
 
+std::string SteeringActuatorNode::faultLatchClearRejection(
+  std::chrono::steady_clock::time_point now) const
+{
+  const auto fresh = [now](auto time, double timeout_ms) {
+    const double age = std::chrono::duration<double, std::milli>(now - time).count();
+    return time.time_since_epoch().count() != 0 && age >= 0.0 && age <= timeout_ms;
+  };
+  if (safety_.effectiveEstop()) return "E-stop is active";
+  if (!fresh(last_brake_status_time_, drive_status_timeout_ms_))
+    return "physical E-stop status is missing or stale";
+  if (safety_.command_brake) return "Host command brake is active";
+  if (!mode_received_ || !fresh(last_mode_time_, drive_status_timeout_ms_))
+    return "drive/mode status is missing or stale";
+  if (drive_mode_ != DriveMode::MANUAL) return "switch to MANUAL";
+  // Match control_tuning/runtime.py::stop_reason: valid |speed| <= 0.05 m/s.
+  if (!drive_speed_valid_ || std::abs(drive_speed_mps_) > 0.05F)
+    return "vehicle is not stopped (valid speed <= 0.05 m/s required)";
+  if (link_recovering_ || !can_driver_->isOpen()) return "SocketCAN reconnect is in progress";
+  const auto & motor = can_driver_->motorState();
+  if (!motor.communication_ok || !fresh(motor.last_feedback, can_timeout_ms_))
+    return "KEYA CAN feedback is stale";
+  const double position_timeout_ms = torqueMode() ? std::min(
+    static_cast<double>(feedback_timeout_ms_),
+    torque_controller_.config().feedback_timeout_sec * 1000.0) : feedback_timeout_ms_;
+  if (!motor.position_valid || !fresh(motor.last_position_feedback, position_timeout_ms) ||
+    !std::isfinite(converter_.countToEquivalentDeg(motor.motor_position_count)))
+    return "KEYA position feedback is stale or invalid";
+  if (!motor.fault_valid || !fresh(motor.last_fault_feedback, can_timeout_ms_))
+    return "KEYA fault feedback is stale";
+  const KeyaFaults faults(motor.fault_bits);
+  if (faults.hard) {
+    std::ostringstream out;
+    out << "active HARD fault ";
+    bool first = true;
+    for (unsigned bit = 0; bit < 16; ++bit) {
+      if (faults.hard & (uint16_t{1} << bit)) {
+        if (!first) out << ", ";
+        out << keyaFaultDefinitions[bit].name;
+        first = false;
+      }
+    }
+    out << " (0x" << std::hex << std::uppercase << std::setw(4) << std::setfill('0')
+        << faults.hard << ")";
+    return out.str();
+  }
+  if (state_ == SteeringState::ACTIVE || enabled_commanded_ || movement_target_valid_ || recovery_probe_)
+    return "actuator is executing a movement command or reset probe";
+  if (stop_pending_) return "zero/Disable transmission is not complete";
+  if (!recovery_.latched) return "no HARD fault latch is set";
+  return {};
+}
+
+void SteeringActuatorNode::clearFaultLatch(std_srvs::srv::Trigger::Response & response)
+{
+  // Same mutually-exclusive callback group as controlTick and safety subscriptions.
+  // Check current driver evidence, not the UI's last diagnostic snapshot.
+  if (can_driver_->isOpen()) can_driver_->receiveAvailableFrames();
+  const auto rejection = faultLatchClearRejection(std::chrono::steady_clock::now());
+  if (!rejection.empty()) {
+    response.success = false;
+    response.message = "rejected: " + rejection;
+    return;
+  }
+  stopMotor();  // Zero/Disable only. Never Enable from this service.
+  if (stop_pending_) {
+    response.success = false;
+    response.message = "rejected: zero/Disable transmission failed";
+    return;
+  }
+  actual_wheel_angle_deg_ = converter_.countToEquivalentDeg(can_driver_->motorState().motor_position_count);
+  recovery_.acknowledgeHardLatch();
+  recovery_probe_ = false;
+  enabled_commanded_ = false;
+  discardAllSteeringCommands();
+  torque_safety_condition_ = TorqueSafetyFault::NONE;
+  requested_disable_reason_ = SteeringDisableReason::NONE;
+  disable_reason_ = SteeringDisableReason::NONE;
+  steer_command_timeout_ = false;
+  minimum_command_stamp_ns_ = this->now().nanoseconds();
+  state_ = SteeringState::WAIT_CMD;
+  response.success = true;
+  response.message = "Fault latch cleared. Steering moved to WAITING FOR COMMAND; no Enable sent.";
+}
+
 void SteeringActuatorNode::publishSafety(
   double can_age, double position_age, double command_age, double fault_age)
 {
@@ -585,8 +673,14 @@ void SteeringActuatorNode::publishSafety(
   add("recovery_reason", recovery_reason.empty() ? "none" : recovery_reason);
   add("recovery_attempts", std::to_string(recovery_.attempts));
   add("recovery_total_attempts", std::to_string(recovery_.total_attempts));
-  add("recovery_max_attempts", std::to_string(recovery_.max_attempts));
   add("latch_reason", recovery_.latch_reason);
+  add("hard_fault_latched", recovery_.latched ? "true" : "false");
+  const auto clear_rejection = faultLatchClearRejection(std::chrono::steady_clock::now());
+  add("hard_fault_clearable", clear_rejection.empty() ? "true" : "false");
+  add("hard_fault_clear_reason", clear_rejection.empty() ? "ready for operator acknowledgment" : clear_rejection);
+  add("recovery_attempt_policy", "statistics only; no retry or persistence latch");
+  add("recovery_retry_interval_ms", std::to_string(recovery_.retryDelaySec() * 1000.0));
+  add("last_recovery_time_sec", std::to_string(last_recovery_time_sec_));
   add("enable_reset_probe", recovery_probe_ ? "true" : "false");
   add("can_reconnect", !canLinkEnabled() ? "OFF" : !can_driver_->isOpen() ? "BACKOFF" :
     link_recovering_ ? "WAITING FOR FEEDBACK" : "CONNECTED");
@@ -703,6 +797,7 @@ void SteeringActuatorNode::controlTick()
     requestImmediateDisable(SteeringDisableReason::MOTOR_FAULT);
   }
   if (recovered) {
+    last_recovery_time_sec_ = this->now().seconds();
     stopMotor();
     recovery_probe_ = false;
     discardAllSteeringCommands();
@@ -739,8 +834,9 @@ void SteeringActuatorNode::controlTick()
   if (recovery_.recovering && !recovery_probe_ && !stop_pending_ && probe_permitted &&
     KeyaFaults(motor.fault_bits).recoverable == 0x4000 &&
     recovery_.probeDue(seconds(age_now)) && pending_command_valid_ &&
-    age_now <= torque_command_deadline_ && recovery_.consumeAttempt(seconds(age_now)))
+    age_now <= torque_command_deadline_)
   {
+    recovery_.recordAttempt(seconds(age_now));
     const bool zero_ok = torqueMode() ? can_driver_->sendTorqueCommand(0) :
       can_driver_->sendPositionCount(motor.motor_position_count);
     if (zero_ok && can_driver_->sendEnable()) {

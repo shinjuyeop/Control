@@ -260,21 +260,40 @@ TEST(KeyaPolicy, RecoverableClearNeedsContinuousFreshEvidence)
   EXPECT_FALSE(p.recovering);
 }
 
-TEST(KeyaPolicy, RepeatedEpisodesAndPersistentFaultHaveBounds)
+TEST(KeyaPolicy, RepeatedAndPersistentRecoverableFaultsNeverLatch)
 {
   lateral_ctrl::KeyaRecoveryPolicy p;
-  for (int i = 0; i < 3; ++i) {
-    p.update(0x10, true, i * 2); p.update(0, true, i * 2 + 0.5);
+  for (int i = 0; i < 1000; ++i) {
+    p.update(0x4652, true, i * 2); p.update(0, true, i * 2 + 0.5);
     EXPECT_TRUE(p.update(0, true, i * 2 + 1));
+    ASSERT_FALSE(p.latched);
+    EXPECT_EQ(p.total_attempts, static_cast<uint64_t>(i + 1));
   }
-  p.update(0x10, true, 6);
-  EXPECT_TRUE(p.latched); EXPECT_EQ(p.attempts, 3U);
+  EXPECT_EQ(p.last_recovery_sec, 1999);
   lateral_ctrl::KeyaRecoveryPolicy persistent;
-  persistent.update(0x400, true, 0); persistent.update(0x400, true, 30);
-  EXPECT_TRUE(persistent.latched);
-  lateral_ctrl::KeyaRecoveryPolicy healthy;
-  healthy.update(0x10, true, 0); healthy.update(0, true, 1); healthy.update(0, true, 2);
-  healthy.update(0, true, 62); EXPECT_EQ(healthy.attempts, 0U);
+  persistent.update(0x400, true, 0);
+  persistent.update(0x400, true, 86400);
+  EXPECT_TRUE(persistent.recovering);
+  EXPECT_FALSE(persistent.latched);
+}
+
+TEST(KeyaPolicy, InfiniteAttemptsHaveCappedBackoffAndNeverLatch)
+{
+  lateral_ctrl::KeyaRecoveryPolicy p;
+  p.update(0x4000, true, 0);
+  EXPECT_FALSE(p.probeDue(0.99)); EXPECT_TRUE(p.probeDue(1));
+  p.recordAttempt(1);
+  EXPECT_FALSE(p.probeDue(2.99)); EXPECT_TRUE(p.probeDue(3));
+  p.recordAttempt(3);
+  EXPECT_FALSE(p.probeDue(6.99)); EXPECT_TRUE(p.probeDue(7));
+  double now = 7;
+  for (int i = 0; i < 1000; ++i) {
+    ASSERT_TRUE(p.probeDue(now)); p.recordAttempt(now);
+    EXPECT_FALSE(p.probeDue(now + 4.99));
+    EXPECT_FALSE(p.latched); now += 5;
+  }
+  EXPECT_EQ(p.attempts, 1003U);
+  EXPECT_EQ(p.total_attempts, 1003U);
 }
 
 TEST(BrakeRelease, BothMcuConsumersRejectPreBrakeCommandsWithoutClockSync)
@@ -305,6 +324,7 @@ TEST(KeyaPolicy, CanDisconnectMayWaitForAutoCommandWithoutPersistenceLatch)
   lateral_ctrl::KeyaRecoveryPolicy p;
   p.update(0x4000, true, 0); p.update(0x4000, true, 300);
   EXPECT_FALSE(p.latched); EXPECT_TRUE(p.recovering);
-  EXPECT_TRUE(p.consumeAttempt(301)); EXPECT_TRUE(p.consumeAttempt(302));
-  EXPECT_FALSE(p.consumeAttempt(303)); EXPECT_TRUE(p.latched);
+  for (int i = 0; i < 10; ++i) p.recordAttempt(301 + i * 5);
+  EXPECT_FALSE(p.latched);
+  EXPECT_EQ(p.attempts, 11U);
 }

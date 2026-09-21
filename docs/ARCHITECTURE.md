@@ -299,7 +299,7 @@ traction 차단 조건으로 사용하지 않습니다.
 ### 7.1 KAI Vehicle Console과 HIL 가상 HMI
 
 `vehicle_console`은 유일한 React frontend, 공용 Web serving/Host·Origin 보안,
-ROS 수신·runtime normalization, 독립 Vehicle read-only backend를 제공합니다.
+ROS 수신·runtime normalization, 독립 Vehicle 관측·HARD latch acknowledgment backend를 제공합니다.
 하나의 active ROS package 안에서 `vehicle_console.common`, `vehicle_console.vehicle`,
 `vehicle_console.hil`로 책임을 나눕니다. 기존 `kaiev26_hil`은 archive에 보관합니다.
 Vehicle backend는 HIL backend/serial/scenario를 import하거나 초기화하지 않습니다.
@@ -352,7 +352,7 @@ ARM 이후 발행합니다. Web 조작권은 한 브라우저에만 주며 heart
 | HIL `/planning/command` 생성 | Host `vehicle_console.hil.hil_command_generator` |
 | 공용 Web frontend·관측·runtime | `vehicle_console` |
 | HIL 조작·scenario·가상 HMI | `vehicle_console.hil.hil_web_bridge` + 공용 Console |
-| Vehicle read-only 관측 | `vehicle_console/vehicle` |
+| Vehicle 관측·HARD latch acknowledgment | `vehicle_console/vehicle` |
 | ROS graph 상세 분석 bridge·layout | `foxglove` |
 | UNO 적용 상태 보고 / 가상 LCD | `hil_display_report.cpp` / `dashboard_display.py` + 공통 C++ renderer |
 

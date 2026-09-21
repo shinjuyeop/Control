@@ -30,7 +30,7 @@ _KEYA_FAULTS = (
      'KEYA 설정 저장 상태를 확인하세요. 정지·MANUAL에서 KEYA 전원을 재시작하고 '
      '재발하면 설정 도구와 드라이버를 점검하세요.'),
     (5, 'Reserved 비트',
-     '현재 Host는 이 비트도 고장으로 처리합니다. 원본 CAN fault word와 '
+     '현재 Host에서는 INFO입니다. 원본 CAN fault word와 '
      '장치 firmware의 비트 정의를 확인하세요.'),
     (6, '드라이버 내부 과전류',
      '정지·MANUAL에서 조향 걸림·모터 부하·KEYA 전류 설정을 확인하세요. 원인 제거 후 '
@@ -55,12 +55,12 @@ _KEYA_FAULTS = (
      '정지·MANUAL에서 KEYA 전원을 재시작해 확인하고, 재발하면 드라이버 점검이 '
      '필요합니다.'),
     (13, 'Spare 비트',
-     '현재 Host는 이 비트도 고장으로 처리합니다. 원본 CAN fault word와 '
+     '현재 Host에서는 INFO입니다. 원본 CAN fault word와 '
      '장치 firmware의 비트 정의를 확인하세요.'),
     (14, '드라이버 CAN 신호 단절',
      'CAN 전원·배선·종단·인터페이스를 복구하세요. 매뉴얼은 Enable reset을 '
-     '요구합니다. Host steering/safety 진단에서 bounded 자동복구 횟수와 '
-     '결과를 확인하세요. HARD FAULT 승격 시 별도 드라이버 복구 점검이 필요합니다.'),
+     '요구합니다. Host steering/safety에서 자동복구 결과를 확인하세요. 횟수는 통계이며 '
+     '승격 조건이 아닙니다. 실제 HARD fault 동반 시 별도 드라이버 복구 점검이 필요합니다.'),
     (15, '드라이버 RS232 신호 단절',
      '현재 CAN 운용에서는 INFO이며 이 비트만으로 Host가 차단하지 않습니다. '
      'KEYA 제어방식 설정을 확인하세요.'),
@@ -110,13 +110,14 @@ def steering_fault_advice(status, *, fresh=True) -> tuple[SteeringFaultAdvice, .
             'control 지연을 확인하세요. 정상 피드백과 유효한 새 명령이면 Host는 '
             '복귀합니다. timeout을 늘리기 전에 수신/지연 원인을 해결하세요.'))
 
-    # STATE_FAULT / REASON_MOTOR_FAULT with no actual KEYA bit can come from an
-    # older Host binary. It must not be mislabeled as hardware stall or bit0 fault.
+    # A cleared hardware fault can leave a Host latch awaiting explicit acknowledgment.
+    # Older binaries may also report Host conditions through this wire state.
     if not fault_bits and (status.state == 8 or status.disable_reason == 10):
         advice.append(SteeringFaultAdvice(
             'Host FAULT 표시 · KEYA 실제 고장 비트 없음',
-            'bit0은 정상 Disable입니다. /steering/torque_safety와 노드 로그, 실행 '
-            '버전을 확인하세요. 하드웨어 고장으로 단정하거나 무조건 재시작하지 마세요.'))
+            'bit0은 정상 Disable입니다. steering/safety의 latch와 clearable을 확인하고 '
+            'MANUAL·정지 상태에서 Console의 CLEAR HARD FAULT LATCH를 사용하세요. '
+            '해당 기능이 없으면 실행 버전과 /steering/torque_safety를 확인하세요.'))
     elif not fault_bits and status.state not in range(9):
         advice.append(SteeringFaultAdvice(
             f'알 수 없는 조향 상태 ({status.state})',

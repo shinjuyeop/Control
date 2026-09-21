@@ -31,7 +31,7 @@ setup(
     zip_safe=True,
     maintainer="shinjuyeop",
     maintainer_email="shinjp02@gmail.com",
-    description="KAI Vehicle Console: read-only vehicle monitoring and controlled HIL validation.",
+    description="KAI Vehicle Console: vehicle monitoring, steering fault acknowledgment and controlled HIL validation.",
     license="TODO: License declaration",
     tests_require=["pytest"],
     entry_points={"console_scripts": [
