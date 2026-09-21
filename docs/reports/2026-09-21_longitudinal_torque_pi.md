@@ -6,6 +6,11 @@ STM_A의 기존 50 ms Control task에 forward AUTO용 positive-current PI를 추
 overshoot/undershoot·chain shock 감소는 아직 검증하지 않았다.**
 실측 없는 새 Torque 결과를 만들거나 기존 Speed 기록을 새 제어기의 결과로 해석하지 않는다.
 
+후속 [9/20 전체 MCAP 분석](2026-09-21_0920_longitudinal_review.md)에서
+fresh/valid 상태의 32,000 RPM 보고가 확인됐다. **현재 freshness gate만으로 걸러지지 않으므로
+Torque 실차 적용 전 RPM 입력 이상 처리를 점검해야 한다.** 아래 gains는 계속 candidate이며
+후속 분석에서 코드나 calibration을 변경하지 않았다.
+
 ## 1. 사용 기록과 분석 방법
 
 `~/KAI_ws/records/260919/quali_succeed_run/`에서 다음 여섯 bag을 직접 읽었다.

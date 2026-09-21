@@ -15,3 +15,5 @@
 | 2026-09-21 | [Competition 조향 복구 정책·구현 기록](2026-09-21_steering_availability.md) |
 
 - [2026-09-21 AUTO Torque PI, MCAP baseline, calibration 및 A/B 절차](2026-09-21_longitudinal_torque_pi.md)
+
+- [2026-09-21: 9/20 전체 MCAP 종방향·전류 피크·RPM 이상 분석](2026-09-21_0920_longitudinal_review.md)
