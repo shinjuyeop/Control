@@ -246,3 +246,5 @@ Active launch는 세 개다: HIL의 Web/headless를 제공하는 `hil.launch.py`
 HIL 중간 launch 두 개의 기능은 `hil.launch.py`로 통합했다. `web:=false`에서도
 `start_bench:=true`를 지정해야 backend를 시작한다. Headless generator 기본값은 기존과
 같이 enabled=true/watchdog=0이며 Web은 항상 DISARMED/watchdog=3 s로 시작한다.
+
+구동 calibration은 `drive_` 설정키로 구분해 표시합니다. 기존 STM_A v1 readback의 native `config`와 새 `display_values` 매핑은 [파라미터 호환표](../../../docs/CONTROL_TUNING_PARAMETERS.md)를 따릅니다.

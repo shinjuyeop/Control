@@ -1,6 +1,7 @@
 from pathlib import Path
 from queue import SimpleQueue
 import time
+import math
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -60,7 +61,12 @@ def test_capture_reads_actual_values_all_names_and_clock(parameter_nodes):
     document = capture()
     assert document['status'] == 'complete'
     actual = document['nodes']['/steering_actuator_node']
+    assert document['schema_version'] == 2
     assert actual['ros__parameters']['torque_kd'] == 1723.
+    assert actual['display_values']['steering_kd_a_per_deg_s'] == pytest.approx(1723 * math.pi / 180 * .0016)
+    assert actual['display_units']['steering_kd_a_per_deg_s'] == 'A/(deg/s)'
+    assert actual['display_values']['steering_torque_feedback_timeout_ms'] == 100
+    assert document['nodes']['/command_governor']['display_values']['governor_command_timeout_ms'] == 234.
     assert actual['ros__parameters']['torque_direction_sign'] == -1
     assert actual['ros__parameters']['operator_note'] == 'actual runtime parameter'
     assert actual['received_ros_time_ns'] >= document['requested_ros_time_ns'] > 0

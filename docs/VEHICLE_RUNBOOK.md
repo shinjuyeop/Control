@@ -64,7 +64,8 @@ ros2 run control_tuning control_tuning_tui
 같은 `tuning_preset`으로 다시 실행한다. TUI만 다시 여는 것으로 적용되지는 않는다.
 [저장 경로·단위·조작 안내](../software/src/control_tuning/README.md)를 따른다.
 
-두 프리셋 `airborne`/`driving`은 schema v2로 lateral/longitudinal/governor/timeouts를 보관한다.
+두 프리셋 `airborne`/`driving`은 schema v3로 steering/drive/governor/timeouts를 보관한다.
+[이름·단위·기존 파일 호환표](CONTROL_TUNING_PARAMETERS.md)에 따라 설정키는 `steering_`/`drive_`/`governor_`로 구분한다. v2 파일은 읽을 수 있고 S 저장 시 v3로 전환한다.
 종방향은 first-test candidate이며 실차 성능 검증값이 아니다. 새 STM_A는 부팅 시 speed DEFAULT,
 launch는 MANUAL 정지·무전류에서 선택한 calibration을 한 번 적용하고 readback을 확인한다.
 실패/timeout이면 현재 모드와 정지 상태를 확인하고 선택한 프리셋으로 구동 스택을 재시작한다.

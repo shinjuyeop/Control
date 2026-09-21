@@ -27,6 +27,8 @@ def test_candidate_roundtrip_and_wire_precision():
         data = struct.unpack('<27f', struct.pack('<27f', *data))
         actual = decode_status(data)
         assert wire_equal(config, actual['config'])
+        assert actual['display_values']['drive_current_limit_a'] == config['max_drive_current_a']
+        assert actual['display_values']['drive_speed_kp_a_per_mps'] == config['speed_kp_a_per_mps']
         assert actual['source'] == 'DEFAULT'
         assert actual['feedback_valid'] == 1
     assert DEFAULT['max_drive_current_a'] == 480
@@ -119,5 +121,5 @@ def test_longitudinal_preset_edits_are_saved_without_applying(editor, store):
     assert editor.modal is None
     editor.key('s')
     saved = editor.presets.load('airborne')
-    assert saved['control_mode'] == 'torque'
+    assert saved['drive_control_mode'] == 'torque'
     assert '다음 구동 스택 실행' in editor.message

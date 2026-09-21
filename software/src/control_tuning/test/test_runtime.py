@@ -61,15 +61,15 @@ def ros_pair(store, monkeypatch):
 
 def test_tui_save_does_not_change_running_settings(ros_pair, store, editor):
     pair = ros_pair
-    editor.draft.update(p_gain_a_per_deg=40., governor_input_timeout_ms=250., control_mode='torque')
+    editor.draft.update(steering_kp_a_per_deg=40., governor_command_timeout_ms=250., drive_control_mode='torque')
     for group in ('1', '3', '5'):
         editor.key(group)
         editor.key('a', pair.client)
         assert editor.modal is None
     editor.key('s', pair.client)
     saved = editor.presets.load('airborne')
-    assert saved['p_gain_a_per_deg'] == 40.
-    assert saved['control_mode'] == 'torque'
+    assert saved['steering_kp_a_per_deg'] == 40.
+    assert saved['drive_control_mode'] == 'torque'
     pair.client.tick(force=True)
     pair.pump(lambda: not pair.client.requests)
     assert not pair.writes
@@ -86,7 +86,7 @@ def test_current_values_follow_external_changes_and_expire(ros_pair, editor):
     pair.server.set_parameters_atomically([Parameter('torque_full_scale_error_deg', value=.4)])
     pair.client.tick(force=True)
     pair.pump(lambda: pair.client.fresh_values(STEERING)['torque_full_scale_error_deg'] == .4)
-    assert editor.live_values(pair.client)['p_gain_a_per_deg'] == 40.
+    assert editor.live_values(pair.client)['steering_kp_a_per_deg'] == 40.
     assert pair.client.longitudinal_status()['source'] == 'DEFAULT'
     pair.client.received[STEERING] -= 5
     pair.client.received[LONGITUDINAL] -= 1

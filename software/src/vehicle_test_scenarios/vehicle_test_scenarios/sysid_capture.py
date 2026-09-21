@@ -7,7 +7,7 @@ from rcl_interfaces.srv import GetParameters, ListParameters
 from rclpy.parameter import parameter_value_to_python
 
 from control_tuning.conditions import condition_document
-from control_tuning.schema import STEERING, GOVERNOR, READ_NAMES, decode_node
+from control_tuning.schema import STEERING, GOVERNOR, READ_NAMES, FIELDS, decode_node
 
 
 TORQUE_TOPICS = (
@@ -37,7 +37,7 @@ class ParameterCapture:
         self.node, self.started, self.timeout = node, time.monotonic(), timeout
         self.finished = False
         self.document = {
-            'schema_version': 1, 'capture_stage': 'recorder_ready_before_run',
+            'schema_version': 2, 'capture_stage': 'recorder_ready_before_run',
             'requested_at': wall_time(),
             'requested_ros_time_ns': node.get_clock().now().nanoseconds,
             'test_condition': condition_document(condition),
@@ -91,12 +91,10 @@ class ParameterCapture:
                         }
                         if missing:
                             entry.update(missing_parameters=missing, error='필수 제어 파라미터를 읽지 못했습니다.')
-                        elif name == STEERING:
+                        else:
                             entry['display_values'] = decode_node(name, values)
-                            entry['display_units'] = {
-                                'p_gain_a_per_deg': 'A/deg', 'd_gain_a_per_deg_s': 'A/(deg/s)',
-                                'peak_current_command_a': 'A', 'continuous_current_command_a': 'A',
-                            }
+                            entry['display_units'] = {field.key: field.unit for field in FIELDS
+                                                      if field.node == name}
                         self.document['nodes']['/' + name] = entry
                         request['stage'] = 'done'
             except Exception as error:

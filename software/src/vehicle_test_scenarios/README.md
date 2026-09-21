@@ -130,6 +130,7 @@ P·D·전류 한도의 화면 단위 환산값도 함께 기록한다.
 이 스냅샷은 recorder 준비 완료 시점의 값이며, 이후 변경은 `/parameter_events`로 확인한다.
 
 같은 내용의 JSON은 `/sysid/control_parameters`에도 한 번 발행해 **MCAP 안에도** 보관한다.
+snapshot schema v2의 `display_values`/`display_units`는 `steering_`/`governor_` 이름을 쓰며, `ros__parameters`는 실제 노드의 native 이름·단위를 보존한다. 기존 v1 snapshot은 [이름 호환 어댑터](../../../docs/CONTROL_TUNING_PARAMETERS.md)로 읽는다.
 `/parameter_events`와 토크 P/D, 합산·최종 raw, 명령 전류, 출력 한도, 포화·고출력 제한·목표 도달
 여부, 필터 전후 각속도, `torque_safety` 등 상세 토픽을 기존 recorder에서 함께 기록한다.
 별도 `mcap_logging.launch.py`를 동시에 실행할 필요가 없다. Position 모드처럼 발행되지 않는

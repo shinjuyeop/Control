@@ -53,12 +53,12 @@ Governor에는 새 ramp를 추가하지 않았다. Decision이 기존 accel/dece
 저장 후 MANUAL 정지 상태에서 기존 구동 스택을 종료하고 같은 프리셋으로 재시작한다.
 TUI만 다시 여는 것으로는 제어값이 적용되지 않는다.
 
-## 두 프리셋과 schema v2
+## 두 프리셋과 schema v3
 
 `airborne`과 `driving`만 유지한다. 접지 정지는 별도 calibration이 아니라 시나리오의
 `stationary` 시험 조건이다. 선택한 시험 조건은 녹화 annotation이며 제어값을 바꾸지 않는다.
 
-v2는 `lateral`, `longitudinal`, `governor`, `timeouts`로 구분한다.
+v3는 `steering`, `drive`, `governor`, `timeouts`로 구분한다. 설정키는 `steering_`, `drive_`, `governor_`로 담당 계통을 표시한다.
 기존 lateral 값은 그대로 이관했다. 종방향 값은 **MCAP 기반 first-test candidate**다.
 
 | 값 | airborne | driving |
@@ -96,11 +96,13 @@ config/
 `config/control_tuning.yaml`이고 소스 없는 설치는 share config를 쓴다. 저장 시 lock,
 fsync/atomic replace, `.yaml.bak`과 외부 변경 검사를 사용한다. TUI는 Git push를 하지 않는다.
 
-**v1 flat values/옛 통합 preset은 자동 적용하지 않는다.** checked-in v2 파일을 양식으로
-기존 values를 해당 section에 옮기고 longitudinal mode/모든 값을 명시한다.
-사용자 조향값을 덮어쓰거나 종방향 값을 숨은 fallback으로 채우지 않는다.
-선택한 프리셋이 없거나 잘못되면 launch가 실패하며 다른 condition을 대신 쓰지 않는다.
-공통 `control_tuning.yaml`은 기반 설정이며 S는 이를 바꾸지 않는다.
+**v2 프리셋은 그대로 읽을 수 있고 S 저장 시 v3 이름으로 전환한다.** 읽기만으로 원본 파일을 바꾸지 않는다.
+새·옛 이름의 값이 충돌하거나 관리 대상 항목이 누락되면 오류로 표시하며 default를 채우지 않는다.
+v1 flat preset은 종방향 값까지 명시해 이관해야 한다. 공통 `control_tuning.yaml`의 native ROS override 형식은 유지한다.
+
+[전체 새 이름·단위·ROS/MCU 연결·MCAP 호환표](../../../docs/CONTROL_TUNING_PARAMETERS.md)를 따른다.
+TUI 상세의 **설정키**는 새 이름이고 **ROS/STM_A 연결**은 기존 통신 계약이다.
+제어기별 native 이름은 변환 계층이 처리하므로 이미 실행 중인 노드에서도 현재값을 읽을 수 있다.
 
 기본 YAML → 공통 설정 → 선택한 프리셋 → 명시한 launch 인자 순서다.
 `actuation_mode:=position`은 KEYA 조향 인자이며 종방향 mode와 별개다.

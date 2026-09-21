@@ -6,6 +6,8 @@ Configuration is RAM-only and conditional on the STM_A revision and stop gate.
 import math
 import struct
 
+from .naming import canonical_values
+
 LONGITUDINAL = 'stm_a_longitudinal'
 CONFIG_TOPIC = '/drive/longitudinal_config'
 STATUS_TOPIC = '/drive/longitudinal_status'
@@ -66,6 +68,7 @@ def decode_status(data):
     # Float32 readback is compared in wire precision; never claim send == apply.
     return dict(revision=int(data[1]), request_id=int(data[2]), result=int(data[3]),
                 source='HOST_OVERRIDE' if data[4] else 'DEFAULT', config=config,
+                display_values=canonical_values(config),
                 **dict(zip(STATE_KEYS, data[17:])))
 
 

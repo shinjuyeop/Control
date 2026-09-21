@@ -117,7 +117,9 @@ class Editor:
         self.selecting_preset = False
         self.help = False
         self.group, self.selected = 0, 0
-        self.tell('')
+        entry = self.presets.entry(condition)
+        self.tell('이전 이름의 v2 프리셋을 읽었습니다. S로 저장하면 v3로 변환됩니다.'
+                  if entry and entry['schema_version'] == 2 else '')
 
     def preset_values(self, condition):
         self.presets.check_unchanged(condition)
@@ -147,7 +149,8 @@ class Editor:
         self.require_preset()
         condition = self.preset_condition
         self.presets.check_unchanged(condition)
-        if not self.preset_dirty and self.presets.path_for(condition).exists():
+        if (not self.preset_dirty and self.presets.path_for(condition).exists() and
+                self.presets.entry(condition)['schema_version'] == 3):
             self.tell('프리셋에 저장할 변경이 없습니다.')
             return
         values = self.presets.save(condition, self.draft)

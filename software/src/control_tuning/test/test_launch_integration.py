@@ -42,8 +42,8 @@ def test_launch_defaults_read_the_same_source_file_as_tui(store, tmp_path, monke
     monkeypatch.setattr(storage, '__file__', str(source_package / 'control_tuning/storage.py'))
     settings = SettingsStore(None, *store.base_paths)
     presets = PresetStore(settings)
-    presets.save('driving', {**settings.saved, 'p_gain_a_per_deg': 40., 'governor_input_timeout_ms': 250.})
-    presets.save('airborne', {**settings.saved, 'p_gain_a_per_deg': 80., 'governor_input_timeout_ms': 100.})
+    presets.save('driving', {**settings.saved, 'steering_kp_a_per_deg': 40., 'governor_command_timeout_ms': 250.})
+    presets.save('airborne', {**settings.saved, 'steering_kp_a_per_deg': 80., 'governor_command_timeout_ms': 100.})
     source = Path(__file__).resolve().parents[2] / package / 'launch' / filename
     spec = importlib.util.spec_from_file_location('test_default_launch_module', source)
     module = importlib.util.module_from_spec(spec)
@@ -83,7 +83,7 @@ def test_launch_defaults_read_the_same_source_file_as_tui(store, tmp_path, monke
 @pytest.mark.parametrize('condition', CONDITION_KEYS)
 def test_launch_helpers_layer_profile_before_explicit_overrides(store, monkeypatch, package, filename, helper, condition):
     presets = PresetStore(store)
-    presets.save(condition, {**store.saved, 'p_gain_a_per_deg': 40., 'governor_input_timeout_ms': 250.})
+    presets.save(condition, {**store.saved, 'steering_kp_a_per_deg': 40., 'governor_command_timeout_ms': 250.})
     source = Path(__file__).resolve().parents[2] / package / 'launch' / filename
     spec = importlib.util.spec_from_file_location('test_launch_module', source)
     module = importlib.util.module_from_spec(spec)
@@ -119,11 +119,11 @@ def test_actual_nodes_save_then_restart_and_cli_priority(store, monkeypatch, tmp
             pytest.fail(f'Build {package} before running the launch integration test')
     monkeypatch.setenv('ROS_DOMAIN_ID', '219')
     monkeypatch.setenv('ROS_LOCALHOST_ONLY', '1')
-    preset = {**store.saved, 'p_gain_a_per_deg': 40., 'peak_current_command_a': 12.,
-              'minimum_vehicle_speed_kph': 1., 'governor_input_timeout_ms': 250.}
+    preset = {**store.saved, 'steering_kp_a_per_deg': 40., 'steering_peak_current_limit_a': 12.,
+              'steering_min_vehicle_speed_kph': 1., 'governor_command_timeout_ms': 250.}
     presets = PresetStore(store)
     presets.save('driving', preset)
-    presets.save('airborne', {**preset, 'p_gain_a_per_deg': 24., 'governor_input_timeout_ms': 300.})
+    presets.save('airborne', {**preset, 'steering_kp_a_per_deg': 24., 'governor_command_timeout_ms': 300.})
     processes = []
 
     @contextmanager
@@ -175,10 +175,10 @@ def test_actual_nodes_save_then_restart_and_cli_priority(store, monkeypatch, tmp
                 assert client.values[GOVERNOR]['input_timeout_ms'] == 250.
                 editor = Editor(store)
                 editor.key('enter')
-                editor.draft['p_gain_a_per_deg'] = 48.
+                editor.draft['steering_kp_a_per_deg'] = 48.
                 editor.key('s', client)
                 presets.reload()
-                assert presets.load('driving')['p_gain_a_per_deg'] == 48.
+                assert presets.load('driving')['steering_kp_a_per_deg'] == 48.
                 client.tick(force=True)
                 pump(lambda: not client.requests)
                 assert client.values[STEERING]['torque_full_scale_error_deg'] == .3
@@ -216,7 +216,7 @@ def test_selected_preset_is_required_and_other_conditions_are_ignored(store, nod
     presets.path_for('airborne').write_text('malformed: [')
     assert load_launch_overrides(store.path, node, **kwargs)
     path = presets.path_for('driving')
-    path.write_text(path.read_text().replace('current_reference_a: 20.0', 'current_reference_a: 10.0'))
+    path.write_text(path.read_text().replace('steering_current_reference_a: 20.0', 'steering_current_reference_a: 10.0'))
     with pytest.raises(ValueError, match='환산 기준'):
         load_launch_overrides(store.path, node, **kwargs)
 
@@ -224,7 +224,7 @@ def test_selected_preset_is_required_and_other_conditions_are_ignored(store, nod
 @pytest.mark.parametrize('condition', CONDITION_KEYS)
 def test_vehicle_launch_passes_selected_longitudinal_config(store, monkeypatch, condition):
     presets = PresetStore(store)
-    presets.save(condition, {**store.saved, 'control_mode': 'torque', 'speed_kp_a_per_mps': 180.})
+    presets.save(condition, {**store.saved, 'drive_control_mode': 'torque', 'drive_speed_kp_a_per_mps': 180.})
     source = Path(__file__).resolve().parents[2] / 'control_launch/launch/vehicle.launch.py'
     spec = importlib.util.spec_from_file_location('longitudinal_launch', source)
     module = importlib.util.module_from_spec(spec)

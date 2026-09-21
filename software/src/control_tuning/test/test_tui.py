@@ -40,21 +40,21 @@ def test_preset_selector_is_first_and_cannot_be_skipped(store, width, height):
         assert not output.getvalue()
     assert editor.preset_condition == 'airborne'
     assert 'S 저장' in text
-    assert 'P 게인' in text and 'A/deg' in text and 'A/(deg/s)' in text
+    assert '조향 P 게인' in text and 'A/deg' in text and 'A/(deg/s)' in text
 
 
 def test_edit_save_and_discard(store, editor):
     for key in ['enter', '4', '0', 'enter']:
         editor.key(key)
-    assert editor.draft['p_gain_a_per_deg'] == 40
+    assert editor.draft['steering_kp_a_per_deg'] == 40
     assert not store.path.exists()
     editor.key('s')
     assert editor.modal is None
-    assert editor.presets.load('airborne')['p_gain_a_per_deg'] == 40
+    assert editor.presets.load('airborne')['steering_kp_a_per_deg'] == 40
     assert not editor.preset_dirty
     assert not store.path.exists()
     editor.key('b')
-    assert editor.draft['p_gain_a_per_deg'] == 32
+    assert editor.draft['steering_kp_a_per_deg'] == 32
     editor.key('q')
     assert not editor.done
     editor.key('escape')
@@ -66,7 +66,7 @@ def test_edit_save_and_discard(store, editor):
 def test_startup_mode_and_invalid_edits(store, editor):
     editor.key('1')
     editor.key('enter')
-    assert editor.draft['actuation_mode'] == 'position'
+    assert editor.draft['steering_control_mode'] == 'position'
     editor.key('a')
     assert editor.modal is None and not editor.error
     editor.key('1')
@@ -76,8 +76,8 @@ def test_startup_mode_and_invalid_edits(store, editor):
     assert editor.error and editor.modal is None
     editor.key('x')
     editor.key('s')
-    assert editor.presets.load('airborne')['actuation_mode'] == 'position'
-    assert store.saved['actuation_mode'] == 'torque'
+    assert editor.presets.load('airborne')['steering_control_mode'] == 'position'
+    assert store.saved['steering_control_mode'] == 'torque'
 
 
 @pytest.mark.parametrize('width,height', [(80, 24), (110, 32), (140, 42)])

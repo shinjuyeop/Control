@@ -169,10 +169,10 @@ Boot는 `DEFAULT`, revision=0, **speed**와 driving candidate gains다. Host가 
 MCU reboot는 DEFAULT로 돌아간다. launch의 calibration helper는 status/request/revision/full config의 실제 wire 값을
 비교한다. readback timeout이면 적용 여부 미확인으로 보고 자동 재전송하지 않는다.
 
-Schema v2는 `lateral`, `longitudinal`, `governor`, `timeouts`로 분리했다.
+후속 이름 정리에서 preset schema v3의 `steering`, `drive`, `governor`, `timeouts`로 전환했다. [파라미터 연결·호환표](../CONTROL_TUNING_PARAMETERS.md)를 따른다. 기존 v2는 읽을 수 있고 S 저장 시 v3로 변환한다.
 checked-in 프리셋은 **airborne/driving 둘**이며 lateral 수치는 작업 시작값을 그대로 옮겼다.
 옛 v1은 오류를 내며 종방향 값을 숨겨 채우지 않는다. 사용자 파일은 기존 values를 네 section에
-배치하고 mode/모든 longitudinal 값을 명시해 v2로 바꿔야 한다. checked-in 두 파일을 양식으로
+배치하고 mode/모든 구동 값을 명시해 v3로 바꿔야 한다. checked-in 두 파일을 양식으로
 쓰되 사용자 조향값을 덮어쓰지 않는다. 접지 정지는 `stationary` 시험 annotation이며 preset이 아니다.
 
 TUI는 80열 이상에서 `1 조향응답 · 2 조향출력 · 3 구동응답 · 4 구동출력 ·

@@ -1,41 +1,41 @@
-schema_version: 2
+schema_version: 3
 condition: airborne
 label: 공중
 saved_at: '2026-09-18T10:54:07.563098+00:00'
-current_reference_a: 20.0
 calibration_note: First-test candidate; vehicle performance not validated
-lateral:
-  p_gain_a_per_deg: 2.0
-  d_gain_a_per_deg_s: 0.05999999999999999
-  settle_error_deg: 0.05
-  settle_rate_deg_s: 0.5
-  rate_filter_cutoff_hz: 10.0
-  peak_current_command_a: 4.0
-  continuous_current_command_a: 2.0
-  peak_budget_ms: 1000
-  peak_recovery_hold_ms: 2000
-  angle_limit_margin_deg: 1.0
-  actuation_mode: torque
-  minimum_vehicle_speed_kph: 0.0
-longitudinal:
-  control_mode: torque
-  speed_kp_a_per_mps: 8.0
-  speed_ki_a_per_mps_s: 1.0
-  speed_deadband_mps: 0.05
-  speed_hysteresis_mps: 0.12
-  max_drive_current_a: 8.0
-  integrator_limit_a: 3.0
-  current_slew_up_a_s: 40.0
-  current_slew_down_a_s: 160.0
-  reapply_current_a: 2.0
-  reapply_slew_a_s: 10.0
-  motor_rpm_limit: 300.0
+steering_current_reference_a: 20.0
+steering:
+  steering_kp_a_per_deg: 2.0
+  steering_kd_a_per_deg_s: 0.05999999999999999
+  steering_settle_error_deg: 0.05
+  steering_settle_rate_deg_s: 0.5
+  steering_rate_filter_hz: 10.0
+  steering_peak_current_limit_a: 4.0
+  steering_sustained_current_limit_a: 2.0
+  steering_peak_duration_ms: 1000
+  steering_peak_recovery_ms: 2000
+  steering_angle_margin_deg: 1.0
+  steering_control_mode: torque
+  steering_min_vehicle_speed_kph: 0.0
+drive:
+  drive_control_mode: torque
+  drive_speed_kp_a_per_mps: 8.0
+  drive_speed_ki_a_per_mps_s: 1.0
+  drive_speed_deadband_mps: 0.05
+  drive_coast_release_error_mps: 0.12
+  drive_current_limit_a: 8.0
+  drive_integrator_limit_a: 3.0
+  drive_current_slew_up_a_s: 40.0
+  drive_current_slew_down_a_s: 160.0
+  drive_reapply_current_band_a: 2.0
+  drive_reapply_current_slew_a_s: 10.0
+  drive_motor_speed_limit_rpm: 300.0
 governor:
-  governor_input_timeout_ms: 200.0
+  governor_command_timeout_ms: 200.0
 timeouts:
   steering_command_timeout_ms: 200
-  can_timeout_ms: 500
-  position_feedback_timeout_ms: 500
-  torque_feedback_timeout_ms: 100
-  mode_timeout_ms: 1500
-  drive_status_timeout_ms: 500
+  steering_can_timeout_ms: 500
+  steering_position_feedback_timeout_ms: 500
+  steering_torque_feedback_timeout_ms: 100
+  steering_vehicle_mode_timeout_ms: 1500
+  steering_vehicle_speed_timeout_ms: 500

@@ -647,3 +647,18 @@ it does not send calibration or parameter writes. Saved values take effect on th
 control-stack launch with that preset. For calibration, test procedure,
 range rationale and recorder coverage see
 [the implementation report](reports/2026-09-21_longitudinal_torque_pi.md).
+
+
+## Control Tuning parameter names
+
+TUI/preset keys use `steering_`, `drive_`, `governor_` prefixes with physical units.
+[The complete mapping and migration contract](CONTROL_TUNING_PARAMETERS.md) defines
+preset schema v3 and parameter snapshot schema v2. Existing v2 presets and v1 snapshots
+remain readable through explicit name adapters; conflicting aliases fail instead of
+silently selecting a value. All managed values remain required.
+
+Node-scoped ROS parameter names and `/parameter_events` keep their native names/units.
+The MCU array ABI remains v1. Its host decoder adds canonical `display_values` while
+retaining the existing `config` object for old clients. No topic/message type or
+firmware rollout is required. Control Tuning remains read-only with respect to runtime:
+S saves the selected preset for the next control-stack launch.

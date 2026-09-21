@@ -13,6 +13,7 @@ from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
 
 from .longitudinal import STATUS_TOPIC, decode_status
+from .naming import canonical_capture
 
 TOPICS = ('/drive/status', '/vehicle/command', '/brake/status', '/gnss/fix_velocity',
           '/parameter_events', '/sysid/control_parameters', STATUS_TOPIC)
@@ -25,7 +26,7 @@ def read_bag(path):
     reader.set_filter(rosbag2_py.StorageFilter(topics=list(TOPICS)))
     types = {t.name: get_message(t.type) for t in reader.get_all_topics_and_types() if t.name in TOPICS}
     rows = {t: [] for t in TOPICS}
-    snapshots, parameters = [], {}
+    snapshots, parameters, captures = [], {}, []
     for_topic = {
         '/drive/status': ('mode', 'gear', 'speed_mps', 'motor_rpm', 'phase_current_a',
                           'bus_current_a', 'bus_voltage_v', 'commanded_phase_current_a',
@@ -57,6 +58,7 @@ def read_bag(path):
                         1: value.bool_value, 3: value.double_value, 4: value.string_value}.get(value.type, str(value))
             continue
         else:
+            captures.append(canonical_capture(json.loads(msg.data)))
             parameters['control_parameters_snapshot_present'] = True
             continue
         rows[topic].append(row)
@@ -74,7 +76,7 @@ def read_bag(path):
         for key, values in data.items():
             if key != 't':
                 drive[key] = np.where(valid, values[np.maximum(index, 0)], np.nan)
-    return drive, dict(calibration=snapshots, parameters=parameters)
+    return drive, dict(calibration=snapshots, parameters=parameters, parameter_captures=captures)
 
 
 def summarize(d, start=0., end=None, target=None):

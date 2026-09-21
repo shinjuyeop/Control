@@ -410,7 +410,8 @@ export function DriveTelemetry({
 }) {
   const d = received(state, online, "/drive/status");
   const lon = received(state, online, "/drive/longitudinal_status");
-  const config = (lon.config ?? {}) as Record<string, unknown>;
+  const config = (lon.display_values ?? {}) as Record<string, unknown>;
+  const legacyConfig = (lon.config ?? {}) as Record<string, unknown>;
   const source = (topic: string) => (
     <Source name={topic} sample={state.topics[topic]} online={online} />
   );
@@ -424,9 +425,9 @@ export function DriveTelemetry({
     >
       <div className="telemetry-group">
         <span className="eyebrow">AUTO LONGITUDINAL · FIRST-TEST CANDIDATE</span>
-        <Fact label="속도루프 모드" value={String(config.control_mode ?? "—").toUpperCase()} />
+        <Fact label="구동 제어 방식" value={String(config.drive_control_mode ?? legacyConfig.control_mode ?? "—").toUpperCase()} />
         <Fact label="Calibration 출처" value={String(lon.source ?? "—")} />
-        <Fact label="Kp / Ki" value={`${fmt(config.speed_kp_a_per_mps)} / ${fmt(config.speed_ki_a_per_mps_s)}`} />
+        <Fact label="구동 속도 P / I 게인" value={`${fmt(config.drive_speed_kp_a_per_mps ?? legacyConfig.speed_kp_a_per_mps)} / ${fmt(config.drive_speed_ki_a_per_mps_s ?? legacyConfig.speed_ki_a_per_mps_s)}`} />
         <Fact label="PI P / I" value={`${fmt(lon.p_current_a)} / ${fmt(lon.i_current_a)} A`} />
         <Fact label="PI 최종 전류" value={fmt(lon.current_command_a)} unit="A" />
         <Fact label="속도 오차" value={fmt(lon.speed_error_mps, 2)} unit="m/s" />

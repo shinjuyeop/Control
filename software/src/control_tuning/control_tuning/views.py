@@ -9,6 +9,7 @@ from rich.table import Table
 from rich.text import Text
 
 from .conditions import CONDITION_KEYS, condition_label
+from .longitudinal import LONGITUDINAL, CONFIG_TOPIC
 from .schema import FIELDS, GROUPS, STEERING, encode, equivalent, format_value, range_hint
 
 
@@ -27,16 +28,16 @@ def _table(*columns):
 
 def _conversion(editor):
     f = editor.field
-    if f.key not in ('p_gain_a_per_deg', 'd_gain_a_per_deg_s',
-                     'peak_current_command_a', 'continuous_current_command_a'):
+    if f.key not in ('steering_kp_a_per_deg', 'steering_kd_a_per_deg_s',
+                     'steering_peak_current_limit_a', 'steering_sustained_current_limit_a'):
         return ''
     try:
         raw = encode(editor.draft, editor.store.saved_native[STEERING])[STEERING][f.native]
-        unit = {'p_gain_a_per_deg': 'deg', 'd_gain_a_per_deg_s': 'raw/(rad/s)'}.get(f.key, 'raw')
+        unit = {'steering_kp_a_per_deg': 'deg', 'steering_kd_a_per_deg_s': 'raw/(rad/s)'}.get(f.key, 'raw')
         converted = f'ROS 변환: {format_value(raw)} {unit}'
-        if f.key == 'p_gain_a_per_deg':
+        if f.key == 'steering_kp_a_per_deg':
             converted += f' · 오차 0.1° → P {editor.draft[f.key] * .1:.3g} A'
-        elif f.key == 'd_gain_a_per_deg_s':
+        elif f.key == 'steering_kd_a_per_deg_s':
             converted += f' · 60°/s → D {editor.draft[f.key] * 60:.3g} A'
         return converted
     except ValueError:
@@ -48,7 +49,9 @@ def _detail(editor):
     hint = range_hint(f, editor.draft, editor.store.saved_native[STEERING])
     lines = [
         Text(f'{f.label}  · S 저장 후 재시작', style='bold'),
-        Text('ROS: ' + f.native, style='dim', no_wrap=True),
+        Text('설정키: ' + f.key, style='dim', no_wrap=True),
+        Text(('STM_A: ' + CONFIG_TOPIC + ' · ' + f.native) if f.node == LONGITUDINAL
+             else 'ROS: /' + f.node + ' · ' + f.native, style='dim', no_wrap=True),
         Text('허용 범위: ' + hint + (' ' + f.unit if f.unit else ''), style='dim', no_wrap=True),
     ]
     if editor.editing is not None:
@@ -66,7 +69,7 @@ def _detail(editor):
 def _parameters(editor, live, width, visible):
     columns = [('항목', None)]
     if width >= 132:
-        columns.append(('ROS 파라미터', 32))
+        columns.append(('설정키', 38))
     columns += [('단위', 9), ('편집값', 10), ('현재값', 10)]
     if width >= 104:
         columns.append(('저장값', 10))
@@ -78,7 +81,7 @@ def _parameters(editor, live, width, visible):
         row = [Text(('› ' if selected else '  ') + f.label + (' *' if changed else ''),
                     style='bold cyan' if selected else 'white')]
         if width >= 132:
-            row.append(Text(f.native, style='dim'))
+            row.append(Text(f.key, style='dim'))
         row += [Text(f.unit, style='dim'),
                 Text(format_value(editor.draft[f.key]), style='bold cyan' if changed else 'bold'),
                 Text(format_value(live.get(f.key)), style='dim')]
@@ -113,7 +116,7 @@ def layout(editor, runtime, width, height):
         message += ('Enter 종료 · Esc 취소' if editor.modal and editor.modal['action'] == 'quit' else 'Q 종료')
         return Text(message, style='yellow')
     choosing = editor.selecting_preset or editor.preset_condition is None
-    detail_size = 10 if editor.help and not choosing and not editor.modal else 5
+    detail_size = 11 if editor.help and not choosing and not editor.modal else 6
     tabs_size = 0 if choosing else 2
     available_body = height - detail_size - 7 - tabs_size
     body_size = min(available_body, 9) if not editor.modal else available_body
