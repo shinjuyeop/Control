@@ -1,5 +1,8 @@
 #pragma once
 
+#include "lateral_ctrl/keya_fault_policy.hpp"
+#include <diagnostic_msgs/msg/diagnostic_array.hpp>
+
 #include "lateral_ctrl/keya_can_driver.hpp"
 #include "kaiev26_msgs/msg/actuator_command.hpp"
 #include "kaiev26_msgs/msg/brake_actuator_status.hpp"
@@ -33,6 +36,17 @@ public:
 private:
   friend class SteeringActuatorNodeTestPeer;
   void stopMotor();
+  void reconnectCan(std::chrono::steady_clock::time_point now);
+  void publishSafety(double can_age, double position_age, double command_age, double fault_age);
+  KeyaRecoveryPolicy recovery_;
+  bool recovery_probe_{false}, link_recovering_{false};
+  double probe_started_{0};
+  int reconnect_delay_ms_{100};
+  uint64_t reconnect_attempts_{0};
+  std::chrono::steady_clock::time_point next_reconnect_{}, link_opened_{};
+  int64_t minimum_command_stamp_ns_{0}, last_brake_stamp_ns_{0};
+  SteeringDisableReason last_disable_reason_{SteeringDisableReason::NONE};
+  rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr safety_pub_;
   void torqueSafetyStop(TorqueSafetyFault fault);
   rcl_interfaces::msg::SetParametersResult onParameters(
     const std::vector<rclcpp::Parameter> & parameters);

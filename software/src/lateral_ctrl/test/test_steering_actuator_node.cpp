@@ -10,7 +10,8 @@ class RecordingKeyaDriver : public KeyaCanDriver
 {
 public:
   RecordingKeyaDriver() : KeyaCanDriver("unused-test-interface", 1) {}
-  bool open() override { opened = true; return true; }
+  bool open() override { ++opens; opened = !fail_open; return opened; }
+  void close() override { opened = false; motor.position_valid = motor.fault_valid = false; }
   bool isOpen() const override { return opened; }
   bool sendEnable() override { frames.emplace_back("enable", 0); return !fail_enable; }
   bool sendDisable() override { frames.emplace_back("disable", 0); return !fail_disable; }
@@ -24,10 +25,12 @@ public:
   const KeyaMotorState & motorState() const override { return motor; }
   void fresh(int32_t count = 0) {
     motor.motor_position_count = count;
-    motor.position_valid = motor.communication_ok = true;
-    motor.last_feedback = motor.last_position_feedback = std::chrono::steady_clock::now();
+    motor.position_valid = motor.communication_ok = motor.fault_valid = true;
+    motor.last_feedback = motor.last_position_feedback = motor.last_fault_feedback = std::chrono::steady_clock::now();
   }
   KeyaMotorState motor;
+  unsigned opens{0};
+  bool fail_open{false};
   bool opened{false}, fail_enable{false}, fail_torque{false}, fail_disable{false};
   using Frames = std::vector<std::pair<std::string, int32_t>>;
   std::shared_ptr<Frames> trace{std::make_shared<Frames>()};
@@ -37,6 +40,10 @@ public:
 class SteeringActuatorNodeTestPeer
 {
 public:
+  static void reconnectDue(SteeringActuatorNode & n) { n.next_reconnect_ = {}; }
+  static void immediateRecovery(SteeringActuatorNode & n) { n.recovery_.clear_hold_sec = 0; }
+  static void probeDue(SteeringActuatorNode & n) { n.recovery_.retry_sec = 0; }
+  static bool latched(const SteeringActuatorNode & n) { return n.recovery_.latched; }
   static void cancelTimer(SteeringActuatorNode & n) { n.control_timer_->cancel(); }
   static void tick(SteeringActuatorNode & n) { n.controlTick(); }
   static void drive(SteeringActuatorNode & n, uint8_t mode = 1) {
@@ -88,7 +95,7 @@ protected:
   }
   static void TearDownTestSuite() { rclcpp::shutdown(); }
   void create(const std::string & mode = "torque", bool armed = true, int sign = 1,
-    std::vector<rclcpp::Parameter> extra = {}, int32_t initial_count = 0)
+    std::vector<rclcpp::Parameter> extra = {}, int32_t initial_count = 0, bool fail_open = false)
   {
     rclcpp::NodeOptions options;
     std::vector<rclcpp::Parameter> parameters{
@@ -102,6 +109,7 @@ protected:
     options.parameter_overrides(parameters);
     auto driver = std::make_unique<RecordingKeyaDriver>();
     can = driver.get();
+    can->fail_open = fail_open;
     node = std::make_unique<SteeringActuatorNode>(options, std::move(driver));
     Peer::cancelTimer(*node);
     can->fresh(initial_count);
@@ -362,10 +370,10 @@ TEST_F(SteeringNodeTest, CanTimeoutStops)
   Peer::tick(*node);
   expectStop();
   EXPECT_EQ(Peer::state(*node), SteeringState::CAN_LOST);
-  Peer::command(*node);
+  Peer::reconnectDue(*node); Peer::tick(*node);
   can->fresh(); Peer::tick(*node);
-  EXPECT_EQ(Peer::state(*node), SteeringState::ACTIVE);
-  EXPECT_TRUE(Peer::enabled(*node));
+  EXPECT_FALSE(Peer::enabled(*node));
+  activate();
 }
 
 TEST_F(SteeringNodeTest, MotorFaultStops)
@@ -378,8 +386,8 @@ TEST_F(SteeringNodeTest, MotorFaultStops)
   can->motor.fault_bits = 0;
   Peer::command(*node);
   can->fresh(); Peer::tick(*node);
-  EXPECT_EQ(Peer::state(*node), SteeringState::ACTIVE);
-  EXPECT_TRUE(Peer::enabled(*node));
+  EXPECT_EQ(Peer::state(*node), SteeringState::FAULT);
+  EXPECT_FALSE(Peer::enabled(*node));
 }
 
 TEST_F(SteeringNodeTest, ControlStallStopsThenRecoversWithHealthyFeedbackAndNewCommand)
@@ -456,4 +464,104 @@ TEST_F(SteeringNodeTest, PositionModeRetainsCurrentCountBeforeEnableAndRateShape
   EXPECT_LT(can->frames.back().second, 77); // 1 deg would be about 77 counts; tiny test dt is shaped.
   Peer::estop(*node);
   EXPECT_EQ(can->frames.back().first, "disable");
+}
+
+TEST_F(SteeringNodeTest, InfoBitsDoNotPreventActive)
+{
+  create(); can->motor.fault_bits = 0xa021; activate(); output();
+  EXPECT_EQ(can->motor.fault_bits, 0xa021);
+}
+
+TEST_F(SteeringNodeTest, RecoverableClearRequiresPostRecoveryCommand)
+{
+  create(); activate();
+  Peer::immediateRecovery(*node);
+  can->motor.fault_bits = 0x10; can->fresh(); Peer::tick(*node);
+  EXPECT_EQ(Peer::state(*node), SteeringState::WAIT_CMD);
+  EXPECT_FALSE(Peer::enabled(*node));
+  Peer::command(*node); // Fresh during fault, but cannot survive recovery.
+  can->motor.fault_bits = 0; can->fresh(); Peer::tick(*node);
+  can->fresh(); Peer::tick(*node);
+  EXPECT_FALSE(Peer::enabled(*node));
+  EXPECT_FALSE(Peer::pending(*node));
+  Peer::command(*node, 0.1F, false, 100.0); // queued pre-recovery stamp
+  can->fresh(); Peer::tick(*node);
+  EXPECT_FALSE(Peer::enabled(*node));
+  activate();
+}
+
+TEST_F(SteeringNodeTest, CanDisconnectProbeNeedsFreshFeedbackAndCannotSendOldTarget)
+{
+  create(); activate();
+  can->motor.fault_bits = 0x4000; can->fresh(); Peer::tick(*node);
+  can->frames.clear(); Peer::probeDue(*node);
+  can->motor.fault_valid = false; Peer::command(*node); Peer::tick(*node);
+  for (const auto & frame : can->frames) EXPECT_NE(frame.first, "enable");
+  can->frames.clear(); can->fresh(); Peer::command(*node); Peer::tick(*node);
+  ASSERT_EQ(can->frames.size(), 2U);
+  EXPECT_EQ(can->frames[0], std::make_pair(std::string("torque"), int32_t{0}));
+  EXPECT_EQ(can->frames[1].first, "enable");
+  EXPECT_FALSE(Peer::enabled(*node)); // reset probe, no movement authority
+  Peer::estop(*node); Peer::tick(*node);
+  EXPECT_EQ(Peer::state(*node), SteeringState::ESTOP);
+  EXPECT_EQ(can->frames.back().first, "disable");
+}
+
+TEST_F(SteeringNodeTest, ReconnectBackoffThenFreshEvidenceAndNewCommand)
+{
+  create(); activate();
+  can->close(); can->fail_open = true;
+  Peer::reconnectDue(*node); Peer::tick(*node);
+  const auto opens = can->opens;
+  for (int i = 0; i < 10; ++i) Peer::tick(*node);
+  EXPECT_EQ(can->opens, opens); // no control-frequency reopen loop
+  Peer::command(*node);
+  can->fail_open = false; Peer::reconnectDue(*node); Peer::tick(*node);
+  EXPECT_TRUE(can->opened); EXPECT_FALSE(Peer::enabled(*node));
+  can->fresh(); Peer::tick(*node);
+  EXPECT_FALSE(Peer::enabled(*node)); EXPECT_FALSE(Peer::pending(*node));
+  activate();
+}
+
+TEST_F(SteeringNodeTest, BrakeReleaseRejectsPreBrakeTargetAndResumesWithoutRestart)
+{
+  for (const auto & mode : {"torque", "position"}) {
+    node.reset(); create(mode); activate();
+    Peer::command(*node, 0.2F, true); Peer::tick(*node);
+    Peer::command(*node, 0.2F, false, 100.0); can->fresh(); Peer::tick(*node);
+    EXPECT_EQ(Peer::state(*node), SteeringState::BRAKE);
+    EXPECT_FALSE(Peer::enabled(*node));
+    Peer::command(*node, -0.01F); can->fresh(); Peer::tick(*node);
+    EXPECT_EQ(Peer::state(*node), SteeringState::ACTIVE);
+  }
+}
+
+TEST_F(SteeringNodeTest, InterfaceMissingAtBootCanRecoverWithoutNodeRestart)
+{
+  create("torque", true, 1, {}, 0, true);
+  EXPECT_FALSE(can->opened);
+  Peer::command(*node); Peer::tick(*node);
+  EXPECT_FALSE(Peer::enabled(*node));
+  can->fail_open = false; Peer::reconnectDue(*node); Peer::tick(*node);
+  can->fresh(); Peer::tick(*node);
+  EXPECT_FALSE(Peer::enabled(*node));
+  activate();
+}
+
+TEST_F(SteeringNodeTest, RecoverableCanProbeRetriesAreBounded)
+{
+  create(); activate(); Peer::probeDue(*node);
+  can->motor.fault_bits = 0x4000; can->fresh(); Peer::tick(*node);
+  for (int i = 0; i < 4; ++i) {
+    Peer::command(*node); can->fresh(); Peer::tick(*node);
+    // A physical stop cancels the probe immediately without replenishing its budget.
+    Peer::estop(*node); Peer::tick(*node);
+    Peer::estop(*node, false); can->fresh(); Peer::tick(*node);
+  }
+  EXPECT_TRUE(Peer::latched(*node));
+  const auto enables = std::count_if(can->frames.begin(), can->frames.end(),
+    [](const auto & frame) { return frame.first == "enable"; });
+  EXPECT_LE(enables, 3); // initial ACTIVE + two bounded reset probes
+  can->motor.fault_bits = 0; Peer::command(*node); can->fresh(); Peer::tick(*node);
+  EXPECT_EQ(Peer::state(*node), SteeringState::FAULT);
 }

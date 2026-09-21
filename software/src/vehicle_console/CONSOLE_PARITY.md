@@ -14,7 +14,7 @@ built browser UI. No firmware, CAN or actuator behavior is changed.
 | Command/drive/brake 300 ms; steering 500 ms stale defaults | Same Vehicle defaults, configurable at startup; ROS sample tests exercise LIVE → STALE and reconnect |
 | Missing data and invalid feedback never look like zero | NO DATA, STALE and source age; invalid Part I/II and steering feedback gated in shared telemetry components |
 | Active conditions name the source field | Shared ActiveConditions: brake reasons, drive timeout/stop/fault, steering state/reason/fault |
-| KEYA bit 0 is not a fault | Shared `fault_bits & ~1` interpretation; retained from the existing Web implementation |
+| KEYA policy comes from Host | Raw bits remain visible; `steering/safety` diagnostics provide all decoded bits, classes, recovery and reconnect state. The UI does not classify raw bits as faults. |
 | Nominal flag polarity; unsupported feedback is informational | Shared drive/steering flag definitions; brake actual false → NOT WIRED; enable feedback valid false remains informational |
 | Detailed power, temperature, command age, steering pipeline and motor observations | Drive, Steering and Safety pages reuse the former HIL telemetry components |
 | Read-only subscriptions | Independent VehicleObserver, no command publishers or ROS service clients; all inbound WebSocket messages rejected; parameter services disabled |

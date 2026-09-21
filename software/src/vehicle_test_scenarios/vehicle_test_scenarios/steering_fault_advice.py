@@ -59,12 +59,11 @@ _KEYA_FAULTS = (
      '장치 firmware의 비트 정의를 확인하세요.'),
     (14, '드라이버 CAN 신호 단절',
      'CAN 전원·배선·종단·인터페이스를 복구하세요. 매뉴얼은 Enable reset을 '
-     '요구하지만 Host는 fault 중 Enable을 막습니다. 정지·MANUAL에서 별도 '
-     '드라이버 복구 절차를 확인하세요.'),
+     '요구합니다. Host steering/safety 진단에서 bounded 자동복구 횟수와 '
+     '결과를 확인하세요. HARD FAULT 승격 시 별도 드라이버 복구 점검이 필요합니다.'),
     (15, '드라이버 RS232 신호 단절',
-     'KEYA 제어방식과 RS232 연결을 확인하세요. 매뉴얼은 Enable reset을 '
-     '요구하지만 Host는 fault 중 Enable을 막습니다. 정지·MANUAL에서 별도 '
-     '드라이버 복구 절차를 확인하세요.'),
+     '현재 CAN 운용에서는 INFO이며 이 비트만으로 Host가 차단하지 않습니다. '
+     'KEYA 제어방식 설정을 확인하세요.'),
 )
 
 
@@ -101,8 +100,8 @@ def steering_fault_advice(status, *, fresh=True) -> tuple[SteeringFaultAdvice, .
         advice.append(SteeringFaultAdvice(
             '조향 CAN 연결/송수신 실패',
             'KEYA 전원·can0 상태·CAN 배선/종단을 확인하세요. fault 비트는 캐시일 수 '
-            '있습니다. 시작 로그에 SocketCAN open 실패가 있으면 can0 복구 후 '
-            '정지·MANUAL에서 조향 노드를 재시작하세요. 새 fault 응답을 확인한 뒤 '
+            '있습니다. Host가 backoff로 SocketCAN reopen을 시도합니다. can0 복구 후 '
+            '새 fault·위치 응답과 steering/safety 진단을 확인한 뒤 '
             '유효한 새 명령이 필요합니다.'))
     elif status.state == 7 or status.feedback_timeout or not status.feedback_valid:
         advice.append(SteeringFaultAdvice(

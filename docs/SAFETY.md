@@ -1,6 +1,6 @@
 # Safety Design
 
-> 이 문서는 현재 작업 브랜치의 소스 코드를 기준으로 작성되었습니다.
+> 이 문서는 main e0cc6b9 기반 2026-09-21 availability 변경의 소스 코드 기준입니다.
 > 코드 변경 시 주기, timeout, 핀, 통신 ID와 안전 조건을 함께 갱신해야 합니다.
 
 ## 1. 문서 목적
@@ -42,7 +42,7 @@
 | EZkontrol Part I/II age | STM_A | 200 ms 이후 status valid false |
 | `/diagnostics` level/message | Console·Foxglove | 관측과 기록에만 사용; 제어 입력이나 차단 조건이 아님 |
 | KEYA CAN·position age | 조향 노드 | 각 500 ms 이후 Disable |
-| KEYA fault bits | 조향 노드 | bit 0을 제외한 fault가 있으면 Disable |
+| KEYA fault bits | 조향 노드 | HARD latch / RECOVERABLE bounded recovery / INFO 기록만; §9.2 |
 | 물리 mode | STM_A → STM_B·조향 | MANUAL/AUTO 동작 선택 |
 
 현재 코드에는 MCU independent watchdog 초기화나 사용이 확인되지 않습니다.
@@ -89,8 +89,8 @@ MANUAL과 AUTO 모두에서 적용됩니다.
 
 브레이크 서보 명령:
 
-- engage: `1305 µs` (55°)
-- release: `1665 µs` (120°)
+- engage: `1693 µs` (125°)
+- release: `1953 µs` (172°)
 - PWM: 50 Hz
 - 부팅 초기 전역 상태와 초기 compare: engage
 - 목표 변경 후 nominal `20 ms × 35 = 700 ms`에 걸쳐 ramp
@@ -166,6 +166,10 @@ STM_B는 command 수신 시 age를 status에 기록하지만, Host command timeo
   engage되지 않습니다.
 - micro-ROS Agent 단절 때 command 값을 fail-safe 값으로 reset하지 않습니다.
 
+두 MCU는 `command_brake_order.h`에서 마지막 stamped brake 이후에 생성된 release만
+수용한다. pre-brake 지연 command는 속도/브레이크 값을 갱신하지 않는다. MCU clock sync를
+전제하지 않는 순서 검사이며 기존 수신 age watchdog을 대체하지 않는다.
+
 ### 7.3 조향
 
 조향은 `ACTIVE`에서 마지막 `/vehicle/command`가 200 ms를 넘으면 KEYA를
@@ -218,16 +222,22 @@ false가 되고, traction command 송신은 계속됩니다. CAN TX 실패 시 �
 `torque`이며 동일 state machine에 §9.3의 보호를 추가한다. KEYA 내부 mode는 별도 설정이며
 position=0020=3, torque=0020=2다. Host가 자동 변경하거나 확인하지 않는다.
 
-다음 조건은 조향 motor Disable 원인입니다.
+KEYA bit 의미·reset·Host 분류의 전체 표와 전이는
+[STEERING_AVAILABILITY.md](STEERING_AVAILABILITY.md)에 있다.
 
-- SocketCAN open 실패 또는 마지막 CAN frame age > 500 ms
-- 유효 position feedback 미수신 또는 age > 500 ms
-- bit 0을 제외한 KEYA fault bit 활성
-
-조향 노드는 안전 조건이 처음 감지되면 target을 현재 추정각으로 바꾸고 그때까지의
-old/pending command를 폐기합니다. 다만 Disable 상태가 유지되는 동안 들어오는
-command는 다시 pending으로 저장할 수 있습니다. CAN write 실패 자체는 별도 fault
-flag로 latch되지 않지만, feedback이 끊기면 timeout 경로로 Disable됩니다.
+- HARD(bit2/3/7/8/11/12)는 zero/Disable 후 FAULT latch. bit clear만으로 자동 재Enable하지 않는다.
+- RECOVERABLE(bit1/4/6/9/10/14)는 zero/Disable 후 recovery hold.
+  fresh CAN·position·fault clear 500 ms 확인 뒤 WAIT_CMD, **복구 완료 이후 생성된 새 command**로 재개한다.
+- INFO(bit0/5/13/15)는 원본에 보존하되 단독 차단하지 않는다. CAN 운용이 전제다.
+- 매뉴얼상 Enable reset인 bit14에 한해 안전조건·fresh command/feedback이 있을 때
+  제한된 zero/현재위치→Enable probe. HARD, 다른 recoverable 동시 활성에서는 금지한다.
+- episode Disable 및 probe를 합쳐 최대 3 attempts. fresh fault(bit14 단독 제외) 연속 30초 또는 budget 초과는
+  FAULT latch. 건강한 feedback 연속 60초 후에만 budget을 초기화한다.
+- SocketCAN open/receive/write 실패 및 CAN 500 ms timeout은 100 ms~5 s backoff로
+  자동 reopen. 새 fault·position 확인 후 pending을 폐기하고 새 command를 요구한다.
+- raw fault는 close에도 보존한다. fault freshness를 별도 추적하여 stale clear 비트로
+  Enable하거나 cached fault의 통신 단절 시간을 persistent fault로 승격하지 않는다.
+- Position 모드 TX 실패도 즉시 Disable/CAN_LOST로 처리한다.
 
 ### 9.3 외부 Torque 조향
 
@@ -282,17 +292,18 @@ flag로 latch되지 않지만, feedback이 끊기면 timeout 경로로 Disable�
 | 사건 | 복구 조건 | 과거 목표 재사용 |
 |---|---|---|
 | 물리 E-stop | 세 GPIO 모두 high, 다음 EStop update | brake 자동 release; MANUAL pedal 또는 inhibited 중 받은 fresh AUTO·조향 command가 있으면 별도 post-release command 없이 재활성화 가능 |
-| Host brake | AUTO에서는 새 `brake_engage=false`; MANUAL 전환도 Host 원인 제거 | STM_A speed는 true command에서 0으로 지워지며 false command의 새 목표를 사용; 조향도 false command를 pending으로 사용 가능 |
+| Host brake | AUTO에서는 brake보다 새 stamp의 `brake_engage=false`; MANUAL 전환도 Host 원인 제거 | STM_A speed는 true command에서 0으로 지워지며 false command의 새 목표를 사용; 조향도 false command를 pending으로 사용 가능 |
 | STM_A Host timeout | 새 유효 `/vehicle/command` | timeout 때 speed 0으로 지워짐 |
 | STM_B→STM_A UART timeout | 새 CRC-valid safety frame | 이후 mode별 현재 command 사용 |
 | STM_A→STM_B UART timeout | 새 CRC-valid vehicle frame | 마지막 mode·speed는 새 frame으로 갱신 |
 | EZkontrol handshake 대기 | 새 `0x55` request에 ACK TX 성공 | 그 후 현재 mode 명령 |
-| KEYA CAN·feedback·fault 복구 | CAN·position valid, fault 해제, AUTO와 safety 정상 | fault가 처음 감지된 뒤 수신한 fresh pending command가 필요; 복구 후 수신일 필요는 없음 |
+| KEYA recoverable / SocketCAN 복구 | §9.2의 bounded recovery / 새 CAN·position·fault 확인 | 복구 완료 이후 생성·수신한 fresh command만 허용 |
+| KEYA HARD / retry·persistence 승격 | 원인 점검·필요한 장치 reset 후 운영자가 Host 재시작 | 자동복구 금지 |
 | Host torque feedback stop | 정상 feedback 확인 | 차단 뒤 받은 새 command 필요; 재시작·parameter toggle 불필요 |
 | MCU reboot | RTOS와 peripheral 재초기화 | STM_A는 safety frame 전 stop; STM_B는 engage에서 시작 후 입력 재계산 |
 
-물리 E-stop, KEYA가 보고한 motor fault, §9.3의 Host torque feedback stop에는
-software latch나 별도 reset command가 없습니다.
+물리 E-stop과 §9.3의 Host torque feedback stop에는 software latch가 없습니다.
+KEYA HARD/복구 budget 초과에는 §9.2의 latch가 있습니다.
 STM_A는 E-stop 중에도 fresh non-brake AUTO speed command를 저장할 수 있고,
 조향도 Disable 사건 뒤 들어온 command를 pending으로 저장할 수 있습니다.
 따라서 E-stop 해제만으로 MANUAL pedal이 다시 적용되거나, inhibited 상태 중 받은
@@ -303,14 +314,14 @@ fresh 명령으로 AUTO traction·조향이 재활성화될 수 있습니다.
 | 상황 | 감지 주체 | 감지 조건 | 즉시 동작 | 복구 조건 | 구현 위치 |
 |---|---|---|---|---|---|
 | Dashboard/Side/RF E-stop | STM_B | GPIO low | 서보 engage, safety bit 1 | 세 입력 high | STM_B `app_freertos.c` |
-| AUTO Host brake | 두 STM·조향 | `brake_engage=true` | traction HALTED, 서보 engage, 조향 Disable | false command 또는 MANUAL 전환; false command 목표를 즉시 pending으로 사용 가능 | 두 STM·조향 |
+| AUTO Host brake | 두 STM·조향 | `brake_engage=true` | traction HALTED, 서보 engage, 조향 Disable | brake보다 새 stamp의 false command 또는 MANUAL 전환; false의 새 목표 사용 | 두 STM·조향 |
 | STM_A Host command 중단 | STM_A | 미수신 또는 ≥500 ms | AUTO HALTED, speed=0 | 새 valid command | STM_A `app_freertos.c` |
 | 조향 command 중단 | 조향 | ACTIVE age >200 ms | KEYA Disable, `WAIT_CMD` | 새 command | `steering_actuator_node.cpp` |
 | STM_B→STM_A UART 중단 | STM_A | invalid 또는 ≥100 ms | traction HALTED | 새 CRC-valid frame | STM_A `app_freertos.c` |
 | STM_A→STM_B UART 중단 | STM_B | ≥200 ms | frame invalid, dashboard 표시 fault | 새 CRC-valid frame | STM_B `app_freertos.c` |
 | Dashboard CAN/Arduino 중단 | STM_B·Arduino | bus-off 또는 fresh snapshot ≥300 ms | 표시 `CAN LOST`/stale, safety 영향 없음 | FDCAN 재시작 + 새 complete snapshot | STM_B `dashboard_can.c`, UNO firmware |
 | EZkontrol status 중단 | STM_A | Part별 age ≥200 ms | status valid=false | 해당 Part 새 frame | STM_A `app_freertos.c` |
-| KEYA CAN 중단 | 조향 | age >500 ms | KEYA Disable | feedback 회복 + fault 감지 뒤 받은 fresh pending command | 조향 node/driver |
+| KEYA CAN 중단 | 조향 | age >500 ms | KEYA Disable | reopen·새 fault/position 확인 이후 새 command | 조향 node/driver |
 | MANUAL→AUTO | 세 제어 경로 | mode 0→1 | STM_A와 조향은 MANUAL 중 수신한 fresh command를 사용할 수 있음 | 조건 충족 | STM_A·STM_B·조향 |
 | AUTO→MANUAL | 세 제어 경로 | mode 1→0 | 조향 Disable, Host brake 원인 제거 | AUTO 재진입 + MANUAL 진입 뒤 받은 fresh pending command | STM_A·STM_B·조향 |
 | MCU 재부팅 | 각 MCU | reset | STM_A stop 초기값, STM_B engage 초기값 | task 입력과 통신 정상화 | 각 `globals.c`, `app_freertos.c` |
@@ -332,6 +343,12 @@ fresh 명령으로 AUTO traction·조향이 재활성화될 수 있습니다.
 따라서 Console과 Foxglove의 진단은 고장 인지와 사후 분석에 사용하며, 물리 E-stop이나
 제어기 safety feedback을 대신하지 않습니다. 진단 구현 위치는
 `software/src/vehicle_state_publisher/vehicle_state_publisher/diagnostics_publisher.py`입니다.
+
+조향 노드도 `/diagnostics`의 `steering/safety`로 원본 fault hex, 활성 bit별 이름/등급,
+복구 reason/attempt/latch, reconnect, command/CAN/position/fault age와 마지막 Disable 원인을
+발행한다. Console Steering과 Diagnostics에서 이 정책 결과를 표시한다. MANUAL 무명령은
+정상, AUTO 무명령은 WAITING FOR COMMAND, recoverable은 RECOVERING으로 구별한다.
+메시지/enum wire 계약은 유지하며 recovery hold는 WAIT_CMD + MOTOR_FAULT다.
 
 ### 12.2 Dashboard와 HIL Virtual HMI의 안전 경계
 
@@ -373,11 +390,11 @@ Virtual LCD stale 표시는 상태 관측이며 안전 차단의 증거 또는 �
 
 ### 실차 시나리오 실행기의 현재 제한
 
-2026-09-18 코드 검토에서 아래 항목은 미수정 상태다. 화면의 RUNNING이나 GO만으로
+실차 시나리오 실행기에는 아래 제한이 남아 있다. 화면의 RUNNING이나 GO만으로
 조향 출력·차량 정지 조건이 모두 충족됐다고 판단하지 않는다.
 
-- TUI의 조향 실행 조건은 raw KEYA fault bits 등을 확인하지만 Host의 일시적인
-  `FEEDBACK_LOST`/`disable_reason`을 직접 검사하지 않는다. 조향 출력이 차단된 동안에도
+- TUI는 Host FAULT/MOTOR_FAULT recovery에서 중단하지만 일시적인
+  `FEEDBACK_LOST` state 자체는 직접 검사하지 않는다. 조향 출력이 차단된 동안에도
   시나리오가 계속되며 종방향 목표를 발행할 수 있다.
 - `RECORD_START`·`WAIT_AUTO`·`COUNTDOWN`에서 조향 설정 응답을 기다리는 동안
   일부 tick은 mode·통신 검사 전에 반환한다. 이 구간의 MANUAL→AUTO 전환을
@@ -397,9 +414,8 @@ Virtual LCD stale 표시는 상태 관측이며 안전 차단의 증거 또는 �
 - 물리 E-stop software debounce·latch 요구사항과 실제 스위치의 기계적 latch 구성
 - STM32 independent watchdog 적용 여부
 - `/brake/status` 단절 시 조향이 stale E-stop 값을 유지하는 문제와 timeout 정책
-- E-stop/fault가 해제된 뒤 반드시 post-recovery command나 별도 enable을
-  요구하도록 할지
+- E-stop 해제 뒤 반드시 post-release command를 요구할지 (KEYA 복구는 이미 post-recovery command 필수)
 - `/vehicle/state`가 stale subsystem status를 재발행하지 않도록 freshness를
   검증할지
 - 브레이크 서보 engage/release pulse와 700 ms ramp의 실차 캘리브레이션
-- KEYA fault bit 0을 안전 판단에서 제외하는 현재 정책의 근거
+- KEYA reset별 실장치 확인과 Decision의 HARD/RECOVERING 정지 계약 (STEERING_AVAILABILITY.md 참조)

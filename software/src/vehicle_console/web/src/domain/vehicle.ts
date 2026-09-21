@@ -70,7 +70,7 @@ export const steeringFlags: Flag[] = [
   ["feedback_timeout", "피드백 timeout", "bad_true"],
   ["mode_received", "모드 수신", "bad_false"],
   ["mode_timeout", "모드 timeout", "bad_true"],
-  ["steer_command_received", "조향 명령 수신", "bad_false"],
+  ["steer_command_received", "조향 명령 수신", "info"],
   ["steer_command_timeout", "조향 명령 timeout", "bad_true"],
   ["pending_command_valid", "대기 명령 유효", "info"],
   ["movement_target_valid", "이동 목표 유효", "info"],

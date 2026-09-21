@@ -27,6 +27,12 @@ steering_actuator_node:
     mode_timeout_ms: 1500
     drive_status_timeout_ms: 500
     steer_command_timeout_ms: 200
+    # Bounded KEYA recovery, startup-only. Existing safety timeouts remain unchanged.
+    keya_recovery_max_attempts: 3
+    keya_recovery_clear_hold_ms: 500
+    keya_recovery_retry_ms: 1000
+    keya_recovery_persistence_ms: 30000
+    keya_recovery_healthy_reset_ms: 60000
     max_steering_rate_deg_s: 60.0
     # Temporary: allow steering at standstill. Restore to 1.0 after this session.
     minimum_steering_speed_kph: 0.0

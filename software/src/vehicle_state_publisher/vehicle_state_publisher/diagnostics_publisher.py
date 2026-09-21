@@ -208,8 +208,8 @@ class DiagnosticsPublisher(Node):
         ):
             lv, txt = age_level(age, LIMIT_MS[key])
             # 조향을 아직 쓰지 않는 구간에서는 command 미수신이 정상 운용이다.
-            if key == 'steer_command' and math.isinf(age) and m.state != 3:
-                lv, txt = WARN, '미수신 (조향 비활성 중)'
+            if key == 'steer_command' and m.state != 3:
+                lv, txt = OK, 'MANUAL' if m.disable_reason == 3 else 'WAITING FOR COMMAND'
             checks.append((label, lv, txt))
         if not m.communication_ok:
             checks.append(('communication_ok', ERROR, 'false'))
@@ -232,6 +232,13 @@ class DiagnosticsPublisher(Node):
         reason_name = STEER_REASON.get(
             m.disable_reason, f'알 수 없음({m.disable_reason})')
         state_level = STEER_STATE_LEVEL.get(m.state, ERROR)
+        if m.state == 1 and m.disable_reason == 3:
+            state_name, state_level = 'MANUAL', OK
+        elif m.state == 2:
+            state_name = 'RECOVERING' if m.disable_reason == 10 else 'WAITING FOR COMMAND'
+            state_level = WARN if m.disable_reason == 10 else OK
+        elif m.state == 8:
+            state_name = 'HARD FAULT'
         detail = state_name if m.state == 3 else f'{state_name} / {reason_name}'
         checks = [('state', state_level, detail)]
         if m.tracking_error_fault:
@@ -241,7 +248,7 @@ class DiagnosticsPublisher(Node):
         checks.append(
             ('tracking error', OK, f'{m.tracking_error_rad:+.4f} rad'))
         level, msg = self._worst(checks)
-        return self._status('조향 상태', 'KEYA', level, msg,
+        return self._status('조향 상태', 'KEYA', level, detail if level == OK else msg,
                             [(k, v) for k, _, v in checks])
 
     def _brake_group(self) -> DiagnosticStatus:

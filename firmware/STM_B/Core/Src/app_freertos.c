@@ -8,6 +8,7 @@
 /* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
+#include "command_brake_order.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "main.h"
@@ -177,6 +178,10 @@ static uint8_t s_ros_executor_initialized = 0u;
 /* Host에서는 최종 브레이크 명령만 받는다. Vehicle Status는 STM_A UART에서 수신한다. */
 static void cb_cmd(const void *m)
 {
+  const kaiev26_msgs__msg__ActuatorCommand *cmd = m;
+  static int64_t last_brake_stamp_ns = 0;
+  if (!CommandBrakeOrder_Accept(&last_brake_stamp_ns, cmd->brake_engage,
+      cmd->header.stamp.sec, cmd->header.stamp.nanosec)) return;
   const uint32_t now = HAL_GetTick();
   taskENTER_CRITICAL();
   COMMAND_BRAKE_REQUEST =

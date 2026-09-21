@@ -1,3 +1,4 @@
+import { steeringState } from "../domain/presentation";
 import type { Data, Snapshot } from "../domain/types";
 import { LinearMeter } from "./SignalInstruments";
 import { sourceTopics } from "../domain/profile";
@@ -132,7 +133,7 @@ export function VehicleSummary({
         />
         <Metric
           label="조향 상태"
-          value={enumText(states, steer.state)}
+          value={steeringState(steer).label}
           note={enumText(reasons, steer.disable_reason)}
         />
         <Metric
@@ -194,7 +195,7 @@ export function ActiveConditions({
     });
   if (typeof s.state === "number" && s.state !== 3)
     conditions.push({
-      text: enumText(states, s.state),
+      text: steeringState(s).label,
       source: "steering.state",
       tone: s.state === 8 ? "danger" : "muted",
     });
@@ -204,10 +205,10 @@ export function ActiveConditions({
       source: "steering.disable_reason",
       tone: "muted",
     });
-  if (typeof s.fault_bits === "number" && s.fault_bits & ~1)
+  if (s.state === 8)
     conditions.push({
-      text: `FAULT ${bitHex(s.fault_bits & ~1)}`,
-      source: "steering.fault_bits (bit0 제외)",
+      text: `HARD FAULT ${bitHex(s.fault_bits)}`,
+      source: "steering.state",
       tone: "danger",
     });
   return (
@@ -496,6 +497,9 @@ export function SteeringTelemetry({
   online: boolean;
 }) {
   const s = received(state, online, "/steering/status");
+  const safetySample = state.topics["/diagnostics"];
+  const safety = safetySample?.data.status?.find((item: Data) => item.name === "steering/safety");
+  const safetyFresh = online && safetySample?.fresh && safety?.fresh !== false;
   const source = (topic: string) => (
     <Source name={topic} sample={state.topics[topic]} online={online} />
   );
@@ -507,7 +511,11 @@ export function SteeringTelemetry({
       title="조향 보드 관측"
       eyebrow="LATERAL CONTROLLER / KEYA"
     >
-      <Fact label="제어 상태" value={enumText(states, s.state)} />
+      <Fact label="제어 상태" value={steeringState(s).label} />
+      <div className="telemetry-group">
+        <span className="eyebrow">Host safety policy · {safetyFresh ? safety?.message : "STALE / NO DATA"}</span>
+        {safety?.values?.map((item: Data) => <Fact key={item.key} label={item.key} value={item.value} />)}
+      </div>
       <Fact label="해제 사유" value={enumText(reasons, s.disable_reason)} />
       <Details title="KEYA 모터 · 피드백 · 수신 상태">
         <Fact
@@ -551,7 +559,7 @@ export function SteeringTelemetry({
         <span className="eyebrow">KEYA · 상태 비트</span>
         <Fact label="KEYA Fault bits 원본" value={bitHex(s.fault_bits)} />
         <Fact
-          label="Fault bits · bit0 제외"
+          label="상태 비트 · bit0 제외 (정책 등급은 Host 진단 참조)"
           value={
             typeof s.fault_bits === "number" ? bitHex(s.fault_bits & ~1) : "—"
           }
@@ -587,7 +595,7 @@ export function SteeringSummary({
   return (
     <section className="steering-summary" aria-label="로드휠 각도 경로">
       <div className="steering-state">
-        <strong>{enumText(states, s.state)}</strong>
+        <strong>{steeringState(s).label}</strong>
         <span>{enumText(reasons, s.disable_reason)}</span>
       </div>
       <div className="telemetry-group">

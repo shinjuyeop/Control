@@ -232,6 +232,20 @@ def test_vehicle_browser_overview_stale_reconnect_and_responsive(vehicle, tmp_pa
             expect(page.get_by_role("heading", name=name, exact=True)).to_be_visible()
             assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
         expect(page.locator(".diagnostic-observations")).to_contain_text("CAN observation")
+        control["diagnostics_pub"].publish(DiagnosticArray(status=[DiagnosticStatus(
+            name="steering/safety", hardware_id="KEYA", level=DiagnosticStatus.WARN,
+            message="RECOVERING", values=[
+                KeyValue(key="raw_fault_bits", value="0x4010"),
+                KeyValue(key="fault_bit_4", value="under_voltage / RECOVERABLE"),
+                KeyValue(key="fault_bit_14", value="can_disconnect / RECOVERABLE"),
+                KeyValue(key="recovery_attempts", value="1"),
+            ],
+        )]))
+        page.get_by_role("navigation").get_by_role("button", name="Steering", exact=True).click()
+        expect(page.locator(".board-telemetry")).to_contain_text("RECOVERING")
+        expect(page.locator(".board-telemetry")).to_contain_text("0x4010")
+        expect(page.locator(".board-telemetry")).to_contain_text("under_voltage / RECOVERABLE")
+        expect(page.locator(".board-telemetry")).to_contain_text("can_disconnect / RECOVERABLE")
         page.get_by_role("navigation").get_by_role("button", name="ECU Runtime", exact=True).click()
         expect(page.locator(".runtime-latency")).to_contain_text("6 µs")
         expect(page.locator(".runtime-page")).to_contain_text("미지원")

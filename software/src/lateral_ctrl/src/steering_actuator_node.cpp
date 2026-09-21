@@ -7,6 +7,8 @@
 #include <functional>
 #include <limits>
 #include <stdexcept>
+#include <iomanip>
+#include <sstream>
 
 namespace lateral_ctrl
 {
@@ -91,6 +93,11 @@ SteeringActuatorNode::SteeringActuatorNode(
   tracking_enabled_ = get_parameter("tracking_control_enabled").as_bool();
   control_period_ms_ = declare_parameter("control_period_ms", 20);
   if (torqueMode()) control_period_ms_ = torque_period_ms;
+  recovery_.max_attempts = integer_parameter("keya_recovery_max_attempts", 3, 1, 10, startup_only);
+  recovery_.clear_hold_sec = integer_parameter("keya_recovery_clear_hold_ms", 500, 100, 10000, startup_only) / 1000.0;
+  recovery_.retry_sec = integer_parameter("keya_recovery_retry_ms", 1000, 500, 10000, startup_only) / 1000.0;
+  recovery_.persistence_sec = integer_parameter("keya_recovery_persistence_ms", 30000, 1000, 300000, startup_only) / 1000.0;
+  recovery_.healthy_reset_sec = integer_parameter("keya_recovery_healthy_reset_ms", 60000, 1000, 600000, startup_only) / 1000.0;
   can_timeout_ms_ = declare_parameter("can_timeout_ms", 500);
   feedback_timeout_ms_ = declare_parameter("feedback_timeout_ms", 500);
   mode_timeout_ms_ = declare_parameter("mode_timeout_ms", 1500);
@@ -156,6 +163,7 @@ SteeringActuatorNode::SteeringActuatorNode(
   angle_pub_ = create_publisher<std_msgs::msg::Float32>(angle_topic, 10);
   target_motor_count_pub_ =
     create_publisher<std_msgs::msg::Int32>(target_motor_count_topic, 10);
+  safety_pub_ = create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/diagnostics", 10);
   status_pub_ = create_publisher<kaiev26_msgs::msg::SteeringActuatorStatus>(status_topic, 10);
   enable_commanded_pub_ = create_publisher<std_msgs::msg::Bool>(enable_commanded_topic, 10);
   enabled_pub_ = create_publisher<std_msgs::msg::Bool>(enabled_topic, 10);
@@ -203,6 +211,9 @@ SteeringActuatorNode::SteeringActuatorNode(
   parameter_callback_ = add_on_set_parameters_callback(
     std::bind(&SteeringActuatorNode::onParameters, this, std::placeholders::_1));
   previous_tick_ = std::chrono::steady_clock::now();
+  link_opened_ = previous_tick_;
+  next_reconnect_ = previous_tick_ + std::chrono::milliseconds(reconnect_delay_ms_);
+  link_recovering_ = canLinkEnabled();
   control_timer_ = create_wall_timer(
     std::chrono::milliseconds(std::max(1, control_period_ms_)),
     std::bind(&SteeringActuatorNode::controlTick, this));
@@ -216,13 +227,16 @@ SteeringActuatorNode::~SteeringActuatorNode()
 
 void SteeringActuatorNode::stopMotor()
 {
-  if (!outputArmed() || !can_driver_ || !can_driver_->isOpen()) return;
+  recovery_probe_ = false;
+  if (!outputArmed() || !can_driver_) return;
+  stop_pending_ = true;
+  if (!can_driver_->isOpen()) return;
   // Always attempt Disable, even if the preceding zero frame fails.
   const bool zero_ok = !torqueMode() || can_driver_->sendTorqueCommand(0);
   const bool disable_ok = can_driver_->sendDisable();
   sent_torque_raw_ = 0;
+  stop_pending_ = !zero_ok || !disable_ok;
   if (torqueMode()) {
-    stop_pending_ = !zero_ok || !disable_ok;
     torque_controller_.reset(seconds(std::chrono::steady_clock::now()));
     torque_output_ = {};
   }
@@ -301,11 +315,14 @@ void SteeringActuatorNode::onCommand(const kaiev26_msgs::msg::ActuatorCommand::S
     std::numeric_limits<double>::infinity();
   const bool stamp_fresh =
     std::isfinite(stamp_age_ms) &&
-    (!torqueMode() || stamp_age_ms >= 0.0) &&
+    stamp_age_ms >= 0.0 &&
     stamp_age_ms <= static_cast<double>(steer_command_timeout_ms_);
+  if (input->brake_engage && stamp_present && stamp_age_ms >= 0.0)
+    last_brake_stamp_ns_ = std::max(last_brake_stamp_ns_, stamp.nanoseconds());
+  const bool release_ordered = stamp.nanoseconds() > last_brake_stamp_ns_;
   const bool brake_activated = !safety_.command_brake && input->brake_engage;
   safety_.command_brake = nextCommandBrakeState(
-    safety_.command_brake, input->brake_engage, stamp_fresh);
+    safety_.command_brake, input->brake_engage, stamp_fresh && release_ordered);
   if (brake_activated) {
     requestImmediateDisable(SteeringDisableReason::COMMAND_BRAKE);
   }
@@ -320,6 +337,7 @@ void SteeringActuatorNode::onCommand(const kaiev26_msgs::msg::ActuatorCommand::S
       SteeringDisableReason::STEER_COMMAND_TIMEOUT);
     return;
   }
+  if (safety_.command_brake || !release_ordered || stamp.nanoseconds() <= minimum_command_stamp_ns_) return;
   // 내부와 외부 모두 중앙 등가 조향각·좌회전 양수다. 여기서는 단위만 바꾼다.
   constexpr double kCanonicalRadToDeg = 180.0 / 3.14159265358979323846;
   pending_target_wheel_angle_deg_ =
@@ -390,10 +408,11 @@ void SteeringActuatorNode::setEstop(bool active, bool test_input)
 
 void SteeringActuatorNode::requestImmediateDisable(SteeringDisableReason reason)
 {
-  if (enabled_commanded_ || torqueMode()) stopMotor();
+  stopMotor();
   discardAllSteeringCommands();
   enabled_commanded_ = false;
   requested_disable_reason_ = reason;
+  last_disable_reason_ = reason;
 }
 
 void SteeringActuatorNode::discardAllSteeringCommands()
@@ -416,7 +435,7 @@ void SteeringActuatorNode::discardAllSteeringCommands()
 
 void SteeringActuatorNode::enterWaitCommand(SteeringDisableReason reason)
 {
-  if (enabled_commanded_) stopMotor();
+  if (enabled_commanded_ || recovery_probe_) stopMotor();
   discardAllSteeringCommands();
   enabled_commanded_ = false;
   disable_reason_ = reason;
@@ -428,7 +447,7 @@ bool SteeringActuatorNode::tryEnterActiveFromPendingCommand(
 {
   const bool fresh = last_steer_command_time_.time_since_epoch().count() != 0 &&
     std::chrono::duration<double, std::milli>(now - last_steer_command_time_).count() <=
-    steer_command_timeout_ms_ && (!torqueMode() || now <= torque_command_deadline_);
+    steer_command_timeout_ms_ && now <= torque_command_deadline_;
   if (!pendingCommandIsEligible(
       pending_command_valid_, pending_command_generation_,
       minimum_accepted_command_generation_, fresh))
@@ -462,13 +481,12 @@ bool SteeringActuatorNode::tryEnterActiveFromPendingCommand(
   if (!(torqueMode() ? can_driver_->sendTorqueCommand(0) :
     can_driver_->sendPositionCount(actual_count)))
   {
-    if (torqueMode()) stopMotor();
-    discardAllSteeringCommands();
+    requestImmediateDisable(SteeringDisableReason::CAN_TIMEOUT);
     return false;
   }
   if (!can_driver_->sendEnable()) {
-    if (torqueMode()) stopMotor();
-    discardAllSteeringCommands();
+    stopMotor();
+    requestImmediateDisable(SteeringDisableReason::CAN_TIMEOUT);
     return false;
   }
   enabled_commanded_ = true;
@@ -482,8 +500,8 @@ void SteeringActuatorNode::transitionTo(SteeringState next)
 {
   if (next == state_) return;
   if (!shouldMotorBeEnabled(next)) {
-    if (enabled_commanded_ || torqueMode()) stopMotor();
-    if (torqueMode()) discardAllSteeringCommands();
+    if (enabled_commanded_ || torqueMode() || recovery_probe_) stopMotor();
+    discardAllSteeringCommands();
     target_wheel_angle_deg_ = actual_wheel_angle_deg_;
     commanded_wheel_angle_deg_ = actual_wheel_angle_deg_;
     corrected_wheel_angle_deg_ = actual_wheel_angle_deg_;
@@ -494,13 +512,105 @@ void SteeringActuatorNode::transitionTo(SteeringState next)
   state_ = next;
 }
 
+void SteeringActuatorNode::reconnectCan(std::chrono::steady_clock::time_point now)
+{
+  if (!canLinkEnabled()) return;
+  // Healthy links incur only an age comparison. No blocking sleep or interface mutation.
+  const auto & motor = can_driver_->motorState();
+  const auto evidence = motor.last_feedback.time_since_epoch().count() ? motor.last_feedback : link_opened_;
+  if (can_driver_->isOpen() && now - evidence > std::chrono::milliseconds(can_timeout_ms_)) {
+    requestImmediateDisable(SteeringDisableReason::CAN_TIMEOUT);
+    can_driver_->close();
+    next_reconnect_ = now + std::chrono::milliseconds(reconnect_delay_ms_);
+  }
+  if (can_driver_->isOpen()) return;
+  if (!link_recovering_) {
+    requestImmediateDisable(SteeringDisableReason::CAN_TIMEOUT);
+    link_recovering_ = true;
+  }
+  if (now < next_reconnect_) return;
+  ++reconnect_attempts_;
+  if (can_driver_->open()) {
+    link_opened_ = now;
+    discardAllSteeringCommands();
+    stopMotor();
+  }
+  next_reconnect_ = now + std::chrono::milliseconds(reconnect_delay_ms_);
+  reconnect_delay_ms_ = std::min(5000, reconnect_delay_ms_ * 2);
+}
+
+void SteeringActuatorNode::publishSafety(
+  double can_age, double position_age, double command_age, double fault_age)
+{
+  const auto & motor = can_driver_->motorState();
+  diagnostic_msgs::msg::DiagnosticArray array;
+  array.header.stamp = now();
+  diagnostic_msgs::msg::DiagnosticStatus report;
+  report.name = "steering/safety";
+  report.hardware_id = "KEYA";
+  const char * state_names[] = {"INIT", "DISABLED", "WAITING FOR COMMAND", "ACTIVE", "ESTOP",
+    "BRAKE", "CAN LOST", "FEEDBACK LOST", "HARD FAULT"};
+  report.message = state_names[static_cast<unsigned>(state_)];
+  if (state_ == SteeringState::DISABLED && disable_reason_ == SteeringDisableReason::MANUAL_MODE)
+    report.message = "MANUAL";
+  if (recovery_.recovering && state_ == SteeringState::WAIT_CMD) report.message = "RECOVERING";
+  report.level = recovery_.latched || state_ == SteeringState::ESTOP ? 2 :
+    recovery_.recovering || can_timeout_ || feedback_timeout_ ? 1 : 0;
+  const auto add = [&report](const std::string & key, const std::string & value) {
+    diagnostic_msgs::msg::KeyValue kv; kv.key = key; kv.value = value; report.values.push_back(kv);
+  };
+  const auto hex = [](uint16_t bits) {
+    std::ostringstream out; out << "0x" << std::hex << std::uppercase << std::setw(4)
+      << std::setfill('0') << bits; return out.str();
+  };
+  add("state", report.message);
+  add("raw_fault_bits", hex(motor.fault_bits));
+  const KeyaFaults faults(motor.fault_bits);
+  add("policy_class", recovery_.latched ? "HARD" : faults.recoverable ? "RECOVERABLE" : "INFO");
+  for (unsigned bit = 0; bit < 16; ++bit) {
+    if (motor.fault_bits & (uint16_t{1} << bit))
+      add("fault_bit_" + std::to_string(bit), std::string(keyaFaultDefinitions[bit].name) +
+        " / " + keyaFaultClassName(keyaFaultClass(bit)));
+  }
+  add("fault_feedback_fresh", motor.fault_valid && fault_age <= can_timeout_ms_ ? "true" : "false");
+  add("recovery_in_progress", recovery_.recovering ? "true" : "false");
+  add("recovery_reason_bits", hex(recovery_.reason_bits));
+  std::string recovery_reason;
+  for (unsigned bit = 0; bit < 16; ++bit) {
+    if (recovery_.reason_bits & (uint16_t{1} << bit)) {
+      if (!recovery_reason.empty()) recovery_reason += ", ";
+      recovery_reason += keyaFaultDefinitions[bit].name;
+    }
+  }
+  add("recovery_reason", recovery_reason.empty() ? "none" : recovery_reason);
+  add("recovery_attempts", std::to_string(recovery_.attempts));
+  add("recovery_total_attempts", std::to_string(recovery_.total_attempts));
+  add("recovery_max_attempts", std::to_string(recovery_.max_attempts));
+  add("latch_reason", recovery_.latch_reason);
+  add("enable_reset_probe", recovery_probe_ ? "true" : "false");
+  add("can_reconnect", !canLinkEnabled() ? "OFF" : !can_driver_->isOpen() ? "BACKOFF" :
+    link_recovering_ ? "WAITING FOR FEEDBACK" : "CONNECTED");
+  add("can_reconnect_attempts", std::to_string(reconnect_attempts_));
+  add("command_age_ms", std::to_string(command_age));
+  add("can_age_ms", std::to_string(can_age));
+  add("position_age_ms", std::to_string(position_age));
+  add("fault_age_ms", std::to_string(fault_age));
+  const char * reasons[] = {"NONE", "MODE_NOT_RECEIVED", "MODE_TIMEOUT", "MANUAL_MODE",
+    "INVALID_MODE", "ESTOP", "COMMAND_BRAKE", "STEER_COMMAND_TIMEOUT", "CAN_TIMEOUT",
+    "FEEDBACK_INVALID", "MOTOR_FAULT"};
+  add("last_disable_reason", reasons[static_cast<unsigned>(last_disable_reason_)]);
+  array.status.push_back(report);
+  safety_pub_->publish(array);
+}
+
 void SteeringActuatorNode::controlTick()
 {
   const auto now = std::chrono::steady_clock::now();
   double dt = std::chrono::duration<double>(now - previous_tick_).count();
   previous_tick_ = now;
   if (!std::isfinite(dt) || dt <= 0.0) dt = control_period_ms_ / 1000.0;
-  if (torqueMode() && stop_pending_) stopMotor();
+  reconnectCan(now);
+  if (stop_pending_ && !recovery_probe_) stopMotor();
 
   if (can_driver_->isOpen()) {
     can_driver_->receiveAvailableFrames();
@@ -519,6 +629,9 @@ void SteeringActuatorNode::controlTick()
   const auto & motor = can_driver_->motorState();
   double feedback_age_ms = std::numeric_limits<double>::infinity();
   double position_age_ms = std::numeric_limits<double>::infinity();
+  const double fault_age_ms = motor.fault_valid ?
+    std::chrono::duration<double, std::milli>(age_now - motor.last_fault_feedback).count() :
+    std::numeric_limits<double>::infinity();
   double mode_age_ms = std::numeric_limits<double>::infinity();
   double steer_age_ms = std::numeric_limits<double>::infinity();
   if (motor.last_feedback.time_since_epoch().count() != 0) {
@@ -573,17 +686,71 @@ void SteeringActuatorNode::controlTick()
   {
     torqueSafetyStop(TorqueSafetyFault::FEEDBACK_TIMEOUT);
   }
-  const bool motor_fault = (motor.fault_bits & static_cast<uint16_t>(~uint16_t{1})) != 0;
+  const bool fault_fresh = motor.fault_valid && fault_age_ms <= can_timeout_ms_;
+  const bool recovery_evidence = feedback_valid && fault_fresh;
+  if (link_recovering_ && recovery_evidence &&
+    motor.last_fault_feedback >= link_opened_ && motor.last_position_feedback >= link_opened_)
+  {
+    link_recovering_ = false;
+    reconnect_delay_ms_ = 100;
+    discardAllSteeringCommands();
+    minimum_command_stamp_ns_ = this->now().nanoseconds();
+  }
+  const bool was_recovering = recovery_.recovering;
+  const bool was_latched = recovery_.latched;
+  const bool recovered = recovery_.update(motor.fault_bits, recovery_evidence, seconds(age_now));
+  if ((!was_recovering && recovery_.recovering) || (!was_latched && recovery_.latched)) {
+    requestImmediateDisable(SteeringDisableReason::MOTOR_FAULT);
+  }
+  if (recovered) {
+    stopMotor();
+    recovery_probe_ = false;
+    discardAllSteeringCommands();
+    minimum_command_stamp_ns_ = this->now().nanoseconds();
+  }
+  const bool motor_fault = recovery_.latched;
   steer_command_timeout_ = state_ == SteeringState::ACTIVE &&
     (!std::isfinite(steer_age_ms) || steer_age_ms > steer_command_timeout_ms_ ||
-    (torqueMode() && age_now > torque_command_deadline_));
+    age_now > torque_command_deadline_);
   disable_reason_ = selectDisableReason(
     mode_received_, mode_timeout_, drive_mode_, safety_, motor_fault, can_timeout_,
-    feedback_valid, steer_command_timeout_);
+    feedback_valid && fault_fresh && !link_recovering_, steer_command_timeout_);
   if (requested_disable_reason_ != SteeringDisableReason::NONE) {
     disable_reason_ = requested_disable_reason_;
     requested_disable_reason_ = SteeringDisableReason::NONE;
   }
+
+  // A callback may request a stop, but must never mask a physical E-stop or HARD latch.
+  if (safety_.effectiveEstop()) disable_reason_ = SteeringDisableReason::ESTOP;
+  else if (recovery_.latched) disable_reason_ = SteeringDisableReason::MOTOR_FAULT;
+
+  // CAN-disconnect is the only fault requiring an Enable reset. Send zero/current
+  // position before Enable, hold no movement target, and require a new fault reply.
+  const bool probe_permitted = outputArmed() && steering_enabled_ && drive_speed_allowed &&
+    mode_received_ && !mode_timeout_ && drive_mode_ == DriveMode::AUTO &&
+    !safety_.effectiveEstop() && !safety_.command_brake && recovery_evidence && !link_recovering_ &&
+    age_now <= torque_command_deadline_;
+  if (recovery_probe_ && (!probe_permitted || recovery_.latched ||
+    KeyaFaults(motor.fault_bits).recoverable != 0x4000 ||
+    seconds(age_now) - probe_started_ >= 0.5))
+  {
+    stopMotor(); recovery_probe_ = false;
+  }
+  if (recovery_.recovering && !recovery_probe_ && !stop_pending_ && probe_permitted &&
+    KeyaFaults(motor.fault_bits).recoverable == 0x4000 &&
+    recovery_.probeDue(seconds(age_now)) && pending_command_valid_ &&
+    age_now <= torque_command_deadline_ && recovery_.consumeAttempt(seconds(age_now)))
+  {
+    const bool zero_ok = torqueMode() ? can_driver_->sendTorqueCommand(0) :
+      can_driver_->sendPositionCount(motor.motor_position_count);
+    if (zero_ok && can_driver_->sendEnable()) {
+      recovery_probe_ = true; probe_started_ = seconds(age_now);
+    } else {
+      stopMotor();
+    }
+    discardAllSteeringCommands();
+  }
+  if (recovery_.latched && !safety_.effectiveEstop()) disable_reason_ = SteeringDisableReason::MOTOR_FAULT;
 
   bool entered_active_this_tick = false;
   if (!drive_speed_allowed) {
@@ -595,7 +762,15 @@ void SteeringActuatorNode::controlTick()
         minimum_steering_speed_mps_ * 3.6);
     }
   }
-  if (disable_reason_ != SteeringDisableReason::NONE) {
+  if (recovery_.recovering && !safety_.effectiveEstop() && !safety_.command_brake &&
+    !can_timeout_) {
+    // Existing wire enum is retained: WAIT_CMD + MOTOR_FAULT means recovery hold.
+    // Detailed authoritative state is published as DiagnosticStatus.
+    disable_reason_ = SteeringDisableReason::MOTOR_FAULT;
+    state_ = SteeringState::WAIT_CMD;
+    movement_target_valid_ = false;
+    enabled_commanded_ = false;
+  } else if (disable_reason_ != SteeringDisableReason::NONE) {
     if (disable_reason_ == SteeringDisableReason::STEER_COMMAND_TIMEOUT) {
       enterWaitCommand(disable_reason_);
     } else {
@@ -644,13 +819,18 @@ void SteeringActuatorNode::controlTick()
         tracking_controller_.update(
           commanded_wheel_angle_deg_, actual_wheel_angle_deg_, dt));
       if (enabled_commanded_) {
-        can_driver_->sendPositionCount(
-          converter_.equivalentDegToCount(corrected_wheel_angle_deg_));
+        if (!can_driver_->sendPositionCount(
+          converter_.equivalentDegToCount(corrected_wheel_angle_deg_))) {
+          requestImmediateDisable(SteeringDisableReason::CAN_TIMEOUT);
+          disable_reason_ = SteeringDisableReason::CAN_TIMEOUT;
+          state_ = SteeringState::CAN_LOST;
+        }
       }
     }
   } else {
     tracking_controller_.reset();
-    if (!torqueMode() && steering_enabled_ && drive_speed_allowed && outputArmed() && feedback_valid &&
+    if (!torqueMode() && !recovery_probe_ && !recovery_.recovering && !recovery_.latched &&
+      steering_enabled_ && drive_speed_allowed && outputArmed() && feedback_valid &&
       can_driver_->isOpen())
     {
       can_driver_->sendPositionCount(motor.motor_position_count);
@@ -661,7 +841,9 @@ void SteeringActuatorNode::controlTick()
     torque_output_ = {};
   }
   if (state_ != SteeringState::ACTIVE) enabled_commanded_ = false;
+  if (disable_reason_ != SteeringDisableReason::NONE) last_disable_reason_ = disable_reason_;
   publishState(position_age_ms, mode_age_ms, steer_age_ms);
+  if (tick_count_ % 5 == 0) publishSafety(feedback_age_ms, position_age_ms, steer_age_ms, fault_age_ms);
 }
 
 void SteeringActuatorNode::publishState(
@@ -679,7 +861,7 @@ void SteeringActuatorNode::publishState(
   target_motor_count.data = converter_.equivalentDegToCount(target_wheel_angle_deg_);
   target_motor_count_pub_->publish(target_motor_count);
   std_msgs::msg::Bool commanded;
-  commanded.data = enabled_commanded_;
+  commanded.data = enabled_commanded_ || recovery_probe_;
   enable_commanded_pub_->publish(commanded);
   std_msgs::msg::Bool enabled;
   enabled.data = motor.enabled_feedback_valid && motor.enabled_feedback;
@@ -699,7 +881,7 @@ void SteeringActuatorNode::publishState(
   status.communication_ok = motor.communication_ok && !can_timeout_;
   status.can_timeout = can_timeout_;
   status.feedback_valid = !feedback_timeout_ && !can_timeout_;
-  status.enabled_commanded = enabled_commanded_;
+  status.enabled_commanded = enabled_commanded_ || recovery_probe_;
   status.enabled_feedback = motor.enabled_feedback;
   status.enabled_feedback_valid = motor.enabled_feedback_valid;
   status.enable_mismatch =

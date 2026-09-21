@@ -39,3 +39,11 @@ test("Safety reason bits and unsupported enable feedback retain their meaning", 
   assert.match(brakeReasons(2), /0x0002/);
   assert.equal(steeringFlags.find(([field]) => field === "enabled_feedback_valid")[2], "info");
 });
+
+test("Steering labels distinguish manual, waiting, recovery and hard fault", () => {
+  const { steeringState } = require("./build/domain/presentation.js");
+  assert.equal(steeringState({state: 1, disable_reason: 3}).label, "MANUAL");
+  assert.equal(steeringState({state: 2, disable_reason: 0}).label, "WAITING FOR COMMAND");
+  assert.equal(steeringState({state: 2, disable_reason: 10}).label, "RECOVERING");
+  assert.equal(steeringState({state: 8, disable_reason: 10}).label, "HARD FAULT");
+});

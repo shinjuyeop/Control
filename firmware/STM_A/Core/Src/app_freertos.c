@@ -10,6 +10,7 @@
 /* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
+#include "command_brake_order.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "main.h"
@@ -1272,6 +1273,9 @@ static void cb_cmd(const void *message)
   if ((brake_requested == 0u) &&
       !isfinite(cmd->speed_target_mps)) return;
 
+  static int64_t last_brake_stamp_ns = 0;
+  if (!CommandBrakeOrder_Accept(&last_brake_stamp_ns, brake_requested,
+      cmd->header.stamp.sec, cmd->header.stamp.nanosec)) return;
   const uint32_t now = HAL_GetTick();
   taskENTER_CRITICAL();
   /* AUTO 속도 명령의 부호는 Host가 정하고, CAN 송신 경계가 전진/후진

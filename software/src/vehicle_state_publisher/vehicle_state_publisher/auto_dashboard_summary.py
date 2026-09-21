@@ -249,7 +249,7 @@ class AutoDashboardSummaryNode(Node):
         if not self.steer.fresh(self.actuator_stale, now):
             return STEER_STATUS_LOST
         status = self.steer.value
-        if status.state == SteeringActuatorStatus.STATE_FAULT or status.fault_bits & ~1:
+        if status.state == SteeringActuatorStatus.STATE_FAULT:
             return STEER_MOTOR_FAULT
         if not status.communication_ok:
             return STEER_CAN_LOST

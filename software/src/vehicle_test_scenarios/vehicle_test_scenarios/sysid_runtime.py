@@ -190,8 +190,6 @@ class SysidNode(Node):
         elif topic == '/steering/status':
             if message.estop_active:
                 error = '조향 E-stop'
-            elif message.fault_bits & ~1:
-                error = f'조향 fault 0x{message.fault_bits:x}'
             elif (message.state == SteeringActuatorStatus.STATE_FAULT
                   or message.disable_reason == SteeringActuatorStatus.REASON_MOTOR_FAULT):
                 error = '조향 제어 안전 정지'
