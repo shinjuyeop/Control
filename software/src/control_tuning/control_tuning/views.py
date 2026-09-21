@@ -115,13 +115,13 @@ def _keys(editor, choosing):
     if editor.help:
         return ('L 현재값   B 기본값   X 저장값   R 조회   F 파일 다시 읽기\n'
                 '? 도움말 닫기   Q 종료')
-    return ('1–7 분류   ↑↓ 항목   Enter 수정   P 프리셋   ? 도움말   Q 종료\n'
+    return ('←→ / 1–7 분류   ↑↓ 항목   Enter 수정   P 프리셋   ? 도움말   Q 종료\n'
             'S 프리셋 저장   A 현재 적용')
 
 
 def layout(editor, runtime, width, height):
-    if width < 68 or height < 24:
-        message = 'Control Tuning\n터미널을 68열 × 24행 이상으로 넓혀 주세요.\n'
+    if width < 80 or height < 24:
+        message = 'Control Tuning\n터미널을 80열 × 24행 이상으로 넓혀 주세요.\n'
         message += ('Enter 종료 · Esc 취소' if editor.modal and editor.modal['action'] == 'quit' else 'Q 종료')
         return Text(message, style='yellow')
     choosing = editor.selecting_preset or editor.preset_condition is None
@@ -163,16 +163,14 @@ def layout(editor, runtime, width, height):
                                  '새 프리셋' if editor.presets.entry(editor.preset_condition) is None else '')
     preset_row.add_row(presets, Text(state, style='dim'))
     view['preset'].update(Padding(preset_row, (0, 1)))
-    tabs = Text()
+    tabs = Text(no_wrap=True)
     for index, label in enumerate(GROUPS):
-        if width < 132 and index != editor.group:
-            continue
-        tabs.append(f' {index + 1} {label} ',
-                    style='bold black on cyan' if not choosing and not editor.modal and index == editor.group else 'dim')
-        if index < len(GROUPS) - 1:
+        if index:
             tabs.append(' ')
-    if width < 132:
-        tabs.append('  1–7 / ←→ 분류 선택', style='dim')
+        active = index == editor.group
+        title = f'{index + 1} {label}'
+        tabs.append(f'[{title}]' if active else title,
+                    style='bold black on cyan' if active else 'white')
     view['tabs'].update(Padding(tabs, (0, 1)))
     if editor.modal:
         body = _review(editor, visible)

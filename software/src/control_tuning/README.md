@@ -13,19 +13,23 @@ ros2 run control_tuning control_tuning_tui
 코드 변경 뒤에는 `colcon build --symlink-install --packages-select control_tuning lateral_ctrl command_governor control_launch` 후 다시 `si` 한다.
 Python 의존성은 rich/PyYAML, MCAP 분석은 ROS의 rosbag2_py/numpy다.
 `--offline`은 파일 편집·저장만, `--preview`는 첫 화면 출력만 수행한다.
-68열×24행 이상, 104열에서 저장값 열, 132열에서 native 이름 열을 표시한다.
+80열×24행 이상, 104열에서 저장값 열, 132열에서 native 이름 열을 표시한다.
 
 ## 분류와 적용
 
 | 분류 | 항목 | 적용 |
 |---|---|---|
-| 1 Lateral 응답 | P/D, settle angle/rate, filter | A / S |
-| 2 Lateral 출력 | peak/sustained current, peak budget/recovery, angle margin | A / S |
-| 3 System 운용 | KEYA mode, minimum speed | S 후 조향 재시작 |
-| 4 System timeout | steering/CAN/feedback/mode/drive timeout | S 후 재시작 |
-| 5 Longitudinal PI | speed/torque, Kp/Ki, deadband/hysteresis | MANUAL 정지·무전류에서 A / S |
-| 6 Longitudinal 전류 | max current, integral limit, slew up/down, reapply band/slew, RPM cap | MANUAL 정지·무전류에서 A / S |
-| 7 Governor | command validity timeout | S 후 재시작 |
+| 1 조향응답 | P/D, 목표 도달 판정, 조향속도 필터 | A / S |
+| 2 조향출력 | 최대·지속 전류, 고출력 시간·회복, 한계각 여유 | A / S |
+| 3 구동응답 | speed/torque, 속도 Kp/Ki, deadband/hysteresis | MANUAL 정지·무전류에서 A / S |
+| 4 구동출력 | 최대 전류, 적분 상한, 전류 상승·하강·재인가, RPM 상한 | MANUAL 정지·무전류에서 A / S |
+| 5 명령검사 | 상위 주행 명령 유효시간 (Governor) | S 후 재시작 |
+| 6 운용설정 | 조향 제어 방식, 조향 허용 최소 차속 | S 후 조향 재시작 |
+| 7 수신제한 | 조향 명령·CAN·피드백·모드·차속 수신 제한 | S 후 재시작 |
+
+프리셋 선택 후 위 7개 분류가 항상 한 행에 표시된다. ←→/Tab으로 이동하거나 1–7로
+바로 선택한다. 선택된 분류는 대괄호와 강조색으로 표시한다. 전체 이름이 들어가도록
+최소 터미널 폭은 80열이다.
 
 하드웨어 연결, 조향 보정식, 제어 주기와 차량 운동 추정은 편집하지 않는다.
 Governor에는 새 ramp를 추가하지 않았다. Decision이 기존 accel/decel ramp를 담당한다.
@@ -39,15 +43,15 @@ Governor에는 새 ramp를 추가하지 않았다. Decision이 기존 accel/dece
 | ↑↓ / 휠 | 항목 선택, 검토 목록 이동 |
 | Enter, +/− | 직접 입력/선택 전환, 증감 |
 | S | 선택한 프리셋 YAML 저장 |
-| A | Longitudinal 분류에서는 STM_A 전체 config; 나머지 분류에서는 기존 조향 live 튜닝 적용 |
+| A | 구동응답·구동출력에서는 STM_A 전체 config; 나머지 분류에서는 기존 조향 live 튜닝 적용 |
 | P / 첫 항목에서 ↑ | 프리셋 선택으로 복귀 |
 | L / B / X | 현재 적용값 / 기본값 / 프리셋 저장값을 편집란으로 가져오기 |
 | R / F | 실행값 조회 / 파일 다시 읽기 |
 | ? / Q / Esc | 도움말 / 종료 / 취소 |
 
 편집·S 저장은 곧바로 차량을 변경하지 않는다. A→Enter는 선택한 제어기의 실행값을 바꾼다.
-Lateral과 Longitudinal을 하나의 atomic transaction처럼 적용하지 않는다.
-현재와 다음 실행 모두 바꾸려면 A와 S를 각각 사용한다. System/Governor는 restart 항목이다.
+조향과 구동을 하나의 atomic transaction처럼 적용하지 않는다.
+현재와 다음 실행 모두 바꾸려면 A와 S를 각각 사용한다. 명령검사·운용설정·수신제한은 재시작 항목이다.
 
 ## 두 프리셋과 schema v2
 
@@ -105,12 +109,12 @@ fsync/atomic replace, `.yaml.bak`과 외부 변경 검사를 사용한다. TUI�
 
 ## Runtime apply/readback
 
-Lateral은 기존 루트 namespace의 steering node 한 개를 대상으로 한다. Torque mode,
+조향 튜닝은 기존 루트 namespace의 steering node 한 개를 대상으로 한다. Torque mode,
 KEYA 전류 환산 기준, 최근 0.5 s 내 차량·조향 상태, MANUAL, |speed|≤0.05 m/s,
 조향 비활성을 확인하고 `SetParametersAtomically` 후 실제 값을 재조회한다.
 KEYA 내부 0020=torque 2/position 3은 별도 설정이다. steering fault 정책은 바꾸지 않는다.
 
-Longitudinal은 STM_A가 직접 MANUAL, fresh Part I/II <200 ms, |speed|≤0.05 m/s,
+구동 튜닝은 STM_A가 직접 MANUAL, fresh Part I/II <200 ms, |speed|≤0.05 m/s,
 pedal=0, |commanded current|<0.1 A, |actual phase current|≤1 A를 검사한다.
 mode 전환도 같은 gate다. request/revision 및 전체 config를 다음 Control cycle에서
 atomic commit한다. TUI는 `/drive/longitudinal_status`의 source/revision/실제 float32 값을

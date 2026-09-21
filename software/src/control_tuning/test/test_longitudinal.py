@@ -114,7 +114,7 @@ def test_ros_apply_waits_for_matching_mcu_readback(monkeypatch):
 
 
 def test_longitudinal_preset_edit_save_apply_review(editor, store):
-    editor.key('5')
+    editor.key('3')
     editor.commit('torque')
     editor.key('s')
     saved = editor.presets.load('airborne')

@@ -7,9 +7,10 @@ from rich.cells import cell_len
 
 from control_tuning.terminal import ScreenRenderer, tui_screen, ENTER_TUI, LEAVE_TUI
 from control_tuning.tui import Editor, layout
+from control_tuning.schema import GROUPS
 
 
-@pytest.mark.parametrize('width,height', [(68, 24), (80, 24), (110, 32), (140, 42)])
+@pytest.mark.parametrize('width,height', [(80, 24), (110, 32), (140, 42)])
 def test_preset_selector_is_first_and_cannot_be_skipped(store, width, height):
     editor = Editor(store)
     output = StringIO()
@@ -26,9 +27,9 @@ def test_preset_selector_is_first_and_cannot_be_skipped(store, width, height):
         text = '\n'.join(screen.display)
         assert '공중' in text and '주행' in text and '접지 정지' not in text
         if key == 'enter':
-            assert text.index('프리셋  ') < text.index('1 Lateral 응답')
+            assert text.index('프리셋  ') < text.index('1 조향응답')
         else:
-            assert all(label not in text for label in ('1 Lateral 응답', '2 Lateral 출력', '3 System 운용', '4 System timeout'))
+            assert all(label not in text for label in tuple(f'{i + 1} {label}' for i, label in enumerate(GROUPS)))
         assert '선택 안 함' not in text
         assert '가져올 값 확인' not in text
         assert '프리셋 수정 20' not in text
@@ -63,7 +64,7 @@ def test_edit_save_and_discard(store, editor):
 
 
 def test_startup_mode_and_invalid_edits(store, editor):
-    editor.key('3')
+    editor.key('6')
     editor.key('enter')
     assert editor.draft['actuation_mode'] == 'position'
     editor.key('a')
@@ -78,15 +79,17 @@ def test_startup_mode_and_invalid_edits(store, editor):
     assert store.saved['actuation_mode'] == 'torque'
 
 
-@pytest.mark.parametrize('width,height', [(68, 24), (80, 24), (110, 32), (140, 42)])
+@pytest.mark.parametrize('width,height', [(80, 24), (110, 32), (140, 42)])
 def test_terminal_navigation_scroll_and_incremental_updates(store, editor, width, height):
     output = StringIO()
     console = Console(file=output, force_terminal=True, width=width, height=height, color_system='truecolor')
     renderer = ScreenRenderer(console)
     screen = pyte.Screen(width, height)
     stream = pyte.Stream(screen)
-    for group in '1234':
-        editor.key(group)
+    for group in range(len(GROUPS)):
+        if group:
+            editor.key('right')
+        assert editor.group == group
         for _ in editor.fields:
             renderer.redraw(layout(editor, None, width, height), 0)
             stream.feed(output.getvalue())
@@ -94,6 +97,9 @@ def test_terminal_navigation_scroll_and_incremental_updates(store, editor, width
             output.truncate(0)
             text = '\n'.join(screen.display)
             assert 'CONTROL TUNING' in text
+            tabs = next(line for line in screen.display if '1 조향응답' in line)
+            assert all(f'{i + 1} {label}' in tabs for i, label in enumerate(GROUPS))
+            assert f'[{group + 1} {GROUPS[group]}]' in tabs
             assert 'A 현재 적용' in text and 'Q 종료' in text
             assert 'S 프리셋 저장' in text
             assert '오프라인' in text
@@ -103,6 +109,10 @@ def test_terminal_navigation_scroll_and_incremental_updates(store, editor, width
             renderer.redraw(layout(editor, None, width, height), 0)
             assert output.getvalue() == ''
             editor.key('down')
+    editor.key('right')
+    assert editor.group == 0
+    editor.key('left')
+    assert editor.group == len(GROUPS) - 1
     editor.key('1')
     editor.key('enter')
     renderer.redraw(layout(editor, None, width, height), 0)
@@ -145,7 +155,7 @@ def test_80_column_screen_has_aligned_units_and_details_next_to_table(store, edi
     assert '프리셋 수정 20' not in output.getvalue()
 
 
-@pytest.mark.parametrize('width,height', [(68, 24), (80, 35), (140, 32)])
+@pytest.mark.parametrize('width,height', [(80, 24), (80, 35), (140, 32)])
 def test_detailed_help_is_optional_and_preserves_editing_context(store, editor, width, height):
     output = StringIO()
     console = Console(file=output, width=width, height=height, force_terminal=True)

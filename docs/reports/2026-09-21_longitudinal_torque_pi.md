@@ -175,8 +175,9 @@ checked-in 프리셋은 **airborne/driving 둘**이며 lateral 수치는 작업 
 배치하고 mode/모든 longitudinal 값을 명시해 v2로 바꿔야 한다. checked-in 두 파일을 양식으로
 쓰되 사용자 조향값을 덮어쓰지 않는다. 접지 정지는 `stationary` 시험 annotation이며 preset이 아니다.
 
-TUI `1–7`/←→로 Lateral 응답/출력, System 운용/timeout, Longitudinal PI/전류,
-Governor를 고른다. Longitudinal 화면의 A는 종방향 전체를, Lateral의 A는 기존 조향 튜닝을
+TUI는 80열 이상에서 `1 조향응답 · 2 조향출력 · 3 구동응답 · 4 구동출력 ·
+5 명령검사 · 6 운용설정 · 7 수신제한`을 한 행에 표시하며 `1–7`/←→로 고른다.
+구동응답·구동출력의 A는 종방향 전체를, 조향응답·조향출력의 A는 기존 조향 튜닝을
 적용한다. 서로 다른 제어기를 하나의 atomic transaction처럼 표시하지 않는다.
 S는 파일 저장, A는 RAM/실행값 변경이다. System/Governor는 저장 후 restart 항목이다.
 
@@ -227,7 +228,7 @@ python3 -m control_tuning.longitudinal_analysis \
    MANUAL, pedal released, speed=0, actual/commanded current≈0에서 시작한다.
 2. 빌드된 STM_A를 식별해서 flash한 뒤 status/Part I/II와 통신 복귀만 먼저 확인한다.
    Console default speed/source DEFAULT를 확인한다.
-3. `tuning_preset:=airborne`로 구동 stack을 실행한다. TUI Longitudinal에서
+3. `tuning_preset:=airborne`로 구동 stack을 실행한다. TUI 구동응답·구동출력에서
    Torque/8 A/Kp8/Ki1/RPM300 및 HOST_OVERRIDE readback을 확인한다.
 4. Control scenario recorder로 `/drive/status`, command/brake, longitudinal status를 기록한다.
    첫 낮은 목표 0.3→0.6 m/s에서 방향·RPM·feedback·P/I·실제 current를 확인한다.
