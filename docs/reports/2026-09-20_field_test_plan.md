@@ -1,8 +1,8 @@
-# 0920 — 다음 현장 시험 할 일
+# 2026-09-20 — 다음 현장 시험 할 일
 
 **진행 순서: 조향 전원·피드백 확인 → EZkontrol 설정과 RPM 확인 → 종방향 저속 감속 비교 → 횡방향 P/D 비교 → 실제 차속별 비교.**
 
-목표는 고속 재현부터 하는 것이 아니라, 9월 19일에 확인된 **조향 저전압, 종방향 과속·감속 후 과도한 속도 하강, 조향 채터링**을 각각 분리하는 것이다. 아래 수치는 비교시험 후보이며 검증된 최종 설정이 아니다. 이 파일은 요청한 `0920` 이름으로 정리한 실행 계획이다.
+목표는 고속 재현부터 하는 것이 아니라, 9월 19일에 확인된 **조향 저전압, 종방향 과속·감속 후 과도한 속도 하강, 조향 채터링**을 각각 분리하는 것이다. 아래 수치는 비교시험 후보이며 검증된 최종 설정이 아니다. 이 문서는 2026-09-20 현장 시험을 위한 실행 계획이다.
 
 ## 1. 시작 전 확인할 준비 상태
 
@@ -188,7 +188,7 @@ Run별 메모는 아래 정도면 충분하다.
 
 ## 참고 문서
 
-- [실주행 원인 분석·조향 fault 전체 조건](CONTROL_TUNING_REGEN_FAULT_REVIEW_20260919.md)
-- [EZkontrol 감속 원인·앱 파라미터](EZKONTROL_DECEL_TUNING_20260920.md)
-- [횡방향 PD 상세 실험표·연속 게인 검토](LATERAL_PD_EXPERIMENTS_20260920.md)
-- [시나리오 러너 사용법](../software/src/vehicle_test_scenarios/README.md)
+- [실주행 원인 분석·조향 fault 전체 조건](2026-09-19_control_tuning_regen_fault_review.md)
+- [EZkontrol 감속 원인·앱 파라미터](2026-09-20_ezkontrol_decel_tuning.md)
+- [횡방향 PD 상세 실험표·연속 게인 검토](2026-09-20_lateral_pd_experiments.md)
+- [시나리오 러너 사용법](../../software/src/vehicle_test_scenarios/README.md)

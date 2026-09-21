@@ -179,7 +179,7 @@ Host current loop가 아니다. 실제 peak 지속 오차는 control tick jitter
   사용한다. KEYA fault bit가 해제되어도 차단 뒤 받은 새로운 command가 있어야 재개한다.
   `/steering/torque_safety`는 현재 Host 피드백 정지 원인을 표시하며 정상 피드백에서
   `none`으로 돌아간다. `fault_bits & ~1`과 함께 확인한다.
-  [2026-09-18 MCAP 분석](../../../docs/STEERING_FAULT_20260918.md)에 MANUAL 범위 초과가
+  [2026-09-18 MCAP 분석](../../../docs/reports/2026-09-18_steering_fault.md)에 MANUAL 범위 초과가
   다음 시험까지 남았던 원인과 수정 내용을 정리했다.
 - `/brake/status` freshness에 별도 timeout이 없는 기존 한계와 물리 E-stop 경로는
   `docs/SAFETY.md`를 따른다. KEYA의 speed/torque watchdog은 최대 1000 ms이며

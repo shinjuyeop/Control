@@ -1,4 +1,11 @@
-EZkontrol_Motor_Settings.xlsx
+# EZkontrol 설정 참고 메모
+
+이 문서는 내부 설정 항목 설명과 과거 설정 기록을 모은 메모이며 제조사 공식 매뉴얼이 아닙니다.
+본문의 “현재값”은 메모에 기록된 값으로, 지금 실기에 저장된 값으로 해석하지 않습니다.
+명시된 기록일은 아래 [2026-09-08 설정 기록](#2026-09-08-설정-기록)에 적용하며,
+날짜가 없는 설정 목록은 별도로 보존합니다.
+
+기존 메모 표제: `EZkontrol_Motor_Settings.xlsx`
 
 - 필드 설명
     1. Controller — 구동 한계와 제어 반응
@@ -705,7 +712,7 @@ EZkontrol_Motor_Settings.xlsx
         - 높임·낮춤: 읽기 전용 표시인지 교정 입력인지에 따라 달라집니다.
         - 구분: 이 화면의 0 V만으로 실제 배터리 전압이 0 V라고 판단할 수 없습니다. Monitor의 실시간 전압과 구분해야 합니다.
 
-- 20260908 값
+## 2026-09-08 설정 기록
 
     **Controller**
     Max phase current(A) : 800
@@ -845,6 +852,8 @@ EZkontrol_Motor_Settings.xlsx
     Bus current(A) : 0
     Bus voltage(V) : 0
 
+
+## 날짜 미상 설정 목록
 
 **Controller**
 Max phase current(A) : 800

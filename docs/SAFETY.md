@@ -223,7 +223,7 @@ false가 되고, traction command 송신은 계속됩니다. CAN TX 실패 시 �
 position=0020=3, torque=0020=2다. Host가 자동 변경하거나 확인하지 않는다.
 
 KEYA bit 의미·reset·Host 분류의 전체 표와 전이는
-[STEERING_AVAILABILITY.md](STEERING_AVAILABILITY.md)에 있다.
+[조향 복구 정책·구현 기록](reports/2026-09-21_steering_availability.md)에 있다.
 
 - HARD(bit2/3/7/8/11/12)는 zero/Disable 후 FAULT latch. bit clear만으로 자동 재Enable하지 않는다.
 - RECOVERABLE(bit1/4/6/9/10/14)는 zero/Disable 후 recovery hold.
@@ -418,4 +418,4 @@ Virtual LCD stale 표시는 상태 관측이며 안전 차단의 증거 또는 �
 - `/vehicle/state`가 stale subsystem status를 재발행하지 않도록 freshness를
   검증할지
 - 브레이크 서보 engage/release pulse와 700 ms ramp의 실차 캘리브레이션
-- KEYA reset별 실장치 확인과 Decision의 HARD/RECOVERING 정지 계약 (STEERING_AVAILABILITY.md 참조)
+- KEYA reset별 실장치 확인과 Decision의 HARD/RECOVERING 정지 계약 (reports/2026-09-21_steering_availability.md 참조)

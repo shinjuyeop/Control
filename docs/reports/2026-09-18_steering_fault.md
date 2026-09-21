@@ -13,7 +13,7 @@
 조건이 정상화되면 새 명령으로 자동 복구한다. E-stop·CAN 단절·KEYA 실제 fault·
 유효하지 않은 피드백 차단은 유지한다.
 아래 원인 분석과 초기 수정·검증 내역은 `c048eaa` 당시 기준이며, 현재 동작은
-[Torque 안전 동작](../software/src/lateral_ctrl/TORQUE_CONTROL.md#안전-동작)을 따른다.
+[Torque 안전 동작](../../software/src/lateral_ctrl/TORQUE_CONTROL.md#안전-동작)을 따른다.
 
 ## 근거와 확인 범위
 

@@ -6,7 +6,7 @@ Governor shaping은 포함하지 않는다.
 
 ## KEYA decode와 policy
 
-근거: [제조사 V1.1](hardware/KEYA_KY170DJD01005-08G-V1_User_Manual_V1.1.pdf)
+근거: [제조사 V1.1](../hardware/KEYA_KY170DJD01005-08G-V1_User_Manual_V1.1.pdf)
 §5.1–5.2, PDF 19–20쪽. `keyaFaultDefinitions`는 이름/reset 설명,
 `keyaFaultClass`/`KeyaRecoveryPolicy`는 Host 정책이다. 원본 16비트는
 `SteeringActuatorStatus.fault_bits`와 진단에 그대로 보존한다.
@@ -115,7 +115,7 @@ frame이 다시 release를 전달한 뒤 STM_A traction이 재허용된다. 서�
 | STM_A AUTO host | 500 ms | traction HALT, COMMAND_SPEED=0 |
 | STM_B→STM_A safety UART | 100 ms | DRIVE_STOP_REQUEST, HALT; CRC-valid 새 frame으로 복구 |
 
-[9/19 분석](CONTROL_TUNING_REGEN_FAULT_REVIEW_20260919.md)은 저전압 후 통신 단절의
+[9/19 분석](2026-09-19_control_tuning_regen_fault_review.md)은 저전압 후 통신 단절의
 근거이며 이 timeout들의 false-trip 근거가 아니다. 따라서 숫자를 늘리지 않았다.
 Host timeout과 새 recovery parameters는 startup 설정으로 가능하지만 `control_tuning`
 UI 노출은 아직 없다. 향후 수신 지터/최악 제어주기 MCAP 근거와 범위를 정한 뒤
@@ -169,9 +169,9 @@ SYSID는 HARD/RECOVERING에서 시험을 중단하며 자동으로 시험을 재
 저장소 루트 기준 30개 파일. 새 파일은 정책, 공통 brake ordering, 이 문서다.
 
 ```text
-docs/CONTROL_TUNING_REGEN_FAULT_REVIEW_20260919.md
+docs/reports/2026-09-19_control_tuning_regen_fault_review.md
 docs/SAFETY.md
-docs/STEERING_AVAILABILITY.md
+docs/reports/2026-09-21_steering_availability.md
 firmware/STM_A/Core/Src/app_freertos.c
 firmware/STM_B/Core/Src/app_freertos.c
 firmware/common/command_brake_order.h

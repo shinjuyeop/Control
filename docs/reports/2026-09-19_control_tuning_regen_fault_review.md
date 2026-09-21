@@ -5,7 +5,7 @@
 범위: 기록·현재 작업 트리·제공된 제조사 문서의 분석과 변경 제안. **제어 코드, 펌웨어, 운용 파라미터, 원본 MCAP는 변경하지 않았다. 차량 노드도 실행하지 않았다.**
 
 > 후속 구현(2026-09-21): §3의 Host mask/복구/Console 설명은 분석 당시 기록이다.
-> 현재 정책은 [STEERING_AVAILABILITY.md](STEERING_AVAILABILITY.md)와 [SAFETY.md](SAFETY.md)를 따른다. MCAP 관측 사실은 변경하지 않았다.
+> 현재 정책은 [조향 복구 정책·구현 기록](2026-09-21_steering_availability.md)와 [SAFETY.md](../SAFETY.md)를 따른다. MCAP 관측 사실은 변경하지 않았다.
 
 ## 결론과 우선순위
 
@@ -40,9 +40,9 @@
 
 ### 0.2 현재 파일과 당시 설정의 구분
 
-현재 [주행 프리셋](../software/src/control_tuning/config/control_tuning.presets/driving.yaml)은 15:29:06 저장값으로 **P=2.4, D=0.08, filter=10 Hz, peak/sustained=16/8 A, peak=1 s, recovery=5 s**다. 이 파일이 실주행 전에 저장됐다는 사실만으로 이미 실행 중이던 노드에 적용됐다고 증명할 수는 없다.
+현재 [주행 프리셋](../../software/src/control_tuning/config/control_tuning.presets/driving.yaml)은 15:29:06 저장값으로 **P=2.4, D=0.08, filter=10 Hz, peak/sustained=16/8 A, peak=1 s, recovery=5 s**다. 이 파일이 실주행 전에 저장됐다는 사실만으로 이미 실행 중이던 노드에 적용됐다고 증명할 수는 없다.
 
-[기본 actuator YAML](../software/src/lateral_ctrl/config/steering_actuator.yaml)은 프리셋과 일부 값이 다르다. 튜닝 판단의 순서는 **해당 Run의 snapshot/parameter event → 실제 readback → 저장 프리셋 → 코드 기본값**이다. 이 분석에서 live parameter read나 차량 조작은 하지 않았다.
+[기본 actuator YAML](../../software/src/lateral_ctrl/config/steering_actuator.yaml)은 프리셋과 일부 값이 다르다. 튜닝 판단의 순서는 **해당 Run의 snapshot/parameter event → 실제 readback → 저장 프리셋 → 코드 기본값**이다. 이 분석에서 live parameter read나 차량 조작은 하지 않았다.
 
 ---
 
@@ -61,7 +61,7 @@
 - `max_steering_rate_deg_s=60`은 **position 모드 전용**이다. Torque Step 채터링을 이 값으로 조절할 수 없다. Decision의 조향 명령 slew 제한은 이와 별개의 상위 기능이다.
 - 새 조향비는 현재 엔코더→등가각 보정식과 실제 응답을 기준으로 판단한다. 이전의 `100/58` 비율을 P/D에 다시 일괄 곱하는 방식은 피한다. 관성·마찰·속도·지연의 변화까지 한 비율로 설명할 수 없다.
 
-근거: [steering_actuator_node.cpp](../software/src/lateral_ctrl/src/steering_actuator_node.cpp) 622–644행, [torque_steering_controller.cpp](../software/src/lateral_ctrl/src/torque_steering_controller.cpp) 91–165행, [튜닝 단위 변환](../software/src/control_tuning/control_tuning/schema.py).
+근거: [steering_actuator_node.cpp](../../software/src/lateral_ctrl/src/steering_actuator_node.cpp) 622–644행, [torque_steering_controller.cpp](../../software/src/lateral_ctrl/src/torque_steering_controller.cpp) 91–165행, [튜닝 단위 변환](../../software/src/control_tuning/control_tuning/schema.py).
 
 ### 1.2 SYSID로 확인한 채터링과 작은 각도 지연
 
@@ -120,7 +120,7 @@ Sine 진폭비·지연은 초기 hold를 제외한 target/actual의 0.25 Hz 사�
 
 ### 1.4 6 m/s 인가 시 회전 현상: PD와 분리해서 볼 부분
 
-![6 m/s 첫 코너 응답](images/control_review_20260919/v6_first_corner.png)
+![6 m/s 첫 코너 응답](../images/control_review_20260919/v6_first_corner.png)
 
 v6 AUTO에서 최대 경로 횡오차 **1.663 m**, 최대 heading error **11.14°**, 조향 추종오차 p95 **1.52°**였다. 경로 progress는 약 5.49→473.16 m로 진행했다. 이 기록에서는 큰 보정과 방향 전환을 확인할 수 있지만 **차량이 한 바퀴 스핀했다거나 타이어가 미끄러졌다고 확정할 근거는 부족하다.**
 
@@ -148,7 +148,7 @@ v6 parameter event에서 PP adaptive lookahead `base=4.0 m`, `gain=0.9 s`, `max=
 
 진단 토픽의 `steering_feedback_guard_active`는 AUTO 535개 샘플 모두 false였다. 이번 현상을 1.5° lead guard가 계속 조향을 막았기 때문이라고 해석하지 않는다. tracking slowdown은 7개 진단 샘플에서 활성화됐다.
 
-근거: [Decision motion_control_node.py](../../Decision/kaiev26_motion_control/kaiev26_motion_control/motion_control_node.py) 590–714, 1286–1312, 1405–1442행 및 [설정](../../Decision/kaiev26_motion_control/config/motion_control.yaml). 진단·parameter events로 주요 값은 해당 Run에서도 확인했다.
+근거: [Decision motion_control_node.py](../../../Decision/kaiev26_motion_control/kaiev26_motion_control/motion_control_node.py) 590–714, 1286–1312, 1405–1442행 및 [설정](../../../Decision/kaiev26_motion_control/config/motion_control.yaml). 진단·parameter events로 주요 값은 해당 Run에서도 확인했다.
 
 ---
 
@@ -165,11 +165,11 @@ v6 parameter event에서 PP adaptive lookahead `base=4.0 m`, `gain=0.9 s`, `max=
 - governor 자체는 유효시각/입력 검사를 통과한 명령을 중계한다. 다만 **상위 Decision에는 이미 가속·감속 ramp가 있다.** 따라서 “시스템 어디에도 ramp가 없다”거나 governor에 중복 ramp를 넣는 것이 첫 해결책이라는 설명은 맞지 않는다.
 - `/drive/status.controller_control_mode=1`은 분석한 AUTO 주행에서 일관됐다. 앱의 과거 Torque control 표시와 구분해야 한다.
 
-근거: [STM_A app_freertos.c](../firmware/STM_A/Core/Src/app_freertos.c) 71–78, 370–436, 1201–1239행; [command_governor_node.cpp](../software/src/command_governor/src/command_governor_node.cpp) 80–109행.
+근거: [STM_A app_freertos.c](../../firmware/STM_A/Core/Src/app_freertos.c) 71–78, 370–436, 1201–1239행; [command_governor_node.cpp](../../software/src/command_governor/src/command_governor_node.cpp) 80–109행.
 
 ### 2.2 실제 관측: 단순 감속 지연을 넘는 현상이 있다
 
-![종방향 첫 감속](images/control_review_20260919/v6_deceleration.png)
+![종방향 첫 감속](../images/control_review_20260919/v6_deceleration.png)
 
 | 현상 | 기록 근거 | 해석 |
 |---|---|---|
@@ -200,9 +200,9 @@ v6 parameter event에서 PP adaptive lookahead `base=4.0 m`, `gain=0.9 s`, `max=
 
 ### 2.4 종방향 파라미터 조정 가이드라인
 
-2026-09-20 추가 확인: [EZkontrol 감속 추종과 내부 파라미터 비교안](EZKONTROL_DECEL_TUNING_20260920.md)에 앱에서 조정할 항목, 공개 설정표의 범위, 조건부 Ki 16→14→12 비교안을 정리했다. 현재 실기 readback을 수행하거나 설정을 적용한 것은 아니다.
+2026-09-20 추가 확인: [EZkontrol 감속 추종과 내부 파라미터 비교안](2026-09-20_ezkontrol_decel_tuning.md)에 앱에서 조정할 항목, 공개 설정표의 범위, 조건부 Ki 16→14→12 비교안을 정리했다. 현재 실기 readback을 수행하거나 설정을 적용한 것은 아니다.
 
-[MotorControlleer](MotorController/MotorControlleer)의 708행 이후는 **20260908 설정 기록**이다. Rotor speed Kp/Ki=2/16, Phase current Kp/Ki=4/512, Bus current Kp/Ki=4/256, Acceleration/Deceleration=100/100, EBS current=0, EBS auto=Disable이 적혀 있다. **오늘 드라이버에서 읽은 값으로 취급하지 않는다.**
+[EZkontrol 설정 기록](../hardware/EZKONTROL_SETTINGS_NOTES.md#2026-09-08-설정-기록)의 해당 절은 **20260908 설정 기록**이다. Rotor speed Kp/Ki=2/16, Phase current Kp/Ki=4/512, Bus current Kp/Ki=4/256, Acceleration/Deceleration=100/100, EBS current=0, EBS auto=Disable이 적혀 있다. **오늘 드라이버에서 읽은 값으로 취급하지 않는다.**
 
 | 항목 | 권장 비교 방향 | 이유/제약 |
 |---|---|---|
@@ -232,19 +232,19 @@ v6 parameter event에서 PP adaptive lookahead `base=4.0 m`, `gain=0.9 s`, `max=
 
 | 문서 | 명시된 내용 | 설계상 의미 |
 |---|---|---|
-| [EZkontrol CANBUS MCU to VCU V1.0.pdf](<MotorController/EZkontrol CANBUS MCU to VCU V1.0.pdf>), PDF 3쪽 | byte4 bit1: 0=Torque, 1=Speed; current/RPM target; 주기 50 ms | 현재 STM_A의 mode bit 사용 근거 |
-| [EZKontrol-Controllers-CAN-Protocols.pdf](MotorController/EZKontrol-Controllers-CAN-Protocols.pdf), PDF 5쪽 | current target+speed limit / speed target+current limit, mode bit1 변경 불필요 설명 | 펌웨어 버전별 계약 확인 필요 |
+| [EZkontrol CANBUS MCU to VCU V1.0.pdf](<../hardware/GoldenMotor_EZkontrol_MCU_to_VCU_CAN_Protocol_V1.0.pdf>), PDF 3쪽 | byte4 bit1: 0=Torque, 1=Speed; current/RPM target; 주기 50 ms | 현재 STM_A의 mode bit 사용 근거 |
+| [GoldenMotor_EZkontrol_CAN_Protocol_Instruction_V1.0.pdf](../hardware/GoldenMotor_EZkontrol_CAN_Protocol_Instruction_V1.0.pdf), PDF 5쪽 | current target+speed limit / speed target+current limit, mode bit1 변경 불필요 설명 | 펌웨어 버전별 계약 확인 필요 |
 | 같은 PDF 5쪽 | 정상 forward +/+, reverse −/− 예시; current/RPM 부호 일치 설명 | **양RPM+음전류=회생이라는 4사분면 명령 계약을 확정하지 못함** |
 
 signed current 필드가 있다는 사실만으로 원하는 회생 CAN 명령이 확인된 것은 아니다. 특히 음의 `speed_target_mps`는 현재 코드에서 후진 목표이므로 회생 대신 사용하면 안 된다.
 
 #### 구현 후보
 
-- **A. 드라이버 EBS 입력 사용:** [EZkontrol Users Manual](<MotorController/EZkontrol Users Manual.pdf>) PDF 9쪽의 BrakeH+/BrakeH−/BrakeL 입력을 확인하고, 실제 배선·trigger·CAN 동시운전·회생 종료조건을 검증한다. 현재 STM_A에서 해당 입력을 직접 제어하는 경로는 찾지 못했으며 실제 배선 여부는 소스만으로 확정할 수 없다. EBS auto Enable 하나로 AUTO 정상감속 제어가 완성되지는 않는다.
+- **A. 드라이버 EBS 입력 사용:** [EZkontrol Users Manual](<../hardware/GoldenMotor_EZkontrol_User_Manual.pdf>) PDF 9쪽의 BrakeH+/BrakeH−/BrakeL 입력을 확인하고, 실제 배선·trigger·CAN 동시운전·회생 종료조건을 검증한다. 현재 STM_A에서 해당 입력을 직접 제어하는 경로는 찾지 못했으며 실제 배선 여부는 소스만으로 확정할 수 없다. EBS auto Enable 하나로 AUTO 정상감속 제어가 완성되지는 않는다.
 - **B. CAN 전류명령 기반 외부 속도제어:** 실제 firmware에서 회전 반대 torque/회생 계약이 확인된 경우, speed PI가 구동·회생 current를 요청하도록 설계한다. 요청 토크와 배터리 충전 허용량을 구분하고 전압·SOC·온도·저속 조건으로 제한한다.
 - **공통:** 회생이 제한되는 상황에서도 필요한 감속을 달성할 기계 브레이크 중재가 필요하다. 현재 bool 브레이크로 어느 정도 연속 감속 제어가 가능한지는 별도 제약이다.
 
-현재 [ActuatorCommand.msg](../../kaiev26_msgs/msg/ActuatorCommand.msg)는 speed/steering/bool brake만 있다. 구현 위치에 따라 두 가지 변경 범위가 가능하다.
+현재 [ActuatorCommand.msg](../../../kaiev26_msgs/msg/ActuatorCommand.msg)는 speed/steering/bool brake만 있다. 구현 위치에 따라 두 가지 변경 범위가 가능하다.
 
 1. 기존 speed 명령을 유지하고 **STM_A 안에 외부 speed→current 루프**를 구현하면, 반드시 새 torque 명령 필드를 만들 필요는 없다. 대신 feedback 품질, current 제한, 모드 전환, 상태 관측 계약을 설계해야 한다.
 2. **Host가 torque/감속도를 직접 요청**하려면 새 명령 필드나 별도 계약이 필요하다. 이 경우 `kaiev26_msgs`·발행자·governor·STM_A 소비자와 STM_A/B generated micro-ROS 산출물의 호환 rollout을 함께 다룬다.
@@ -253,14 +253,14 @@ signed current 필드가 있다는 사실만으로 원하는 회생 CAN 명령�
 
 #### 전기적 한도와 실제 회생 확인
 
-- `MotorControlleer`의 EBS 0 A / auto Disable은 9월 8일 기록이다. 오늘 AUTO의 음의 bus current와 함께 보면, 그것만으로 오늘 회생 비활성을 단정할 수 없다.
-- 제공 문서가 참조하는 [51.8V 78Ah 팩 사양서](<hardware/51.8V78Ah(14S30P)더블류웍스향배터리팩사양서.pdf>) PDF 6쪽은 최대 연속 충전 **39 A**, 충전 정지 **58.8 V**, 충전 온도 **0~45°C**를 제시한다. **실차가 이 팩과 같은 구성일 때만 적용**하며, BMS의 순간 충전허용량은 별도 확인해야 한다.
+- 설정 메모의 EBS 0 A / auto Disable은 9월 8일 기록이다. 오늘 AUTO의 음의 bus current와 함께 보면, 그것만으로 오늘 회생 비활성을 단정할 수 없다.
+- 제공 문서가 참조하는 [51.8V 78Ah 팩 사양서](<../hardware/51.8V78Ah(14S30P)더블류웍스향배터리팩사양서.pdf>) PDF 6쪽은 최대 연속 충전 **39 A**, 충전 정지 **58.8 V**, 충전 온도 **0~45°C**를 제시한다. **실차가 이 팩과 같은 구성일 때만 적용**하며, BMS의 순간 충전허용량은 별도 확인해야 한다.
 - PDF 7쪽의 100 A/1초 보호 검출값은 정상 충전 운전값이 아니다. EBS 설정전류와 DC 충전전류의 관계가 확인되지 않아 `EBS current=39 A`로 그대로 옮길 수 없다.
 - 기록의 −310 A는 부호와 크기를 독립 검증할 필요가 있는 **컨트롤러 보고값**이다. 같은 팩에 실제로 이 수준이 지속된다면 허용 충전량을 크게 벗어날 수 있으므로, 원인 확인 전 회생 강도를 높이는 근거로 사용하지 않는다. 신호의 진위·지속시간·실제 BMS 제한은 아직 확인되지 않았다.
 - 회생 충전은 검증된 부호의 DC 전류, 배터리/BMS 전류, DC 전압, 회전수·감속을 함께 확인한다. 음의 phase current만으로 충전이나 회수에너지를 확정하지 않는다.
 - 9월 8일 기록의 75 V overvoltage shutdown은 이 14S 팩의 회생 충전 보호값으로 사용할 수 없다. 과거 EBS max=58 V 역시 현재 장치 readback이나 적정값 검증을 대신하지 못한다.
 
-표시기용 [MCU to METER V1.1](<MotorController/EZkontrol CANBUS MCU to METER V1.1.pdf>) PDF 3–4쪽과 [新思维-高标100513.pdf](MotorController/新思维-高标100513.pdf) 1–2쪽은 표시·상태 전송 자료다. 회생 torque 명령의 근거로 쓰지 않았다.
+표시기용 [MCU to METER V1.1](<../hardware/GoldenMotor_EZkontrol_MCU_to_Meter_CAN_Protocol_V1.1.pdf>) PDF 3–4쪽과 [新思维-高标100513.pdf](../hardware/新思维-高标100513.pdf) 1–2쪽은 표시·상태 전송 자료다. 회생 torque 명령의 근거로 쓰지 않았다.
 
 ---
 
@@ -268,7 +268,7 @@ signed current 필드가 있다는 사실만으로 원하는 회생 CAN 명령�
 
 ### 3.1 이번 실주행에서 실제로 발생한 fault
 
-![KEYA 저전압과 통신 단절 순서](images/control_review_20260919/v4_undervoltage.png)
+![KEYA 저전압과 통신 단절 순서](../images/control_review_20260919/v4_undervoltage.png)
 
 대상: `20260919_155517_534099_decision_case_01_pure_pursuit_v4`.
 
@@ -291,11 +291,11 @@ signed current 필드가 있다는 사실만으로 원하는 회생 CAN 명령�
 
 일반 우선순위: **E-stop → CAN timeout → KEYA fault → command brake → feedback invalid → mode 문제 → command timeout**. 다만 callback 등의 `requested_disable_reason_`가 설정된 tick은 그 요청이 우선하므로 위 이벤트처럼 잠시 BRAKE가 보일 수 있다.
 
-근거: [steering_actuator_node.cpp](../software/src/lateral_ctrl/src/steering_actuator_node.cpp) 576–585행, [steering_types.hpp](../software/src/lateral_ctrl/include/lateral_ctrl/steering_types.hpp) 62–90행.
+근거: [steering_actuator_node.cpp](../../software/src/lateral_ctrl/src/steering_actuator_node.cpp) 576–585행, [steering_types.hpp](../../software/src/lateral_ctrl/include/lateral_ctrl/steering_types.hpp) 62–90행.
 
 ### 3.3 하드웨어/KEYA 내부 보호 비트 전체
 
-근거: [KEYA User Manual V1.1](hardware/KEYA_KY170DJD01005-08G-V1_User_Manual_V1.1.pdf), §5.1–5.2, **PDF 19–20쪽**. 아래 reset 표현은 §5.2 표 기준이며 일부 항목은 §5.1 설명과 표현 차이가 있다. 장치 firmware별 실제 복구 동작은 미검증이다.
+근거: [KEYA User Manual V1.1](../hardware/KEYA_KY170DJD01005-08G-V1_User_Manual_V1.1.pdf), §5.1–5.2, **PDF 19–20쪽**. 아래 reset 표현은 §5.2 표 기준이며 일부 항목은 §5.1 설명과 표현 차이가 있다. 장치 firmware별 실제 복구 동작은 미검증이다.
 
 | Bit | Mask | KEYA가 보고하는 상태 | Host FAULT 포함 | 매뉴얼 reset 표기 |
 |---|---:|---|---|---|
@@ -344,7 +344,7 @@ signed current 필드가 있다는 사실만으로 원하는 회생 CAN 명령�
 
 Host feedback stop은 zero→Disable하고 과거 명령·제어이력을 버린다. 정상 피드백과 차단 뒤 수신한 유효한 새 명령, AUTO 및 나머지 조건이 충족되면 복귀한다. **새 명령은 반드시 복구 후에 수신된 것일 필요는 없고, 차단 후 수신해 복구 시점에도 fresh한 pending 명령일 수 있다.**
 
-근거: [node](../software/src/lateral_ctrl/src/steering_actuator_node.cpp) 231–241, 295–336, 371–484, 499–666행 및 [torque controller](../software/src/lateral_ctrl/src/torque_steering_controller.cpp) 58–88, 107–139행.
+근거: [node](../../software/src/lateral_ctrl/src/steering_actuator_node.cpp) 231–241, 295–336, 371–484, 499–666행 및 [torque controller](../../software/src/lateral_ctrl/src/torque_steering_controller.cpp) 58–88, 107–139행.
 
 ### 3.5 제거된 조건, 표시의 한계, 하드웨어 복구의 한계
 
@@ -358,7 +358,7 @@ Host feedback stop은 zero→Disable하고 과거 명령·제어이력을 버린
 - Host latch 제거는 **KEYA 내부 고장 reset까지 자동화했다는 뜻이 아니다.** 전원/Disable/Enable reset이 필요한 고장이 있다. 특히 bit14/15를 장치가 Enable까지 유지한다면 Host는 fault 때문에 Enable을 못 보내는 순환 조건이 가능하다. 실제 장치에서 이 조건이 발생했다고 확인한 것은 아니다.
 - SYSID는 state8/고장 비트와 CAN·feedback 이상을 각각 중단 조건으로 사용한다. **현재 Decision readiness는 CAN·feedback 이상·E-stop 등을 검사하지만 state8/고장 비트를 직접 검사하지 않는다.** 이번 v4에서 KEYA fault 발생 직후가 아니라 feedback invalid 이후 BLOCKED된 순서와도 일치한다. 이는 상위 소비자에 남은 별도 확인 사항이며 이번에는 수정하지 않았다. 화면에서 시험이 중단됐다는 사실만으로 Host FAULT로 판정하지 않는다.
 
-근거: [keya_can_driver.cpp](../software/src/lateral_ctrl/src/keya_can_driver.cpp) 41행 이후, [auto_dashboard_summary.py](../software/src/vehicle_state_publisher/vehicle_state_publisher/auto_dashboard_summary.py) 246행 이후, [sysid_runtime.py](../software/src/vehicle_test_scenarios/vehicle_test_scenarios/sysid_runtime.py) 189행 이후, [Decision readiness](../../Decision/kaiev26_decision/kaiev26_decision/test_readiness.py) 312–329행.
+근거: [keya_can_driver.cpp](../../software/src/lateral_ctrl/src/keya_can_driver.cpp) 41행 이후, [auto_dashboard_summary.py](../../software/src/vehicle_state_publisher/vehicle_state_publisher/auto_dashboard_summary.py) 246행 이후, [sysid_runtime.py](../../software/src/vehicle_test_scenarios/vehicle_test_scenarios/sysid_runtime.py) 189행 이후, [Decision readiness](../../../Decision/kaiev26_decision/kaiev26_decision/test_readiness.py) 312–329행.
 
 ---
 

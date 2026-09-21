@@ -16,7 +16,7 @@
 | 같은 감속 구간 | EZ 상태는 speed mode, 전류 제한 명령은 480 A 유지; 실제 bus current는 음수 구간도 존재 | Host의 480 A는 한도이며 실제 전류가 아님. 회생이 전혀 없다고 단정할 수 없음 |
 | 후속 감속 16:08:41.478 | RPM 환산속도 12.46 m/s, 직전 GNSS 약 6.14 m/s | 보고 RPM과 차체 운동이 크게 불일치. 12.46 m/s를 실제 차속으로 해석하면 안 됨 |
 
-![첫 감속의 속도와 전류](images/control_review_20260919/v6_deceleration.png)
+![첫 감속의 속도와 전류](../images/control_review_20260919/v6_deceleration.png)
 
 낮아진 목표보다 잠깐 빠른 것은 정상적인 감속시간 때문일 수도 있다. 이번에는 **목표를 통과한 뒤 과하게 느려지고 다시 회복하는 현상**이 있으므로, 단순히 제동력이 부족하거나 타력 감속이 느린 문제만으로 보기는 어렵다.
 
@@ -26,7 +26,7 @@
 
 AUTO에서는 `목표 m/s → STM_A 목표 motor RPM + phase-current limit → EZ 내부 속도제어`로 동작한다. STM_A는 50 ms마다 목표를 전송하고, 직접적인 Host 속도 PI를 계산하지 않는다. 상위 Decision에는 가속 1 m/s²·감속 2 m/s²의 명령 ramp가 이미 있다. 실제 차량이 그 감속도를 달성하도록 보장하는 기능은 아니다.
 
-근거: [STM_A](../firmware/STM_A/Core/Src/app_freertos.c) 370–436행, [Decision ramp](../../Decision/kaiev26_motion_control/kaiev26_motion_control/motion_control_node.py) 1432–1442행. 기록에서도 `/drive/status.controller_control_mode=1`을 확인했다.
+근거: [STM_A](../../firmware/STM_A/Core/Src/app_freertos.c) 370–436행, [Decision ramp](../../../Decision/kaiev26_motion_control/kaiev26_motion_control/motion_control_node.py) 1432–1442행. 기록에서도 `/drive/status.controller_control_mode=1`을 확인했다.
 
 ### 원인 후보
 
@@ -40,7 +40,7 @@ AUTO에서는 `목표 m/s → STM_A 목표 motor RPM + phase-current limit → E
 
 ## 3. EZkontrol 앱에서 조정/확인할 항목
 
-아래 기록값은 [MotorControlleer](MotorController/MotorControlleer) 708행 이후의 **2026-09-08 운영 기록**이다. 지금 실기에 저장된 값이나 제조사 권장값이 아니다. 앱 readback을 먼저 저장하고 그 값과 비교한다.
+아래 기록값은 [EZkontrol 설정 기록](../hardware/EZKONTROL_SETTINGS_NOTES.md#2026-09-08-설정-기록)에 남아 있는 **2026-09-08 운영 기록**이다. 지금 실기에 저장된 값이나 제조사 권장값이 아니다. 앱 readback을 먼저 저장하고 그 값과 비교한다.
 
 | 항목 | 9월 8일 기록 | 역할 / 이번 판단 |
 |---|---:|---|

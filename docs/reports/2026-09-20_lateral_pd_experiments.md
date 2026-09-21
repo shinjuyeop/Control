@@ -2,7 +2,7 @@
 
 **첫 비교는 P=2.4/D=0.08을 기준으로 P만 2.0으로 낮추는 시험이다. D=0.06은 그다음에 같은 P에서 비교한다.** 속도에 따라 P/D를 연속적으로 바꾸는 구조는 가능하지만, 현재 기록으로 속도별 최적 게인이나 감소율을 확정할 수 없다. 먼저 고정 게인으로 채터링·작은 각도 지연을 분리하고, 같은 실제 차속에서 얻은 결과로 연속 함수를 정한다.
 
-이 문서는 시험 제안이다. 제어 코드·프리셋·실행 파라미터를 변경하거나 차량 시험을 수행하지 않았다. 기존 분석은 [2026-09-19 실주행 제어 분석](CONTROL_TUNING_REGEN_FAULT_REVIEW_20260919.md)을 따른다. 아래 TUI 이름과 적용 동작은 현재 작업 트리의 소스로 확인했다.
+이 문서는 시험 제안이다. 제어 코드·프리셋·실행 파라미터를 변경하거나 차량 시험을 수행하지 않았다. 기존 분석은 [2026-09-19 실주행 제어 분석](2026-09-19_control_tuning_regen_fault_review.md)을 따른다. 아래 TUI 이름과 적용 동작은 현재 작업 트리의 소스로 확인했다.
 
 ## 1. 이번 제안의 근거와 한계
 
@@ -16,7 +16,7 @@
 
 오후 14개 Run은 **D가 모두 0.08**이었다. D=0.06이 더 좋다는 측정 결과는 아직 없다. P=2.0도 새 비교 후보다. 위 각도는 KEYA 엔코더를 보정식으로 환산한 중앙등가 조향각이며 독립적인 타이어각 측정은 아니다.
 
-현재 저장된 [주행 프리셋](../software/src/control_tuning/config/control_tuning.presets/driving.yaml)은 P=2.4/D=0.08이다. 예선 실주행 MCAP에는 당시 조향 게인 snapshot과 해당 parameter event가 없어, 이 저장값을 예선 주행 당시 적용값으로 확정할 수 없다. 새 Run에서는 `control_parameters.yaml`의 실행 노드 readback을 기준으로 삼는다.
+현재 저장된 [주행 프리셋](../../software/src/control_tuning/config/control_tuning.presets/driving.yaml)은 P=2.4/D=0.08이다. 예선 실주행 MCAP에는 당시 조향 게인 snapshot과 해당 parameter event가 없어, 이 저장값을 예선 주행 당시 적용값으로 확정할 수 없다. 새 Run에서는 `control_parameters.yaml`의 실행 노드 readback을 기준으로 삼는다.
 
 **오후 SYSID의 5–7 km/h와 예선의 6 m/s는 다르다. 6 m/s는 21.6 km/h다.** 예선 6 m/s 명령 기록에는 GNSS 약 8.14 m/s까지의 속도 초과와 코너 전 조향 목표 반전이 있었다. 이 현상을 조향 PD만으로 해결하려고 고속 게인을 크게 낮추거나 큰 Step을 넣지 않는다. 실제 감속과 코너 진입속도 문제를 먼저 분리한다.
 
@@ -72,7 +72,7 @@ D를 낮췄을 때 overshoot가 커지는 것은 D가 필요하다는 증거다.
 
 **종방향 제어 방식도 PD 비교 중에는 고정한다.** 검토 중인 `감속 방식` 선택 항목과 `기존 속도제어`/`타력 감속` 값은 아직 이 문서 작성 시점의 구현·적용 사실로 취급하지 않는다. 타력 전환이 목표 하강 때만인지, 실제속도가 목표 이상인 동안 계속인지도 별도 확정이 필요하다. 아래 A/B/C 시험 도중 PD와 감속 방식을 함께 바꾸지 않는다.
 
-적용은 Run 사이에 **MANUAL·정지·조향 비활성 상태**에서 `A → 검토 → Enter`로 한다. TUI의 `현재 적용값`에서 반영을 확인한 뒤 다음 Run을 시작한다. 이는 현행 [TUI 적용 조건](../software/src/control_tuning/control_tuning/runtime.py)의 동작이다. `S`는 선택한 프리셋 저장이며 실행 중 노드에는 적용하지 않는다. 다음 launch에도 유지할 선정값만 `S`로 저장한다.
+적용은 Run 사이에 **MANUAL·정지·조향 비활성 상태**에서 `A → 검토 → Enter`로 한다. TUI의 `현재 적용값`에서 반영을 확인한 뒤 다음 Run을 시작한다. 이는 현행 [TUI 적용 조건](../../software/src/control_tuning/control_tuning/runtime.py)의 동작이다. `S`는 선택한 프리셋 저장이며 실행 중 노드에는 적용하지 않는다. 다음 launch에도 유지할 선정값만 `S`로 저장한다.
 
 ## 4. 시나리오 TUI의 정확한 입력표
 
@@ -190,10 +190,10 @@ enterWaitCommand()
 
 ## 7. 확인한 소스
 
-- [TUI 필드와 전류 단위 변환](../software/src/control_tuning/control_tuning/schema.py): 화면 표시명, P/D 변환, 고출력·settle 설정.
-- [TUI 사용 및 적용/저장 동작](../software/src/control_tuning/README.md), [런타임 적용 조건](../software/src/control_tuning/control_tuning/runtime.py).
-- [시나리오 카탈로그](../software/src/vehicle_test_scenarios/vehicle_test_scenarios/sysid_profiles.py): 정확한 시험·필드 이름과 `예상 입력시간` 계산.
-- [시나리오 파형](../software/src/vehicle_test_scenarios/vehicle_test_scenarios/scenario_runner.py): Step 4구간, Sine 주기, 초기 hold와 유한 반복 종료.
-- [시나리오 운용](../software/src/vehicle_test_scenarios/README.md): 정속 준비 timeout 후 진행, 녹화와 제어 파라미터 snapshot.
-- [조향 노드](../software/src/lateral_ctrl/src/steering_actuator_node.cpp): `onParameters`, `stopMotor`, `enterWaitCommand`, `onDriveStatus`, Torque 경로의 `target_rate=0`.
-- [Torque 제어기](../software/src/lateral_ctrl/src/torque_steering_controller.cpp): PD, 각속도 필터, peak budget 보존과 reset 의미.
+- [TUI 필드와 전류 단위 변환](../../software/src/control_tuning/control_tuning/schema.py): 화면 표시명, P/D 변환, 고출력·settle 설정.
+- [TUI 사용 및 적용/저장 동작](../../software/src/control_tuning/README.md), [런타임 적용 조건](../../software/src/control_tuning/control_tuning/runtime.py).
+- [시나리오 카탈로그](../../software/src/vehicle_test_scenarios/vehicle_test_scenarios/sysid_profiles.py): 정확한 시험·필드 이름과 `예상 입력시간` 계산.
+- [시나리오 파형](../../software/src/vehicle_test_scenarios/vehicle_test_scenarios/scenario_runner.py): Step 4구간, Sine 주기, 초기 hold와 유한 반복 종료.
+- [시나리오 운용](../../software/src/vehicle_test_scenarios/README.md): 정속 준비 timeout 후 진행, 녹화와 제어 파라미터 snapshot.
+- [조향 노드](../../software/src/lateral_ctrl/src/steering_actuator_node.cpp): `onParameters`, `stopMotor`, `enterWaitCommand`, `onDriveStatus`, Torque 경로의 `target_rate=0`.
+- [Torque 제어기](../../software/src/lateral_ctrl/src/torque_steering_controller.cpp): PD, 각속도 필터, peak budget 보존과 reset 의미.
