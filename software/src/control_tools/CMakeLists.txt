@@ -21,7 +21,8 @@ ament_target_dependencies(steering_bench_test_node rclcpp rcl_interfaces std_msg
 install(TARGETS deadzone_measure_node steering_bench_test_node DESTINATION lib/${PROJECT_NAME})
 install(PROGRAMS scripts/mcap_to_csv.py scripts/torque_sysid_metrics.py
   scripts/record_mcap scripts/longitudinal_analysis DESTINATION lib/${PROJECT_NAME})
-install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME}
+  PATTERN "__pycache__" EXCLUDE)
 install(FILES README.md LOGGING.md DEADZONE_MEASUREMENT.md DESTINATION share/${PROJECT_NAME})
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)

@@ -43,7 +43,8 @@ install(TARGETS steering_core steering_node steering_actuator_node
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 install(DIRECTORY include/ DESTINATION include)
-install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME}
+  PATTERN "__pycache__" EXCLUDE)
 install(FILES README.md TORQUE_CONTROL.md DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
