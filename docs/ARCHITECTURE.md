@@ -12,66 +12,74 @@
 
 ## 2. 전체 시스템 구성
 
-공통 Host 설정 UI는 `software/src/control_tuning`이다. 기존 노드의 파라미터를 읽고,
-MANUAL·정지 상태에서 torque 튜닝을 atomic 적용한다. 사용자 override YAML은 실차 및
-조향·거버너 단독 launch에서 읽는다. 운용·timeout 변경은 저장 후 재시작한다.
-주행 command 발행은 하지 않으며 시나리오 입력 편집은 `vehicle_test_scenarios`에 둔다.
-[파라미터 TUI 계약](../software/src/control_tuning/README.md)을 참고한다.
+전체 흐름은 **Host 명령 → 구동·제동·조향 → 상태 통합**과
+**LV 배터리 계측 → STM_B → 계기판·ROS**로 나뉩니다.
+아래 그림은 실차 연결의 개요이며, ROS 토픽과 HIL 정비 경로는 뒤의 상세 그림에서 설명합니다.
 
 ```mermaid
-flowchart LR
-    Planning["Planning / Motion Control<br/>(별도 상위 패키지)"]
-    PlanCmd["/planning/command"]
-    Governor["command_governor<br/>정합성 게이트 · 재발행"]
-    Command["/vehicle/command"]
-
-    subgraph Consumers["Command Consumers"]
-        direction TB
-        STMA["STM_A<br/>차량 입력 · 구동"]
-        STMB["STM_B<br/>E-stop · 브레이크"]
-        Steering["lateral_ctrl<br/>조향"]
+flowchart TB
+    subgraph Host["Host / Control PC · ROS 2"]
+        Planning["Planning / 시험 시나리오"]
+        Governor["command_governor"]
+        Steering["lateral_ctrl"]
+        Observe["상태 통합 · 진단<br/>Console / Foxglove"]
+        Planning -->|"/planning/command"| Governor
+        Governor -->|"/vehicle/command"| Steering
     end
 
-    Drive["EZkontrol<br/>구동 모터"]
-    Keya["KEYA<br/>조향 모터"]
-    Estop["Dashboard / Side / RF<br/>E-stop"]
-    Servo["브레이크 서보"]
-    Fusion["vehicle_state_publisher_node"]
-    State["/vehicle/state"]
-    WheelTwist["/vehicle/wheel_twist"]
-    Diagnostics["diagnostics_publisher"]
-    DiagnosticTopic["/diagnostics"]
-    UNO["Arduino UNO R4 Minima<br/>Dashboard HMI"]
-    LCD["MSP4030 / MSP4031<br/>ST7796S 480×320 LCD"]
-    Touch["FT6336U<br/>capacitive touch"]
-    HilConsole["vehicle_console<br/>HIL profile"]
+    subgraph Control["차량 제어 · STM32G474"]
+        A["STM_A<br/>모드 · 기어 · 페달 / 구동"]
+        B["STM_B<br/>E-stop · 브레이크 / 표시 중계"]
+        A <-->|"USART1 · 차량 / 안전 상태"| B
+    end
 
-    Planning --> PlanCmd
-    PlanCmd --> Governor
-    Governor --> Command
-    Command --> STMA
-    Command --> STMB
-    Command --> Steering
-    STMA <-->|"USART1<br/>vehicle / safety status"| STMB
-    STMA <-->|"FDCAN1"| Drive
-    Steering <-->|"SocketCAN"| Keya
-    Estop --> STMB
-    STMB --> Servo
-    STMA -->|"/drive/status"| Fusion
-    STMB -->|"/brake/status"| Fusion
-    Steering -->|"/steering/status"| Fusion
-    Fusion --> State
-    Fusion --> WheelTwist
-    STMA -.->|"/drive/status"| Diagnostics
-    STMB -.->|"/brake/status"| Diagnostics
-    Steering -.->|"/steering/status"| Diagnostics
-    Diagnostics --> DiagnosticTopic
-    STMB -->|"Dashboard CAN<br/>250 kbit/s · 0x321–0x328"| UNO
-    UNO -->|"SPI"| LCD
-    Touch -->|"I2C 0x38<br/>20 ms polling"| UNO
-    HilConsole -.->|"HIL-only USB Serial 115200<br/>VT D/M/U/C"| UNO
-    UNO -.->|"HIL_LCD report<br/>Virtual LCD mirror"| HilConsole
+    subgraph Outputs["액추에이터"]
+        EZ["EZkontrol · 구동 모터"]
+        Brake["브레이크 서보"]
+        KEYA["KEYA · 조향 모터"]
+    end
+
+    subgraph Meter["독립 계측 · HMI"]
+        INA["LV 배터리 션트 / INA228"]
+        RP["XIAO RP2350<br/>전압 · 전류 · Ah/Wh · SOC / 저장"]
+        UNO["UNO R4 Dashboard<br/>ST7796S LCD · FT6336U touch"]
+        INA -->|"I2C"| RP
+    end
+
+    EStop["Dashboard / Side / RF<br/>물리 E-stop"] --> B
+    Governor -->|"/vehicle/command"| A
+    Governor -->|"/vehicle/command"| B
+    A <-->|"FDCAN1"| EZ
+    B -->|"PWM"| Brake
+    Steering <-->|"SocketCAN"| KEYA
+    A -->|"/drive/status"| Observe
+    B -->|"/brake/status · LV 상태"| Observe
+    Steering -->|"/steering/status"| Observe
+    RP <-->|"UART0 ↔ UART4<br/>115200 · 상태 / 정비"| B
+    B -->|"Dashboard CAN · 250 kbit/s"| UNO
+
+    classDef host fill:#e8f1ff,stroke:#3567a0,color:#142b45
+    classDef controller fill:#fff0d9,stroke:#ad7020,color:#49300c
+    classDef peripheral fill:#e6f5ed,stroke:#35815a,color:#163e29
+    class Planning,Governor,Steering,Observe host
+    class A,B controller
+    class INA,RP,UNO,EZ,Brake,KEYA peripheral
 ```
+
+| 경로 | 담당 | Host / ROS 의존성 |
+|---|---|---|
+| AUTO 명령 | Planning → Governor → STM_A·STM_B·조향 | Host 명령과 상태 필요 |
+| MANUAL 구동 | 물리 페달·기어 → STM_A → EZkontrol | 물리 입력 경로는 ROS와 독립 |
+| 물리 E-stop | E-stop → STM_B → 서보·STM_A safety UART | ROS와 독립 |
+| LV 계측·적산·저장 | INA228 → RP2350 | PC·STM_B 연결 없이 수행 |
+| native 계기판·LV 표시 | STM_A / RP2350 → STM_B → UNO | ROS와 독립 |
+| AUTO 상세 표시 | Host 요약 → STM_B → UNO | `/dashboard/auto_status` 필요 |
+
+공통 설정 TUI `control_tuning`은 실행값 조회와 프리셋 편집·저장을 담당합니다.
+`S`로 저장한 뒤 같은 프리셋으로 구동 스택을 재시작하면 반영됩니다.
+TUI는 실행 중 제어값이나 주행 명령을 발행하지 않습니다.
+시나리오 입력은 `vehicle_test_scenarios`에서 편집합니다.
+[파라미터 TUI 계약](../software/src/control_tuning/README.md)을 참고합니다.
 
 STM_A와 STM_B는 각각 별도의 LPUART1 serial transport와 micro-ROS Agent를
 사용합니다. 두 Agent는 MCU의 ROS 2 endpoint를 Host의 ROS graph에 연결합니다.
@@ -134,6 +142,7 @@ STM_B는 물리 E-stop 입력과 브레이크 서보의 직접 구동을 담당�
 - TIM2 CH2 PWM으로 브레이크 서보를 움직입니다.
 - 최종 브레이크 요청을 STM_A에 UART로 전달합니다.
 - `/brake/status`로 command 상태와 정지 원인을 발행합니다.
+- UART4로 RP2350 계측 상태를 받아 ROS BatteryState·정비 payload와 Dashboard LV 표시로 중계합니다.
 - STM_A의 mode·gear·speed와 EZkontrol drive detail을 UART로 받아 250 kbit/s
   Classical CAN dashboard snapshot으로 Arduino UNO R4에 전송합니다. Arduino가
   MSP4030/ST7796S LCD를 렌더링합니다. native 표시는 ROS와 독립적이며,
@@ -172,7 +181,27 @@ pinout·전압·renderer 세부사항은
 [`firmware/UNO_R4_DASHBOARD/README.md`](../firmware/UNO_R4_DASHBOARD/README.md)를
 따릅니다.
 
-### 3.4 Host / Control PC
+### 3.4 XIAO RP2350 LV 배터리 적산계
+
+XIAO RP2350은 100 A / 75 mV 션트와 INA228을 통해 LV 배터리의 전압·전류를
+측정합니다. `Wire1` I2C로 센서를 읽고 CHARGE 증가량으로 Ah, 구간 평균 전압으로
+Wh를 계산합니다. SOC·용량·영점·트립 상태는 LittleFS journal에 저장합니다.
+
+- 계측·적산·저장은 ROS나 PC 연결 없이 계속 동작합니다.
+- UART0(`D6/GPIO0` TX, `D7/GPIO1` RX)와 STM_B UART4(`PC11` RX, `PC10` TX)가
+  3.3 V, 115200 8N1로 통신합니다. 상태는 100 ms마다 CRC32 보호 frame으로 보냅니다.
+- STM_B는 `/lv_battery/state`와 정비용 `/lv_battery/link/status|command|ack`을 중계합니다.
+  LV 전압·SOC는 기존 Dashboard CAN `0x324`에 포함됩니다.
+- 기본 정비 TUI는 STM_B micro-ROS 경로를 사용하고, 직접 USB는 `--usb` fallback입니다.
+  완충 기준점·트립 초기화·영점·용량 변경은 RP2350의 저장 완료 ACK로 확인합니다.
+- RP2350 내부 전류는 방전 양수이며 ROS `BatteryState.current`는 방전 음수로 변환합니다.
+- 1초간 UART 상태가 없으면 STM_B가 LV 미수신으로 표시합니다. 계측 장애나 SOC 값은
+  브레이크 요청·traction 판단에 사용하지 않습니다.
+
+배선·전원·센서 경계는 [LV 배터리 구성](rp2350/lv_battery_gauge.md),
+빌드·적산·저장·정비는 [RP2350 README](../firmware/XIAO_RP2350_LV_GAUGE/README.md)를 따릅니다.
+
+### 3.5 Host / Control PC
 
 - ROS 2 graph와 각 STM의 micro-ROS Agent를 실행합니다.
 - `command_governor`가 상위 Planning 계층의 `/planning/command`를 받아
@@ -192,10 +221,7 @@ pinout·전압·renderer 세부사항은
   `foxglove/foxglove_bridge.launch.py`로 따로 켭니다. 실차 장치에서의 최종 확인은 아직이며
   HIL bench에서 동형 구조로 검증했습니다.
 
-### 3.5 조향 제어
-
-> 이 절의 software 관련 내용은 현재 브랜치 구현을 기준으로 한 스냅샷입니다.
-> software 구조와 통합 실행 방식은 아직 정리 중이며 이후 변경될 수 있습니다.
+### 3.6 조향 제어
 
 `software/src/lateral_ctrl`의 `steering_actuator_node`가 `/vehicle/command`,
 `/drive/status`, `/brake/status`를 받아 KEYA 조향 모터를 제어합니다.
@@ -244,36 +270,49 @@ Planning / Motion Control (별도 상위 패키지)
 
 ## 5. 상태 및 진단 데이터 흐름
 
+### 5.1 차량 상태 통합
+
 ```mermaid
 flowchart LR
-    EZ["EZkontrol Part I / II"] --> A["STM_A"]
-    A --> DS["/drive/status"]
-    A -->|"vehicle status UART"| B["STM_B"]
-    B -->|"safety status UART"| A
-    E["물리 E-stop"] --> B
-    B --> BS["/brake/status"]
-    K["KEYA feedback"] --> L["steering_actuator_node"]
-    DS --> L
-    BS --> L
-    L --> SS["/steering/status"]
-    DS --> F["vehicle_state_publisher"]
-    BS --> F
-    SS --> F
-    F --> VS["/vehicle/state"]
-    A -->|"drive detail / vehicle UART"| B
-    Summary["auto_dashboard_summary"] -.->|"/dashboard/auto_status"| B
-    B -->|"Dashboard CAN<br/>native 4 + AUTO 4 frames"| UNO["Arduino UNO R4"]
-    UNO -->|"SPI"| LCD["ST7796S LCD"]
-    Touch["FT6336U touch"] -->|"I2C polling"| UNO
-    HIL["vehicle_console HIL"] -.->|"USB Virtual Touch"| UNO
-    UNO -.->|"USB HIL_LCD report"| HIL
+    A["STM_A<br/>/drive/status"] --> Fusion["vehicle_state_publisher_node"]
+    B["STM_B<br/>/brake/status"] --> Fusion
+    L["lateral_ctrl<br/>/steering/status"] --> Fusion
+    Fusion --> State["/vehicle/state"]
+    Fusion --> Twist["/vehicle/wheel_twist"]
+    A --> Diag["diagnostics_publisher"]
+    B --> Diag
+    L --> Diag
+    Diag --> D["/diagnostics"]
 ```
 
 `/vehicle/state`는 세 status가 모두 최소 한 번 수신된 후에만 발행됩니다. 현재
-구현은 각 입력의 age나 freshness를 다시 검사하지 않고 마지막 수신값을
-합성합니다.
-STM_B→UNO→LCD의 native 표시는 ROS와 독립적이고, AUTO 표시는 Host 요약 토픽에 의존합니다. FT6336U 입력은
-UNO의 local navigation으로만 이어지며, 점선 USB 경로는 HIL 전용 가상 HMI입니다.
+구현은 각 입력의 age나 freshness를 다시 검사하지 않고 마지막 수신값을 합성합니다.
+조향 노드도 `/drive/status`와 `/brake/status`를 직접 구독해 제어 조건을 판단합니다.
+LV 배터리는 별도 `/lv_battery/state` 경로이며 이 세 status 합성에 포함되지 않습니다.
+
+### 5.2 계기판·LV 계측·정비
+
+```mermaid
+flowchart TB
+    INA["INA228 / 외장 션트"] -->|"I2C · Wire1"| RP["XIAO RP2350<br/>계측 · 적산 · SOC · LittleFS"]
+    RP <-->|"UART0 ↔ UART4 · 115200<br/>상태 / command / 저장 완료 ACK"| B["STM_B"]
+    A["STM_A"] -->|"USART1 · 차량 / 구동 상세"| B
+    Summary["Host · auto_dashboard_summary"] -->|"/dashboard/auto_status · 10 Hz"| B
+    B -->|"/lv_battery/state · 10 Hz"| ROS["ROS BatteryState 소비자"]
+    TUI["LV 정비 TUI"] <-->|"/lv_battery/link/status · command · ack"| B
+    TUI -.->|"직접 정비 fallback · USB"| RP
+    B -->|"Dashboard CAN · 250 kbit/s<br/>0x321–0x324 native / 0x325–0x328 AUTO"| UNO["UNO R4 Dashboard"]
+    UNO -->|"SPI"| LCD["ST7796S · 480×320 LCD"]
+    Touch["FT6336U touch"] -->|"I2C 0x38 · 20 ms polling"| UNO
+    HIL["vehicle_console · HIL"] -.->|"USB Virtual Touch"| UNO
+    UNO -.->|"USB HIL_LCD report"| HIL
+```
+
+실선은 기본 운용 경로, 점선은 직접 USB 정비 또는 HIL 전용 경로입니다.
+STM_B→UNO native snapshot은 50 ms마다 전송하며 `0x324` byte 5–7에 LV validity,
+전압·SOC를 담습니다. native·LV 표시는 ROS와 독립적이고 AUTO 상세 표시는 Host에 의존합니다.
+LV UART 1초 단절, AUTO 요약 300 ms 단절, UNO native CAN 300 ms 단절은 각각 별도로 판정합니다.
+FT6336U 입력은 UNO 내부 화면 탐색에만 사용합니다.
 
 ## 6. MANUAL / AUTO 모드
 
@@ -321,7 +360,7 @@ traction 차단 조건으로 사용하지 않습니다.
 `vehicle_console`은 유일한 React frontend, 공용 Web serving/Host·Origin 보안,
 ROS 수신·runtime normalization, 독립 Vehicle 관측·HARD latch acknowledgment backend를 제공합니다.
 하나의 active ROS package 안에서 `vehicle_console.common`, `vehicle_console.vehicle`,
-`vehicle_console.hil`로 책임을 나눕니다. 기존 `kaiev26_hil`은 archive에 보관합니다.
+`vehicle_console.hil`로 책임을 나눕니다. 기존 `kaiev26_hil` 보관본은 대체 완료 후 정리했으며 Git 이력에 남아 있습니다.
 Vehicle backend는 HIL backend/serial/scenario를 import하거나 초기화하지 않습니다.
 
 ```text
@@ -349,8 +388,8 @@ Control Dock의 운전자 입력, 고장 주입과 시나리오는 기존 `/hil/
 
 Web 전용 launch의 command generator는 DISARMED로 시작하고, 조작 브라우저의 명시적
 ARM 이후 발행합니다. Web 조작권은 한 브라우저에만 주며 heartbeat 단절 시 해제합니다.
-생성기에도 Web heartbeat watchdog을 적용하되, headless HIL launch의 generator 기본값은 유지합니다. Qt surface는
-[parity 검증 후 archive](../software/src/vehicle_console/CONSOLE_PARITY.md)에 보관합니다.
+생성기에도 Web heartbeat watchdog을 적용하되, headless HIL launch의 generator 기본값은 유지합니다. Qt 화면은
+[parity 검증](../software/src/vehicle_console/CONSOLE_PARITY.md)을 거쳐 Web으로 대체했고 보관본은 정리했습니다.
 상세 실행·단위 변환·검증 결과는 [Web Console](../software/src/vehicle_console/HIL_WEB.md)에 있습니다.
 
 ## 8. 설계 경계와 책임 분리
@@ -368,12 +407,16 @@ ARM 이후 발행합니다. Web 조작권은 한 브라우저에만 주며 heart
 | `/vehicle/command` 단일 발행과 명령 정합성 게이트 | Host `command_governor` |
 | 명령 형상 (속도 상한·램프·축간 협조) | Host `command_governor` (예정, 현재 패스스루) |
 | Production Planning / motion-control 명령 생성 (`/planning/command`) | 현재 코드에서 확인되지 않음 |
+| 시험·측정·독립 녹화·공통 기록 설정·분석 | Host `control_tools` |
 | 실차 시험 `/planning/command` 생성 | Host `vehicle_test_scenarios` |
 | HIL `/planning/command` 생성 | Host `vehicle_console.hil.hil_command_generator` |
 | 공용 Web frontend·관측·runtime | `vehicle_console` |
 | HIL 조작·scenario·가상 HMI | `vehicle_console.hil.hil_web_bridge` + 공용 Console |
 | Vehicle 관측·HARD latch acknowledgment | `vehicle_console/vehicle` |
 | ROS graph 상세 분석 bridge·layout | `foxglove` |
+| LV 계측·Ah/Wh·SOC·영속 저장 | `XIAO_RP2350_LV_GAUGE` |
+| LV UART 수신·ROS 정비·Dashboard 중계 | STM_B `lv_battery_protocol.c` / `app_freertos.c` |
+| 계기판 렌더링·local touch | `UNO_R4_DASHBOARD` |
 | UNO 적용 상태 보고 / 가상 LCD | `hil_display_report.cpp` / `dashboard_display.py` + 공통 C++ renderer |
 
 ## 9. 관련 문서
@@ -388,3 +431,8 @@ ARM 이후 발행합니다. Web 조작권은 한 브라우저에만 주며 heart
 - 조향 패키지: [`../software/src/lateral_ctrl/README.md`](../software/src/lateral_ctrl/README.md)
 - 실차 시험 시나리오: [`../software/src/vehicle_test_scenarios/README.md`](../software/src/vehicle_test_scenarios/README.md)
 - HIL 운용 절차: [`HIL_RUNBOOK.md`](HIL_RUNBOOK.md)
+
+- LV 배터리 구성: [`rp2350/lv_battery_gauge.md`](rp2350/lv_battery_gauge.md)
+- RP2350 펌웨어·정비: [`../firmware/XIAO_RP2350_LV_GAUGE/README.md`](../firmware/XIAO_RP2350_LV_GAUGE/README.md)
+
+- 시험·측정·녹화·분석: [`control_tools`](../software/src/control_tools/README.md)

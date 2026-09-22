@@ -434,3 +434,11 @@ Virtual LCD stale 표시는 상태 관측이며 안전 차단의 증거 또는 �
   검증할지
 - 브레이크 서보 engage/release pulse와 700 ms ramp의 실차 캘리브레이션
 - KEYA reset별 실장치 확인과 Decision의 HARD/RECOVERING 정지 계약 (reports/2026-09-21_steering_availability.md 참조)
+
+## LV 배터리 계측의 책임 경계
+
+RP2350·INA228은 LV 계측·적산·SOC 저장을 담당하며 BMS나 전원 차단기를 대체하지 않습니다.
+STM_B는 UART4 status가 1초간 없으면 `/lv_battery/state.present=false`와 Dashboard LV
+무효 표시로 알립니다. 센서 무효 시 전압·전류를 NaN으로 발행하며 이를 brake request,
+STM_A safety UART 또는 traction 차단 조건에 추가하지 않습니다.
+배선·계측·정비 조건은 [LV 배터리 구성](rp2350/lv_battery_gauge.md)을 따릅니다.

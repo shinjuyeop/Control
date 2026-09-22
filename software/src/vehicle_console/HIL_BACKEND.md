@@ -104,7 +104,7 @@ Parameters:
 - `web_heartbeat_timeout_sec` (기본 0, Web 전용 launch는 3초; 시작 시 설정하는 read-only parameter)
 
 실제 Planning publisher와 동시에 실행하면 안 된다. `/vehicle/command`를 직접
-발행하는 기존 `lateral_ctrl/steering_bench_test_node`는 호환성 때문에 유지했지만
+발행하는 기존 `control_tools/steering_bench_test_node`는 호환성 때문에 유지했지만
 governor를 우회하므로, 신규 HIL 시험은 이 node를 사용한다.
 
 이 node는 HIL 벤치 시험용이다. 실차 sysid는
@@ -118,8 +118,7 @@ governor를 우회하므로, 신규 HIL 시험은 이 node를 사용한다.
 
 단일 frontend는 `web`에서 관리한다. `vehicle_console.hil` backend는 기존 조작권·인계·ARM·watchdog·scenario·Virtual LCD/Touch를 담당한다.
 실행과 빌드는 [HIL_WEB.md](HIL_WEB.md)를 따른다.
-Qt GUI source/tests는 [legacy_hil_gui](../../../archive/software/legacy_hil_gui)에
-보관한다. 대체 범위와 차이는 [parity matrix](CONSOLE_PARITY.md)에 있다.
+Qt GUI 보관본은 Web 대체 완료 후 정리했으며 Git 이력에 남아 있다. 대체 범위와 차이는 [parity matrix](CONSOLE_PARITY.md)에 있다.
 
 ## Safe state
 

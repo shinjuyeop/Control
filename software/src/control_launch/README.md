@@ -33,8 +33,7 @@ STM_A/B Agent, `command_governor`, `steering_actuator_node`, 차량 상태·whee
 공통 파라미터는 `ros2 run control_tuning control_tuning_tui`로 수정합니다.
 조향·거버너 모두 **기본 YAML → 기존 공통 설정 → 선택한 프리셋 → 명시적 launch 인자** 순서로 읽습니다.
 옵션 없이 실행하면 항상 주행 프리셋을 읽습니다. 선택한 프리셋이 없거나 잘못되면 오류를 냅니다.
-TUI에서 `S`로 저장한 값은 기존 launch를 완전히 종료하고 같은 프리셋으로 다시 실행할 때 반영됩니다. Torque 튜닝 11개는 MANUAL·정지 상태에서 `A`로
-실행 중 적용할 수도 있습니다. [TUI 사용법](../control_tuning/README.md)을 참고하십시오.
+TUI에서 `S`로 저장한 값은 기존 launch를 완전히 종료하고 같은 프리셋으로 다시 실행할 때 반영됩니다. TUI는 실행 중 제어값을 변경하지 않습니다. [TUI 사용법](../control_tuning/README.md)을 참고하십시오.
 
 현재 조향 YAML은 하드웨어 출력을 허용하고 최소 차속을 `0 km/h`로 설정합니다.
 AUTO·fresh 상태·새 명령 등 조향 조건은 계속 적용됩니다. KEYA 내부 mode는 Host가

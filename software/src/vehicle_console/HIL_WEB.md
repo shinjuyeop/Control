@@ -573,8 +573,8 @@ HIL은 `ros2 launch vehicle_console hil.launch.py`, 실차 read-only 관측은
 `web:=false start_bench:=true`를 주고, Agent 없이 실행하려면 `agents:=false`를 추가한다.
 Foxglove는 기본 8765를 사용하므로 HIL과 포트 변경 없이 함께 실행할 수 있다.
 
-이전 package 전체는 `archive/software/kaiev26_hil`에 보관하며 `COLCON_IGNORE`로
-빌드에서 제외한다. 기존 결과를 계속 읽도록 기본 결과 경로
+이전 독립 `kaiev26_hil` 보관본은 통합 완료 후 정리했다. 기존 결과를 계속 읽도록 기본 결과 경로
 `~/.local/state/kaiev26_hil/web_results`는 그대로 유지한다. `results_dir`로 변경할 수 있다.
-Qt 화면은 [legacy archive](../../../archive/software/legacy_hil_gui)에,
+Qt 화면 보관본도 대체 완료 후 정리했다. 복구 기준은
+[archive 정리 기록](../../../archive/README.md#2026년-대체-완료-보관본-정리),
 검증 범위는 [Console validation](CONSOLE_VALIDATION.md)에 있다.

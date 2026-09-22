@@ -37,9 +37,9 @@ Decision: archive both Qt surfaces after the first profile tests and targeted
 colcon build passed. Only legacy GUI code/tests/launch context moved; active HIL
 backend and vcan SIL remain. Vehicle diagnostics now belong to
 `vehicle_state_publisher`, while the Foxglove bridge/layout belong to `foxglove`.
-Archives are under
-`archive/software/legacy_hil_gui`, `legacy_vehicle_dashboard` and
-`control_gui_common`; `archive/software/COLCON_IGNORE` excludes all three.
+2026-09-22 정리에서 구형 Qt 화면 2개와 공통 helper의 보관본을 제거했습니다.
+위 검증 결과는 당시의 이관 기록이며, Git 복구 기준은
+[archive 정리 기록](../../../archive/README.md#2026년-대체-완료-보관본-정리)에 있습니다.
 
 The two GUI packages were the only active consumers of `control_gui_common` and
 PyQt5. Their active dependencies were removed. `python3-tk` and
@@ -54,7 +54,6 @@ in the HIL/UNO runbooks remains historical evidence, not proof of this refactor.
 After the initial frontend/Qt migration, the user chose one Console system.
 The active HIL implementation is now `vehicle_console.hil`, shared infrastructure
 is `vehicle_console.common`, and the Vehicle entrypoint only adds explicit steering HARD-latch acknowledgment without
-initializing HIL modules. The former complete package is archived separately at
-`archive/software/kaiev26_hil`; its archived code is excluded from colcon discovery.
+initializing HIL modules. 독립 `kaiev26_hil` 패키지의 보관본은 통합 완료 후 2026-09-22에 정리했습니다.
 Existing HIL node names, commands, watchdog, scenario and virtual-HMI behavior are
 preserved. Headless launch and CLI tools remain available from `vehicle_console`.

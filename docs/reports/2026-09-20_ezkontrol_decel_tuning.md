@@ -1,5 +1,7 @@
 # EZkontrol 종방향 감속 추종: 원인과 내부 설정 확인 — 2026-09-20
 
+> Decision 소스 참조는 작성 당시 별도 checkout 기준입니다. 현재 Control 저장소에는 포함되지 않습니다.
+
 **EZkontrol에서 조정할 수 있는 항목은 있다. 우선 검토할 것은 `Rotor speed Ki`와 `Rotor speed Kp`다.** 다만 기록에는 실제 속도의 큰 overshoot/undershoot와 RPM 피드백 급변이 함께 있어, Ki 과대 하나로 원인을 확정할 수 없다. `Deceleration` 숫자를 낮추면 해결된다는 근거도 아직 없다.
 
 이번에는 기록·소스·제공 문서 및 공개 설정 설명표를 확인했다. **STM 펌웨어, EZkontrol 설정, 운용 노드는 변경하지 않았다.** 앞서 요청한 선택형 타력 감속은 미구현 상태이며, 이 문서는 그 구현과 별개로 EZ 내부 설정으로 개선할 수 있는 범위를 설명한다.
@@ -26,7 +28,7 @@
 
 AUTO에서는 `목표 m/s → STM_A 목표 motor RPM + phase-current limit → EZ 내부 속도제어`로 동작한다. STM_A는 50 ms마다 목표를 전송하고, 직접적인 Host 속도 PI를 계산하지 않는다. 상위 Decision에는 가속 1 m/s²·감속 2 m/s²의 명령 ramp가 이미 있다. 실제 차량이 그 감속도를 달성하도록 보장하는 기능은 아니다.
 
-근거: [STM_A](../../firmware/STM_A/Core/Src/app_freertos.c) 370–436행, [Decision ramp](../../../Decision/kaiev26_motion_control/kaiev26_motion_control/motion_control_node.py) 1432–1442행. 기록에서도 `/drive/status.controller_control_mode=1`을 확인했다.
+근거: [STM_A](../../firmware/STM_A/Core/Src/app_freertos.c) 370–436행, Decision ramp (`Decision/kaiev26_motion_control/kaiev26_motion_control/motion_control_node.py`) 1432–1442행. 기록에서도 `/drive/status.controller_control_mode=1`을 확인했다.
 
 ### 원인 후보
 

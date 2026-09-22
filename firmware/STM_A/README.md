@@ -283,7 +283,7 @@ toolchain과 micro-ROS Agent 빌드는 [`../README.md`](../README.md)를 참고�
 
 `STM32_Programmer_CLI`로 probe SN을 지정해 flash합니다. 절차 전체(빌드,
 SN 확인, flash, 고정 이름·역할 확인)는
-[`../../docs/VEHICLE_RUNBOOK.md`](../../docs/VEHICLE_RUNBOOK.md#5-보드-교체-시)를
+[보드 교체 절차](../README.md#보드-교체-절차)를
 따르고, 여러 보드가 꽂힌 상태라면 먼저
 [`../../docs/HIL_RUNBOOK.md`](../../docs/HIL_RUNBOOK.md#플래시-전-swd-target-확인)의
 SWD target 확인을 거칩니다.

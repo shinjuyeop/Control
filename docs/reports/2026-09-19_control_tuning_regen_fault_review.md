@@ -1,5 +1,7 @@
 # 2026-09-19 실주행 제어 분석: 조향 튜닝, 종방향 감속·회생, 조향 fault
 
+> Decision 소스 참조는 작성 당시 별도 checkout 기준입니다. 현재 Control 저장소에는 포함되지 않습니다.
+
 분석 대상: `~/KAI_ws/records/260919/quali_succeed_run/` 4개 기록과 `~/KAI_ws/records/260919/afternoon_sysid/` 14개 기록.
 분석 기준: AUTO 구간, 조향 응답은 그중 ACTIVE 구간. 시각은 **2026-09-19 KST**.
 범위: 기록·현재 작업 트리·제공된 제조사 문서의 분석과 변경 제안. **제어 코드, 펌웨어, 운용 파라미터, 원본 MCAP는 변경하지 않았다. 차량 노드도 실행하지 않았다.**
@@ -148,7 +150,7 @@ v6 parameter event에서 PP adaptive lookahead `base=4.0 m`, `gain=0.9 s`, `max=
 
 진단 토픽의 `steering_feedback_guard_active`는 AUTO 535개 샘플 모두 false였다. 이번 현상을 1.5° lead guard가 계속 조향을 막았기 때문이라고 해석하지 않는다. tracking slowdown은 7개 진단 샘플에서 활성화됐다.
 
-근거: [Decision motion_control_node.py](../../../Decision/kaiev26_motion_control/kaiev26_motion_control/motion_control_node.py) 590–714, 1286–1312, 1405–1442행 및 [설정](../../../Decision/kaiev26_motion_control/config/motion_control.yaml). 진단·parameter events로 주요 값은 해당 Run에서도 확인했다.
+근거: Decision motion_control_node.py (`Decision/kaiev26_motion_control/kaiev26_motion_control/motion_control_node.py`) 590–714, 1286–1312, 1405–1442행 및 설정 (`Decision/kaiev26_motion_control/config/motion_control.yaml`). 진단·parameter events로 주요 값은 해당 Run에서도 확인했다.
 
 ---
 
@@ -358,7 +360,7 @@ Host feedback stop은 zero→Disable하고 과거 명령·제어이력을 버린
 - Host latch 제거는 **KEYA 내부 고장 reset까지 자동화했다는 뜻이 아니다.** 전원/Disable/Enable reset이 필요한 고장이 있다. 특히 bit14/15를 장치가 Enable까지 유지한다면 Host는 fault 때문에 Enable을 못 보내는 순환 조건이 가능하다. 실제 장치에서 이 조건이 발생했다고 확인한 것은 아니다.
 - SYSID는 state8/고장 비트와 CAN·feedback 이상을 각각 중단 조건으로 사용한다. **현재 Decision readiness는 CAN·feedback 이상·E-stop 등을 검사하지만 state8/고장 비트를 직접 검사하지 않는다.** 이번 v4에서 KEYA fault 발생 직후가 아니라 feedback invalid 이후 BLOCKED된 순서와도 일치한다. 이는 상위 소비자에 남은 별도 확인 사항이며 이번에는 수정하지 않았다. 화면에서 시험이 중단됐다는 사실만으로 Host FAULT로 판정하지 않는다.
 
-근거: [keya_can_driver.cpp](../../software/src/lateral_ctrl/src/keya_can_driver.cpp) 41행 이후, [auto_dashboard_summary.py](../../software/src/vehicle_state_publisher/vehicle_state_publisher/auto_dashboard_summary.py) 246행 이후, [sysid_runtime.py](../../software/src/vehicle_test_scenarios/vehicle_test_scenarios/sysid_runtime.py) 189행 이후, [Decision readiness](../../../Decision/kaiev26_decision/kaiev26_decision/test_readiness.py) 312–329행.
+근거: [keya_can_driver.cpp](../../software/src/lateral_ctrl/src/keya_can_driver.cpp) 41행 이후, [auto_dashboard_summary.py](../../software/src/vehicle_state_publisher/vehicle_state_publisher/auto_dashboard_summary.py) 246행 이후, [sysid_runtime.py](../../software/src/vehicle_test_scenarios/vehicle_test_scenarios/sysid_runtime.py) 189행 이후, Decision readiness (`Decision/kaiev26_decision/kaiev26_decision/test_readiness.py`) 312–329행.
 
 ---
 

@@ -218,7 +218,7 @@ coast=actual |phase|<5 A, reapplication=coast에서 actual>20 A로 넘어가는 
 ```bash
 cd ~/KAI_ws
 si
-python3 -m control_tuning.longitudinal_analysis \
+ros2 run control_tools longitudinal_analysis \
   records/260919/quali_succeed_run/20260919_160206_275928_decision_case_01_pure_pursuit_v6/rosbag \
   --start 0 --end 10.5 --target 6
 ```

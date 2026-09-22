@@ -215,18 +215,16 @@ npm run build
 Browser tests use the existing Playwright/Chrome surface and skip if those tools
 are absent. Backend tests use actual isolated ROS pub/sub, with no hardware.
 Full results and remaining physical limits are in [CONSOLE_VALIDATION.md](CONSOLE_VALIDATION.md).
-Qt source/tests/launch/docs are preserved in `archive/software/legacy_hil_gui` and
-`legacy_vehicle_dashboard`, with the unused helper in `archive/software/control_gui_common`.
-The subtree is excluded by `COLCON_IGNORE`. See [parity matrix](CONSOLE_PARITY.md).
+구형 Qt 화면 2개와 공통 helper의 보관본은 대체 완료 후 정리했습니다.
+대체 범위는 [parity matrix](CONSOLE_PARITY.md), Git 복구 기준은
+[archive 정리 기록](../../../archive/README.md#2026년-대체-완료-보관본-정리)에 있습니다.
 Tkinter and Matplotlib remain active dependencies of the vcan SIL GUI.
 
 HIL operational details: [HIL_WEB.md](HIL_WEB.md); headless/serial/SIL: [HIL_BACKEND.md](HIL_BACKEND.md).
 
 ## 이전 패키지 이관
 
-`kaiev26_hil` 전체의 source/tests/config/launch/docs는
-`archive/software/kaiev26_hil`에 보관한다. 그 archive는 `COLCON_IGNORE`로 제외되며,
-active backend는 `vehicle_console.hil`이다. 노드 이름과 ROS topic/service/parameter는
+`kaiev26_hil`은 `vehicle_console.hil`로 통합되었으며 독립 패키지 보관본은 정리했다. 노드 이름과 ROS topic/service/parameter는
 유지하므로 firmware 및 다른 제어 노드의 계약은 바뀌지 않는다.
 
 | 이전 실행 | 현재 실행 |

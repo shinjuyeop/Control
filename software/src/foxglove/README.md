@@ -45,7 +45,7 @@ ros2 run vehicle_state_publisher diagnostics_publisher
 - **Diagnostics**: `/diagnostics` 요약과 선택 항목 상세
 
 시험 탭의 그래프와 상태 전이는 receive/log time으로 동기화되어 MCAP 재생 커서를
-함께 따른다. `/sysid/scinario`는 현재 시험 label을 표시하며, 이 철자는 현재 시험
+함께 따른다. `/sysid/scenario`는 현재 시험 label을 표시하며, 토픽 이름은 현재 시험
 runner의 토픽 계약을 그대로 사용한다. 이 레이아웃은 토픽을 관측할 뿐 차량 제어 또는
 safety 판단에 사용하지 않는다.
 
@@ -62,8 +62,6 @@ Foxglove 기본 포트는 8765, Vehicle Console은 8766, HIL Console은 8767이�
 colcon build --symlink-install --packages-select foxglove
 ```
 
-기존 Qt dashboard는
-[`archive/software/legacy_vehicle_dashboard`](../../../archive/software/legacy_vehicle_dashboard)에
-보관한다. Console 기능 대응과 검증 기록은
+기존 Qt dashboard는 Vehicle Console로 대체되어 보관본을 정리했다. Console 기능 대응과 검증 기록은
 [`vehicle_console/CONSOLE_PARITY.md`](../vehicle_console/CONSOLE_PARITY.md)와
 [`vehicle_console/CONSOLE_VALIDATION.md`](../vehicle_console/CONSOLE_VALIDATION.md)에 있다.

@@ -6,7 +6,7 @@
 ## 1. 문서 목적
 
 이 문서는 현재 코드에서 확인되는 ROS 2 topic, STM_A↔STM_B UART, EZkontrol·KEYA
-CAN, Dashboard CAN, Arduino LCD/touch와 HIL UNO USB의 데이터 계약과
+CAN, Dashboard CAN, RP2350 LV 계측·정비, Arduino LCD/touch와 HIL UNO USB의 데이터 계약과
 주기·timeout을 정리하는 기준 문서입니다. 안전 조건의 결과는
 [`SAFETY.md`](SAFETY.md), 구성요소의 책임은
 [`ARCHITECTURE.md`](ARCHITECTURE.md)를 참고하십시오.
@@ -43,6 +43,10 @@ CAN, Dashboard CAN, Arduino LCD/touch와 HIL UNO USB의 데이터 계약과
 | STM_A | STM_B | USART1 | type `0x01` | mode, gear, speed | 20 ms | STM_B에서 200 ms | vehicle status |
 | STM_A | STM_B | USART1 | type `0x03` | 구동 bus·온도·fault·command 상태 | 100 ms | STM_B에서 300 ms | dashboard drive detail |
 | STM_B | STM_A | USART1 | type `0x02` | final brake request | 20 ms | STM_A에서 100 ms | safety status |
+| RP2350 | STM_B | UART0 ↔ UART4, 115200 8N1 | status `0x01` | CRC32 보호 136-byte LV payload | 100 ms | STM_B에서 1 s | 계측·SOC·진단 |
+| STM_B | RP2350 | UART4 ↔ UART0 | command `0x10` / ACK `0x11` | 12-byte command / 16-byte 저장 결과 ACK | event | TUI 1 s 재전송 | 정비용 request ID |
+| STM_B | ROS 소비자 | ROS 2 | `/lv_battery/state` | `sensor_msgs/BatteryState` | 100 ms | UART 1 s | 방전 음수; 계측 무효는 NaN |
+| STM_B ↔ 정비 TUI | 정비 TUI ↔ STM_B | ROS 2 | `/lv_battery/link/{status,command,ack}` | `std_msgs/UInt8MultiArray` | status 100 ms / 나머지 event | TUI freshness 판정 | 전체 이름은 아래 LV 절 참고 |
 | STM_B | UNO R4 | Classical CAN | `0x321`~`0x328` | native status 4 frame + AUTO summary 4 frame | 50 ms | UNO에서 300 ms | 표시 전용 |
 | UNO R4 | ST7796S LCD | SPI | MSP4030/MSP4031 | logical 480×320 화면 | 적용 상태 변경 시 | 없음 | local display output |
 | FT6336U | UNO R4 | I2C | address `0x38` | 최대 2점 raw touch | 20 ms polling | read 실패 시 1 s 재시도 | local navigation input |
@@ -122,8 +126,8 @@ STM_A의 500 ms와 조향의 200 ms freshness 한계보다 충분히 빠르게 �
 `vehicle_test_scenario_runner` 실행 파일은 일반 호출 시 TUI(`/auto_sysid`)이며,
 YAML launch는 headless `vehicle_test_scenario_node`(`/vehicle_test_scenario_runner`)를
 사용한다. 두 경로 모두 시험 명령을 20 Hz로 `/planning/command`에 발행한다.
-`/sysid/scinario`는 `std_msgs/msg/String` 기록용 label 토픽이며 철자는 호환성 때문에
-유지한다. Headless의 빈 `scenario_label`은 `scenario` 변경을 따라가고,
+`/sysid/scenario`는 `std_msgs/msg/String` 기록용 label 토픽이다.
+기존 `/sysid/scinario` 오타를 정정했으며 과거 MCAP의 토픽 이름은 그대로 둔다. Headless의 빈 `scenario_label`은 `scenario` 변경을 따라가고,
 명시된 label은 그대로 유지된다. 고정 YAML label에 들어 있는 숫자는 식별자이며
 현재 속도 설정을 뜻하지 않는다. 모든 실차 시나리오의 기본 속도·중심각은 0이다.
 실행 중단 조건의 차이는 [Safety](SAFETY.md#실차-시나리오-실행기의-현재-제한)를 따른다.
@@ -680,3 +684,26 @@ Driving remains 480 A/RPM4500 with unchanged gains and CAN baseline.
 PI gains, integral, deadband/coast and slew/reapply remain Torque-only. Firmware
 Part I/II freshness is 200 ms: Speed status validity semantics stay unchanged;
 Torque resets/inhibits to 0 A/HALTED and requires a Host command received after feedback recovery.
+
+## 12. RP2350 LV 배터리 계측·정비
+
+RP2350 UART0 TX(`D6/GPIO0`) → STM_B UART4 RX(`PC11/CN7-2`),
+RP2350 UART0 RX(`D7/GPIO1`) ← STM_B UART4 TX(`PC10/CN7-1`)이며 공통 GND를 사용합니다.
+3.3 V, 115200 8N1의 양방향 CRC32 binary protocol입니다.
+frame·단위·정비 command는 [LV 프로토콜](rp2350/lv_battery_gauge.md#9-battery-uart-protocol)을 따릅니다.
+
+| Topic | 방향 | Type | 내용 |
+|---|---|---|---|
+| `/lv_battery/state` | STM_B → ROS | `sensor_msgs/msg/BatteryState` | 전압·전류·용량·SOC; 100 ms |
+| `/lv_battery/link/status` | STM_B → TUI | `std_msgs/msg/UInt8MultiArray` | 136-byte status payload; 100 ms |
+| `/lv_battery/link/command` | TUI → STM_B → RP2350 | `std_msgs/msg/UInt8MultiArray` | 12-byte 정비 command payload |
+| `/lv_battery/link/ack` | RP2350 → STM_B → TUI | `std_msgs/msg/UInt8MultiArray` | 16-byte 저장 결과 ACK payload |
+
+RP2350 내부 전류는 방전 양수, `BatteryState.current`는 방전 음수입니다.
+UART status 수신 후 1초가 지나면 `present=false`이며 전압·전류는 NaN입니다.
+유효 계측 여부와 SOC 설정 여부는 별도로 판정합니다. 온도는 배터리 센서가 없으므로
+NaN이며 INA die 온도를 대신 넣지 않습니다.
+
+LV 계기판은 기존 native `0x324` byte 5(flags), 6(0.1 V), 7(SOC %, unknown `0xFF`)를
+사용합니다. 별도 CAN ID는 추가하지 않으며 UART 1초 단절 시 LV flags를 내립니다.
+계측 상태는 ROS 상태 통합 3종이나 E-stop·traction 제어 입력에 포함되지 않습니다.

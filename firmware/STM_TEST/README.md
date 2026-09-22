@@ -340,7 +340,7 @@ src/Control/firmware/STM_TEST/tests/run_host_tests.sh
 ## 10. 플래시 및 실행
 
 `STM32_Programmer_CLI`로 probe SN을 지정해 flash합니다. 명령 양식은
-[`../../docs/VEHICLE_RUNBOOK.md`](../../docs/VEHICLE_RUNBOOK.md#5-보드-교체-시)와
+[보드 교체 절차](../README.md#보드-교체-절차)와
 같고(ELF 경로만 `STM_TEST.elf`), 여러 보드가 꽂힌 bench에서는 반드시
 [`../../docs/HIL_RUNBOOK.md`](../../docs/HIL_RUNBOOK.md#플래시-전-swd-target-확인)의
 SWD target 확인을 먼저 거칩니다. 2026-08-14 protocol 3 flash는 이 절차로

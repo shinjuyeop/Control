@@ -13,6 +13,7 @@ firmware/
 ├── STM_B/             # E-stop·brake와 CAN dashboard를 담당하는 production STM_B
 ├── STM_TEST/          # STM_A/B 입출력과 EZ/KEYA CAN을 대신하는 HIL emulator
 ├── UNO_R4_DASHBOARD/  # UNO R4 Minima CAN receiver와 MSP4030 UI
+├── XIAO_RP2350_LV_GAUGE/ # INA228 LV 배터리 적산계·STM_B UART4·정비 TUI
 ├── common/            # STM 공통 주기·성능 계측
 ├── KEYA/              # 조향 드라이버 설정·프로토콜 자료
 ├── micro_ros_agent/   # vendored micro-ROS Agent
@@ -24,16 +25,18 @@ firmware/
 [`STM_A/README.md`](STM_A/README.md),
 [`STM_B/README.md`](STM_B/README.md),
 [`UNO_R4_DASHBOARD/README.md`](UNO_R4_DASHBOARD/README.md),
-[`STM_TEST/README.md`](STM_TEST/README.md)에 정리되어 있습니다.
+[`STM_TEST/README.md`](STM_TEST/README.md),
+[`XIAO_RP2350_LV_GAUGE/README.md`](XIAO_RP2350_LV_GAUGE/README.md)에 정리되어 있습니다.
+RP2350은 Arduino-Pico core로 별도 빌드하며, INA228 계측·적산·저장을 독립 실행합니다.
+STM_B UART4(115200 8N1)가 ROS 정비 경로와 계기판 표시를 중계합니다.
 
 STM_A와 STM_B는 실차 기준 펌웨어이고, STM_TEST는 실차 없이 두 보드의 입출력을
 시험하기 위한 bench 전용 펌웨어입니다. STM_B는 safety/UART/micro-ROS 경로와
 별개인 저우선순위 CAN dashboard task로 표시 snapshot을 송신하고,
 UNO_R4_DASHBOARD가 이를 받아 MSP4030 UI를 렌더합니다. UNO_R4_DASHBOARD는 Arduino
 Renesas UNO core로 빌드합니다. STM_TEST는 LPUART1 ASCII protocol로 PC와 직접
-통신하므로 Agent가 필요 없습니다. 이전 직접-SPI LCD STM_B는
-[`../archive/firmware/STM_B_DIRECT_LCD`](../archive/firmware/STM_B_DIRECT_LCD)에
-보관합니다.
+통신하므로 Agent가 필요 없습니다. 이전 직접-SPI LCD STM_B 보관본은 CAN dashboard로 대체되어 정리했습니다.
+[archive 정리 기록](../archive/README.md#2026년-대체-완료-보관본-정리)에서 Git 복구 기준을 확인할 수 있습니다.
 
 STM 공통 주기·성능 계측은 [common](common/README.md)을 따른다.
 
@@ -200,8 +203,8 @@ readlink -f /dev/hil_a
 verified flash하고 reset한 뒤, 3.28 V·Device ID `0x469`와 flash readback의
 `stm_b_node`, `/vehicle/command`, `/brake/status` 문자열을 확인했습니다. 이 결과는
 전송 이미지의 STM_B 역할을 증명하지만 micro-ROS Agent 연결이나 실차 액추에이터
-동작까지 검증한 것은 아닙니다. 해당 source는 현재
-`archive/firmware/STM_B_DIRECT_LCD`에 보관합니다.
+동작까지 검증한 것은 아닙니다. 해당 source의 보관본은 대체 완료 후 정리했으며
+[archive 정리 기록](../archive/README.md#2026년-대체-완료-보관본-정리)에 Git 복구 기준을 남겼습니다.
 
 ## Agent 실행
 
@@ -216,7 +219,7 @@ STM_TEST는 micro-ROS를 쓰지 않으므로 Agent를 붙이지 않습니다.
 cd ~/KAI_ws
 si
 ros2 run micro_ros_agent micro_ros_agent serial \
-  --dev /dev/hil_a -b 115200
+  --dev /dev/hil_a -b 460800
 ```
 
 터미널 2, STM_B:
@@ -225,7 +228,7 @@ ros2 run micro_ros_agent micro_ros_agent serial \
 cd ~/KAI_ws
 si
 ros2 run micro_ros_agent micro_ros_agent serial \
-  --dev /dev/hil_b -b 115200
+  --dev /dev/hil_b -b 460800
 ```
 
 연결 후에는 node 이름뿐 아니라 타입과 실제 endpoint를 함께 확인합니다.
@@ -257,3 +260,66 @@ virtual COM port 식별이며 SWD target 확인을 대신하지 않으므로, ru
 - STM_B 상세: [`STM_B/README.md`](STM_B/README.md)
 - STM_TEST 상세: [`STM_TEST/README.md`](STM_TEST/README.md)
 - HIL 전체 운용: [`../docs/HIL_RUNBOOK.md`](../docs/HIL_RUNBOOK.md)
+
+## 보드 교체 절차
+
+새 NUCLEO-G474RE로 교체하면 ① 펌웨어 플래시 ② 고정 이름 갱신 ③ 역할 확인
+세 가지가 필요하다. **다른 보드가 꽂혀 있으면 헷갈리기 쉬우므로, 새 보드만
+USB에 꽂고 진행하는 것을 권한다.** 여러 보드가 꽂힌 채 해야 하면
+[`../docs/HIL_RUNBOOK.md`](../docs/HIL_RUNBOOK.md#플래시-전-swd-target-확인)의 SWD target
+확인을 먼저 거친다.
+
+### ① 펌웨어 빌드·플래시
+
+교체된 역할에 맞는 펌웨어를 빌드한다 (아래는 STM_A 기준, STM_B면 경로만
+바꾼다).
+
+```bash
+cd ~/KAI_ws
+source /etc/profile.d/cubeclt-bin-path_1.20.0.sh
+cmake -S src/Control/firmware/STM_A --preset Release
+cmake --build src/Control/firmware/STM_A/build/Release
+```
+
+새 보드의 ST-LINK probe serial(SN)을 확인하고 플래시한다.
+
+```bash
+STM32_Programmer_CLI -l                     # Connected ST-LINK Probes의 SN 확인
+
+STM32_Programmer_CLI -c port=SWD sn=<SN> mode=UR \
+  -w src/Control/firmware/STM_A/build/Release/STM_A.elf -v -rst
+```
+
+`Download verified successfully`와 `MCU Reset`이 나오면 성공이다.
+
+### ② 고정 이름 갱신
+
+`/dev/stm_a`·`/dev/stm_b`는 보드의 ST-LINK serial에 묶여 있으므로 규칙의
+serial을 새 보드 것으로 바꾼다. ①에서 확인한 SN이 그 값이다
+(`ls /dev/serial/by-id/`로도 확인 가능).
+
+```bash
+# 교체된 역할(stm_a 또는 stm_b)의 serial을 새 값으로 수정
+vi ~/KAI_ws/src/Control/firmware/udev/99-kaiev26-stm.rules
+
+cd ~/KAI_ws/src/Control
+sudo install -m 0644 firmware/udev/99-kaiev26-stm.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=tty
+
+readlink -f /dev/stm_a /dev/stm_b           # 새 장치를 가리키면 성공
+```
+
+### ③ 역할 확인·기록
+
+serial은 장치 이름일 뿐 올라간 펌웨어가 어느 쪽인지는 별개다. Agent를 붙여
+node 이름으로 역할까지 대조한다.
+
+```bash
+ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/stm_a -b 460800
+# 다른 터미널에서
+ros2 node list                              # /stm_a_node 가 보여야 함 (stm_b도 동일 요령)
+```
+
+끝나면 수정한 규칙 파일과
+[`README.md`](README.md#stm-보드-고정-장치-이름)의
+serial 표를 함께 커밋해 저장소와 실물이 어긋나지 않게 한다.
