@@ -22,7 +22,7 @@
 //        ros2 launch lateral_ctrl steering_actuator.launch.py
 //            can_interface:=can0 actuator_output_enabled:=false
 //   2. 이 노드를 실행한다.
-//        ros2 run lateral_ctrl deadzone_measure_node can0
+//        ros2 run control_tools deadzone_measure_node can0
 //   3. /deadzone/start (std_msgs/UInt8, data=1)를 쏘면 자동으로 계단식
 //      토크 램프가 시작된다. 각 단계를 step_hold_ms만큼 유지하며 각도
 //      변화를 기다리고, 변화가 감지되면 자동으로 정지 + disable된 뒤

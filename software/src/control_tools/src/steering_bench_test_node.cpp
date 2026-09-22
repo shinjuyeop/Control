@@ -1,4 +1,4 @@
-#include "lateral_ctrl/bench_test_utils.hpp"
+#include "control_tools/bench_test_utils.hpp"
 
 #include <kaiev26_msgs/msg/actuator_command.hpp>
 #include <kaiev26_msgs/msg/drive_actuator_status.hpp>
@@ -25,7 +25,7 @@ public:
     test_drive_mode_ = declare_parameter("test_drive_mode", 1);
     drive_mode_publish_period_ms_ = declare_parameter("drive_mode_publish_period_ms", 100);
     steer_sequence_publish_enabled_ = declare_parameter("steer_sequence_publish_enabled", true);
-    sequence_ = declare_parameter("steer_sequence_deg", defaultBenchSequence());
+    sequence_ = declare_parameter("steer_sequence_deg", control_tools::defaultBenchSequence());
     steer_command_publish_period_ms_ =
       declare_parameter("steer_command_publish_period_ms", 20);
     steer_target_change_interval_ms_ =

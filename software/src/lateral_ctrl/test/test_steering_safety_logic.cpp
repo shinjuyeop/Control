@@ -1,4 +1,3 @@
-#include "lateral_ctrl/bench_test_utils.hpp"
 #include "lateral_ctrl/steering_types.hpp"
 
 #include <gtest/gtest.h>
@@ -138,12 +137,7 @@ TEST(SteeringSafetyLogic, PriorityIsDeterministic)
     reasonWithoutTimeouts(true, DriveMode::AUTO, safety, true, true, false),
     SteeringDisableReason::CAN_TIMEOUT);
 }
-TEST(SteeringSafetyLogic, BenchSequenceAlternatesFiveDegrees)
-{
-  EXPECT_EQ(
-    lateral_ctrl::defaultBenchSequence(),
-    (std::vector<double>{5.0, -5.0}));
-}
+
 TEST(SteeringSafetyLogic, RateLimiterBoundsMovement)
 {
   EXPECT_DOUBLE_EQ(lateral_ctrl::rateLimit(0.0, 10.0, 5.0, 0.1), 0.5);

@@ -15,9 +15,8 @@ Mode의 **코드 기본값은 position**이다. 현재 작업 YAML의 운영자 
 20 A 환산 기준에서 최대 명령은 16 A, 지속 명령은 8 A다. 실측 전류나 정격 설정을 뜻하지 않는다.
 최대 명령을 바꿔도 화면의 P를 유지하도록 `torque_full_scale_error_deg`를 함께 환산한다.
 
-`A`는 MANUAL·정지 상태에서 16개 torque 튜닝을 atomic 적용하고 재조회한다.
-`S`는 다음 launch용 사용자 파일에 저장한다. 운용 방식·최소 차속·timeout은 저장 후
-노드 재시작이 필요하다. 기존 ROS 키는 유지하므로 아래 표와 CLI는 계속 유효하다.
+`S`는 선택한 프리셋 파일에 저장한다. TUI는 실행 중 제어값을 변경하지 않으며,
+모든 변경은 MANUAL·정지 상태에서 구동 스택을 종료하고 같은 프리셋으로 재시작해야 반영된다. 기존 ROS 키는 유지하므로 아래 표와 CLI는 계속 유효하다.
 [TUI 사용법·단위·저장 경로](../control_tuning/README.md)를 참고한다.
 
 튜닝 TUI의 `P`는 공중·주행별 사용자 제어 프리셋을 관리한다. 검증되지 않은
@@ -58,7 +57,7 @@ Ki=0이다. direct step의 target rate는 0으로 두어 D kick을 만들지 않
 처리 뒤 실제 송신값은 달라질 수 있다. peak=10000까지 검증 후 설정 가능하다.
 
 부호 변환은 `keyaTorqueCommand()`에서 단 한 번 적용한다. 기본 `+1`은
-`DEADZONE_MEASUREMENT.md`의 양의 raw torque→물리 LEFT 관측을 따른 초기 가정이다.
+[데드존 측정 기록](../control_tools/DEADZONE_MEASUREMENT.md)의 양의 raw torque→물리 LEFT 관측을 따른 초기 가정이다.
 그 문서의 옛 `/ctrl/steer_handle_hires`는 반전된 진단 축이며, 현재 calibration은
 positive count→LEFT다. 옛 음의 angle 기록만 보고 `-1`로 바꾸지 않는다. 장착 상태와
 Direction 설정이 달라질 수 있으므로 첫 저출력 시험에서 **물리 LEFT와 현재 count/
@@ -244,31 +243,10 @@ Host current loop가 아니다. 실제 peak 지속 오차는 control tick jitter
    별도 노드 재시작이나 `steering_enabled` toggle은 필요하지 않다.
    position 복귀는 노드 종료·KEYA 0020=3/Burn 확인 후 실행한다.
 
-## T0-T2 측정 도구
+## T0-T2 측정과 분석
 
-`torque_sysid_bench.launch.py`는 T0 부호, T1 마찰, T2 관성 시험 중 하나만 실행한다.
-읽기 전용 조향 노드와 실제 torque를 보내는 측정 노드를 함께 띄우므로
-`vehicle.launch.py`나 다른 KEYA 송신원과 동시에 실행하면 안 된다. 바퀴를 띄우고
-차량 정지·MANUAL/중립·가속 페달 해제·E-stop 준비, 대상 CAN과 KEYA 0020=2를 확인한 뒤
-T0부터 진행한다. 이 문서의 코드·테스트 결과는 물리 부호나 안전 한계의 증명이 아니다.
+실험 실행·MCAP 분석 절차는 [`control_tools`](../control_tools/README.md#토크-식별-t0t2)를 따릅니다.
 
-```bash
-ros2 launch lateral_ctrl torque_sysid_bench.launch.py test:=t0 direction:=1
-ros2 launch lateral_ctrl torque_sysid_bench.launch.py test:=t1 direction:=1
-ros2 launch lateral_ctrl torque_sysid_bench.launch.py test:=t2 level:=300
-```
-
-기록은 기본적으로 외장 저장소
-`~/Storage/ROS2_Workspace_offload/Control/torque_sysid`에 생성된다. 외장 저장소가 별도
-mount가 아니면 launch가 기록 전에 중단한다. T2를 두 개 이상의 raw level로 기록한 뒤:
-
-```bash
-ros2 run lateral_ctrl torque_sysid_metrics.py inertia \
-  <level300-bag>:300 <level500-bag>:500 --friction-raw <T1-result>
-ros2 run lateral_ctrl torque_sysid_metrics.py step <step-bag> --csv <output.csv>
-```
-
-측정 도구는 조향 기구의 마찰·관성 특성을 분석하는 용도이며 PD 제어 설정을 변경하지 않는다.
 
 ## Foxglove와 기록
 
@@ -300,7 +278,7 @@ torque 진단 토픽은 torque mode에서만 발행한다. 정지 시 제어 기
 reset되며 actual/current/speed는 기존 status에서 계속 관측한다.
 
 근거: 저장소 `docs/hardware/KEYA_KY170DJD01005-08G-V1_User_Manual_V1.1.pdf`
-§II, §4.1.2, §4.3.2, §4.3.3.2, `DEADZONE_MEASUREMENT.md`, 현재 calibration r3.
+§II, §4.1.2, §4.3.2, §4.3.3.2, [데드존 측정 기록](../control_tools/DEADZONE_MEASUREMENT.md), 현재 calibration r3.
 
 ## 구현 검증 (2026-09-16)
 

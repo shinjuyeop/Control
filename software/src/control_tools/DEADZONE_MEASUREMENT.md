@@ -4,7 +4,7 @@ KEYA KY170DJD01005-08G-V1 스티어링 모터를 Torque control 모드로 두고
 휠이 실제로 움직이기 시작하는지"(정지 마찰 breakaway 문턱)를 측정한 기록.
 
 Production 외부 wheel-angle torque 제어는 이제 `steering_actuator_node`의
-`actuation_mode=torque`로 실행한다. [TORQUE_CONTROL.md](TORQUE_CONTROL.md)에
+`actuation_mode=torque`로 실행한다. [조향 토크 제어](../lateral_ctrl/TORQUE_CONTROL.md)에
 mode·부호·envelope·튜닝 절차가 있다. 아래 측정 기록은 당시 진단 축과 조건을
 유지하며, 표의 raw 비율로 계산했던 전류값은 현재 설정의 검증된 raw→A 변환이 아니다.
 측정 노드와 production은 `KeyaCanDriver::torquePayload()`를 공유한다.
@@ -46,7 +46,7 @@ ros2 launch lateral_ctrl steering_actuator.launch.py \
     can_interface:=can0 actuator_output_enabled:=false
 
 # 터미널2 (노드는 한 번만 띄우고 계속 재사용)
-ros2 run lateral_ctrl deadzone_measure_node can0 --ros-args \
+ros2 run control_tools deadzone_measure_node can0 --ros-args \
     -p step_hold_ms:=300 -p ramp_direction:=1
 
 # 터미널3 — 반복 측정 시 노드 재시작 없이 이걸로 재실행
@@ -161,7 +161,7 @@ angle 1.260° -> 1.296° (Δ=0.036°)
 step_hold_ms 를 늘렸을 때 106으로 값이 변함
 
 터미널 2 : 
-ros2 run lateral_ctrl deadzone_measure_node can0 --ros-args       -p angle_topic:=/ctrl/steer_handle_hires       -p ramp_direction:=-1       -p ramp_step:=1       -p step_hold_ms:=8000       -p start_cmd:=101       -p torque_limit:=110
+ros2 run control_tools deadzone_measure_node can0 --ros-args       -p angle_topic:=/ctrl/steer_handle_hires       -p ramp_direction:=-1       -p ramp_step:=1       -p step_hold_ms:=8000       -p start_cmd:=101       -p torque_limit:=110
 
 
 Δ=-0.036°는 360°/10000count = 0.036°/count와 정확히 일치 — **hires 인코더 카운트 정확히 1칸** 단위로

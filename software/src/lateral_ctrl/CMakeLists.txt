@@ -19,17 +19,6 @@ find_package(diagnostic_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(kaiev26_msgs REQUIRED)
 
-# ── 측정 전용 노드 (deadzone/breakaway/sweep 실험용, DEADZONE_MEASUREMENT.md 참고)
-#    각도와 전류는 steering_actuator_node를 읽기 전용으로 띄워 /steering/status에서 받는다.
-#    드라이버 0020=Torque control(2)로 전환한 오프라인 세션에서만 사용.
-add_executable(deadzone_measure_node src/deadzone_measure_node.cpp)
-ament_target_dependencies(deadzone_measure_node rclcpp std_msgs kaiev26_msgs)
-
-install(TARGETS
-  deadzone_measure_node
-  DESTINATION lib/${PROJECT_NAME}
-)
-
 add_library(steering_core
   src/keya_can_driver.cpp
   src/steering_angle_converter.cpp
@@ -41,7 +30,6 @@ target_include_directories(steering_core PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(deadzone_measure_node steering_core)
 add_library(steering_node src/steering_actuator_node.cpp)
 target_link_libraries(steering_node steering_core)
 ament_target_dependencies(steering_node rclcpp std_msgs kaiev26_msgs diagnostic_msgs std_srvs)
@@ -49,19 +37,13 @@ add_executable(steering_actuator_node src/steering_actuator_main.cpp)
 target_link_libraries(steering_actuator_node steering_node)
 ament_target_dependencies(steering_actuator_node rclcpp)
 
-add_executable(steering_bench_test_node src/steering_bench_test_node.cpp)
-target_include_directories(steering_bench_test_node PRIVATE include)
-ament_target_dependencies(steering_bench_test_node rclcpp std_msgs kaiev26_msgs)
-
-install(TARGETS steering_core steering_node steering_actuator_node steering_bench_test_node
+install(TARGETS steering_core steering_node steering_actuator_node
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
-install(PROGRAMS scripts/mcap_to_csv.py scripts/torque_sysid_metrics.py
-  DESTINATION lib/${PROJECT_NAME})
 install(FILES README.md TORQUE_CONTROL.md DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
@@ -91,4 +73,5 @@ if(BUILD_TESTING)
 endif()
 
 ament_export_include_directories(include)
+ament_export_libraries(steering_core)
 ament_package()

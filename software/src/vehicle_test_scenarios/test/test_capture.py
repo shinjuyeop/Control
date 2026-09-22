@@ -11,7 +11,8 @@ from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 import yaml
 
-from vehicle_test_scenarios.sysid_capture import ParameterCapture, TORQUE_TOPICS
+from control_tools.parameter_capture import ParameterCapture
+from control_tools.topics import TORQUE_TOPICS
 from vehicle_test_scenarios import sysid_processes
 from control_tuning.schema import STEERING, GOVERNOR
 

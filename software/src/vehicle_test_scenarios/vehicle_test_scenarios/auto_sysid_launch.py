@@ -22,7 +22,7 @@ def auto_sysid_launch_description(
         "vehicle.launch.py",
     )
     logging_launch = os.path.join(
-        get_package_share_directory("lateral_ctrl"),
+        get_package_share_directory("control_tools"),
         "launch",
         "mcap_logging.launch.py",
     )

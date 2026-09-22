@@ -100,7 +100,7 @@ def _make_actions(context):
         ]
     delay = float(LaunchConfiguration('start_delay_sec').perform(context))
     actions.append(TimerAction(period=delay, actions=[Node(
-        package='lateral_ctrl', executable='deadzone_measure_node',
+        package='control_tools', executable='deadzone_measure_node',
         name='deadzone_measure_node', output='screen', arguments=[can_interface],
         parameters=[parameters],
     )]))

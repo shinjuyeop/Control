@@ -11,7 +11,7 @@ ros2 run control_tuning control_tuning_tui
 ```
 
 코드 변경 뒤에는 `colcon build --symlink-install --packages-select control_tuning lateral_ctrl command_governor control_launch` 후 다시 `si` 한다.
-Python 의존성은 rich/PyYAML, MCAP 분석은 ROS의 rosbag2_py/numpy다.
+Python 의존성은 rich/PyYAML이다. MCAP 분석은 [control_tools](../control_tools/README.md)에서 수행한다.
 `--offline`은 파일 편집·저장만, `--preview`는 첫 화면 출력만 수행한다.
 80열×24행 이상, 104열에서 저장값 열, 132열에서 native 이름 열을 표시한다.
 
@@ -137,7 +137,7 @@ helper는 15 s 안에 safe stop/readback을 기다려 한 번 적용한다. 실�
 cd ~/KAI_ws
 si
 python3 -m pytest src/Control/software/src/control_tuning/test -q
-python3 -m control_tuning.longitudinal_analysis <bag-directory> --start 0 --end 10.5 --target 6
+ros2 run control_tools longitudinal_analysis <bag-directory> --start 0 --end 10.5 --target 6
 ```
 
 Tests는 별도 ROS domain/localhost에서 실행한다. `CONTROL_TUNING_LAUNCH_TESTS=1`은

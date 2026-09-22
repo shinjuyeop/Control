@@ -5,6 +5,7 @@ is a LIMIT in native speed mode. GNSS supplies body acceleration when available.
 """
 import argparse
 import json
+import csv
 import math
 
 import numpy as np
@@ -12,8 +13,8 @@ import rosbag2_py
 from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
 
-from .longitudinal import STATUS_TOPIC, decode_status
-from .naming import canonical_capture
+from control_tuning.longitudinal import STATUS_TOPIC, decode_status
+from control_tuning.naming import canonical_capture
 
 TOPICS = ('/drive/status', '/vehicle/command', '/brake/status', '/gnss/fix_velocity',
           '/parameter_events', '/sysid/control_parameters', STATUS_TOPIC)
@@ -47,6 +48,10 @@ def read_bag(path):
             row['gnss'] = math.hypot(msg.twist.twist.linear.x, msg.twist.twist.linear.y)
         elif topic == STATUS_TOPIC:
             status = decode_status(msg.data)
+            rows[topic].append({'t': row['t'], **{key: status[key] for key in
+                ('speed_error_mps', 'p_current_a', 'i_current_a', 'unsaturated_current_a',
+                 'current_command_a', 'saturated', 'anti_windup', 'coasting', 'feedback_valid', 'inhibit')},
+                'revision': status['revision']})
             if not snapshots or status['revision'] != snapshots[-1]['revision']:
                 snapshots.append({'t': row['t'], **status})
             continue
@@ -76,7 +81,8 @@ def read_bag(path):
         for key, values in data.items():
             if key != 't':
                 drive[key] = np.where(valid, values[np.maximum(index, 0)], np.nan)
-    return drive, dict(calibration=snapshots, parameters=parameters, parameter_captures=captures)
+    return drive, dict(calibration=snapshots, parameters=parameters, parameter_captures=captures,
+                       pi_samples=rows[STATUS_TOPIC])
 
 
 def summarize(d, start=0., end=None, target=None):
@@ -166,9 +172,19 @@ def main():
     parser.add_argument('bag')
     parser.add_argument('--start', type=float, default=0, help='Seconds from first positive AUTO command')
     parser.add_argument('--end', type=float)
+    parser.add_argument('--pi-csv', help='Export every received PI sample at its bag receive time')
     parser.add_argument('--target', type=float, help='Nominal event target for 10–90%%/arrival/settling')
     args = parser.parse_args()
     data, provenance = read_bag(args.bag)
+    samples = provenance.pop('pi_samples')
+    provenance['pi_sample_count'] = len(samples)
+    if args.pi_csv:
+        if not samples:
+            raise ValueError('No longitudinal PI samples to export')
+        with open(args.pi_csv, 'w', newline='') as stream:
+            writer = csv.DictWriter(stream, fieldnames=list(samples[0]))
+            writer.writeheader()
+            writer.writerows(samples)
     print(json.dumps({'bag': args.bag, **summarize(data,args.start,args.end,args.target),
                       **provenance}, indent=2, ensure_ascii=False))
 

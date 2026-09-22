@@ -123,11 +123,14 @@ K-City 경로 시험은 Decision의 `kcity_quali_route.yaml` 또는
 YAML 기본값으로 누락을 채우지 않는다. 토크 P full-scale·D, 전류 raw 한도, 허용/회복 시간,
 필터, 조향 속도 제한, 토크 방향, 운용 방식, timeout, 캘리브레이션과 전류 환산 기준을 포함한다.
 P·D·전류 한도의 화면 단위 환산값도 함께 기록한다.
+실차에서는 `/drive/longitudinal_status`의 fresh한 readback도 같은 파일의
+`longitudinal`에 저장해 STM_A에 적용된 제어 모드·PI 설정을 확인한다.
 
 조회는 recorder가 필수 토픽과 `/parameter_events`에 연결된 뒤 수행한다. 파일 저장 성공
 후에만 AUTO 대기로 넘어간다. 필수 파라미터 누락·서비스 시간 초과·중복 노드는 실패로 기록하고
 시험 시작을 허용하지 않는다. 각 노드의 조회 시각은 ROS 시각과 UTC 시각으로 남긴다.
-이 스냅샷은 recorder 준비 완료 시점의 값이며, 이후 변경은 `/parameter_events`로 확인한다.
+이 스냅샷은 recorder 준비 완료 시점의 값이다. 이후 ROS 파라미터 변경은
+`/parameter_events`, STM_A 설정 변경은 `/drive/longitudinal_status`로 확인한다.
 
 같은 내용의 JSON은 `/sysid/control_parameters`에도 한 번 발행해 **MCAP 안에도** 보관한다.
 snapshot schema v2의 `display_values`/`display_units`는 `steering_`/`governor_` 이름을 쓰며, `ros__parameters`는 실제 노드의 native 이름·단위를 보존한다. 기존 v1 snapshot은 [이름 호환 어댑터](../../../docs/CONTROL_TUNING_PARAMETERS.md)로 읽는다.
@@ -199,7 +202,7 @@ vehicle_test_scenario_node
 | `scenario_repetitions` | `0` | 0이면 무한 반복. 유한 반복 완료 후 speed target 0·brake false 유지 |
 | `wait_for_auto_mode` | `false` | true이면 MANUAL에서 zero-speed baseline, AUTO 감지 후 timeline 준비 |
 | `auto_start_delay_sec` | `0.0` | AUTO 감지 후 speed target 0·brake false countdown |
-| `scenario_status_topic` | `/sysid/scinario` | 현재 시나리오 label `std_msgs/msg/String` 토픽 |
+| `scenario_status_topic` | `/sysid/scenario` | 현재 시나리오 label `std_msgs/msg/String` 토픽 |
 | `scenario_label` | 빈 문자열 | 빈 값이면 scenario 이름, 고정 launch는 run label 사용 |
 | `brake_override` | `false` | 모든 시나리오를 즉시 speed/steer 0 + brake로 덮어씀 |
 
@@ -303,6 +306,7 @@ ros2 param set /vehicle_test_scenario_runner enabled false  # MANUAL 전환 후
 
 다음 launch들은 명령행 인자를 받지 않는다. 각 파일이 실차 `vehicle.launch.py`,
 고정 YAML runner, MCAP logger를 한 번에 시작한다. MCAP은 launch 즉시 기록된다.
+MANUAL 상태에서 logger의 `녹화 준비 완료`를 확인한 뒤 AUTO로 전환한다.
 `/drive/status`가 MANUAL에서 AUTO로 바뀌면 10초 동안 `/planning/command`에
 `speed_target_mps=0.0`, `brake_engage=false`를 발행하며 countdown을
 로그에 표시한다. countdown 뒤 시나리오 `t=0`이 시작된다. 정해진 반복이 끝나면
@@ -316,7 +320,7 @@ ros2 launch vehicle_test_scenarios auto_lateral_steering_sine.launch.py
 ros2 launch vehicle_test_scenarios auto_lateral_steering_square.launch.py
 ```
 
-| Launch | 고정 조건 | MCAP session prefix |
+| Launch | 고정 조건 | `/sysid/scenario` label |
 | --- | --- | --- |
 | `auto_longitudinal_speed_step.launch.py` | 10 s zero baseline 후 low↔high, 기본 모두 0 km/h, 각 5 s, 4 cycle | `A02_speed_step_10_20` |
 | `auto_lateral_steering_step.launch.py` | 기본 0 km/h, center/+1/center/-1°, 각 5 s, 3 cycle | `A11_steering_step_center_pm1` |
@@ -327,7 +331,14 @@ ros2 launch vehicle_test_scenarios auto_lateral_steering_square.launch.py
 실행 전에 source YAML에서 시험할 속도와 중심각을 설정하고 다시 빌드한다.
 종방향 YAML에는 센터각 설정이 필요 없다. 기존 고정 label은 식별자 호환을 위해 유지하며,
 `A02_speed_step_10_20`의 숫자는 현재 설정속도를 나타내지 않는다.
-각 run은 실차 제어컴의
-실행 중인 workspace의 `records/` 아래 별도 MCAP으로 저장된다. logger는
+각 run은 `~/KAI_ws/records/<시간>_independent/rosbag/`에 별도 MCAP으로 저장된다. logger는
 `/planning/command`와 `/vehicle/command`를 모두 기록한다.
-`/sysid/scinario`에는 각 YAML의 고정 `std_msgs/msg/String` label이 20 Hz로 기록된다.
+`/sysid/scenario`에는 각 YAML의 고정 `std_msgs/msg/String` label이 20 Hz로 기록된다.
+
+## 공통 녹화 도구
+
+MCAP 저장 옵션과 Control 토픽, 실제 파라미터 수집은
+[`control_tools`](../control_tools/LOGGING.md)를 공유합니다. TUI의 시험·녹화 생명주기는
+이 패키지에 유지합니다. 실차 기록은 STM_A longitudinal status의 연결과 실제 기록을
+필수 확인하며, 초기 YAML snapshot에도 적용 설정 readback을 남깁니다.
+ROS 파라미터 snapshot은 조향·거버너, 종방향 적용값은 STM_A readback입니다.

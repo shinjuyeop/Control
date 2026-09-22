@@ -5,20 +5,14 @@ import time
 
 from rcl_interfaces.srv import GetParameters, ListParameters
 from rclpy.parameter import parameter_value_to_python
+from rclpy.qos import qos_profile_sensor_data
+from std_msgs.msg import Float32MultiArray
 
 from control_tuning.conditions import condition_document
+from control_tuning.longitudinal import STATUS_TOPIC, decode_status
 from control_tuning.schema import STEERING, GOVERNOR, READ_NAMES, FIELDS, decode_node
 
 
-TORQUE_TOPICS = (
-    '/steering/actuation_mode', '/steering/requested_angle', '/steering/angle_error',
-    '/steering/rate', '/steering/unfiltered_rate', '/steering/torque_p_raw',
-    '/steering/torque_d_raw', '/steering/torque_unsaturated_raw',
-    '/steering/torque_command_raw', '/steering/torque_current_limit_command_a',
-    '/steering/torque_limit_raw', '/steering/torque_saturated',
-    '/steering/torque_peak_limited', '/steering/torque_settled',
-    '/steering/torque_rate_ready', '/steering/torque_safety',
-)
 REQUIRED_PARAMETERS = {
     STEERING: set(READ_NAMES[STEERING]) | {'torque_direction_sign', 'max_steering_rate_deg_s',
                                          'steering_enabled', 'hardware_can_enabled', 'actuator_output_enabled'},
@@ -33,22 +27,34 @@ def wall_time():
 class ParameterCapture:
     """Non-blocking service state machine. Calls no parameter setters."""
 
-    def __init__(self, node, condition, *, timeout=5.0):
+    def __init__(self, node, condition=None, *, timeout=5.0, require_longitudinal=False):
         self.node, self.started, self.timeout = node, time.monotonic(), timeout
         self.finished = False
         self.document = {
             'schema_version': 2, 'capture_stage': 'recorder_ready_before_run',
             'requested_at': wall_time(),
             'requested_ros_time_ns': node.get_clock().now().nanoseconds,
-            'test_condition': condition_document(condition),
+            'test_condition': condition_document(condition) if condition else {'key': 'unspecified'},
             'status': 'pending', 'nodes': {},
             'note': 'Parameters read from running nodes. Use /parameter_events for subsequent changes.',
         }
+        self.require_longitudinal = require_longitudinal
+        self.longitudinal = None
+        self.longitudinal_subscription = (node.create_subscription(
+            Float32MultiArray, STATUS_TOPIC, self._receive_longitudinal, qos_profile_sensor_data)
+            if require_longitudinal else None)
+        self.document['longitudinal'] = {'status': 'pending' if require_longitudinal else 'not_requested'}
         self.requests = {}
         for name in REQUIRED_PARAMETERS:
             listing = node.create_client(ListParameters, f'/{name}/list_parameters')
             getter = node.create_client(GetParameters, f'/{name}/get_parameters')
             self.requests[name] = dict(listing=listing, getter=getter, stage='waiting', future=None)
+
+    def _receive_longitudinal(self, message):
+        try:
+            self.longitudinal = (time.monotonic(), decode_status(message.data))
+        except ValueError:
+            self.longitudinal = None
 
     def _error(self, name, message):
         self.document['nodes']['/' + name] = {'status': 'failed', 'error': message}
@@ -102,12 +108,26 @@ class ParameterCapture:
             if request['stage'] != 'done' and time.monotonic() - self.started > self.timeout:
                 self._error(name, '실제 파라미터 조회 시간 초과')
         if all(request['stage'] == 'done' for request in self.requests.values()):
+            if self.require_longitudinal:
+                if self.longitudinal and time.monotonic() - self.longitudinal[0] < .7:
+                    self.document['longitudinal'] = {
+                        'status': 'complete', 'topic': STATUS_TOPIC,
+                        'received_at': wall_time(), 'readback': self.longitudinal[1]}
+                elif time.monotonic() - self.started <= self.timeout:
+                    return False
+                else:
+                    self.document['longitudinal'] = {'status': 'failed',
+                        'error': 'STM_A longitudinal readback missing, invalid or stale'}
             self.finished = True
             complete = all(entry['status'] == 'complete' for entry in self.document['nodes'].values())
+            complete &= not self.require_longitudinal or self.document['longitudinal']['status'] == 'complete'
             self.document.update(status='complete' if complete else 'incomplete', completed_at=wall_time())
         return self.finished
 
     def close(self):
+        if self.longitudinal_subscription is not None:
+            self.node.destroy_subscription(self.longitudinal_subscription)
+            self.longitudinal_subscription = None
         for request in self.requests.values():
             future = request['future']
             if future is not None and not future.done():

@@ -16,11 +16,12 @@ import os
 
 
 def generate_launch_description():
-    share = get_package_share_directory('lateral_ctrl')
+    share = get_package_share_directory('control_tools')
+    lateral_share = get_package_share_directory('lateral_ctrl')
     bench_config = os.path.join(share, 'config', 'steering_bench_test.yaml')
     actuator = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(share, 'launch', 'steering_actuator.launch.py')
+            os.path.join(lateral_share, 'launch', 'steering_actuator.launch.py')
         ),
         launch_arguments={
             'can_interface': LaunchConfiguration('can_interface'),
@@ -33,7 +34,7 @@ def generate_launch_description():
         }.items(),
     )
     bench = Node(
-        package='lateral_ctrl',
+        package='control_tools',
         executable='steering_bench_test_node',
         name='steering_bench_test_node',
         output='screen',

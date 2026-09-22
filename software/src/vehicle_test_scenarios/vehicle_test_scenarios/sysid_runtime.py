@@ -104,7 +104,7 @@ class SysidNode(Node):
         self.record_error = ''
         self.command_publisher = self.create_publisher(ActuatorCommand, '/planning/command', 10)
         self.steering_control = SteeringControl(self)
-        self.label_publisher = self.create_publisher(String, '/sysid/scinario', 10)
+        self.label_publisher = self.create_publisher(String, '/sysid/scenario', 10)
         self.control_parameters_publisher = self.create_publisher(
             String, '/sysid/control_parameters', 10)
         self.route_enable_publisher = self.create_publisher(Bool, '/sysid/route_enabled', 10)
