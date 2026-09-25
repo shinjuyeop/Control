@@ -39,7 +39,6 @@ public:
     angle_limit_ = startup<double>("max_steering_rad", .4363);
     rate_limit_ = startup<double>("steering_rate_limit_radps", 1.0471975512);
     state_angle_limit_ = angle_limit_;
-    observer_only_ = startup<bool>("observer_only", false);
     const double reference_limit =
         model["steering_reference_limit_rad"].as<double>();
     const double reference_rate =
@@ -48,10 +47,8 @@ public:
         !std::isfinite(reference_limit + reference_rate))
       throw std::runtime_error("Path model requires a finite positive "
                                "identified reference envelope");
-    if (!observer_only_) {
-      angle_limit_ = std::min(angle_limit_, reference_limit);
-      rate_limit_ = std::min(rate_limit_, reference_rate);
-    }
+    angle_limit_ = std::min(angle_limit_, reference_limit);
+    rate_limit_ = std::min(rate_limit_, reference_rate);
     if (!(wheelbase_ > 0) || !(steer_tau_ > 0) || !(yaw_tau_ > 0) ||
         !(yaw_gain_ > 0) || !(steer_gain_ > 0) ||
         !std::isfinite(wheelbase_ + steer_tau_ + yaw_tau_ + yaw_gain_ +
@@ -74,17 +71,14 @@ public:
     applied_sub_ = create_subscription<kaiev26_msgs::msg::ActuatorCommand>(
         "/vehicle/command", 10,
         [this](kaiev26_msgs::msg::ActuatorCommand::SharedPtr m) {
-          if (!observer_only_)
-            previous_ = m->steering_target_rad;
+          previous_ = m->steering_target_rad;
         });
     output_ = create_publisher<ackermann_msgs::msg::AckermannDriveStamped>(
-        observer_only_ ? "~/target" : "/control/lateral/target", 10);
+        "/control/lateral/target", 10);
     diagnostics_ = create_publisher<diagnostic_msgs::msg::DiagnosticArray>(
-        observer_only_ ? "~/diagnostics" : "/control/lateral/diagnostics", 10);
+        "/control/lateral/diagnostics", 10);
     prediction_ = create_publisher<visualization_msgs::msg::MarkerArray>(
-        observer_only_ ? "/debug/path_compare/mpc/trajectory"
-                       : "/control/lateral/mpc/trajectory",
-        10);
+        "/control/lateral/mpc/trajectory", 10);
     timer_ = create_wall_timer(std::chrono::milliseconds(50),
                                std::bind(&PathMpcNode::tick, this));
   }
@@ -150,13 +144,7 @@ private:
             points[nearest] + ratio * (points[nearest + 1] - points[nearest]);
         ey = direction.y() * projection.x() - direction.x() * projection.y();
         epsi = -std::atan2(direction.y(), direction.x());
-        if (observer_only_ && !observer_previous_ready_) {
-          previous_ = state_->steering_rad;
-          observer_previous_ready_ = true;
-        }
-        if (v < .1 ||
-            (!observer_only_ &&
-             state_->mode == kaiev26_msgs::msg::VehicleState::MODE_MANUAL)) {
+        if (v < .1 || state_->mode == kaiev26_msgs::msg::VehicleState::MODE_MANUAL) {
           sol.solved = true;
           sol.input = state_->steering_rad;
         } else {
@@ -239,15 +227,12 @@ private:
         reason = "invalid_path";
     }
     if (sol.solved) {
-      if (observer_only_)
-        previous_ = sol.input;
       ackermann_msgs::msg::AckermannDriveStamped m;
       m.header.stamp = now();
       m.header.frame_id = "base_footprint";
       m.drive.steering_angle = sol.input;
       output_->publish(m);
-    } else if (observer_only_)
-      observer_previous_ready_ = false;
+    }
     visualization_msgs::msg::MarkerArray markers;
     markers.markers.push_back(predicted);
     prediction_->publish(markers);
@@ -276,8 +261,6 @@ private:
   Eigen::MatrixXd reference_, offset_;
   double wheelbase_, steer_tau_, yaw_tau_, yaw_gain_, steer_gain_, steer_bias_,
       yaw_bias_, angle_limit_, state_angle_limit_, rate_limit_, previous_{0};
-  bool observer_only_{false};
-  bool observer_previous_ready_{false};
   rclcpp::Time imu_received_{0, 0, RCL_ROS_TIME};
   kaiev26_msgs::msg::Centerline::SharedPtr path_;
   kaiev26_msgs::msg::VehicleState::SharedPtr state_;
