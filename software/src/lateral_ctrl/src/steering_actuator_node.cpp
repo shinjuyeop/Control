@@ -85,6 +85,20 @@ SteeringActuatorNode::SteeringActuatorNode(
   torque.min_angle_rad = converter_.countToEquivalentDeg(-converter_.commandCountLimit()) * kDegToRad;
   torque.max_angle_rad = converter_.countToEquivalentDeg(converter_.commandCountLimit()) * kDegToRad;
   torque_controller_.configure(torque);
+  const auto algorithm = declare_parameter<std::string>("torque_controller", "pd", startup_only);
+  const auto model_file = declare_parameter<std::string>("steering_model_file", "", startup_only);
+  if (algorithm != "pd" && algorithm != "mpc") throw std::invalid_argument("torque_controller must be pd or mpc");
+  if (algorithm == "mpc") {
+    if (!torqueMode()) throw std::invalid_argument("Steering MPC requires torque actuation");
+    steering_mpc_ = std::make_unique<steering_mpc::SteeringMpc>(steering_mpc::SteeringModel::load(model_file),
+      declare_parameter<int>("mpc_horizon",50,startup_only),
+      declare_parameter<double>("mpc_angle_weight",4000.,startup_only),
+      declare_parameter<double>("mpc_rate_weight",.1,startup_only),
+      declare_parameter<double>("mpc_delta_torque_weight",.02,startup_only));
+    if (std::abs(steering_mpc_->dt()-torque.control_period_sec)>1e-6)
+      throw std::invalid_argument("Steering model sample period must match the control period");
+    mpc_diagnostics_=create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/control/steering/diagnostics",10);
+  }
   RCLCPP_WARN(get_logger(),
     "actuation_mode=%s REQUIRES KEYA parameter 0020=%d, Control Ways=CAN (0019=2). "
     "Host does NOT set or verify 0020. Burn settings before operation. "
@@ -894,7 +908,27 @@ void SteeringActuatorNode::controlTick()
       commanded_wheel_angle_deg_ = target_wheel_angle_deg_;
       corrected_wheel_angle_deg_ = target_wheel_angle_deg_;
       torque_output_ = torque_controller_.update(target_wheel_angle_deg_ * kDegToRad,
-        0.0, seconds(age_now));  // No target derivative kick on a step.
+        0.0, seconds(age_now), steering_mpc_ ?
+        std::function<double(double,double,double,double)>([this](double angle,double rate,double target,double limit) {
+          const auto & cfg=torque_controller_.config();
+          const auto started=std::chrono::steady_clock::now();
+          mpc_result_=steering_mpc_->solve(angle,rate,target,sent_torque_raw_*torque_direction_sign_,limit,
+            cfg.min_angle_rad+cfg.soft_limit_margin_rad,cfg.max_angle_rad-cfg.soft_limit_margin_rad);
+          diagnostic_msgs::msg::DiagnosticArray array; array.header.stamp=this->now();
+          diagnostic_msgs::msg::DiagnosticStatus status; status.name="steering_mpc";
+          status.level=mpc_result_.solved?(mpc_result_.status==OSQP_SOLVED_INACCURATE?1:0):2;
+          status.message=mpc_result_.solved?(mpc_result_.status==OSQP_SOLVED_INACCURATE?"solved_inaccurate":"solved"):"solver_failed_"+std::to_string(mpc_result_.status);
+          for(const auto & item: std::vector<std::pair<std::string,double>>{
+              {"solve_ms",mpc_result_.solve_ms},{"iterations",mpc_result_.iterations},
+              {"compute_ms",std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count()}}) {
+            diagnostic_msgs::msg::KeyValue value; value.key=item.first; value.value=std::to_string(item.second); status.values.push_back(value);
+          }
+          array.status.push_back(status); mpc_diagnostics_->publish(array);
+          return mpc_result_.solved?mpc_result_.input:std::numeric_limits<double>::quiet_NaN();
+        }) : std::function<double(double,double,double,double)>{});
+      if (std::chrono::steady_clock::now() > torque_command_deadline_) {
+        torque_output_.fault = TorqueSafetyFault::FEEDBACK_TIMEOUT;
+      }
       if (torque_output_.fault != TorqueSafetyFault::NONE) {
         torqueSafetyStop(torque_output_.fault);
       } else if (enabled_commanded_) {
@@ -934,6 +968,7 @@ void SteeringActuatorNode::controlTick()
   }
   if (torqueMode() && state_ != SteeringState::ACTIVE) {
     torque_controller_.idle(seconds(age_now));
+    if (steering_mpc_) steering_mpc_->reset();
     torque_output_ = {};
   }
   if (state_ != SteeringState::ACTIVE) enabled_commanded_ = false;

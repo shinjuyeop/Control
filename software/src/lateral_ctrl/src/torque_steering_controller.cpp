@@ -104,7 +104,8 @@ void TorqueSteeringController::accountOutput(double now)
   have_output_time_ = true;
 }
 
-TorqueSteeringOutput TorqueSteeringController::update(double target, double target_rate, double now)
+TorqueSteeringOutput TorqueSteeringController::update(double target, double target_rate, double now,
+  const std::function<double(double, double, double, double)> & law)
 {
   TorqueSteeringOutput out;
   out.rate_rad_s = rate_rad_s_;
@@ -132,14 +133,18 @@ TorqueSteeringOutput TorqueSteeringController::update(double target, double targ
   out.p_raw = config_.peak_limit_raw / config_.full_scale_error_rad * out.error_rad;
   out.d_raw = config_.kd * (target_rate - rate_rad_s_);
   out.unsaturated_raw = out.p_raw + out.d_raw;
+  out.peak_limited = peak_used_sec_ + config_.control_period_sec >
+    config_.peak_duration_sec + 1e-9;
+  out.limit_raw = out.peak_limited ? config_.sustained_limit_raw : config_.peak_limit_raw;
+  if (law && rate_ready_) {
+    out.unsaturated_raw = law(angle_rad_, rate_rad_s_, out.target_rad, out.limit_raw);
+    out.p_raw = out.d_raw = 0.0;
+  }
   if (!std::isfinite(out.unsaturated_raw)) {
     out.fault = TorqueSafetyFault::INVALID_INPUT;
     last_command_raw_ = 0;
     return out;
   }
-  out.peak_limited = peak_used_sec_ + config_.control_period_sec >
-    config_.peak_duration_sec + 1e-9;
-  out.limit_raw = out.peak_limited ? config_.sustained_limit_raw : config_.peak_limit_raw;
   out.settled = std::abs(out.error_rad) < config_.settle_angle_rad &&
     std::abs(rate_rad_s_) < config_.settle_rate_rad_s &&
     std::abs(unfiltered_rate_rad_s_) < config_.settle_rate_rad_s &&

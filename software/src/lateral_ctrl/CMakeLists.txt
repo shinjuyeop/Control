@@ -14,6 +14,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(steering_mpc REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
@@ -31,8 +32,8 @@ target_include_directories(steering_core PUBLIC
 )
 
 add_library(steering_node src/steering_actuator_node.cpp)
-target_link_libraries(steering_node steering_core)
-ament_target_dependencies(steering_node rclcpp std_msgs kaiev26_msgs diagnostic_msgs std_srvs)
+target_link_libraries(steering_node steering_core steering_mpc::steering_mpc_core)
+ament_target_dependencies(steering_node rclcpp std_msgs kaiev26_msgs diagnostic_msgs std_srvs steering_mpc)
 add_executable(steering_actuator_node src/steering_actuator_main.cpp)
 target_link_libraries(steering_actuator_node steering_node)
 ament_target_dependencies(steering_actuator_node rclcpp)

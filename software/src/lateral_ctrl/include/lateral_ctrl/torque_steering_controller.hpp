@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 
 namespace lateral_ctrl
 {
@@ -49,7 +50,8 @@ public:
   // Reconfiguration preserves the peak budget; callers stop output before committing it.
   void configure(const TorqueSteeringConfig & config);
   TorqueSafetyFault observeFeedback(double angle_rad, double sample_time_sec);
-  TorqueSteeringOutput update(double target_rad, double target_rate_rad_s, double now_sec);
+  TorqueSteeringOutput update(double target_rad, double target_rate_rad_s, double now_sec,
+    const std::function<double(double, double, double, double)> & law = {});
   // Clear motion history, not peak exposure. Re-arming must not buy a new peak window.
   void reset(double now_sec);
   void idle(double now_sec);

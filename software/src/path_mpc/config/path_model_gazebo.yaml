@@ -1,0 +1,25 @@
+steering_reference_limit_rad: 0.4363
+steering_reference_rate_rad_s: 1.0471975512
+wheelbase_m: 1.2991017929
+steering_time_constant_s: 0.1251969018277452
+steering_gain: 1.0124993792269081
+steering_bias_rad: -2.1969354823649838e-05
+steering_prediction_rmse_rad: 0.0009592447426246493
+yaw_time_constant_s: 0.005000000000000001
+yaw_gain: 1.0442247957396724
+yaw_bias_rad_s: -0.00012045845574264422
+yaw_prediction_rmse_rad_s: 0.0027881692706036624
+actuator_source: /mnt/data/data/ROS2_Workspace_offload/lateral_mpc/20260924/mpc_tuned/20260924_130357_530999_independent/rosbag
+vehicle_sources:
+- /mnt/data/data/ROS2_Workspace_offload/lateral_mpc/20260924/mpc_tuned/20260924_130357_530999_independent/rosbag
+scope: Empirical planar response; wheelbase is design geometry, not identified tire
+  parameters
+validation_yaw:
+- bag: /mnt/data/data/ROS2_Workspace_offload/lateral_mpc/20260924/pd/20260924_125656_403876_independent/rosbag
+  prediction_rmse_rad_s: 0.003094929077444447
+sample_period_s: 0.02
+yaw_lag_below_sample_resolution: true
+identified_steering_reference_limit_rad: 0.05235341936349869
+identified_steering_reference_rate_rad_s: 0.10275342938259426
+envelope_note: Reference envelope widened to the motion_control steering limits (25
+  deg, 60 deg/s) for Gazebo K-City runs; the identified range is kept in identified_steering_reference_*.

@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+"""Compare recorded path tracking runs on the same existing route definition."""
+import argparse,json
+from pathlib import Path
+import numpy as np
+import yaml
+import rosbag2_py
+from rosidl_runtime_py.utilities import get_message
+from rclpy.serialization import deserialize_message
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import sys
+from ament_index_python.packages import get_package_prefix
+sys.path.insert(0, str(Path(get_package_prefix('steering_mpc')) / 'lib' / 'steering_mpc'))
+from lateral_data import timing
+
+def main():
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--run',action='append',required=True,help='LABEL=bag directory')
+    p.add_argument('--route',required=True);p.add_argument('--output',required=True);a=p.parse_args()
+    out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
+    route=yaml.safe_load(Path(a.route).read_text())['waypoints'];xy=np.array([[p['x'],p['y']] for p in route]);xy-=xy[0]
+    direction=xy[1]-xy[0];direction=direction/np.linalg.norm(direction)
+    rotation=np.array([[direction[0],direction[1]],[-direction[1],direction[0]]])
+    xy=xy@rotation.T
+    fig,axes=plt.subplots(1,2,figsize=(12,5),gridspec_kw={'width_ratios':[1,1.4]})
+    axes[0].plot(xy[:,0],xy[:,1],'k--',label='Reference')
+    report={}
+    for spec in a.run:
+        label,path=spec.split('=',1);reader=rosbag2_py.SequentialReader();reader.open(rosbag2_py.StorageOptions(uri=path,storage_id='mcap'),rosbag2_py.ConverterOptions('',''))
+        names=['/vehicle/state','/planning/route_context','/localization/odometry']
+        types={t.name:get_message(t.type) for t in reader.get_all_topics_and_types() if t.name in names}
+        reader.set_filter(rosbag2_py.StorageFilter(topics=list(types)));moving=False;state_t=0;cte=[];poses=[];invalid=0;count=0
+        while reader.has_next():
+            topic,raw,t=reader.read_next();m=deserialize_message(raw,types[topic]);t*=1e-9
+            if topic==names[0]:moving=m.mode==1 and m.speed_mps>.2;state_t=t
+            elif moving and t-state_t<.2:
+                if topic==names[1]:
+                    count+=1;invalid+=not m.route_projection_valid
+                    if m.route_projection_valid:cte.append([m.progress_s,m.cross_track_error,m.heading_error])
+                elif topic==names[2]:poses.append([m.pose.pose.position.x,m.pose.pose.position.y])
+        d=np.array(cte);pos=np.array(poses)
+        if not len(d):raise ValueError(f'{label}: no moving valid route observations')
+        if len(pos):
+            pos=(pos-np.array([route[0]['x'],route[0]['y']]))@rotation.T
+            axes[0].plot(pos[:,0],pos[:,1],label=label)
+        axes[1].plot(d[:,0],d[:,1],label=label)
+        report[label]=dict(cross_track_rmse_m=float(np.sqrt(np.mean(d[:,1]**2))),p95_cross_track_m=float(np.quantile(np.abs(d[:,1]),.95)),
+            max_cross_track_m=float(np.max(np.abs(d[:,1]))),heading_rmse_deg=float(np.rad2deg(np.sqrt(np.mean(d[:,2]**2)))),
+            final_progress_m=float(d[-1,0]),invalid_projection_fraction=invalid/max(1,count),timing=timing(path),bag=str(Path(path).resolve()))
+    axes[0].set_aspect('equal');axes[0].set_xlabel('Forward from start [m]');axes[0].set_ylabel('Left from start [m]')
+    axes[1].set_xlabel('Route progress [m]');axes[1].set_ylabel('Cross-track error [m]')
+    for ax in axes:ax.grid(alpha=.25)
+    handles,labels=axes[0].get_legend_handles_labels();fig.legend(handles,labels,loc='upper center',ncol=4,fontsize=9)
+    fig.tight_layout(rect=(0,0,1,.91));fig.savefig(out/'path_comparison.png',dpi=170);fig.savefig(out/'path_comparison.svg')
+    (out/'metrics.json').write_text(json.dumps(report,indent=2));print(json.dumps(report,indent=2))
+if __name__=='__main__':main()

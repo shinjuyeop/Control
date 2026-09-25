@@ -22,6 +22,7 @@
 #include <std_msgs/msg/string.hpp>
 
 #include <memory>
+#include "steering_mpc/steering_mpc.hpp"
 #include <string>
 
 namespace lateral_ctrl
@@ -83,6 +84,9 @@ private:
   WheelAngleTrackingController tracking_controller_;
   TorqueSteeringController torque_controller_;
   TorqueSteeringOutput torque_output_;
+  std::unique_ptr<steering_mpc::SteeringMpc> steering_mpc_;
+  mpc_common::Solution mpc_result_;
+  rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr mpc_diagnostics_;
   std::string actuation_mode_{"position"};
   bool torqueMode() const { return actuation_mode_ == "torque"; }
   int torque_direction_sign_{1};

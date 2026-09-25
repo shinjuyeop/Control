@@ -1,0 +1,36 @@
+dt: 0.02
+states:
+- steering_rad
+- steering_rate_rad_s
+input: /steering/torque_command_raw
+input_scale: 10000.0
+delay_steps: 0
+A:
+- - 0.9994407990013944
+  - 0.01966526189263393
+- - -0.05560461029292236
+  - 0.9665275836667009
+B:
+- 0.00022865107559519177
+- 0.02273610738040836
+c:
+- 1.1360321138187182e-05
+- 0.0011296228570165457
+damping: 1.6736728711974058
+stiffness: 2.8275550357023387
+gain: 1.156155839903901
+bias: 0.057442553431727814
+calibration: /home/user1/ROS2_Workspace/gazebo_sitl/src/Control/software/src/lateral_ctrl/config/steering_motor_calibration.yaml
+wheelbase_m: 1.3
+training:
+- 20260919_150730_991775_steering_step_v5
+- 20260919_150906_310553_steering_step_v5
+- 20260919_151306_873949_steering_step_v7
+- 20260919_152237_618508_steering_sine_v5
+- 20260919_152705_444451_steering_sine_v7
+validation:
+- 20260919_151054_047669_steering_step_v5
+- 20260919_151729_090170_steering_step_v6
+- 20260919_152450_164836_steering_sine_v5
+method: Continuous run output-error fit, equal weight per training bag; provisional
+  closed-loop empirical plant

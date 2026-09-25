@@ -266,3 +266,28 @@ TEST(TorqueSteeringController, MotorSignIsAppliedOnceAtBoundary)
   EXPECT_THROW(keyaTorqueCommand(10, 0), std::invalid_argument);
   EXPECT_THROW(keyaTorqueCommand(10001, 1), std::invalid_argument);
 }
+
+TEST(TorqueSteeringController, ExternalLawRetainsOutputLimitsAndFeedbackStop)
+{
+  TorqueSteeringController c;
+  seed(c);
+  int calls=0;
+  auto law=[&calls](double,double,double,double limit) { ++calls; return limit*2; };
+  const auto out=c.update(5*rad,0,1.02,law);
+  EXPECT_EQ(out.command_raw,2000);
+  EXPECT_TRUE(out.saturated);
+  const auto stale=c.update(5*rad,0,1.3,law);
+  EXPECT_EQ(stale.command_raw,0);
+  EXPECT_EQ(stale.fault,TorqueSafetyFault::FEEDBACK_TIMEOUT);
+  EXPECT_EQ(calls,1);
+}
+TEST(TorqueSteeringController, FailedExternalLawStopsOutput)
+{
+  TorqueSteeringController c;
+  seed(c);
+  const auto out=c.update(5*rad,0,1.02,[](double,double,double,double) {
+    return std::numeric_limits<double>::quiet_NaN();
+  });
+  EXPECT_EQ(out.command_raw,0);
+  EXPECT_EQ(out.fault,TorqueSafetyFault::INVALID_INPUT);
+}

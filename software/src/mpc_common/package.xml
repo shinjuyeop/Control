@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>mpc_common</name><version>0.1.0</version>
+  <description>Shared C++ OSQP solver for scalar-input MPC.</description>
+  <maintainer email="kgm@example.com">kgm</maintainer><license>TODO: License declaration</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>osqp_vendor</depend><depend>eigen</depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>
