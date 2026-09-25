@@ -12,10 +12,11 @@ def storage_options(uri):
     return options
 
 
-def record(uri, topics):
+def record(uri, topics, use_sim_time=False):
     import rosbag2_py
     options = rosbag2_py.RecordOptions()
     options.topics = list(topics)
+    options.use_sim_time = use_sim_time
     options.rmw_serialization_format = 'cdr'
     try:
         rosbag2_py.Recorder().record(storage_options(uri), options)
@@ -24,7 +25,7 @@ def record(uri, topics):
 
 
 def worker_main():
-    record(sys.argv[1], json.loads(sys.argv[2]))
+    record(sys.argv[1], json.loads(sys.argv[2]), len(sys.argv)>3 and sys.argv[3]=='true')
 
 
 def recorded_counts(uri):

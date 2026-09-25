@@ -140,6 +140,7 @@ class ProcessManager:
         self.recorder = OwnedProcess('MCAP', [
             sys.executable, '-u', '-c', RECORDER_CODE, str(self.run_dir / 'rosbag'),
             json.dumps(RECORD_TOPICS),
+            str(self.node.get_parameter('use_sim_time').value).lower(),
         ], self.node.log)
         self.record_started_at = time.monotonic()
         self.recorder_ready = False

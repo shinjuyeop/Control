@@ -404,3 +404,37 @@ def test_center_limit_is_applied_when_switching_to_a_steering_test():
     finally:
         node.destroy_node()
         rclpy.shutdown()
+
+
+def test_current_step_and_coastdown_waveforms():
+    cfg = ScenarioConfig(scenario='current_step', current_low_a=40., current_high_a=180.,
+                         current_hold_sec=3., cruise_speed_kph=30., scenario_repetitions=2)
+    assert scenario_setpoint(cfg, 0).phase_current_a == 40
+    assert scenario_setpoint(cfg, 3).phase_current_a == 180
+    assert scenario_setpoint(cfg, 6).phase_current_a == 40
+    stopped, complete = scheduled_scenario_setpoint(cfg, 12)
+    assert complete and stopped.speed_kph == 0 and stopped.phase_current_a is None
+    cfg = ScenarioConfig(scenario='coastdown', current_high_a=200., current_hold_sec=8.,
+                         coast_duration_sec=20., cruise_speed_kph=30.)
+    assert scenario_setpoint(cfg, 7.99).phase_current_a == 200
+    assert scenario_setpoint(cfg, 8).phase_current_a == 0
+    assert not scenario_setpoint(cfg, 8).brake_engage
+
+
+def test_current_trial_does_not_fall_back_to_speed_control():
+    rclpy.init(args=['--ros-args','-p','enabled:=true','-p','scenario:=current_step',
+                    '-p','cruise_speed_kph:=30.0','-p','current_high_a:=180.0'])
+    node=VehicleTestScenarioRunner()
+    try:
+        node._steering_control.ready=Mock(return_value=True)
+        node._publisher=Mock()
+        node._started_at=node.get_clock().now().nanoseconds*1e-9-2.
+        drive=DriveActuatorStatus();drive.controller_control_mode=1
+        node._drive_sample=(time.monotonic(),drive)
+        node._longitudinal_sample=(time.monotonic(),{'config':{'control_mode':'speed'}})
+        node._publish()
+        command=node._publisher.publish.call_args.args[0]
+        assert command.speed_target_mps == 0.0
+        assert command.brake_engage
+    finally:
+        node.destroy_node();rclpy.shutdown()

@@ -9,7 +9,7 @@ import time
 
 from geometry_msgs.msg import TwistWithCovarianceStamped
 from kaiev26_msgs.msg import (
-    ActuatorCommand, BrakeActuatorStatus, DriveActuatorStatus,
+    ActuatorCommand, BrakeActuatorStatus, DriveActuatorStatus, DriveCurrentCommand,
     SteeringActuatorStatus, VehicleState, RouteContext,
 )
 from nav_msgs.msg import Odometry
@@ -18,10 +18,11 @@ from control_tuning.conditions import CONDITION_KEYS
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from sensor_msgs.msg import Imu, NavSatFix
-from std_msgs.msg import Bool, String
+from std_msgs.msg import Bool, String, Float32MultiArray
+from control_tuning.longitudinal import decode_status
 from tf2_msgs.msg import TFMessage
 
-from .scenario_runner import ScenarioSetpoint
+from .scenario_runner import ScenarioSetpoint, CURRENT_SCENARIOS, current_setpoint, external_current_ready
 from .steering_control import SteeringControl
 from .steering_fault_advice import steering_fault_advice
 from .sysid_profiles import (
@@ -68,9 +69,9 @@ class SysidNode(Node):
         '/gnss/fix', '/gnss/fix_velocity', '/tf_static', *FOLLOW_TOPICS,
     )
 
-    def __init__(self, *, clock=time.monotonic, require_ezkontrol_status=True, **kwargs):
+    def __init__(self, *, clock=None, require_ezkontrol_status=True, **kwargs):
         super().__init__('auto_sysid', **kwargs)
-        self.clock = clock
+        self.clock = clock or (lambda: self.get_clock().now().nanoseconds*1e-9)
         self.require_ezkontrol_status = require_ezkontrol_status
         self.lock = threading.RLock()
         self.commands = SimpleQueue()
@@ -103,6 +104,10 @@ class SysidNode(Node):
         self.session_open = False
         self.record_error = ''
         self.command_publisher = self.create_publisher(ActuatorCommand, '/planning/command', 10)
+        self.current_publisher = None
+        self.longitudinal_sample = None
+        self.create_subscription(Float32MultiArray, '/drive/longitudinal_status', self._receive_longitudinal,
+                                 qos_profile_sensor_data)
         self.steering_control = SteeringControl(self)
         self.label_publisher = self.create_publisher(String, '/sysid/scenario', 10)
         self.control_parameters_publisher = self.create_publisher(
@@ -124,6 +129,12 @@ class SysidNode(Node):
         self.preset_future = None
         self.preset_requested_at = 0.0
         self.preset_timer = self.create_timer(1.0, self._read_launch_preset)
+
+    def _receive_longitudinal(self, message):
+        try:
+            self.longitudinal_sample = (self.clock(), decode_status(message.data))
+        except ValueError:
+            self.longitudinal_sample = None
 
     def _read_launch_preset(self):
         if self.preset_future is not None:
@@ -328,6 +339,16 @@ class SysidNode(Node):
                 if problems:
                     self.log('Run 대기: ' + '; '.join(problems))
                     continue
+                if value.scenario in CURRENT_SCENARIOS:
+                    if (not self.longitudinal_sample or self.clock()-self.longitudinal_sample[0]>.7 or
+                        self.longitudinal_sample[1]['config']['control_mode'] != 'external_current'):
+                        self.log('전류 시험은 STM_A external_current 설정과 readback이 필요합니다.')
+                        continue
+                    if not self.current_publisher:
+                        self.current_publisher = self.create_publisher(DriveCurrentCommand, '/vehicle/drive_current_command', 1)
+                elif self.current_publisher:
+                    self.destroy_publisher(self.current_publisher)
+                    self.current_publisher = None
                 self.settings = value
                 for topic in FOLLOW_TOPICS:
                     self.received.pop(topic, None)
@@ -505,6 +526,16 @@ class SysidNode(Node):
                     0.0 if self.output.steering_deg is None
                     else math.radians(self.output.steering_deg))
                 message.brake_engage = self.output.brake_engage
+                if self.current_publisher:
+                    if not external_current_ready(self.received.get('/drive/status'), self.longitudinal_sample, self.clock()):
+                        message.speed_target_mps = 0.0
+                        message.brake_engage = True
+                    demand = DriveCurrentCommand()
+                    demand.header.stamp = message.header.stamp
+                    demand.phase_current_a = current_setpoint(self, self.output,
+                        self.received.get('/drive/status'), self.longitudinal_sample,
+                        message.brake_engage, now=self.clock())
+                    self.current_publisher.publish(demand)
                 self.command_publisher.publish(message)
                 self.label_publisher.publish(String(
                     data=(

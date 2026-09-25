@@ -85,6 +85,18 @@ SCENARIO_SPECS = (
         ),
         (('cruise_speed_kph', 0.0), ('brake_delay_sec', 3.0)),
     ),
+    ScenarioSpec('current_step', '전류 Step', '입력 응답 시험', '종방향 입력',
+        (P('current_low_a', '낮은 전류', 'A'), P('current_high_a', '높은 전류', 'A'),
+         P('current_hold_sec', '구간 유지시간', 'sec'), P('cruise_speed_kph', '차속 상한', 'km/h'),
+         P('scenario_repetitions', '반복', '회', True)),
+        (('current_low_a', 0.), ('current_high_a', 0.), ('current_hold_sec', 5.),
+         ('cruise_speed_kph', 0.), ('scenario_repetitions', 1))),
+    ScenarioSpec('coastdown', '코스트다운', '입력 응답 시험', '종방향 입력',
+        (P('current_high_a', '가속 전류', 'A'), P('current_hold_sec', '가속시간', 'sec'),
+         P('coast_duration_sec', '타력시간', 'sec'), P('cruise_speed_kph', '차속 상한', 'km/h'),
+         P('scenario_repetitions', '반복', '회', True)),
+        (('current_high_a', 0.), ('current_hold_sec', 5.), ('coast_duration_sec', 15.),
+         ('cruise_speed_kph', 0.), ('scenario_repetitions', 1))),
     ScenarioSpec(
         'steering_step', '조향 양방향 Step', '입력 응답 시험', '횡방향 입력',
         (
@@ -157,6 +169,10 @@ SCENARIO_KEYS = tuple(SCENARIO_BY_KEY)
 @dataclass(frozen=True)
 class RunSettings:
     scenario: str = 'straight'
+    current_low_a: float = 0.0
+    current_high_a: float = 0.0
+    current_hold_sec: float = 5.0
+    coast_duration_sec: float = 15.0
     cruise_speed_kph: float = 0.0
     speed_low_kph: float = 0.0
     speed_high_kph: float = 0.0
@@ -236,6 +252,8 @@ class RunSettings:
         engine_scenario = 'steering_sweep' if self.scenario == 'steering_sine' else self.scenario
         return ScenarioConfig(
             scenario=engine_scenario,
+            current_low_a=self.current_low_a, current_high_a=self.current_high_a,
+            current_hold_sec=self.current_hold_sec, coast_duration_sec=self.coast_duration_sec,
             cruise_speed_kph=self.cruise_speed_kph,
             speed_low_kph=self.speed_low_kph,
             speed_high_kph=self.speed_high_kph,
@@ -254,6 +272,8 @@ class RunSettings:
         )
 
     def description(self):
+        if self.scenario in ('current_step', 'coastdown'):
+            return f'{self.name} · {self.current_low_a:g}–{self.current_high_a:g} A · 차속 상한 {self.cruise_speed_kph:g} km/h'
         if self.follows_route:
             return f'{self.name} · 최고 목표 {self.cruise_speed_kph:g} km/h · 종료점 감속·정지'
         if self.scenario == 'straight':

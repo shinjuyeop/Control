@@ -47,6 +47,7 @@ def main(argv=None):
     parser.add_argument('--require-external-storage', action='store_true')
     parser.add_argument('--no-capture-parameters', action='store_true')
     parser.add_argument('--no-require-longitudinal', action='store_true')
+    parser.add_argument('--use-sim-time', action='store_true')
     args = parser.parse_args(argv)
     base = output_base(args.output_base_dir, args.require_external_storage)
     run = base / datetime.now().strftime('%Y%m%d_%H%M%S_%f_independent')
@@ -56,7 +57,8 @@ def main(argv=None):
                     status='starting', parameter_capture='disabled' if args.no_capture_parameters else 'pending')
     save_yaml(run / 'recording.yaml', document)
     rclpy.init(args=[], signal_handler_options=SignalHandlerOptions.NO)
-    node = Node('control_tools_recorder')
+    node = Node('control_tools_recorder', parameter_overrides=[
+        rclpy.parameter.Parameter('use_sim_time', value=args.use_sim_time)])
     executor = SingleThreadedExecutor()
     executor.add_node(node)
     publisher = node.create_publisher(String, '/sysid/control_parameters', 10)
@@ -72,7 +74,7 @@ def main(argv=None):
     previous_sigterm = signal.signal(signal.SIGTERM, request_stop)
     try:
         recorder = OwnedProcess('MCAP', [sys.executable, '-u', '-m', 'control_tools.recording',
-                                str(run / 'rosbag'), json.dumps(topics)], print)
+                                str(run / 'rosbag'), json.dumps(topics), str(args.use_sim_time).lower()], print)
         node.get_logger().info(f'MCAP: {run}')
         while True:
             executor.spin_once(timeout_sec=.05)

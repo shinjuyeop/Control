@@ -31,7 +31,7 @@ from vehicle_test_scenarios.sysid_tui import (
 
 def test_catalog_groups_parameterized_inputs_and_routes_without_square():
     assert SCENARIO_KEYS == (
-        'straight', 'speed_step', 'speed_ramp', 'brake_test',
+        'straight', 'speed_step', 'speed_ramp', 'brake_test', 'current_step', 'coastdown',
         'steering_step', 'steering_sine', 'steering_chirp',
         'route_quali', 'route_final',
     )

@@ -14,7 +14,15 @@ si
 ros2 run vehicle_test_scenarios vehicle_test_scenario_runner
 ```
 
-직접 실행하면 TUI가 열린다. 기존 YAML launch는 명시적인
+직접 실행하면 TUI가 열린다. Gazebo에서는 `--sim-time`을 붙여
+`use_sim_time=true`로 실행한다. 붙이지 않으면 실제 시계를 쓰므로
+`command_governor`가 sim time과 어긋난 명령을 모두 버린다.
+
+```bash
+ros2 run vehicle_test_scenarios vehicle_test_scenario_runner --sim-time
+```
+
+기존 YAML launch는 명시적인
 `vehicle_test_scenario_node` headless entrypoint를 사용한다. 이전처럼
 `vehicle_test_scenario_runner --ros-args ...`를 호출해도 headless 호환 경로로
 동작한다. 차량 TF, STM A/B Agent,
@@ -169,6 +177,8 @@ vehicle_test_scenario_node
 | `steering_step` | 중앙→좌→중앙→우 순서의 정확한 조향 step |
 | `speed_step` | `speed_low_kph`와 `speed_high_kph`를 일정 간격으로 전환 |
 | `speed_ramp` | low→high→low 속도를 선형 ramp로 반복 |
+| `current_step` | `current_low_a`↔`current_high_a`, 각 `current_hold_sec` 유지 |
+| `coastdown` | `current_high_a`를 `current_hold_sec` 유지한 뒤 `coast_duration_sec` 동안 0 A |
 | `brake_test` | 일정 속도 명령 후 지정 시간에 brake를 걸고 계속 유지 |
 | `steering_sweep` | 일정 속도에서 중앙±진폭을 sine 파형으로 왕복 |
 | `steering_chirp` | 일정 속도에서 시작→종료 주파수로 sine 주파수를 선형 변화 |
@@ -342,3 +352,15 @@ MCAP 저장 옵션과 Control 토픽, 실제 파라미터 수집은
 이 패키지에 유지합니다. 실차 기록은 STM_A longitudinal status의 연결과 실제 기록을
 필수 확인하며, 초기 YAML snapshot에도 적용 설정 readback을 남깁니다.
 ROS 파라미터 snapshot은 조향·거버너, 종방향 적용값은 STM_A readback입니다.
+
+## 전류 입력 식별
+
+전류 Step·코스트다운은 STM_A `external_current` readback을 확인하고 사용합니다.
+전류 입력은 `/vehicle/drive_current_command`, 차속 상한과 브레이크는 기존
+`/planning/command` → governor 경로입니다. 기본 전류·차속은 0입니다.
+MPC/PI 제어기와 전류 시험을 동시에 실행하지 않습니다. `cruise_speed_kph`는 전류 시험의
+차속 상한이며 30 km/h 이하로 설정합니다. 상한 이상에서는 0 A로 타력 주행합니다.
+
+Gazebo에서는 `use_sim_time=true`로 같은 시나리오 엔진과 녹화 시계를 사용합니다.
+실차에서는 실제 시계를 사용합니다. 모델 식별·제어·실험 절차는
+[longitudinal_mpc](../longitudinal_mpc/README.md)를 참고합니다.
