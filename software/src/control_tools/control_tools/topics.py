@@ -22,6 +22,11 @@ TORQUE_TOPICS = (
 CONTROL_TOPICS = (
     '/planning/command',
     '/vehicle/command',
+    '/vehicle/drive_current_command',
+    '/control/longitudinal/diagnostics',
+    '/control/steering/diagnostics',
+    '/control/lateral/diagnostics',
+    '/control/lateral/target',
     '/steering/status',
     '/steering/angle',
     *TORQUE_TOPICS,

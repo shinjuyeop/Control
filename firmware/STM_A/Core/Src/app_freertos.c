@@ -38,6 +38,7 @@
 #include <rclc/executor.h>
 #include <kaiev26_msgs/msg/actuator_command.h>
 #include <kaiev26_msgs/msg/drive_actuator_status.h>
+#include <kaiev26_msgs/msg/drive_current_command.h>
 #include "rmw_microros/rmw_microros.h"
 
 bool cubemx_transport_open(struct uxrCustomTransport *transport);
@@ -207,6 +208,13 @@ static uint8_t s_long_pending_valid;
 
 static uint8_t s_long_feedback_valid, s_long_inhibit = LONG_DISABLED;
 static LongGate s_long_gate;
+static LongExternalInput s_external_current;
+static int64_t s_command_stamp_ns;
+static uint8_t s_external_previous_mode = 0xffu;
+static kaiev26_msgs__msg__DriveCurrentCommand s_current_msg;
+static char s_current_frame_id[16];
+static rcl_subscription_t s_current_subscription;
+static uint8_t s_current_subscription_initialized;
 static float s_long_status_data[LONG_STATUS_COUNT];
 static float s_long_request_data[LONG_REQUEST_COUNT];
 static std_msgs__msg__Float32MultiArray s_long_status_msg, s_long_request_msg;
@@ -264,6 +272,7 @@ static void send_motor_can(int32_t rpm, float curr_a, uint8_t run_command,
                            uint8_t speed_control);
 static HAL_StatusTypeDef send_motor_handshake_ack(void);
 static void cb_cmd(const void *message);
+static void cb_current(const void *message);
 static void cb_long_config(const void *message);
 static void prepare_longitudinal(uint32_t now);
 static void publish_longitudinal(void);
@@ -400,6 +409,9 @@ void StartControl(void *argument)
     if (s_motor_handshake_done == 0u)
     {
       Long_Reset(&s_long_controller);
+      taskENTER_CRITICAL();
+      Long_ClearExternal(&s_external_current, s_command_stamp_ns);
+      taskEXIT_CRITICAL();
       s_tractive_commanded = 0u;
       RuntimeMetrics_End(RM_CONTROL, activation);
       osDelay(10);
@@ -444,7 +456,15 @@ void StartControl(void *argument)
           int32_t mrpm = (int32_t)(wrpm * GEAR_RATIO);
           const LongMotorCommand command = Long_SpeedCommand(&s_long_calibration.config, mrpm);
           send_motor_can(command.rpm, command.current, 1u, 1u);
-        } else if (s_long_inhibit == LONG_OK && COMMAND_SPEED > 0.0f) {
+        } else if (s_long_calibration.config.mode == LONG_EXTERNAL_CURRENT &&
+                   s_long_inhibit == LONG_OK && COMMAND_SPEED > 0.0f) {
+          taskENTER_CRITICAL();
+          const float current = fminf(s_external_current.current,
+                                      s_long_calibration.config.max_current);
+          taskEXIT_CRITICAL();
+          send_motor_can((int32_t)s_long_calibration.config.rpm_limit, current, 1u, 0u);
+        } else if (s_long_calibration.config.mode == LONG_TORQUE &&
+                   s_long_inhibit == LONG_OK && COMMAND_SPEED > 0.0f) {
           const float ceiling = s_long_calibration.config.rpm_limit * 3.14159f * TIRE_DIAM_M / (60.0f * GEAR_RATIO);
           float current = Long_Update(&s_long_controller, &s_long_calibration.config,
               fminf(COMMAND_SPEED, ceiling), CURRENT_SPEED, 0.05f);
@@ -912,6 +932,7 @@ static void reset_host_command_state(void)
   s_command_timeout = 1u;
   s_command_brake_engage = 1u;
   s_last_command_tick = 0u;
+  Long_ClearExternal(&s_external_current, s_command_stamp_ns);
   taskEXIT_CRITICAL();
 }
 
@@ -923,6 +944,9 @@ static void init_ros_message_buffers(void)
   s_long_status_msg.data.size = s_long_status_msg.data.capacity = LONG_STATUS_COUNT;
   s_long_request_msg.data.data = s_long_request_data;
   s_long_request_msg.data.capacity = LONG_REQUEST_COUNT;
+  memset(&s_current_msg, 0, sizeof(s_current_msg));
+  s_current_msg.header.frame_id.data = s_current_frame_id;
+  s_current_msg.header.frame_id.capacity = sizeof(s_current_frame_id);
   memset(&s_cmd_msg, 0, sizeof(s_cmd_msg));
   memset(&s_status_msg, 0, sizeof(s_status_msg));
 
@@ -942,6 +966,7 @@ static uint8_t create_ros_entities(void)
   s_ros_pub_drive_status = rcl_get_zero_initialized_publisher();
   s_ros_executor = rclc_executor_get_zero_initialized_executor();
   s_long_subscription = rcl_get_zero_initialized_subscription();
+  s_current_subscription = rcl_get_zero_initialized_subscription();
   s_long_publisher = rcl_get_zero_initialized_publisher();
 
   s_cmd_msg.header.frame_id.size = 0u;
@@ -965,6 +990,13 @@ static uint8_t create_ros_entities(void)
     return 0u;
   }
   s_ros_sub_cmd_initialized = 1u;
+  rmw_qos_profile_t current_qos = rmw_qos_profile_default;
+  current_qos.depth = 1;
+  current_qos.durability = RMW_QOS_POLICY_DURABILITY_VOLATILE;
+  if (rclc_subscription_init(&s_current_subscription, &s_ros_node,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(kaiev26_msgs, msg, DriveCurrentCommand),
+      "/vehicle/drive_current_command", &current_qos) != RCL_RET_OK) return 0u;
+  s_current_subscription_initialized = 1u;
 
   if (rclc_publisher_init_default(
           &s_ros_pub_drive_status, &s_ros_node,
@@ -984,7 +1016,7 @@ static uint8_t create_ros_entities(void)
   s_long_publisher_initialized = 1u;
 
   if (rclc_executor_init(
-          &s_ros_executor, &s_ros_support.context, 2, &s_ros_allocator) != RCL_RET_OK) {
+          &s_ros_executor, &s_ros_support.context, 3, &s_ros_allocator) != RCL_RET_OK) {
     return 0u;
   }
   s_ros_executor_initialized = 1u;
@@ -996,6 +1028,8 @@ static uint8_t create_ros_entities(void)
   }
   if (rclc_executor_add_subscription(&s_ros_executor, &s_long_subscription,
       &s_long_request_msg, &cb_long_config, ON_NEW_DATA) != RCL_RET_OK) return 0u;
+  if (rclc_executor_add_subscription(&s_ros_executor, &s_current_subscription,
+      &s_current_msg, &cb_current, ON_NEW_DATA) != RCL_RET_OK) return 0u;
   RuntimeStatsRos_Init(&s_runtime_ros, &s_ros_node,
       kaiev26_msgs__msg__RuntimeStats__BOARD_STM_A);
   return 1u;
@@ -1018,6 +1052,11 @@ static void destroy_ros_entities(void)
     s_ros_executor_initialized = 0u;
   }
   RuntimeStatsRos_Fini(&s_runtime_ros, &s_ros_node);
+  if (s_current_subscription_initialized) {
+    const rcl_ret_t result = rcl_subscription_fini(&s_current_subscription, &s_ros_node);
+    (void)result;
+    s_current_subscription_initialized = 0u;
+  }
   if (s_long_subscription_initialized) {
     const rcl_ret_t result = rcl_subscription_fini(&s_long_subscription, &s_ros_node);
     (void)result;
@@ -1366,15 +1405,35 @@ static void prepare_longitudinal(uint32_t now)
     Long_ApplyConfiguration(&s_long_calibration, &s_long_pending,
         Long_CanConfigure(MODE == 0u, s_long_feedback_valid,
           CURRENT_SPEED, PEDAL, s_commanded_phase_current_a, s_phase_current_a));
-    if (s_long_calibration.result == LONG_APPLIED) Long_Reset(&s_long_controller);
+    if (s_long_calibration.result == LONG_APPLIED) {
+      Long_Reset(&s_long_controller);
+      Long_ClearExternal(&s_external_current, s_command_stamp_ns);
+    }
   }
   bool discard_command = false;
   s_long_inhibit = Long_CheckInhibit(&s_long_controller, &s_long_gate,
-      MODE == 1u && s_long_calibration.config.mode == LONG_TORQUE,
+      MODE == 1u && s_long_calibration.config.mode != LONG_SPEED,
       s_long_feedback_valid,
       s_command_received && age_since(now, s_last_command_tick) < HOST_COMMAND_TIMEOUT_MS,
       DRIVE_STOP_REQUEST != 0u || s_command_brake_engage != 0u,
       COMMAND_SPEED, CURRENT_SPEED, &discard_command);
+  if (MODE != s_external_previous_mode) {
+    Long_ClearExternal(&s_external_current, s_command_stamp_ns);
+    s_external_previous_mode = MODE;
+  }
+  if (MODE != 1u || s_long_calibration.config.mode != LONG_EXTERNAL_CURRENT ||
+      s_long_inhibit != LONG_OK || COMMAND_SPEED <= 0 || s_motor_fault_bits != 0u ||
+      s_controller_control_mode != CONTROLLER_CONTROL_MODE_TORQUE ||
+      s_motor_handshake_done == 0u) {
+    Long_ClearExternal(&s_external_current, s_command_stamp_ns);
+  }
+  if (MODE == 1u && s_long_calibration.config.mode == LONG_EXTERNAL_CURRENT) {
+    if (s_motor_fault_bits != 0u ||
+        s_controller_control_mode != CONTROLLER_CONTROL_MODE_TORQUE) s_long_inhibit = LONG_STOP;
+    else if (s_long_inhibit == LONG_OK &&
+             !Long_ExternalFresh(&s_external_current, now, HOST_COMMAND_TIMEOUT_MS))
+      s_long_inhibit = LONG_WAIT_COMMAND;
+  }
   if (discard_command) {
     s_command_received = 0u;
     COMMAND_SPEED = 0.0f;
@@ -1396,6 +1455,22 @@ static void publish_longitudinal(void)
   d[25] = s_long_feedback_valid; d[26] = s_long_inhibit;
   taskEXIT_CRITICAL();
   RCL_PUBLISH_BEST_EFFORT(&s_long_publisher, &s_long_status_msg);
+}
+
+static void cb_current(const void *message)
+{
+  const kaiev26_msgs__msg__DriveCurrentCommand *msg = message;
+  if (msg->header.stamp.sec < 0 || msg->header.stamp.nanosec >= 1000000000u) return;
+  const int64_t stamp = (int64_t)msg->header.stamp.sec * 1000000000LL + msg->header.stamp.nanosec;
+  taskENTER_CRITICAL();
+  if (MODE == 1u && s_long_calibration.config.mode == LONG_EXTERNAL_CURRENT &&
+      s_motor_handshake_done && s_long_feedback_valid && !DRIVE_STOP_REQUEST &&
+      s_controller_control_mode == CONTROLLER_CONTROL_MODE_TORQUE &&
+      !s_command_brake_engage && !s_motor_fault_bits && stamp >= s_command_stamp_ns &&
+      stamp - s_command_stamp_ns < (int64_t)HOST_COMMAND_TIMEOUT_MS * 1000000LL) {
+    (void)Long_ReceiveExternal(&s_external_current, msg->phase_current_a, stamp, HAL_GetTick());
+  }
+  taskEXIT_CRITICAL();
 }
 
 static void cb_cmd(const void *message)
@@ -1420,6 +1495,9 @@ static void cb_cmd(const void *message)
   s_command_received = 1u;
   s_command_timeout = 0u;
   s_last_command_tick = now;
+  s_command_stamp_ns = (int64_t)cmd->header.stamp.sec * 1000000000LL + cmd->header.stamp.nanosec;
+  if (brake_requested || COMMAND_SPEED <= 0)
+    Long_ClearExternal(&s_external_current, s_command_stamp_ns);
   taskEXIT_CRITICAL();
 }
 

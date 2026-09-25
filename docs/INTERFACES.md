@@ -593,22 +593,22 @@ Float32다. 후자는 KEYA Parameter 0003과 매뉴얼의 80% 식으로 계산�
 - `BrakeActuatorStatus`와 `/vehicle/state` input freshness 정책
 
 
-## Longitudinal calibration v1
+## Longitudinal calibration v2
 
 STM_A AUTO longitudinal config/status uses `std_msgs/msg/Float32MultiArray` with
 empty `layout.dim` and `layout.data_offset=0`. The bounded MCU buffers accept the exact
-v1 payload length. Unsupported version/length/nonfinite/config ranges are rejected;
-malformed DDS sequences that cannot deserialize have no acknowledgment. No message
-or generated micro-ROS library changes are needed. Existing DriveActuatorStatus is unchanged.
+15-float request and 27-float status payload lengths. v1 speed/torque requests remain supported. Unsupported version/length/nonfinite/config ranges are rejected;
+malformed DDS sequences that cannot deserialize have no acknowledgment. `DriveCurrentCommand` and regenerated micro-ROS libraries are required for external-current control.
+`DriveActuatorStatus` retains its existing layout.
 
 `/drive/longitudinal_config`: reliable, volatile (never transient-local), 15 floats:
 
 | Index | Field |
 |---|---|
-| 0 | version=1 |
+| 0 | version=2 |
 | 1 | request_id: integer 1…16777215 |
 | 2 | expected_revision: integer 0…16777215 |
-| 3 | control_mode: 0=speed, 1=torque (different from EZ feedback bit!) |
+| 3 | control_mode: 0=speed, 1=torque PI, 2=external_current (different from EZ feedback bit!) |
 | 4–14 | Kp, Ki, max_drive_current, integrator_limit, slew_up, slew_down, deadband, hysteresis, reapply_current, reapply_slew, motor_rpm_limit |
 
 Current fields are phase amperes; Kp A/(m/s), Ki A/(m/s*s), slew A/s,
@@ -628,7 +628,7 @@ Use the existing trusted vehicle ROS domain, not an untrusted network.
 
 | Index | Field |
 |---|---|
-| 0 | version=1 |
+| 0 | version=2 |
 | 1 | applied revision; boot=0 |
 | 2 | last request ID; malformed request=0 |
 | 3 | result: 0=idle, 1=applied, 2=invalid, 3=unsafe, 4=revision conflict, 5=busy |
@@ -653,6 +653,38 @@ control-stack launch with that preset. For calibration, test procedure,
 range rationale and recorder coverage see
 [the implementation report](reports/2026-09-21_longitudinal_torque_pi.md).
 
+
+## External phase-current command
+
+`/vehicle/drive_current_command` uses `kaiev26_msgs/msg/DriveCurrentCommand`:
+
+| Field | Meaning |
+|---|---|
+| `header.stamp` | Publisher ROS clock, strictly advancing for accepted samples |
+| `phase_current_a` | Forward motor phase-current demand in A, 0–480 protocol envelope |
+
+Only `external_current` mode consumes this topic. The selected operating current/RPM envelope
+may be lower than the protocol maximum. `/vehicle/command` remains governor-owned and independently
+required: positive forward target, released brake and fresh host command. PC MPC, host reference PI
+and current-identification scenarios are alternative producers of the current topic.
+
+STM_A uses a separate 500 ms reception watchdog for current commands. A received current stamp must
+be at least the most recent accepted target stamp and less than 500 ms ahead of it. Current source
+stamps reject reordered commands and commands queued before a stop; HAL ticks measure reception age.
+They do not imply that the MCU is synchronized to the PC's UTC clock. Invalid current samples do not
+renew the watchdog. Brake, drive stop, mode changes, handshake, reconnect, invalid feedback and
+valid nonzero motor fault clear stored current. Feedback recovery also retains the existing
+requirement for a new upper-level command. Safety inhibits bypass current slew and send HALTED.
+
+The MCU performs no speed PI in this mode. CAN current remains in phase amperes, torque mode is
+bit1=0, and the configured motor RPM is a ceiling. Read actual CAN-transmitted current from
+`/drive/status.commanded_phase_current_a`; calibration status elements 17–24 are PI diagnostics.
+The new current message type, STM_A library/firmware and Host must be deployed together. New Host
+configuration clients read v1/v2 status and refuse external-current selection on v1 firmware.
+
+The current MPC model and all controller settings are fixed for a run. The Host publishes read-only
+`model_A`, `model_B`, `model_c` and `model_dt` parameters containing the loaded coefficients.
+The existing recorder captures these values when `/longitudinal_controller` is running.
 
 ## Control Tuning parameter names
 
@@ -707,3 +739,25 @@ NaN이며 INA die 온도를 대신 넣지 않습니다.
 LV 계기판은 기존 native `0x324` byte 5(flags), 6(0.1 V), 7(SOC %, unknown `0xFF`)를
 사용합니다. 별도 CAN ID는 추가하지 않으며 UART 1초 단절 시 LV flags를 내립니다.
 계측 상태는 ROS 상태 통합 3종이나 E-stop·traction 제어 입력에 포함되지 않습니다.
+
+## 식별 기반 횡방향 MPC
+
+`lateral_ctrl`의 `torque_controller=pd|mpc`는 같은 `/vehicle/command` 목표각과
+같은 KEYA 송신·안전 처리를 사용한다. MPC 모델 파일은 `steering_model_file`로 지정하며,
+`/steering/torque_command_raw`는 실제 전송한 signed KEYA raw 명령을 계속 발행한다.
+
+경로 MPC는 기존 Decision의 `lateral_controller=mpc`로 선택한다.
+
+| 토픽 | 타입 | 생산자 → 소비자 | 의미 |
+| --- | --- | --- | --- |
+| `/control/lateral/target` | `ackermann_msgs/AckermannDriveStamped` | C++ `lateral_path_mpc` → Decision motion-control | 계산 시각과 LEFT-positive 중앙 등가 목표각 `drive.steering_angle` [rad] |
+| `/control/lateral/diagnostics` | `diagnostic_msgs/DiagnosticArray` | 경로 MPC → Decision/recorder | 해 상태, 횡오차·방향오차, solve/compute 시간 |
+| `/control/steering/diagnostics` | `diagnostic_msgs/DiagnosticArray` | 조향 MPC → recorder | 해 상태, 반복 횟수, solve/compute 시간 |
+
+Decision은 MPC 선택 시 위 목표각을 속도·제동 명령과 합친다. 실패 진단 또는 150 ms를 넘긴
+해는 기존 정지 처리로 연결한다. 기존 `/planning/command` → governor → `/vehicle/command`
+소유권을 유지한다. 경로 입력 `Centerline`의 좌표계는 `base_footprint`, 각도 단위는 rad다.
+
+`path_model_file`에는 내부 조향 MPC를 켜고 측정한 폐루프 응답과 차량 yaw 응답이 들어간다.
+목표각·목표각 변화속도는 식별된 입력 범위와 기존 차량 설정의 교집합으로 제한한다.
+실제 조향 상태에는 차량의 각도 한계를 적용한다. 학습 입력 범위는 기계적 최대 능력의 측정값이 아니다.

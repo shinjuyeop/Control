@@ -1,3 +1,4 @@
+﻿// NOLINT: This file starts with a BOM since it contain non-ASCII characters
 // generated from rosidl_generator_c/resource/idl__struct.h.em
 // with input from kaiev26_msgs:msg/TrafficLightObservation.idl
 // generated code does not contain a copyright notice
@@ -59,11 +60,17 @@ typedef struct kaiev26_msgs__msg__TrafficLightObservation
   uint32_t detection_id;
   uint32_t track_id;
   uint8_t state;
+  /// header.frame_id 기준 위치, 미추정시 x/y/z NaN
   geometry_msgs__msg__Point position;
+  /// 적색 score [0, 1], 색상 미판정시 NaN
   float red_score;
+  /// 황색 score [0, 1], 색상 미판정시 NaN
   float yellow_score;
+  /// 녹색 score [0, 1], 색상 미판정시 NaN
   float green_score;
+  /// 화살표 score [0, 1], 색상 미판정시 NaN
   float arrow_score;
+  /// 영상 감지/색상 신뢰도 [0, 1], 깊이 추정과 독립
   float confidence;
   rosidl_runtime_c__String source;
 } kaiev26_msgs__msg__TrafficLightObservation;

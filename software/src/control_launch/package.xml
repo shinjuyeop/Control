@@ -33,4 +33,5 @@
   <export>
     <build_type>ament_cmake</build_type>
   </export>
+  <exec_depend>longitudinal_mpc</exec_depend>
 </package>

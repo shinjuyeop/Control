@@ -85,11 +85,12 @@ driver:
   initial_mode: autonomous
 ```
 
-기존 설정 파일에서 이 세 항목을 변경합니다. 운전 모드는 에뮬레이터가
+기존 설정 파일에서 이 세 항목을 변경합니다. GUI에서 `가상 CAN SITL`을 선택합니다.
+운전 모드는 에뮬레이터가
 제공하고 패드는 `control_launch`의 텔레옵 노드가 읽습니다. 각 터미널에서 실행합니다.
 
 ```bash
-ros2 launch kaiev26_gazebo_bringup sitl_can.launch.py
+ros2 run kaiev26_gazebo_bringup gazebo_launcher
 ros2 launch control_launch joystick_teleop.launch.py use_sim_time:=true
 ```
 

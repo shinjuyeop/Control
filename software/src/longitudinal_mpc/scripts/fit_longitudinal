@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""Fit a two-state affine model to separate driving runs, then evaluate held-out runs."""
+import argparse
+import json
+from pathlib import Path
+import numpy as np
+from scipy.optimize import least_squares, lsq_linear
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+plt.rcParams.update({"font.size": 12, "axes.labelsize": 12, "axes.titlesize": 13, "legend.fontsize": 10})
+from bag_io import read_run, intervals
+from model import Model
+
+
+def episodes(runs, dt=.05):
+    horizon = round(2/dt)
+    result = []
+    for run in runs:
+        # The affine rolling-resistance model describes motion, not static contact.
+        mask = run['valid'] & np.isfinite(run['requested_current']) & (run['v'] >= .2) & (run['v'] <= 30/3.6) & (run['u'] >= 0)
+        for start, end in intervals(mask):
+            for k in range(start, end-horizon, horizon//2):
+                result.append((np.column_stack([run['v'], run['i']])[k:k+horizon+1],
+                               run['requested_current'][k:k+horizon], run['t'][k]))
+    if not result:
+        raise ValueError('Need continuous torque-mode driving intervals of at least two seconds')
+    return result
+
+
+def fit(runs, dt=.05):
+    samples = episodes(runs, dt)
+    states = np.stack([e[0] for e in samples]); inputs = np.stack([e[1] for e in samples])
+    x = states[:, :-1].reshape(-1, 2); y = states[:, 1:].reshape(-1, 2); u = inputs.ravel()
+    current = lsq_linear(np.column_stack([x[:, 1], u]), y[:, 1], bounds=([0., 0.], [.999, 2.]))
+    alpha, gain = current.x
+    initial = lsq_linear(np.column_stack([x[:, 0], x[:, 1], u, np.ones(len(u))]), y[:, 0],
+                         bounds=([0., 0., 0., -np.inf], [1.01, np.inf, np.inf, 0.])).x
+    def model_for(p):
+        a, bi, bu, c = p
+        return np.array([[a, bi], [0, alpha]]), np.array([bu, gain]), np.array([c, 0.])
+    def residual(p):
+        A, B, c = model_for(p)
+        current_states = states[:, 0].copy(); residuals = []
+        for k in range(inputs.shape[1]):
+            current_states = current_states@A.T + inputs[:, k, None]*B + c
+            residuals.append(current_states[:, 0]-states[:, k+1, 0])
+        return np.concatenate(residuals)
+    result = least_squares(residual, initial, bounds=([0,0,0,-np.inf], [1.01,np.inf,np.inf,0]),
+                           loss='soft_l1', f_scale=.1, x_scale='jac', max_nfev=1000)
+    A, B, c = model_for(result.x)
+    return Model(dt, A, B, c, 30/3.6), dict(episodes=len(samples), speed_rmse_mps=float(np.sqrt(np.mean(residual(result.x)**2))))
+
+
+def validate(model, runs, output, label):
+    samples = episodes(runs, model.dt)
+    errors, holds = [], []
+    fig, axes = plt.subplots(2, 2, figsize=(11, 7), constrained_layout=True)
+    chosen = np.linspace(0, len(samples)-1, 4, dtype=int)
+    for index, (states, inputs, _) in enumerate(samples):
+        predicted = [states[0].copy()]
+        for u in inputs:
+            predicted.append(model.A@predicted[-1]+model.B*u+model.c)
+        predicted = np.array(predicted)
+        errors.extend(predicted[1:, 0]-states[1:, 0]); holds.extend(states[0, 0]-states[1:, 0])
+        if index in chosen:
+            ax = axes.flat[list(chosen).index(index)]
+            t = np.arange(len(states))*model.dt
+            ax.plot(t, states[:, 0]*3.6, label='Measured')
+            ax.plot(t, predicted[:, 0]*3.6, '--', label='Identified model')
+            ax.set(xlabel='Time [s]', ylabel='Speed [km/h]', title=f'{label}: episode {index+1}')
+            ax.grid(alpha=.2); ax.legend()
+    fig.savefig(output/f'{label}_prediction.png', dpi=180)
+    fig.savefig(output/f'{label}_prediction.svg'); plt.close(fig)
+    continuous_errors = []
+    fig, axes = plt.subplots(len(runs), 1, figsize=(11, 3.4*len(runs)), squeeze=False, constrained_layout=True)
+    for ax, run in zip(axes[:,0], runs):
+        prediction = np.full(len(run['v']), np.nan)
+        supported = (run['valid'] & np.isfinite(run['requested_current']) &
+                     (run['v'] >= .2) & (run['v'] <= model.speed_max_mps))
+        for lo, hi in intervals(supported):
+            if hi-lo < round(2/model.dt):
+                continue
+            state = np.array([run['v'][lo], run['i'][lo]])
+            prediction[lo] = state[0]
+            for k in range(lo,hi-1):
+                state = model.A@state+model.B*run['requested_current'][k]+model.c
+                prediction[k+1] = state[0]
+            continuous_errors.extend(prediction[lo+1:hi]-run['v'][lo+1:hi])
+        ax.plot(run['t'], run['v']*3.6, label='Measured')
+        ax.plot(run['t'], prediction*3.6, '--', label='Continuous model rollout')
+        ax.set(xlabel='Recorded time [s]', ylabel='Speed [km/h]', title=label+' — reset only at valid-interval start')
+        ax.grid(alpha=.2); ax.legend()
+    fig.savefig(output/f'{label}_continuous.png',dpi=180)
+    fig.savefig(output/f'{label}_continuous.svg'); plt.close(fig)
+    return dict(episodes=len(samples), continuous_rmse_mps=float(np.sqrt(np.mean(np.square(continuous_errors)))),
+                prediction_rmse_mps=float(np.sqrt(np.mean(np.square(errors)))),
+                constant_speed_rmse_mps=float(np.sqrt(np.mean(np.square(holds)))))
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--train', nargs='+', required=True); p.add_argument('--validation', nargs='+', required=True)
+    p.add_argument('--output', type=Path, required=True)
+    p.add_argument('--reference-model', type=Path, help='Evaluate an earlier model on the same held-out runs')
+    args = p.parse_args()
+    if {Path(x).resolve() for x in args.train} & {Path(x).resolve() for x in args.validation}:
+        p.error('Training and validation must be different driving runs')
+    args.output.mkdir(parents=True, exist_ok=True)
+    training = [read_run(x) for x in args.train]; validation = [read_run(x) for x in args.validation]
+    model, fitting = fit(training)
+    report = dict(fitting=fitting, train=validate(model, training, args.output, 'train'),
+                  validation=validate(model, validation, args.output, 'validation'))
+    if args.reference_model:
+        report['reference_validation'] = validate(Model.load(args.reference_model), validation, args.output, 'reference_validation')
+    model.save(args.output/'model.yaml', training_runs=args.train, validation_runs=args.validation,
+               identification=report)
+    (args.output/'identification.json').write_text(json.dumps(report, indent=2))
+    print(json.dumps(report, indent=2))
+
+
+if __name__ == "__main__":
+    main()

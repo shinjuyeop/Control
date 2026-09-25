@@ -71,7 +71,7 @@ FIELDS = (
 FIELDS += (
     Field('drive_control_mode', '구동 제어 방식', '', GROUPS[2], 'control_mode',
           'S로 저장하고 선택한 프리셋으로 구동 스택을 재시작합니다. Torque 값은 초기 시험 후보입니다.',
-          node=LONGITUDINAL, choices=('speed', 'torque')),
+          node=LONGITUDINAL, choices=('speed', 'torque', 'external_current')),
     Field('drive_speed_kp_a_per_mps', '구동 속도 P 게인', 'A/(m/s)', GROUPS[2], 'speed_kp_a_per_mps',
           '구동 Torque 모드 전용입니다. MCAP 기반 초기 시험 후보이며 S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 10, node=LONGITUDINAL),
     Field('drive_speed_ki_a_per_mps_s', '구동 속도 I 게인', 'A/(m/s*s)', GROUPS[2], 'speed_ki_a_per_mps_s',
@@ -214,7 +214,7 @@ def range_hint(field, values, context):
     """Controller acceptance bounds, not experimentally verified tuning guidance."""
     if field.node == LONGITUDINAL:
         return {
-            'drive_control_mode': 'speed / torque; 저장 후 재시작',
+            'drive_control_mode': 'speed / torque / external_current; 저장 후 재시작',
             'drive_speed_kp_a_per_mps': '0 초과 ~ 1000', 'drive_speed_ki_a_per_mps_s': '0~200',
             'drive_current_limit_a': '0 초과 ~ 480', 'drive_integrator_limit_a': '0~최대 구동 전류',
             'drive_current_slew_up_a_s': '0 초과 ~ 9600', 'drive_current_slew_down_a_s': '0 초과 ~ 9600',

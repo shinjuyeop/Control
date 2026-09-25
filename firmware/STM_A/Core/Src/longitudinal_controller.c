@@ -20,9 +20,10 @@ bool Long_DecodeRequest(const float *d, size_t count, LongRequest *r)
 {
   if (count != LONG_REQUEST_COUNT) return false;
   for (size_t n = 0; n < count; ++n) if (!isfinite(d[n])) return false;
-  if (d[0] != LONG_VERSION || d[1] < 1 || d[1] > LONG_ID_MAX ||
+  if ((d[0] != 1 && d[0] != LONG_VERSION) || d[1] < 1 || d[1] > LONG_ID_MAX ||
       floorf(d[1]) != d[1] || d[2] < 0 || d[2] > LONG_ID_MAX ||
-      floorf(d[2]) != d[2] || (d[3] != LONG_SPEED && d[3] != LONG_TORQUE)) return false;
+      floorf(d[2]) != d[2] || (d[3] != LONG_SPEED && d[3] != LONG_TORQUE &&
+      !(d[0] == LONG_VERSION && d[3] == LONG_EXTERNAL_CURRENT))) return false;
   LongConfig c = {(uint8_t)d[3], d[4], d[5], d[6], d[7], d[8], d[9],
                   d[10], d[11], d[12], d[13], d[14]};
   /* Bounds protect current/RPM capability and 20 Hz numerical authority, not a
@@ -56,6 +57,26 @@ bool Long_CanConfigure(bool manual, bool feedback_valid, float speed,
 }
 
 void Long_Reset(LongController *s) { memset(s, 0, sizeof(*s)); }
+
+void Long_ClearExternal(LongExternalInput *s, int64_t floor)
+{
+  s->current = 0;
+  s->received = false;
+  if (floor > s->last_stamp_ns) s->last_stamp_ns = floor;
+}
+
+bool Long_ReceiveExternal(LongExternalInput *s, float current, int64_t stamp, uint32_t tick)
+{
+  if (!isfinite(current) || current < 0 || current > 480 ||
+      stamp <= s->last_stamp_ns) return false;
+  *s = (LongExternalInput){current, tick, stamp, true};
+  return true;
+}
+
+bool Long_ExternalFresh(const LongExternalInput *s, uint32_t tick, uint32_t timeout)
+{
+  return s->received && (uint32_t)(tick - s->received_tick) < timeout;
+}
 
 float Long_Update(LongController *s, const LongConfig *c, float target, float actual, float dt)
 {

@@ -44,8 +44,14 @@ class ParameterCapture:
             Float32MultiArray, STATUS_TOPIC, self._receive_longitudinal, qos_profile_sensor_data)
             if require_longitudinal else None)
         self.document['longitudinal'] = {'status': 'pending' if require_longitudinal else 'not_requested'}
+        self.required_parameters = dict(REQUIRED_PARAMETERS)
+        if ('longitudinal_controller', '/') in node.get_node_names_and_namespaces():
+            self.required_parameters['longitudinal_controller'] = {
+                'controller', 'current_max_a', 'current_slew_up_a_s', 'current_slew_down_a_s'}
+        if ('lateral_path_mpc', '/') in node.get_node_names_and_namespaces():
+            self.required_parameters['lateral_path_mpc'] = {'path_model_file'}
         self.requests = {}
-        for name in REQUIRED_PARAMETERS:
+        for name in self.required_parameters:
             listing = node.create_client(ListParameters, f'/{name}/list_parameters')
             getter = node.create_client(GetParameters, f'/{name}/get_parameters')
             self.requests[name] = dict(listing=listing, getter=getter, stage='waiting', future=None)
@@ -88,7 +94,10 @@ class ParameterCapture:
                             raise ValueError('파라미터 응답 개수가 일치하지 않습니다.')
                         values = {key: parameter_value_to_python(value)
                                   for key, value in zip(keys, response.values)}
-                        missing = sorted(REQUIRED_PARAMETERS[name] - {k for k, v in values.items() if v is not None})
+                        required = self.required_parameters[name]
+                        if name == 'longitudinal_controller' and values.get('controller') == 'mpc':
+                            required = required | {'model_A', 'model_B', 'model_c', 'model_dt', 'model_file'}
+                        missing = sorted(required - {k for k, v in values.items() if v is not None})
                         entry = {
                             'status': 'partial' if missing else 'complete',
                             'received_at': wall_time(),
@@ -97,7 +106,7 @@ class ParameterCapture:
                         }
                         if missing:
                             entry.update(missing_parameters=missing, error='필수 제어 파라미터를 읽지 못했습니다.')
-                        else:
+                        elif name in REQUIRED_PARAMETERS:
                             entry['display_values'] = decode_node(name, values)
                             entry['display_units'] = {field.key: field.unit for field in FIELDS
                                                       if field.node == name}

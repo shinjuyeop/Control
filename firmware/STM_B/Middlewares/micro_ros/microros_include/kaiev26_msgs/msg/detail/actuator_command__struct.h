@@ -28,7 +28,7 @@ typedef struct kaiev26_msgs__msg__ActuatorCommand
   std_msgs__msg__Header header;
   /// 중앙 등가 Ackermann 조향각. 좌회전 양수
   float steering_target_rad;
-  /// 실차 STM_A는 speed control만 지원한다. throttle/torque 모드는 제공하지 않는다
+  /// 목표 차속. 전류 지령은 DriveCurrentCommand로 전달한다.
   float speed_target_mps;
   bool brake_engage;
 } kaiev26_msgs__msg__ActuatorCommand;

@@ -48,7 +48,10 @@ Control/
 │   └── tools/                       # micro-ROS 라이브러리 재생성 스크립트
 ├── software/
 │   └── src/
-│       ├── longitudinal_mpc/        # 실험용 MPC, COLCON_IGNORE로 빌드 제외
+│       ├── mpc_common/              # 두 MPC가 공유하는 C++/OSQP QP 계산
+│       ├── steering_mpc/            # 식별 기반 C++ 조향 토크 MPC
+│       ├── path_mpc/                # 식별 기반 C++ 경로 MPC
+│       ├── longitudinal_mpc/         # 식별 기반 C++ 상전류 MPC와 분석 scripts
 │       ├── lateral_ctrl/            # KEYA 조향 액추에이터 제어
 │       ├── command_governor/        # /planning/command → /vehicle/command 단일 발행자
 │       ├── vehicle_state_publisher/ # 차량 상태·wheel twist·diagnostics 발행
@@ -85,6 +88,10 @@ Control/
 | `command_governor` | `/planning/command`를 정합성 게이트 후 `/vehicle/command`로 재발행하는 유일한 발행자. 현재 패스스루이며 형상(속도 상한·램프·축간 협조)은 이후 단계 |
 | `vehicle_state_publisher` | status 3종을 `/vehicle/state`, `/vehicle/wheel_twist`, `/diagnostics`로 변환 |
 | `control_launch` | 실차 구동 스택 통합 `vehicle.launch.py` (Agent 2개 + 거버너 + 조향 + 상태 통합) |
+| [`mpc_common`](software/src/mpc_common/README.md) | 두 MPC가 공유하는 C++/OSQP QP 계산 |
+| [`steering_mpc`](software/src/steering_mpc/README.md) | 조향 토크 MPC와 실차 bag 식별·비교 |
+| [`path_mpc`](software/src/path_mpc/README.md) | 경로 MPC와 폐루프 응답 식별·경로 평가 |
+| `longitudinal_mpc` | PC 목표속도→상전류 MPC, STM_A C PI 참조, MCAP 식별·비교 |
 | `control_tuning` | P·D 명령 전류 단위 편집, 출력·운용·timeout 설정, 저장 후 구동 스택 재시작으로 적용 |
 | `control_tools` | 조향 벤치·측정, 독립 MCAP 녹화, 공통 기록 설정·파라미터 수집과 분석 |
 | `vehicle_test_scenarios` | production Planning 대신 `/planning/command`를 발행하는 실차 입력 응답·K-City 경로 추종 TUI 및 headless 시험 시나리오 |
@@ -138,7 +145,7 @@ ROS 2 패키지는 워크스페이스 루트에서 빌드합니다. 위 트리�
 기본 배치입니다. 실차 통합 launch에는 별도 `kaiev26_description`과 그 의존성이
 필요하고, 센서 드라이버와 TUI 경로 시험의 `kaiev26_decision`,
 `kaiev26_motion_control`, `eskf_localization`도 해당 시험에 맞게 준비해야 합니다.
-`longitudinal_mpc`와 `archive/`는 기본 colcon 탐색에서 제외됩니다.
+`archive/`는 기본 colcon 탐색에서 제외됩니다.
 
 ```bash
 cd ~/KAI_ws
@@ -238,7 +245,6 @@ TUI는 `ros2 run vehicle_test_scenarios vehicle_test_scenario_runner`로 실행�
 | [LV 배터리 구성](docs/rp2350/lv_battery_gauge.md) | INA228·RP2350·STM_B·ROS·계기판 연결과 계측 경계 |
 | [RP2350 펌웨어](firmware/XIAO_RP2350_LV_GAUGE/README.md) | 빌드·업로드·적산·영속 저장·정비 TUI |
 | [Vehicle wiring](docs/vehicle-wiring/README.md) | 배선도 편집 |
-| [longitudinal_mpc](software/src/longitudinal_mpc/README.md) | 빌드에서 제외된 실험용 MPC |
 | [STM_A](firmware/STM_A/README.md) | STM_A 내부 구조 및 동작 |
 | [STM_B](firmware/STM_B/README.md) | STM_B 내부 구조 및 동작 |
 | [STM_TEST](firmware/STM_TEST/README.md) | HIL emulator의 pin map, UART protocol과 Plant |

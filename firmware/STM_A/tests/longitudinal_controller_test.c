@@ -43,6 +43,26 @@ static void test_speed_envelope(void)
 int main(void)
 {
   test_speed_envelope();
+  LongExternalInput external = {0};
+  assert(!Long_ReceiveExternal(&external, -1, 1, 10));
+  assert(!Long_ReceiveExternal(&external, NAN, 1, 10));
+  assert(!Long_ReceiveExternal(&external, 481, 1, 10));
+  assert(Long_ReceiveExternal(&external, 120, 100, 10));
+  assert(Long_ExternalFresh(&external, 509, 500));
+  assert(!Long_ExternalFresh(&external, 510, 500));
+  Long_ClearExternal(&external, 200);
+  assert(!Long_ExternalFresh(&external, 100, 500));
+  assert(!Long_ReceiveExternal(&external, 120, 150, 100));
+  assert(Long_ReceiveExternal(&external, 80, 201, UINT32_MAX-10));
+  assert(Long_ExternalFresh(&external, 10, 500));
+  float external_wire[LONG_REQUEST_COUNT] = {2, 1, 0};
+  LongConfig external_config=Long_DefaultConfig();
+  external_config.mode=LONG_EXTERNAL_CURRENT;
+  Long_EncodeConfig(&external_config, external_wire+3);
+  LongRequest external_request;
+  assert(Long_DecodeRequest(external_wire, LONG_REQUEST_COUNT, &external_request));
+  external_wire[0]=1;
+  assert(!Long_DecodeRequest(external_wire, LONG_REQUEST_COUNT, &external_request));
   LongConfig c = Long_DefaultConfig();
   LongController s = {0};
   assert(c.mode == LONG_SPEED && c.max_current == 480);
