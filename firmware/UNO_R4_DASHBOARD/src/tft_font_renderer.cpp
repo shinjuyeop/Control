@@ -31,6 +31,16 @@ uint16_t blend(uint16_t background, uint16_t foreground, uint8_t alpha)
                     255U);
 }
 
+void drawPixel(uint16_t *row_pixels,
+               uint16_t row_width,
+               int16_t x,
+               uint16_t color,
+               uint8_t alpha)
+{
+  if (x >= 0 && x < (int16_t)row_width)
+    row_pixels[x] = blend(row_pixels[x], color, alpha);
+}
+
 void drawGlyphRow(uint16_t *row_pixels,
                   uint16_t row_width,
                   uint16_t y,
@@ -42,43 +52,53 @@ void drawGlyphRow(uint16_t *row_pixels,
 {
   const int16_t top = anchor_y + glyph.top;
   if ((int16_t)y < top || (int16_t)y >= top + glyph.height) return;
-  const uint32_t row_begin = (uint32_t)((int16_t)y - top) * glyph.width;
-  const uint32_t row_end = row_begin + glyph.width;
-  if (font.rle == 0U)
+  const uint16_t row = (uint16_t)((int16_t)y - top);
+  const uint8_t *levels = font.alpha_levels;
+  if (font.encoding == TFT_FONT_PACKED)
   {
-    const uint8_t *alpha = font.data + glyph.data_offset + row_begin;
+    const uint8_t *codes = font.data + glyph.data_offset +
+                           (uint32_t)row * ((glyph.width + 1U) / 2U);
     for (uint8_t x = 0U; x < glyph.width; ++x)
     {
-      const int16_t destination_x = left + x;
-      if (destination_x >= 0 && destination_x < (int16_t)row_width)
-        row_pixels[destination_x] =
-            blend(row_pixels[destination_x], color, alpha[x]);
+      const uint8_t pair = codes[x >> 1];
+      const uint8_t code = (x & 1U) != 0U ? (uint8_t)(pair & 0x0FU)
+                                          : (uint8_t)(pair >> 4);
+      if (code != 0U)
+        drawPixel(row_pixels, row_width, (int16_t)(left + x), color, levels[code]);
     }
     return;
   }
 
-  const uint16_t row = (uint16_t)((int16_t)y - top);
-  const uint16_t encoded_begin =
-      font.row_offsets[glyph.row_offset_index + row];
-  const uint16_t encoded_end =
-      font.row_offsets[glyph.row_offset_index + row + 1U];
-  const uint8_t *encoded = font.data + glyph.data_offset + encoded_begin;
-  uint32_t position = 0U;
-  for (uint16_t offset = 0U; offset + 1U < encoded_end - encoded_begin; offset += 2U)
+  const uint8_t *codes = font.data + glyph.data_offset +
+                         font.row_offsets[glyph.row_offset_index + row];
+  uint16_t nibble = 0U;
+  auto next = [&]() -> uint8_t {
+    const uint8_t pair = codes[nibble >> 1];
+    const uint8_t code = (nibble & 1U) != 0U ? (uint8_t)(pair & 0x0FU)
+                                             : (uint8_t)(pair >> 4);
+    nibble++;
+    return code;
+  };
+  uint16_t position = 0U;
+  while (position < glyph.width)
   {
-    const uint32_t run_end = position + encoded[offset];
-    if (encoded[offset + 1U] != 0U)
+    const uint8_t code = next();
+    if (code == 0U)
     {
-      for (uint32_t pixel = position; pixel < run_end; ++pixel)
-      {
-        const int16_t destination_x = left + (int16_t)pixel;
-        if (destination_x >= 0 && destination_x < (int16_t)row_width)
-          row_pixels[destination_x] = blend(
-              row_pixels[destination_x], color, encoded[offset + 1U]);
-      }
+      position = (uint16_t)(position + next() + 1U);
     }
-    position = run_end;
-    if (position >= glyph.width) break;
+    else if (code == 15U)
+    {
+      const uint16_t end = (uint16_t)(position + next() + 1U);
+      for (; position < end; ++position)
+        drawPixel(row_pixels, row_width, (int16_t)(left + position), color, 255U);
+    }
+    else
+    {
+      drawPixel(row_pixels, row_width, (int16_t)(left + position), color,
+                levels[code]);
+      position++;
+    }
   }
 }
 

@@ -135,6 +135,7 @@ struct Region
 };
 
 static uint16_t row_pixels[St7796Lcd::WIDTH];
+static AssetCodec::StaticRowDecoder static_decoder(auto_static);
 static AutoFrame desired_frame = {};
 static AutoFrame previous_queued_frame = {};
 static AutoFrame active_frame = {};
@@ -152,17 +153,7 @@ static size_t current_history_count = 0U;
 
 void decodeStaticRow(uint16_t y)
 {
-  const uint32_t begin = auto_static_row_offsets[y];
-  const uint32_t end = auto_static_row_offsets[y + 1U];
-  uint16_t x = 0U;
-  for (uint32_t offset = begin; offset + 2U < end; offset += 3U)
-  {
-    const uint8_t count = auto_static_row_rle[offset];
-    const uint16_t color =
-        ((uint16_t)auto_static_row_rle[offset + 1U] << 8) |
-        auto_static_row_rle[offset + 2U];
-    for (uint8_t index = 0U; index < count; ++index) row_pixels[x++] = color;
-  }
+  static_decoder.decode(y, row_pixels);
 }
 
 void fillRow(uint16_t y,
@@ -256,6 +247,28 @@ void fillPolygonRow(uint16_t y,
   }
 }
 
+// sinf/cosf link newlib's large-argument reduction (about 2.5 KB of flash).
+// Dashboard angles stay within a few turns, so reduce in degrees to
+// |x| <= 45 degrees and evaluate the Taylor series (error below 1e-8).
+void sinCosDegrees(float degrees, float *sine, float *cosine)
+{
+  const float quadrant = floorf(degrees / 90.0f + 0.5f);
+  const float x = (degrees - quadrant * 90.0f) * (kPi / 180.0f);
+  const float x2 = x * x;
+  const float s = x * (1.0f - x2 / 6.0f * (1.0f - x2 / 20.0f *
+                  (1.0f - x2 / 42.0f * (1.0f - x2 / 72.0f))));
+  const float c = 1.0f - x2 / 2.0f * (1.0f - x2 / 12.0f *
+                  (1.0f - x2 / 30.0f * (1.0f - x2 / 56.0f *
+                  (1.0f - x2 / 90.0f))));
+  switch ((int32_t)quadrant & 3)
+  {
+    case 0: *sine = s; *cosine = c; break;
+    case 1: *sine = c; *cosine = -s; break;
+    case 2: *sine = -s; *cosine = -c; break;
+    default: *sine = -c; *cosine = s; break;
+  }
+}
+
 void prepareArrow(ArrowGeometry *arrow,
                   float cx,
                   float cy,
@@ -268,9 +281,10 @@ void prepareArrow(ArrowGeometry *arrow,
   memset(arrow, 0, sizeof(*arrow));
   arrow->valid = valid ? 1U : 0U;
   if (!valid) return;
-  const float radians = angle_deg * kPi / 180.0f;
-  const float dx = sinf(radians);
-  const float dy = -cosf(radians);
+  float dx = 0.0f;
+  float dy = 0.0f;
+  sinCosDegrees(angle_deg, &dx, &dy);
+  dy = -dy;
   arrow->x0 = cx;
   arrow->y0 = cy;
   arrow->x1 = cx + dx * length;
@@ -327,10 +341,9 @@ void prepareFrameGeometry(AutoFrame *frame, uint32_t now_ms)
 
   if (frame->heading_valid != 0U)
   {
-    const float radians =
-        (frame->heading_centideg / 100.0f) * kPi / 180.0f;
-    const float cosine = cosf(radians);
-    const float sine = sinf(radians);
+    float sine = 0.0f;
+    float cosine = 0.0f;
+    sinCosDegrees(frame->heading_centideg / 100.0f, &sine, &cosine);
     static const float body_x[5] = {0.0f, 10.0f, 10.0f, -10.0f, -10.0f};
     static const float body_y[5] = {-24.0f, -13.0f, 17.0f, 17.0f, -13.0f};
     static const float window_x[4] = {-6.0f, 6.0f, 6.0f, -6.0f};

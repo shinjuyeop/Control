@@ -12,10 +12,19 @@ struct TftGlyphAsset
   uint8_t width;
   uint8_t height;
   uint16_t advance_q6;
-  uint32_t data_offset;
-  uint16_t data_length;
+  uint16_t data_offset;
   uint16_t row_offset_index;
 } __attribute__((packed));
+
+// Glyph pixels are 4-bit codes mapped through alpha_levels (0 = 0, 15 = 255).
+// Packed: rows of two codes per byte, high nibble first.
+// Tokens: byte-aligned rows of nibbles; 0,n = n+1 clear pixels, 15,n = n+1
+// opaque pixels, any other code = one pixel. row_offsets locate each row.
+enum : uint8_t
+{
+  TFT_FONT_PACKED = 0U,
+  TFT_FONT_TOKENS = 1U
+};
 
 struct TftFontAsset
 {
@@ -23,7 +32,8 @@ struct TftFontAsset
   size_t glyph_count;
   const uint8_t *data;
   const uint16_t *row_offsets;
-  uint8_t rle;
+  const uint8_t *alpha_levels;
+  uint8_t encoding;
   int8_t minimum_top;
   int8_t maximum_bottom;
 } __attribute__((packed));
