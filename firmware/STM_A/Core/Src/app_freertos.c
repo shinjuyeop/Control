@@ -89,7 +89,10 @@ enum {
 #define DRIVE_DETAIL_TX_PERIOD_MS 100u
 #define HOST_COMMAND_TIMEOUT_MS 500u
 #define MOTOR_FEEDBACK_TIMEOUT_MS 200u
-#define MOTOR_RPM_ZERO_HOLD_SAMPLES 2u
+/* Part I RPM despike. 차량이 낼 수 있는 가감속으로 한 프레임에 바뀔 수 있는 폭을 넘으면
+ * 튄 값으로 본다. 기본 폭은 저속 양자화와 센서 잡음 여유다. */
+#define MOTOR_RPM_GATE_BASE_RPM 40.0f
+#define MOTOR_RPM_GATE_ACCEL_MPS2 4.0f
 #define AGENT_PING_PERIOD_MS 500u
 #define AGENT_PING_TIMEOUT_MS 100u
 /* 20ms(50Hz). 벤치에서 페달 밟는 속도와 EZkontrol 응답을 놓치지 않을 만큼 촘촘하다.
@@ -151,9 +154,9 @@ static uint8_t s_life = 0;
  * 캘리브레이션(PEDAL_ADC_MIN/MAX)이 바뀌어도 과거 로그를 다시 계산할 수 있게 남긴다. */
 static volatile int32_t s_pedal_adc_raw = 0;
 static volatile float s_motor_rpm_raw = 0.0f;
-static int32_t s_last_nonzero_motor_rpm = 0;
-static uint8_t s_motor_rpm_zero_streak = 0u;
-static uint8_t s_motor_rpm_hold_armed = 0u;
+static float s_motor_rpm_estimate = 0.0f;
+static int32_t s_motor_rpm_history[3] = {0, 0, 0};
+static uint8_t s_motor_rpm_despiker_armed = 0u;
 static volatile uint8_t s_command_received = 0u;
 static volatile uint8_t s_command_timeout = 1u;
 static volatile uint8_t s_command_brake_engage = 1u;
@@ -282,7 +285,7 @@ static uint8_t create_ros_entities(void);
 static void destroy_ros_entities(void);
 static uint32_t age_since(uint32_t now, uint32_t stamp);
 static void reset_motor_rpm_despiker(void);
-static int32_t despike_motor_rpm(int32_t motor_rpm_raw);
+static float despike_motor_rpm(int32_t motor_rpm_raw, float dt_s);
 static void capture_drive_detail(uint32_t now,
                                  BoardUartDriveDetail_t *detail);
 static void publish_drive_status(uint32_t now);
@@ -1106,28 +1109,51 @@ static uint32_t age_since(uint32_t now, uint32_t stamp)
 
 static void reset_motor_rpm_despiker(void)
 {
-  s_last_nonzero_motor_rpm = 0;
-  s_motor_rpm_zero_streak = 0u;
-  s_motor_rpm_hold_armed = 0u;
+  s_motor_rpm_estimate = 0.0f;
+  s_motor_rpm_history[0] = 0;
+  s_motor_rpm_history[1] = 0;
+  s_motor_rpm_history[2] = 0;
+  s_motor_rpm_despiker_armed = 0u;
 }
 
-static int32_t despike_motor_rpm(int32_t motor_rpm_raw)
+static int32_t median3_i32(int32_t a, int32_t b, int32_t c)
 {
-  if (motor_rpm_raw != 0) {
-    s_last_nonzero_motor_rpm = motor_rpm_raw;
-    s_motor_rpm_zero_streak = 0u;
-    s_motor_rpm_hold_armed = 1u;
-    return motor_rpm_raw;
+  if (a > b) { const int32_t t = a; a = b; b = t; }
+  if (b > c) { b = c; }
+  return (a > b) ? a : b;
+}
+
+/* 한 프레임 폭(gate) 안의 값은 지연 없이 그대로 쓴다. 폭을 넘으면 최근 3개 중앙값 쪽으로
+ * 폭만큼만 움직인다. 1프레임 튐과 0-dropout은 중앙값이 무시하고, 실제 변화는 폭 속도로
+ * 따라가므로 기각이 이어져도 값이 멈추지 않는다. */
+static float despike_motor_rpm(int32_t motor_rpm_raw, float dt_s)
+{
+  const float rpm_per_mps = 60.0f * GEAR_RATIO / (3.14159f * TIRE_DIAM_M);
+  const float gate = MOTOR_RPM_GATE_BASE_RPM +
+                     MOTOR_RPM_GATE_ACCEL_MPS2 * rpm_per_mps * dt_s;
+
+  if (s_motor_rpm_despiker_armed == 0u) {
+    s_motor_rpm_history[0] = motor_rpm_raw;
+    s_motor_rpm_history[1] = motor_rpm_raw;
+    s_motor_rpm_history[2] = motor_rpm_raw;
+    s_motor_rpm_estimate = (float)motor_rpm_raw;
+    s_motor_rpm_despiker_armed = 1u;
+    return s_motor_rpm_estimate;
   }
 
-  if ((s_motor_rpm_hold_armed != 0u) &&
-      (s_motor_rpm_zero_streak < MOTOR_RPM_ZERO_HOLD_SAMPLES)) {
-    s_motor_rpm_zero_streak++;
-    return s_last_nonzero_motor_rpm;
-  }
+  s_motor_rpm_history[0] = s_motor_rpm_history[1];
+  s_motor_rpm_history[1] = s_motor_rpm_history[2];
+  s_motor_rpm_history[2] = motor_rpm_raw;
 
-  reset_motor_rpm_despiker();
-  return 0;
+  if (fabsf((float)motor_rpm_raw - s_motor_rpm_estimate) <= gate) {
+    s_motor_rpm_estimate = (float)motor_rpm_raw;
+  } else {
+    const float reference = (float)median3_i32(
+        s_motor_rpm_history[0], s_motor_rpm_history[1], s_motor_rpm_history[2]);
+    s_motor_rpm_estimate +=
+        fmaxf(-gate, fminf(gate, reference - s_motor_rpm_estimate));
+  }
+  return s_motor_rpm_estimate;
 }
 
 static int16_t encode_tenths_i16(float value)
@@ -1517,12 +1543,14 @@ static void parse_motor_status_part1(const uint8_t data[8], uint32_t now)
   const int32_t motor_rpm_raw = (int32_t)raw_rpm - 32000;
 
   /* 새 CAN stream에서는 이전 stream의 RPM을 hold하지 않는다. */
-  if ((s_part1_received == 0u) ||
-      (age_since(now, s_last_part1_rx_ms) >= MOTOR_FEEDBACK_TIMEOUT_MS)) {
+  const uint32_t part1_gap_ms = age_since(now, s_last_part1_rx_ms);
+  if ((s_part1_received == 0u) || (part1_gap_ms >= MOTOR_FEEDBACK_TIMEOUT_MS)) {
     reset_motor_rpm_despiker();
   }
-  const int32_t motor_rpm_despiked = despike_motor_rpm(motor_rpm_raw);
-  const float wheel_rpm = (float)motor_rpm_despiked / GEAR_RATIO;
+  /* 프레임이 몰려 들어와도 폭이 20 Hz 한 주기보다 좁아지지 않게 한다. */
+  const float part1_dt_s = (float)((part1_gap_ms < 50u) ? 50u : part1_gap_ms) * 1.0e-3f;
+  const float motor_rpm_despiked = despike_motor_rpm(motor_rpm_raw, part1_dt_s);
+  const float wheel_rpm = motor_rpm_despiked / GEAR_RATIO;
 
   s_bus_voltage_v = (float)raw_voltage * 0.1f;
   s_bus_current_a = (float)raw_bus_current * 0.1f - 3200.0f;
