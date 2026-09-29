@@ -10,6 +10,34 @@ from control_tuning.tui import Editor, layout
 from control_tuning.schema import GROUPS
 
 
+def test_drive_mode_filters_editable_fields_and_preserves_hidden_values(editor):
+    editor.key('3')
+    editor.commit('speed')
+    assert [f.key for f in editor.fields] == [
+        'drive_control_mode', 'governor_deceleration_slew_mps2', 'governor_acceleration_slew_mps2']
+    editor.key('down')
+    editor.commit(.3)
+    editor.key('down')
+    editor.commit(1.2)
+    editor.key('4')
+    assert {f.key for f in editor.fields} == {'drive_current_limit_a', 'drive_motor_speed_limit_rpm'}
+    original_pi = editor.draft['drive_speed_kp_a_per_mps']
+    editor.commit(10)
+    editor.key('s')
+    assert not editor.error
+    saved = editor.presets.load('airborne')
+    assert saved['governor_deceleration_slew_mps2'] == .3
+    assert saved['governor_acceleration_slew_mps2'] == 1.2
+    assert saved['drive_speed_kp_a_per_mps'] == original_pi
+    editor.key('3')
+    editor.commit('torque')
+    assert 'drive_speed_kp_a_per_mps' in {f.key for f in editor.fields}
+    assert 'drive_coast_release_error_mps' not in {f.key for f in editor.fields}
+    assert 'governor_acceleration_slew_mps2' not in {f.key for f in editor.fields}
+    editor.commit('external_current')
+    assert [f.key for f in editor.fields] == ['drive_control_mode']
+
+
 @pytest.mark.parametrize('width,height', [(80, 24), (110, 32), (140, 42)])
 def test_preset_selector_is_first_and_cannot_be_skipped(store, width, height):
     editor = Editor(store)

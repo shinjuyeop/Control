@@ -1,4 +1,4 @@
-"""STM_A longitudinal ABI v2: named host representation of fixed Float32 arrays.
+"""STM_A longitudinal ABI v3: named host representation of fixed Float32 arrays.
 
 Keep field order in sync with longitudinal_controller.h and docs/INTERFACES.md.
 Configuration is RAM-only and conditional on the STM_A revision and stop gate.
@@ -16,15 +16,15 @@ CONFIG_KEYS = (
     'control_mode', 'speed_kp_a_per_mps', 'speed_ki_a_per_mps_s',
     'max_drive_current_a', 'integrator_limit_a', 'current_slew_up_a_s',
     'current_slew_down_a_s', 'speed_deadband_mps', 'speed_hysteresis_mps',
-    'reapply_current_a', 'reapply_slew_a_s', 'motor_rpm_limit',
+    'reapply_current_a', 'reapply_slew_a_s', 'motor_rpm_limit', 'coast_current_floor_a',
 )
 STATE_KEYS = ('speed_error_mps', 'p_current_a', 'i_current_a', 'unsaturated_current_a',
               'current_command_a', 'saturated', 'anti_windup', 'coasting',
               'feedback_valid', 'inhibit')
 DEFAULT = dict(zip(CONFIG_KEYS, ('speed', 180., 12., 480., 120., 2400., 4800.,
-                               .05, .12, 20., 200., 4500.)))
-AIRBORNE = dict(zip(CONFIG_KEYS, ('torque', 15., 2., 40., 6., 120., 400.,
-                                .05, .12, 5., 40., 4500.)))
+                               .05, .12, 20., 200., 4500., 0.)))
+AIRBORNE = dict(zip(CONFIG_KEYS, ('torque', 25., 2., 40., 6., 120., 400.,
+                                .05, .12, 5., 20., 4500., 1.)))
 RESULTS = ('대기', '적용 완료', '잘못된 설정', 'MANUAL 정지·무전류 조건 불충족',
            '다른 설정이 먼저 적용됨', '다른 요청 처리 중')
 
@@ -43,40 +43,49 @@ def validate_config(config):
         'speed_deadband_mps': (0, .2), 'speed_hysteresis_mps': (config['speed_deadband_mps'], .5),
         'reapply_current_a': (0, config['max_drive_current_a']),
         'reapply_slew_a_s': (0, config['current_slew_up_a_s']), 'motor_rpm_limit': (100, 4500),
+        'coast_current_floor_a': (0, config['max_drive_current_a']),
     }
     inclusive = {'speed_ki_a_per_mps_s', 'integrator_limit_a', 'speed_deadband_mps',
-                 'reapply_current_a', 'motor_rpm_limit'}
+                 'reapply_current_a', 'motor_rpm_limit', 'coast_current_floor_a'}
     for key, (lo, hi) in bounds.items():
+        if config['control_mode'] != 'torque' and key not in ('max_drive_current_a', 'motor_rpm_limit'):
+            continue
         if not (lo <= config[key] <= hi if key in inclusive else lo < config[key] <= hi):
             raise ValueError(f'{key}: {lo}~{hi} 범위를 확인하세요.')
 
 
-def config_wire(config):
+def config_wire(config, version=3):
     validate_config(config)
-    return [float(MODES.index(config['control_mode'])), *[float(config[k]) for k in CONFIG_KEYS[1:]]]
+    if version < 3 and config['coast_current_floor_a']:
+        raise ValueError('1 A 감속 전류 하한은 STM_A longitudinal ABI v3가 필요합니다.')
+    keys = CONFIG_KEYS if version >= 3 else CONFIG_KEYS[:-1]
+    return [float(MODES.index(config['control_mode'])), *[float(config[k]) for k in keys[1:]]]
 
 
-def request_data(config, request_id, revision, version=2):
+def request_data(config, request_id, revision, version=3):
+    if version not in (1, 2, 3):
+        raise ValueError('지원하지 않는 STM_A longitudinal ABI 버전입니다.')
     if version == 1 and config['control_mode'] == 'external_current':
         raise ValueError('외부 전류 입력은 STM_A longitudinal ABI v2가 필요합니다.')
-    return [float(version), float(request_id), float(revision), *config_wire(config)]
+    return [float(version), float(request_id), float(revision), *config_wire(config, version)]
 
 
 def decode_status(data):
-    if len(data) != 27 or data[0] not in (1, 2) or not all(math.isfinite(x) for x in data):
-        raise ValueError('STM_A longitudinal status ABI v1/v2가 필요합니다.')
-    if data[5] not in (range(3) if data[0] == 2 else range(2)) or data[4] not in (0, 1) or data[3] not in range(len(RESULTS)):
+    if data[0] not in (1, 2, 3) or len(data) != (28 if data[0] == 3 else 27) or not all(math.isfinite(x) for x in data):
+        raise ValueError('STM_A longitudinal status ABI v1/v2/v3가 필요합니다.')
+    if data[5] not in (range(3) if data[0] >= 2 else range(2)) or data[4] not in (0, 1) or data[3] not in range(len(RESULTS)):
         raise ValueError('STM_A longitudinal status enum 오류')
-    config = dict(zip(CONFIG_KEYS, [MODES[int(data[5])], *data[6:17]]))
+    offset = 18 if data[0] == 3 else 17
+    config = dict(zip(CONFIG_KEYS, [MODES[int(data[5])], *data[6:offset], *([] if data[0] == 3 else [0.])]))
     # Float32 readback is compared in wire precision; never claim send == apply.
     return dict(version=int(data[0]), revision=int(data[1]), request_id=int(data[2]), result=int(data[3]),
                 source='HOST_OVERRIDE' if data[4] else 'DEFAULT', config=config,
                 display_values=canonical_values(config),
-                **dict(zip(STATE_KEYS, data[17:])))
+                **dict(zip(STATE_KEYS, data[offset:])))
 
 
 def wire_equal(config, other):
     def pack(c):
-        return struct.pack('<12f', float(MODES.index(c['control_mode'])),
+        return struct.pack('<13f', float(MODES.index(c['control_mode'])),
                            *[c[k] for k in CONFIG_KEYS[1:]])
     return pack(config) == pack(other)

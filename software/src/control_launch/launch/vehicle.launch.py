@@ -55,12 +55,15 @@ from control_tuning.conditions import CONDITION_KEYS
 
 
 def _governor(context, config):
+    parameters = load_launch_overrides(
+        LaunchConfiguration("control_tuning_file").perform(context), "command_governor",
+        LaunchConfiguration("tuning_preset").perform(context), governor_config=config)
+    if LaunchConfiguration('longitudinal_controller', default='firmware').perform(context) != 'firmware':
+        parameters['acceleration_slew_mps2'] = 0.0
     return [Node(
         package="command_governor", executable="command_governor_node",
         name="command_governor", output="screen",
-        parameters=[config, load_launch_overrides(
-            LaunchConfiguration("control_tuning_file").perform(context), "command_governor",
-            LaunchConfiguration("tuning_preset").perform(context), governor_config=config)],
+        parameters=[config, parameters],
         respawn=True, respawn_delay=2.0,
     )]
 

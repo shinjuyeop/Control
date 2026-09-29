@@ -9,9 +9,9 @@
 #define HIL_PEDAL_ADC_MAX                3000u
 #define HIL_DAC_MAX_COUNT                4095u
 
-/* STM_B: 1000 + (194 / 35) * angle, rounded; engage 55°, release 120°. */
-#define HIL_BRAKE_ENGAGED_PULSE_US       1305u
-#define HIL_BRAKE_RELEASED_PULSE_US      1665u
+/* STM_B: 1000 + (194 / 35) * angle, rounded; engage 125°, release 172°. */
+#define HIL_BRAKE_ENGAGED_PULSE_US       1693u
+#define HIL_BRAKE_RELEASED_PULSE_US      1953u
 #define HIL_BRAKE_PULSE_TOLERANCE_US     50u
 #define HIL_BRAKE_PWM_TIMEOUT_MS         100u
 

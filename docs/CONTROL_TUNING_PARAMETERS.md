@@ -9,7 +9,7 @@ TUI/프리셋/정규화된 MCAP 분석값에는 같은 canonical key를 사용�
 
 - `steering_`: KEYA 조향 제어 또는 조향 허용 판단에 사용하는 설정.
 - `drive_`: STM_A AUTO Speed/Torque 공통 구동 envelope와 Torque 속도 PI 설정.
-- `governor_`: 상위 명령의 유효성 검사.
+- `governor_`: 상위 명령의 유효성 검사와 속도 명령 변화율.
 - `kp`, `ki`, `kd`: P/I/D 게인. `_a_per_deg`, `_a_per_mps` 등은 출력 전류와 오차의 단위를 표현한다.
 - `limit_a`: 명령/적분 전류 한도. MCAP의 실측 `phase_current_a` 또는 `motor_current_a`와 구분한다.
 - `timeout_ms`: 해당 소비자가 판단하는 유효시간. `steering_vehicle_speed_timeout_ms`는
@@ -41,6 +41,8 @@ TUI 상세에는 새 설정키와 기존 연결을 함께 표시한다.
 | `steering_angle_margin_deg` | 조향 한계각 여유 | deg | 조향 ROS: `torque_soft_limit_margin_deg` |
 | `steering_min_vehicle_speed_kph` | 조향 허용 최소 차속 | km/h | 조향 ROS: `minimum_steering_speed_kph` |
 | `governor_command_timeout_ms` | 거버너 명령 유효시간 | ms | 거버너 ROS: `input_timeout_ms` |
+| `governor_acceleration_slew_mps2` | 거버너 가속 slew | m/s² | 거버너 ROS: `acceleration_slew_mps2` |
+| `governor_deceleration_slew_mps2` | 거버너 감속 slew | m/s² | 거버너 ROS: `deceleration_slew_mps2` |
 | `steering_command_timeout_ms` | 조향 명령 수신 제한 | ms | 조향 ROS: `steer_command_timeout_ms` |
 | `steering_can_timeout_ms` | 조향 CAN 수신 제한 | ms | 조향 ROS: `can_timeout_ms` |
 | `steering_position_feedback_timeout_ms` | 조향 위치 피드백 제한 | ms | 조향 ROS: `feedback_timeout_ms` |
@@ -78,6 +80,23 @@ RPM 한도는 driving과 같고, 전류 한도는 공중 시험용으로 낮게 
 실제 도달 속도와 전류는 아직 공중 시험으로 검증되지 않았다.
 나머지 speed PI, 적분 한도, deadband/coast, current slew/reapply 항목은 Torque 전용이다.
 MANUAL pedal/gear는 이 AUTO envelope의 영향을 받지 않는다.
+
+TUI는 편집 중인 `drive_control_mode`에 맞는 구동 항목만 표시한다.
+Speed는 모드·전류 한도·RPM 한도·governor 가속/감속 slew를 표시하고,
+Torque는 가속 slew를 숨기고 PI·deadband·감속 최소 전류·적분 한도·전류 slew/reapply를 추가한다.
+`external_current`는 모드·전류 한도·RPM 한도를 표시한다.
+연속 PI가 사용하지 않는 `drive_coast_release_error_mps`는 숨긴다.
+숨긴 설정값은 프리셋과 STM_A ABI에 보존되며 다른 모드로 돌아가면 재사용된다.
+Speed/외부 전류에서는 숨겨진 PI 한도와 현재 전류 한도의 관계를 검사하지 않고,
+Torque로 전환해 저장할 때 다시 검사한다.
+
+governor 감속 slew 기본값은 0.5 m/s²이며 0이면 제한 해제다.
+양수 목표로 낮출 때만 적용하므로 5→2 m/s에는 6초가 걸린다.
+0 목표는 즉시 토크컷·타력감속하고 명시적 브레이크는 지연하지 않는다.
+Speed 전용 가속 slew 초기값은 1.0 m/s²이고 0이면 제한 해제다.
+켜져 있으면 첫 명령과 통신 공백 후 재개 시 0부터 목표까지 상승한다.
+Torque/외부 전류 프리셋에서는 저장값을 보존하면서 governor 적용값만 0으로 만든다.
+기존 v2/v3 프리셋에 이 항목이 없으면 기본 설정에서 채우고 다음 저장 때 기록한다.
 
 ## 프리셋 schema v3
 

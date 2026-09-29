@@ -2,9 +2,22 @@ import yaml
 import pytest
 
 from control_tuning.conditions import CONDITION_KEYS
-from control_tuning.presets import PresetStore
-from control_tuning.schema import STEERING
+from control_tuning.presets import PresetStore, load_launch_overrides
+from control_tuning.schema import STEERING, GOVERNOR
 from control_tuning.tui import Editor
+
+
+@pytest.mark.parametrize('mode', ['speed', 'torque', 'external_current'])
+def test_acceleration_slew_only_reaches_governor_for_speed_preset(store, mode):
+    presets = PresetStore(store)
+    presets.save('driving', {**store.saved, 'drive_control_mode': mode,
+                             'governor_acceleration_slew_mps2': 1.2})
+    assert presets.load('driving')['governor_acceleration_slew_mps2'] == 1.2
+    parameters = load_launch_overrides(store.path, GOVERNOR, 'driving',
+                                      steering_config=store.base_paths[0],
+                                      governor_config=store.base_paths[1],
+                                      calibration=store.base_paths[2])
+    assert parameters['acceleration_slew_mps2'] == (1.2 if mode == 'speed' else 0.)
 
 
 def test_presets_save_in_independent_files_with_individual_backups(store):

@@ -103,7 +103,14 @@ class PresetStore:
                 if key in values and values[key] != value:
                     raise ValueError(f'{key}: section 간 설정값이 서로 다릅니다.')
                 values[key] = value
-        return self.normalize(canonical_values(values))
+        values = canonical_values(values)
+        values.setdefault('drive_coast_current_floor_a', 0.0)
+        # Existing v2/v3 presets predate the governor ramp; use the base setting.
+        values.setdefault('governor_deceleration_slew_mps2',
+                          self.settings.saved['governor_deceleration_slew_mps2'])
+        values.setdefault('governor_acceleration_slew_mps2',
+                          self.settings.saved['governor_acceleration_slew_mps2'])
+        return self.normalize(values)
 
     def save(self, condition, values):
         self.entry(condition)
@@ -142,4 +149,7 @@ def load_launch_overrides(path, node, condition='driving', **base_paths):
         raise ValueError(f'프리셋이 없습니다: {presets.path_for(condition)}. '
                          'Control Tuning에서 해당 프리셋을 선택하고 S로 저장하세요.')
     values = presets.load(condition)
-    return encode(values, settings.saved_native[STEERING])[node]
+    parameters = encode(values, settings.saved_native[STEERING])[node]
+    if node == GOVERNOR and values['drive_control_mode'] != 'speed':
+        parameters['acceleration_slew_mps2'] = 0.0
+    return parameters

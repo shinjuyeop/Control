@@ -1,4 +1,4 @@
-"""command_governor 단독 실행. /planning/command -> /vehicle/command 패스스루.
+"""command_governor 단독 실행. /planning/command -> /vehicle/command 감속 slew.
 
 이 노드가 /vehicle/command의 유일한 발행자여야 한다. hil_command_generator를
 /vehicle/command로 직접 발행하도록 되돌리거나 steering_bench_test_node와 함께

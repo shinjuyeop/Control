@@ -63,7 +63,7 @@ int main(void)
   assert(Long_ExternalFresh(&regen, 509, 500) && regen.current == -10);
   assert(!Long_ReceiveRegen(&regen, -20, 100, 20));
   assert(Long_ReceiveRegen(&regen, 0, 101, 20));
-  float external_wire[LONG_REQUEST_COUNT] = {2, 1, 0};
+  float external_wire[LONG_REQUEST_COUNT] = {3, 1, 0};
   LongConfig external_config=Long_DefaultConfig();
   external_config.mode=LONG_EXTERNAL_CURRENT;
   Long_EncodeConfig(&external_config, external_wire+3);
@@ -83,20 +83,38 @@ int main(void)
   Long_Update(&s,&c,6,7,.05f); near(s.current,0);
   for (int n=0;n<200;n++) Long_Update(&s,&c,6,7,.05f);
   near(s.i,0); assert(s.coasting && s.anti_windup);
-  Long_Update(&s,&c,6,5.95f,.05f); near(s.current,0); assert(s.coasting);
-  Long_Update(&s,&c,6,5.8f,.05f); near(s.current,10); assert(!s.coasting);
-  Long_Update(&s,&c,6,5.8f,.05f); near(s.current,20);
-  Long_Update(&s,&c,6,5.8f,.05f); assert(s.current>30);
+  Long_Update(&s,&c,6,5.95f,.05f); assert(s.current>0 && s.current<=10 && !s.coasting);
+  float reapply_before=s.current;
+  Long_Update(&s,&c,6,5.8f,.05f); near(s.current,reapply_before+10);
+  Long_Update(&s,&c,6,5.8f,.05f); assert(s.current>20);
   // Integral builds after output catches up and survives ordinary target steps.
   Long_Reset(&s);
   for (int n=0;n<100;n++) Long_Update(&s,&c,6,5.9f,.05f);
   assert(s.i>0); float before=s.i;
   Long_Update(&s,&c,6.02f,6,.05f); near(s.i,before);
-  Long_Update(&s,&c,5,6,.05f); near(s.i,0); // overspeed erases stored drive torque
+  Long_Update(&s,&c,5,6,.05f); near(s.i,before); // zero-output saturation preserves load current
   Long_Update(&s,&c,0,4,.05f); near(s.current,0); near(s.i,0); assert(!s.coasting);
   // Stop/reset does not slew: all command/controller history clears immediately.
   Long_Update(&s,&c,8,0,.05f); Long_Reset(&s);
   near(s.current,0); near(s.p,0); near(s.i,0);
+
+  // Airborne downward step: no regeneration, no I erasure, positive torque
+  // resumes above target and obeys the existing reapply current slew.
+  LongConfig air=c;
+  air.kp=25; air.ki=2; air.max_current=40; air.integrator_limit=6;
+  air.slew_up=120; air.slew_down=400; air.reapply_current=5; air.reapply_slew=20;
+  s.i=6; s.current=6;
+  air.coast_current_floor=1;
+  for (int n=0;n<40;n++) {
+    near(Long_Update(&s,&air,10.0f/3.6f,20.0f/3.6f,.05f),1);
+    near(s.i,6); assert(s.anti_windup);
+  }
+  near(Long_Update(&s,&air,10.0f/3.6f,10.0f/3.6f+.1f,.05f),2);
+  assert(!s.coasting && s.i>5.9f);
+  float integral=s.i;
+  Long_Update(&s,&air,3,3.1f,.05f);
+  assert(s.i<integral && s.current>0); // unsaturated negative error reduces I
+  Long_Update(&s,&air,0,3,.05f); near(s.i,0); near(s.current,0);
 
   LongGate gate = {0}; bool discard = false;
   Long_Update(&s,&c,8,0,.05f);
@@ -112,7 +130,7 @@ int main(void)
   assert(Long_CheckInhibit(&s,&gate,true,true,true,false,-1,0,&discard)==LONG_REVERSE);
   assert(Long_CheckInhibit(&s,&gate,true,true,true,false,1,-1,&discard)==LONG_REVERSE);
 
-  float wire[LONG_REQUEST_COUNT]={1,123,0};
+  float wire[LONG_REQUEST_COUNT]={3,123,0};
   Long_EncodeConfig(&c,wire+3);
   LongRequest r;
   assert(Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));
@@ -120,10 +138,23 @@ int main(void)
     float old=wire[n];wire[n]=NAN;assert(!Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));wire[n]=old;
   }
   wire[6]=481;assert(!Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));wire[6]=480;
-  wire[3]=2;assert(!Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));wire[3]=1;
-  wire[3]=LONG_SPEED;assert(!Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));wire[3]=1;
+  wire[0]=1;wire[3]=2;assert(!Long_DecodeRequest(wire,LONG_REQUEST_COUNT-1,&r));
+  wire[0]=3;wire[3]=1;
+  wire[3]=LONG_SPEED;assert(Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));
+  LongCalibration speed_cal={.config=Long_DefaultConfig()};
+  Long_ApplyConfiguration(&speed_cal,&r,true);
+  assert(speed_cal.result==LONG_APPLIED && speed_cal.config.mode==LONG_SPEED);
+  // Inactive PI values must not prevent lowering the Speed current limit.
+  wire[6]=10;assert(Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));
+  near(Long_SpeedCommand(&r.config,2000).current,10);
+  wire[3]=LONG_TORQUE;assert(!Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));
+  wire[6]=480;
   assert(!Long_DecodeRequest(wire,LONG_REQUEST_COUNT-1,&r));
   assert(Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));
+  wire[0]=2;assert(Long_DecodeRequest(wire,LONG_REQUEST_COUNT-1,&r));
+  near(r.config.coast_current_floor,0);
+  wire[0]=3;wire[15]=1;assert(Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));
+  near(r.config.coast_current_floor,1);wire[15]=0;
   LongCalibration cal={.config=Long_DefaultConfig()};
   Long_ApplyConfiguration(&cal,&r,false);assert(cal.result==LONG_UNSAFE && cal.revision==0);
   assert(cal.config.mode==LONG_TORQUE && cal.source==LONG_DEFAULT);

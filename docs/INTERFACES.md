@@ -114,11 +114,20 @@ UNO USB는 별개 인터페이스이며 115200을 유지합니다.
 
 `/vehicle/command`의 발행자는 `command_governor` 하나입니다. 거버너는
 `/planning/command`를 수신 즉시 정합성 게이트(stamp 0·음수, 나이 ±200 ms,
-finite)를 거쳐 재-stamp 후 재발행하며, 자체 타이머와 keep-alive가 없으므로 발행률은
+finite)를 거쳐 양수 목표의 하강률을 제한하고 재-stamp 후 재발행하며,
+자체 타이머와 keep-alive가 없으므로 발행률은
 입력을 그대로 따릅니다. 따라서 상류(실차 시험은
 `vehicle_test_scenario_runner`, HIL은 `hil_command_generator`, 모두 20 Hz)가
 STM_A의 500 ms와 조향의 200 ms freshness 한계보다 충분히 빠르게 발행해야
 합니다. 5 Hz는 조향 200 ms의 경계라 간헐 timeout이 납니다.
+감속 slew는 `deceleration_slew_mps2` (기본 0.5 m/s², 0이면 해제)입니다.
+Speed 프리셋에서는 `acceleration_slew_mps2` (초기값 1.0 m/s², 0이면 해제)로
+양수 목표 상승률도 제한합니다. Torque/외부 전류에서는 가속 제한을 해제합니다.
+가속 제한이 켜져 있으면 첫 명령과 입력 공백 후 재개는 0부터 시작합니다.
+음수 목표는 그대로 전달하고, 0 목표는 즉시 전달해 STM_A가 0 A/HALTED
+Torque 명령으로 타력감속합니다. Speed의 0 RPM hold나 회생 ramp를 유지하지 않습니다.
+`brake_engage`도 지연하지 않습니다. 유효 입력 공백이 `input_timeout_ms`를 넘으면
+이전 slew 이력을 버립니다. Speed 선택은 정지 상태 설정 적용 후 CAN control-mode bit 1로 반영합니다.
 `/planning/command`의 production Planning publisher는 아직 구현되지 않았습니다.
 실차 시험·HIL·production publisher 중 하나만 실행합니다.
 
@@ -611,23 +620,25 @@ AUTO Torque는 둘 중 하나가 invalid면 차단합니다. 조향 timeout은 `
 - `BrakeActuatorStatus`와 `/vehicle/state` input freshness 정책
 
 
-## Longitudinal calibration v2
+## Longitudinal calibration v3
 
 STM_A AUTO longitudinal config/status uses `std_msgs/msg/Float32MultiArray` with
 empty `layout.dim` and `layout.data_offset=0`. The bounded MCU buffers accept the exact
-15-float request and 27-float status payload lengths. v1 speed/torque requests remain supported. Unsupported version/length/nonfinite/config ranges are rejected;
+16-float v3 request and 28-float v3 status payload lengths. v1/v2 requests remain supported
+with a 0 A coast floor. Unsupported version/length/nonfinite/config ranges are rejected;
 malformed DDS sequences that cannot deserialize have no acknowledgment. `DriveCurrentCommand` and regenerated micro-ROS libraries are required for external-current control.
 `DriveActuatorStatus` retains its existing layout.
 
-`/drive/longitudinal_config`: reliable, volatile (never transient-local), 15 floats:
+`/drive/longitudinal_config`: reliable, volatile (never transient-local), 16 floats:
 
 | Index | Field |
 |---|---|
-| 0 | version=2 |
+| 0 | version=3 |
 | 1 | request_id: integer 1…16777215 |
 | 2 | expected_revision: integer 0…16777215 |
 | 3 | control_mode: 0=speed, 1=torque PI, 2=external_current (different from EZ feedback bit!) |
 | 4–14 | Kp, Ki, max_drive_current, integrator_limit, slew_up, slew_down, deadband, hysteresis, reapply_current, reapply_slew, motor_rpm_limit |
+| 15 | coast_current_floor: minimum positive current while above a positive target; 0…max_drive_current |
 
 Current fields are phase amperes; Kp A/(m/s), Ki A/(m/s*s), slew A/s,
 deadband/hysteresis m/s, RPM motor rpm. Field order is defined by
@@ -642,19 +653,19 @@ Duplicate last-applied request ID is idempotent. Revision exhaustion requires re
 IDs/revisions use the exact integer range of float32; they are not authorization tokens.
 Use the existing trusted vehicle ROS domain, not an untrusted network.
 
-`/drive/longitudinal_status`: best effort, 5 Hz, 27 floats:
+`/drive/longitudinal_status`: best effort, 5 Hz, 28 floats:
 
 | Index | Field |
 |---|---|
-| 0 | version=2 |
+| 0 | version=3 |
 | 1 | applied revision; boot=0 |
 | 2 | last request ID; malformed request=0 |
 | 3 | result: 0=idle, 1=applied, 2=invalid, 3=unsafe, 4=revision conflict, 5=busy |
 | 4 | calibration source: 0=DEFAULT, 1=HOST_OVERRIDE |
-| 5–16 | active config in CONFIG_KEYS order, including mode |
-| 17–21 | speed error, P, I/integrator state, unsaturated current, final PI current |
-| 22–25 | saturated, anti-windup, coasting, AUTO Torque control feedback usable (Part I <500 ms and Part II <1 s; 0/1) |
-| 26 | inhibit: 0=OK, 1=disabled, 2=feedback loss, 3=wait fresh command, 4=reverse unsupported, 5=stop |
+| 5–17 | active config in CONFIG_KEYS order, including mode and coast current floor |
+| 18–22 | speed error, P, I/integrator state, unsaturated current, final PI current |
+| 23–26 | saturated, anti-windup, coasting, AUTO Torque control feedback usable (Part I <500 ms and Part II <1 s; 0/1) |
+| 27 | inhibit: 0=OK, 1=disabled, 2=feedback loss, 3=wait fresh command, 4=reverse unsupported, 5=stop |
 
 Read actual CAN-transmitted current/RPM and actual phase/bus current from `/drive/status`.
 In speed mode its commanded_phase_current_a is a limit, not commanded torque.
@@ -731,7 +742,18 @@ MANUAL pedal/gear bypasses this AUTO calibration envelope.
 Airborne first-test candidate: Kp15/Ki2, 20 A, integral6 A, slew120/400 A/s,
 reapply5 A at40 A/s, RPM600, deadband0.05/release0.12 m/s.
 Driving remains 480 A/RPM4500 with unchanged gains and CAN baseline.
-PI gains, integral, deadband/coast and slew/reapply remain Torque-only. Firmware
+Torque PI uses signed speed error with output limited to positive drive current
+or zero. Negative error reduces current continuously; lower output/slew saturation
+freezes the integral instead of clearing the learned load current. `coasting`
+reports PI demand limited by the coast floor while overspeed, not a latched output override. The
+`hysteresis` / `drive_coast_release_error_mps` field remains in the existing ABI
+for older firmware/settings but is unused by continuous PI. Reapply slew still
+limits positive current recovery after the floor demand. `coast_current_floor`
+is active only above a positive target; target zero and safety gates command zero.
+This loop does not request
+regeneration; explicit external regen requests retain their existing path.
+
+PI gains, integral, deadband and slew/reapply remain Torque-only. Firmware
 Part I freshness is 500 ms; Part II status becomes invalid at 1 s.
 AUTO Torque resets/inhibits to 0 A/HALTED if either Part is invalid and requires a Host
 command received after feedback recovery. Speed/MANUAL continue to report the valid flags.

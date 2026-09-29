@@ -16,15 +16,15 @@ from control_tuning.longitudinal import (
 from control_tuning.longitudinal_runtime import LongitudinalClient
 
 
-def status_data(config, revision=0, request_id=0, result=0, source=0):
-    return [1., float(revision), float(request_id), float(result), float(source),
-            *config_wire(config), *([0.] * 8), 1., 1.]
+def status_data(config, revision=0, request_id=0, result=0, source=0, version=3):
+    return [float(version), float(revision), float(request_id), float(result), float(source),
+            *config_wire(config, version), *([0.] * 8), 1., 1.]
 
 
 def test_candidate_roundtrip_and_wire_precision():
     for config in (DEFAULT, AIRBORNE):
         data = status_data(config)
-        data = struct.unpack('<27f', struct.pack('<27f', *data))
+        data = struct.unpack('<28f', struct.pack('<28f', *data))
         actual = decode_status(data)
         assert wire_equal(config, actual['config'])
         assert actual['display_values']['drive_current_limit_a'] == config['max_drive_current_a']
@@ -33,6 +33,10 @@ def test_candidate_roundtrip_and_wire_precision():
         assert actual['feedback_valid'] == 1
     assert DEFAULT['max_drive_current_a'] == 480
     assert AIRBORNE['max_drive_current_a'] < DEFAULT['max_drive_current_a']
+    assert decode_status(status_data(DEFAULT, version=2))['config']['coast_current_floor_a'] == 0
+    assert len(request_data(DEFAULT, 1, 0, version=2)) == 15
+    with pytest.raises(ValueError):
+        request_data(AIRBORNE, 1, 0, version=2)
 
 
 @pytest.mark.parametrize('key,value', [
@@ -41,11 +45,19 @@ def test_candidate_roundtrip_and_wire_precision():
     ('current_slew_up_a_s', 0.), ('current_slew_down_a_s', math.inf),
     ('speed_deadband_mps', .3), ('speed_hysteresis_mps', .01),
     ('reapply_current_a', -1.), ('reapply_slew_a_s', 3000.), ('motor_rpm_limit', 5000.),
+    ('coast_current_floor_a', -1.), ('coast_current_floor_a', 481.),
     ('control_mode', 'regen'),
 ])
 def test_invalid_request_rejected_at_host_boundary(key, value):
     with pytest.raises(ValueError):
-        request_data({**DEFAULT, key:value}, 1, 0)
+        request_data({**DEFAULT, 'control_mode':'torque', key:value}, 1, 0)
+
+
+def test_speed_current_limit_does_not_depend_on_inactive_pi_settings():
+    config = {**DEFAULT, 'max_drive_current_a':10.}
+    assert request_data(config, 1, 0)[6] == 10.
+    with pytest.raises(ValueError):
+        request_data({**config, 'control_mode':'torque'}, 1, 0)
 
 
 def test_ros_apply_waits_for_matching_mcu_readback(monkeypatch):
@@ -133,17 +145,18 @@ def test_checked_in_drive_envelopes_and_launch_mapping():
     presets = PresetStore(settings)
     airborne = presets.load('airborne')
     expected = {
-        'drive_control_mode':'torque', 'drive_speed_kp_a_per_mps':15.,
+        'drive_control_mode':'torque', 'drive_speed_kp_a_per_mps':25.,
         'drive_speed_ki_a_per_mps_s':2., 'drive_speed_deadband_mps':.05,
-        'drive_coast_release_error_mps':.12, 'drive_current_limit_a':40.,
+        'drive_coast_release_error_mps':.12, 'drive_coast_current_floor_a':1., 'drive_current_limit_a':40.,
         'drive_integrator_limit_a':6., 'drive_current_slew_up_a_s':120.,
         'drive_current_slew_down_a_s':400., 'drive_reapply_current_band_a':5.,
-        'drive_reapply_current_slew_a_s':40., 'drive_motor_speed_limit_rpm':4500.,
+        'drive_reapply_current_slew_a_s':20., 'drive_motor_speed_limit_rpm':4500.,
     }
     assert {k:airborne[k] for k in expected} == expected
     native = load_launch_overrides(settings.path,LONGITUDINAL,'airborne')
     assert native == AIRBORNE
     assert request_data(native,1,0)[6] == 40.
     assert request_data(native,1,0)[14] == 4500.
+    assert request_data(native,1,0)[15] == 1.
     driving = load_launch_overrides(settings.path,LONGITUDINAL,'driving')
     assert driving == {**DEFAULT,'control_mode':'torque'}

@@ -29,6 +29,7 @@ KEY_ALIASES = {
     'speed_ki_a_per_mps_s': 'drive_speed_ki_a_per_mps_s',
     'speed_deadband_mps': 'drive_speed_deadband_mps',
     'speed_hysteresis_mps': 'drive_coast_release_error_mps',
+    'coast_current_floor_a': 'drive_coast_current_floor_a',
     'max_drive_current_a': 'drive_current_limit_a',
     'integrator_limit_a': 'drive_integrator_limit_a',
     'current_slew_up_a_s': 'drive_current_slew_up_a_s',

@@ -5,9 +5,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Float32MultiArray ABI v2 adds external_current; v1 speed/torque requests remain valid. */
-#define LONG_VERSION 2u
-#define LONG_CONFIG_COUNT 12u
+/* ABI v3 appends the Torque coast current floor; v1/v2 requests remain valid. */
+#define LONG_VERSION 3u
+#define LONG_CONFIG_COUNT 13u
 #define LONG_REQUEST_COUNT (3u + LONG_CONFIG_COUNT)
 #define LONG_STATUS_COUNT (5u + LONG_CONFIG_COUNT + 10u)
 #define LONG_ID_MAX 16777215u
@@ -22,7 +22,9 @@ enum { LONG_OK = 0, LONG_DISABLED = 1, LONG_FEEDBACK = 2,
 typedef struct {
   uint8_t mode;
   float kp, ki, max_current, integrator_limit, slew_up, slew_down;
+  /* hysteresis is retained for ABI compatibility; continuous PI does not use it. */
   float deadband, hysteresis, reapply_current, reapply_slew, rpm_limit;
+  float coast_current_floor;
 } LongConfig;
 
 typedef struct {
@@ -43,7 +45,7 @@ typedef struct {
 
 void Long_ApplyConfiguration(LongCalibration *state, const LongRequest *request, bool stopped);
 
-/* RAM default is the existing speed path; gains are driving first-test candidates. */
+/* RAM boot default is Torque; native Speed is selectable at a safe stop. */
 LongConfig Long_DefaultConfig(void);
 typedef struct { int32_t rpm; float current; } LongMotorCommand;
 /* AUTO Speed uses the same configured current/RPM envelope as AUTO Torque.

@@ -482,7 +482,20 @@ void StartControl(void *argument)
         s_regen_current = fminf(fmaxf(regen_target, s_regen_current - regen_step),
                                 s_regen_current + regen_step);
 
-        if (s_regen_current < 0.0f) {
+        if (COMMAND_SPEED == 0.0f ||
+            (s_long_calibration.config.mode != LONG_SPEED && COMMAND_SPEED < 0.0f)) {
+          /* Ordinary zero target coasts: cut torque immediately, no RPM hold or regen ramp. */
+          Long_Reset(&s_long_controller);
+          s_regen_current = 0.0f;
+          send_motor_can(0, 0.0f, 0u, 0u);
+        } else if (s_long_calibration.config.mode == LONG_SPEED) {
+          Long_Reset(&s_long_controller);
+          s_regen_current = 0.0f;
+          const int32_t target_rpm = (int32_t)(COMMAND_SPEED * 60.0f * GEAR_RATIO /
+                                              (3.14159f * TIRE_DIAM_M));
+          const LongMotorCommand command = Long_SpeedCommand(&s_long_calibration.config, target_rpm);
+          send_motor_can(command.rpm, command.current, 1u, 1u);
+        } else if (s_regen_current < 0.0f) {
           /* 전진 회생: 음수 상전류 + 목표 RPM 0 + RUNNING. */
           Long_Reset(&s_long_controller);
           send_motor_can(0, s_regen_current, 1u, 0u);
@@ -526,7 +539,7 @@ void StartControl(void *argument)
       Long_Reset(&s_long_controller);
       s_regen_current = 0.0f;
       if (s_long_inhibit == LONG_OK) s_long_inhibit = LONG_STOP;
-      /* 임시: 속도 제어 정지 유지(0 rpm hold)도 쓰지 않는다. */
+      /* No active zero-RPM hold: the independent brake path owns braking. */
       send_motor_can(0, 0.0f, 0u, 0u);
     }
     // 20Hz / 50ms 주기
@@ -1548,11 +1561,12 @@ static void publish_longitudinal(void)
   d[0] = LONG_VERSION; d[1] = s_long_calibration.revision; d[2] = s_long_calibration.request_id;
   d[3] = s_long_calibration.result; d[4] = s_long_calibration.source;
   Long_EncodeConfig(&s_long_calibration.config, d + 5);
-  d[17] = s_long_controller.error; d[18] = s_long_controller.p;
-  d[19] = s_long_controller.i; d[20] = s_long_controller.unsaturated;
-  d[21] = s_long_controller.current; d[22] = s_long_controller.saturated;
-  d[23] = s_long_controller.anti_windup; d[24] = s_long_controller.coasting;
-  d[25] = s_long_feedback_valid; d[26] = s_long_inhibit;
+  float *state = d + 5u + LONG_CONFIG_COUNT;
+  state[0] = s_long_controller.error; state[1] = s_long_controller.p;
+  state[2] = s_long_controller.i; state[3] = s_long_controller.unsaturated;
+  state[4] = s_long_controller.current; state[5] = s_long_controller.saturated;
+  state[6] = s_long_controller.anti_windup; state[7] = s_long_controller.coasting;
+  state[8] = s_long_feedback_valid; state[9] = s_long_inhibit;
   taskEXIT_CRITICAL();
   RCL_PUBLISH_BEST_EFFORT(&s_long_publisher, &s_long_status_msg);
 }
@@ -1602,8 +1616,10 @@ static void cb_cmd(const void *message)
   s_command_timeout = 0u;
   s_last_command_tick = now;
   s_command_stamp_ns = (int64_t)cmd->header.stamp.sec * 1000000000LL + cmd->header.stamp.nanosec;
-  if (brake_requested || COMMAND_SPEED <= 0)
+  if (brake_requested || COMMAND_SPEED <= 0) {
     Long_ClearExternal(&s_external_current, s_command_stamp_ns);
+    Long_ClearExternal(&s_regen_request, s_command_stamp_ns);
+  }
   taskEXIT_CRITICAL();
 }
 

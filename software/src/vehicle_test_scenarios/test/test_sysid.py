@@ -702,7 +702,7 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path, record_mcap):
     source = Node('steering_actuator_node')
     lon_pub = source.create_publisher(Float32MultiArray, '/drive/longitudinal_status', 10)
     source.create_timer(.1, lambda: lon_pub.publish(Float32MultiArray(data=[
-        1., 1., 1., 1., 1., *config_wire(AIRBORNE),
+        3., 1., 1., 1., 1., *config_wire(AIRBORNE),
         .1, 1., 2., 3., 3., 0., 0., 0., 1., 0.])))
     source.declare_parameter('steering_enabled', True)
     source.declare_parameter('tuning_preset', 'driving')
@@ -810,6 +810,10 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path, record_mcap):
             assert capture['nodes']['/steering_actuator_node']['ros__parameters']['torque_kd'] == 1500.0
             assert capture['nodes']['/steering_actuator_node']['ros__parameters']['steering_enabled'] is False
             assert capture['nodes']['/command_governor']['ros__parameters']['input_timeout_ms'] == 200.0
+            assert capture['longitudinal']['status'] == 'complete'
+            assert capture['longitudinal']['readback']['version'] == 3
+            assert capture['longitudinal']['readback']['config']['coast_current_floor_a'] == 1.0
+            assert counts['/drive/longitudinal_status'] > 0
             assert counts['/sysid/control_parameters'] == 1
             assert counts['/parameter_events'] > 0
             assert all(counts.get(topic, 0) > 0 for topic in TORQUE_TOPICS)
