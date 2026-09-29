@@ -5,11 +5,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Float32MultiArray ABI v1; see docs/INTERFACES.md. No generated interface change. */
-#define LONG_VERSION 1u
-#define LONG_CONFIG_COUNT 12u
+/* Float32MultiArray ABI v2; see docs/INTERFACES.md. No generated interface change. */
+#define LONG_VERSION 2u
+#define LONG_CONFIG_COUNT 16u
 #define LONG_REQUEST_COUNT (3u + LONG_CONFIG_COUNT)
-#define LONG_STATUS_COUNT (5u + LONG_CONFIG_COUNT + 10u)
+#define LONG_STATUS_COUNT (5u + LONG_CONFIG_COUNT + 11u)
 #define LONG_ID_MAX 16777215u
 
 enum { LONG_SPEED = 0, LONG_TORQUE = 1 };
@@ -23,11 +23,17 @@ typedef struct {
   uint8_t mode;
   float kp, ki, max_current, integrator_limit, slew_up, slew_down;
   float deadband, hysteresis, reapply_current, reapply_slew, rpm_limit;
+  /* Identified plant a = ff_gain * I - ff_rolling - ff_damping * v, inverted as
+   * feedforward. ff_gain 0 disables all feedforward; ff_accel_limit bounds the
+   * term taken from the commanded target rate. */
+  float ff_gain, ff_rolling, ff_damping, ff_accel_limit;
 } LongConfig;
 
 typedef struct {
-  float error, p, i, unsaturated, current;
+  float error, p, i, ff, unsaturated, current;
   bool saturated, anti_windup, coasting, reapplying;
+  float target_previous;
+  bool have_target;
 } LongController;
 
 typedef struct {
@@ -49,6 +55,11 @@ typedef struct { int32_t rpm; float current; } LongMotorCommand;
 /* AUTO Speed uses the same configured current/RPM envelope as AUTO Torque.
  * The CAN sender still applies the separate physical forward/reverse limits. */
 LongMotorCommand Long_SpeedCommand(const LongConfig *config, int32_t target_rpm);
+/* MANUAL pedal demand through the configured torque envelope and slew rates.
+ * Pure function: the pedal path keeps no PI history, so AUTO safety resets
+ * never touch it and a MANUAL driver keeps direct torque authority. */
+float Long_PedalCommand(const LongConfig *config, float pedal_percent,
+                        float previous_current, float dt);
 bool Long_DecodeRequest(const float *data, size_t count, LongRequest *request);
 void Long_EncodeConfig(const LongConfig *config, float *data);
 bool Long_CanConfigure(bool manual, bool feedback_valid, float speed,

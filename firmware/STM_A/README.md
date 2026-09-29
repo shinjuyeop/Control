@@ -247,9 +247,13 @@ sequenceDiagram
 
 AUTO Speed는 `speed_target_mps`를 타이어 지름 `0.47 m`, 감속비 `4.60`으로 motor RPM에
 변환한 뒤 active preset RPM envelope를 적용하고 active current limit으로 EZ speed-control을 명령합니다.
-AUTO Torque는 STM_A 20 Hz Speed PI의 phase-current 출력을 active current limit으로 제한하며
-EZ RPM ceiling도 active preset을 사용합니다. 최종 전진/후진 물리 RPM clamp는 별도로 유지합니다.
-MANUAL은 기존 pedal percentage→torque current와 물리 gear 부호 경로를 유지합니다.
+AUTO Torque는 STM_A 20 Hz Speed PI에 식별 플랜트 feedforward를 더한 phase-current 출력을
+active current limit으로 제한하며 EZ RPM ceiling도 active preset을 사용합니다.
+최종 전진/후진 물리 RPM clamp는 별도로 유지합니다.
+MANUAL은 pedal percentage→torque current와 물리 gear 부호 경로를 유지하되, Torque
+calibration에서는 active current limit·RPM ceiling·전류 상승/하강률을 페달에도 적용합니다.
+Speed calibration에서는 기존 0~480 A 매핑 그대로입니다. 페달 명령은 PI 이력과 분리돼 있어
+AUTO 안전 reset이 페달 출력을 바꾸지 않으며, MANUAL에서 속도 PI는 동작하지 않습니다.
 
 ### 8.5 안전 동작
 
@@ -387,11 +391,13 @@ RuntimeStats 적용 firmware의 LPUART1과 Agent는 모두 **460800 baud**를 �
 
 ## AUTO longitudinal mode
 
-Driving Speed의 기존 CAN baseline 및 MANUAL 동작은 보존된다. `Core/Src/longitudinal_controller.c`는
-기존 20 Hz Control task에서 호출하는 positive-current PI다. 새 task는 없다.
-부팅 기본은 speed/DEFAULT, driving gain은 MCAP first-test candidate다.
-PC→RAM calibration과 5 Hz readback은 [wire 계약](../../docs/INTERFACES.md#longitudinal-calibration-v1),
-reset/feedback/전류 정책과 시험 절차는 [실측 보고서](../../docs/reports/2026-09-21_longitudinal_torque_pi.md)를 따른다.
+Driving Speed의 기존 CAN baseline은 보존된다. `Core/Src/longitudinal_controller.c`는
+기존 20 Hz Control task에서 호출하는 positive-current PI + feedforward다. 새 task는 없다.
+부팅 기본은 speed/DEFAULT이고, gain과 feedforward 상수는 MCAP first-test candidate다.
+MANUAL 페달은 Torque calibration의 전류·RPM·slew envelope를 공유한다.
+PC→RAM calibration과 5 Hz readback은 [wire 계약](../../docs/INTERFACES.md#longitudinal-calibration-v2),
+reset/feedback/전류 정책과 시험 절차는 [실측 보고서](../../docs/reports/2026-09-21_longitudinal_torque_pi.md),
+feedforward와 MANUAL envelope는 [후속 보고서](../../docs/reports/2026-09-29_longitudinal_feedforward.md)를 따른다.
 
 Host 알고리즘/상태 전이 테스트 (HAL/ROS/보드 불필요):
 

@@ -290,3 +290,5 @@ PR 본문은 다음 형식을 사용합니다.
 ```
 
 AUTO 종방향 Speed/Torque PI 및 first-test calibration은 [구현·실측 보고서](docs/reports/2026-09-21_longitudinal_torque_pi.md)를 따릅니다.
+식별 플랜트 feedforward, MANUAL 페달 envelope 공유와 Kp380/Ki190 후보는
+[feedforward 기록](docs/reports/2026-09-29_longitudinal_feedforward.md)을 따릅니다.

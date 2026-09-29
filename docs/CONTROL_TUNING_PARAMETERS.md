@@ -2,13 +2,15 @@
 
 조향·구동을 함께 편집하므로 **담당 계통 + 항목 + 단위**가 이름에 드러나게 한다.
 TUI/프리셋/정규화된 MCAP 분석값에는 같은 canonical key를 사용한다.
-기존 ROS 파라미터, topic/message type 및 STM_A v1 배열 순서는 연결용 계약으로 유지한다.
+기존 ROS 파라미터, topic/message type 및 STM_A v2 배열 순서는 연결용 계약으로 유지한다.
 새 이름을 기존 이름으로 단순 치환할 때 단위까지 같다고 가정하면 안 된다.
 
 ## 이름 규칙
 
 - `steering_`: KEYA 조향 제어 또는 조향 허용 판단에 사용하는 설정.
-- `drive_`: STM_A AUTO Speed/Torque 공통 구동 envelope와 Torque 속도 PI 설정.
+- `drive_`: STM_A Speed/Torque 공통 구동 envelope, Torque 속도 PI와 feedforward 설정.
+- `drive_ff_`: 식별한 플랜트 `a = 전류당 가속도 × I − 주행저항 − 속도저항 × v`의 역함수로
+  만드는 feedforward 항. PI 게인과 달리 차량 물성 추정값이며 노면·하중이 바뀌면 다시 식별한다.
 - `governor_`: 상위 명령의 유효성 검사.
 - `kp`, `ki`, `kd`: P/I/D 게인. `_a_per_deg`, `_a_per_mps` 등은 출력 전류와 오차의 단위를 표현한다.
 - `limit_a`: 명령/적분 전류 한도. MCAP의 실측 `phase_current_a` 또는 `motor_current_a`와 구분한다.
@@ -47,18 +49,22 @@ TUI 상세에는 새 설정키와 기존 연결을 함께 표시한다.
 | `steering_torque_feedback_timeout_ms` | 조향 토크모드 피드백 제한 | ms | 조향 ROS: `torque_feedback_timeout_ms` |
 | `steering_vehicle_mode_timeout_ms` | 조향용 차량모드 수신 제한 | ms | 조향 ROS: `mode_timeout_ms` |
 | `steering_vehicle_speed_timeout_ms` | 조향용 차속 수신 제한 | ms | 조향 ROS: `drive_status_timeout_ms` |
-| `drive_control_mode` | 구동 제어 방식 | 선택값 | STM_A v1: `control_mode` |
-| `drive_speed_kp_a_per_mps` | 구동 속도 P 게인 | A/(m/s) | STM_A v1: `speed_kp_a_per_mps` |
-| `drive_speed_ki_a_per_mps_s` | 구동 속도 I 게인 | A/(m/s*s) | STM_A v1: `speed_ki_a_per_mps_s` |
-| `drive_speed_deadband_mps` | 구동 속도 데드밴드 | m/s | STM_A v1: `speed_deadband_mps` |
-| `drive_coast_release_error_mps` | 구동 타력 해제 오차 | m/s | STM_A v1: `speed_hysteresis_mps` |
-| `drive_current_limit_a` | 구동 전류 한도 | A | STM_A v1: `max_drive_current_a` |
-| `drive_integrator_limit_a` | 구동 적분 전류 한도 | A | STM_A v1: `integrator_limit_a` |
-| `drive_current_slew_up_a_s` | 구동 전류 상승률 | A/s | STM_A v1: `current_slew_up_a_s` |
-| `drive_current_slew_down_a_s` | 구동 전류 하강률 | A/s | STM_A v1: `current_slew_down_a_s` |
-| `drive_reapply_current_band_a` | 구동 재인가 전류 구간 | A | STM_A v1: `reapply_current_a` |
-| `drive_reapply_current_slew_a_s` | 구동 재인가 전류 상승률 | A/s | STM_A v1: `reapply_slew_a_s` |
-| `drive_motor_speed_limit_rpm` | 구동 모터 회전수 한도 | rpm | STM_A v1: `motor_rpm_limit` |
+| `drive_control_mode` | 구동 제어 방식 | 선택값 | STM_A v2: `control_mode` |
+| `drive_speed_kp_a_per_mps` | 구동 속도 P 게인 | A/(m/s) | STM_A v2: `speed_kp_a_per_mps` |
+| `drive_speed_ki_a_per_mps_s` | 구동 속도 I 게인 | A/(m/s*s) | STM_A v2: `speed_ki_a_per_mps_s` |
+| `drive_speed_deadband_mps` | 구동 속도 데드밴드 | m/s | STM_A v2: `speed_deadband_mps` |
+| `drive_coast_release_error_mps` | 구동 타력 해제 오차 | m/s | STM_A v2: `speed_hysteresis_mps` |
+| `drive_current_limit_a` | 구동 전류 한도 | A | STM_A v2: `max_drive_current_a` |
+| `drive_integrator_limit_a` | 구동 적분 전류 한도 | A | STM_A v2: `integrator_limit_a` |
+| `drive_current_slew_up_a_s` | 구동 전류 상승률 | A/s | STM_A v2: `current_slew_up_a_s` |
+| `drive_current_slew_down_a_s` | 구동 전류 하강률 | A/s | STM_A v2: `current_slew_down_a_s` |
+| `drive_reapply_current_band_a` | 구동 재인가 전류 구간 | A | STM_A v2: `reapply_current_a` |
+| `drive_reapply_current_slew_a_s` | 구동 재인가 전류 상승률 | A/s | STM_A v2: `reapply_slew_a_s` |
+| `drive_motor_speed_limit_rpm` | 구동 모터 회전수 한도 | rpm | STM_A v2: `motor_rpm_limit` |
+| `drive_ff_current_gain_mps2_per_a` | 구동 전류당 가속도 | m/s^2/A | STM_A v2: `ff_current_gain_mps2_per_a` |
+| `drive_ff_rolling_resistance_mps2` | 구동 주행저항 가속도 | m/s^2 | STM_A v2: `ff_rolling_resistance_mps2` |
+| `drive_ff_speed_damping_per_s` | 구동 속도 저항 계수 | 1/s | STM_A v2: `ff_speed_damping_per_s` |
+| `drive_ff_accel_limit_mps2` | 구동 feedforward 가속 한도 | m/s^2 | STM_A v2: `ff_accel_limit_mps2` |
 
 조향 P/D·전류 한도는 physical-unit TUI 값과 native parameter 값 사이에 변환이 있다.
 예를 들어 조향 `steering_kp_a_per_deg`는 `torque_full_scale_error_deg`에 단순 이름 변경으로
@@ -73,8 +79,11 @@ TUI 상세에는 새 설정키와 기존 연결을 함께 표시한다.
 CAN 송신부의 최종 전진 4500 / 후진 1500 rpm 물리 clamp는 별도로 유지한다.
 Driving 480 A/4500 rpm에서 기존 Speed baseline CAN 명령은 동일하다.
 Airborne는 Kp15/Ki2, 20 A/600 rpm의 first-test candidate이며 두 AUTO mode에 같은 envelope를 쓴다.
-나머지 speed PI, 적분 한도, deadband/coast, current slew/reapply 항목은 Torque 전용이다.
-MANUAL pedal/gear는 이 AUTO envelope의 영향을 받지 않는다.
+나머지 speed PI, 적분 한도, deadband/coast, current slew/reapply, feedforward 항목은 Torque 전용이다.
+MANUAL은 Torque calibration일 때 `drive_current_limit_a`·`drive_motor_speed_limit_rpm`과
+전류 상승·하강률을 페달 경로에도 적용한다. Speed calibration에서는 기존 0~480 A 페달 매핑을 쓴다.
+MANUAL에는 속도 PI와 feedforward가 동작하지 않는다. 페달은 그대로 토크 요구다.
+`drive_ff_current_gain_mps2_per_a`가 0이면 feedforward 없이 PI만 동작한다.
 
 ## 프리셋 schema v3
 
@@ -88,9 +97,10 @@ steering:
   # 나머지 조향 항목도 명시
 drive:
   drive_control_mode: torque
-  drive_speed_kp_a_per_mps: 180.0
+  drive_speed_kp_a_per_mps: 380.0
   drive_current_limit_a: 480.0
-  # 나머지 구동 항목도 명시
+  drive_ff_current_gain_mps2_per_a: 0.00512
+  # 나머지 구동 항목과 feedforward 항목도 명시
 governor:
   governor_command_timeout_ms: 200.0
 timeouts:
@@ -123,7 +133,8 @@ TUI는 현재값 조회·편집·S 저장만 한다. **A 즉시 적용 기능은
 - 기존 snapshot v1은 `control_tuning.naming.canonical_capture()`로 새 분석 이름에 매핑한다.
   원본 MCAP을 수정하지 않으며 이전 데이터의 제거된/추가 필드는 보존한다.
   v1에 없던 거버너 `display_values`를 기본값으로 새로 만들지 않는다.
-- `/drive/longitudinal_status`는 **Float32MultiArray ABI v1 그대로**다.
+- `/drive/longitudinal_status`는 **Float32MultiArray ABI v2**다. v1 payload는 양방향으로 거부하므로
+  보드와 host를 함께 갱신한다.
   host `decode_status()`가 기존 `config`와 새 이름의 `display_values`를 함께 제공한다.
   Console과 MCAP 분석에서 새 이름을 쓴다. 새 Console은 기존 서버의 `config`도 읽을 수 있다.
 - 기존 Drive/SteeringActuatorStatus, `/drive/status`, `/steering/status` 토픽명과 실측 필드는 바꾸지 않았다.

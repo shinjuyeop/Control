@@ -25,9 +25,9 @@ def test_camera_lidar_and_other_sensor_selections_are_preserved():
 
 
 def longitudinal_data(p=1., revision=1):
-    from control_tuning.longitudinal import config_wire, AIRBORNE
-    return [1., float(revision), 1., 1., 1., *config_wire(AIRBORNE),
-            .1, p, 2., p + 2., p + 2., 0., 0., 0., 1., 0.]
+    from control_tuning.longitudinal import config_wire, AIRBORNE, VERSION
+    return [float(VERSION), float(revision), 1., 1., 1., *config_wire(AIRBORNE),
+            .1, p, 2., 0., p + 2., p + 2., 0., 0., 0., 1., 0.]
 
 
 def test_analysis_preserves_pi_samples_with_unchanged_revision(tmp_path):

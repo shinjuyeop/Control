@@ -10,29 +10,45 @@ from rclpy.executors import SingleThreadedExecutor
 from std_msgs.msg import Float32MultiArray
 
 from control_tuning.longitudinal import (
-    DEFAULT, AIRBORNE, CONFIG_KEYS, CONFIG_TOPIC, STATUS_TOPIC,
+    DEFAULT, AIRBORNE, CONFIG_KEYS, CONFIG_TOPIC, STATUS_TOPIC, VERSION,
     config_wire, decode_status, request_data, validate_config, wire_equal,
 )
 from control_tuning.longitudinal_runtime import LongitudinalClient
 
 
 def status_data(config, revision=0, request_id=0, result=0, source=0):
-    return [1., float(revision), float(request_id), float(result), float(source),
-            *config_wire(config), *([0.] * 8), 1., 1.]
+    return [float(VERSION), float(revision), float(request_id), float(result), float(source),
+            *config_wire(config), *([0.] * 9), 1., 1.]
 
 
 def test_candidate_roundtrip_and_wire_precision():
     for config in (DEFAULT, AIRBORNE):
         data = status_data(config)
-        data = struct.unpack('<27f', struct.pack('<27f', *data))
+        data = struct.unpack('<32f', struct.pack('<32f', *data))
         actual = decode_status(data)
         assert wire_equal(config, actual['config'])
         assert actual['display_values']['drive_current_limit_a'] == config['max_drive_current_a']
         assert actual['display_values']['drive_speed_kp_a_per_mps'] == config['speed_kp_a_per_mps']
+        # Float32 readback: the identified gain is not exactly representable.
+        assert actual['display_values']['drive_ff_current_gain_mps2_per_a'] == pytest.approx(
+            config['ff_current_gain_mps2_per_a'])
         assert actual['source'] == 'DEFAULT'
         assert actual['feedback_valid'] == 1
+        assert actual['ff_current_a'] == 0
     assert DEFAULT['max_drive_current_a'] == 480
     assert AIRBORNE['max_drive_current_a'] < DEFAULT['max_drive_current_a']
+    # Driving candidate carries the identified plant; airborne runs PI only.
+    assert (DEFAULT['speed_kp_a_per_mps'], DEFAULT['speed_ki_a_per_mps_s']) == (380., 190.)
+    assert DEFAULT['ff_current_gain_mps2_per_a'] == .00512  # 2026-09-20 fit
+    assert AIRBORNE['ff_current_gain_mps2_per_a'] == 0
+
+
+def test_status_of_the_previous_abi_is_rejected():
+    data = status_data(DEFAULT)
+    with pytest.raises(ValueError, match='v2'):
+        decode_status([1., *data[1:]])
+    with pytest.raises(ValueError, match='v2'):
+        decode_status(data[:-1])
 
 
 @pytest.mark.parametrize('key,value', [
@@ -42,6 +58,9 @@ def test_candidate_roundtrip_and_wire_precision():
     ('speed_deadband_mps', .3), ('speed_hysteresis_mps', .01),
     ('reapply_current_a', -1.), ('reapply_slew_a_s', 3000.), ('motor_rpm_limit', 5000.),
     ('control_mode', 'regen'),
+    ('ff_current_gain_mps2_per_a', .0001), ('ff_current_gain_mps2_per_a', .06),
+    ('ff_current_gain_mps2_per_a', math.nan), ('ff_rolling_resistance_mps2', -.1),
+    ('ff_speed_damping_per_s', 1.1), ('ff_accel_limit_mps2', 5.1),
 ])
 def test_invalid_request_rejected_at_host_boundary(key, value):
     with pytest.raises(ValueError):
@@ -139,6 +158,8 @@ def test_checked_in_drive_envelopes_and_launch_mapping():
         'drive_integrator_limit_a':6., 'drive_current_slew_up_a_s':120.,
         'drive_current_slew_down_a_s':400., 'drive_reapply_current_band_a':5.,
         'drive_reapply_current_slew_a_s':40., 'drive_motor_speed_limit_rpm':600.,
+        'drive_ff_current_gain_mps2_per_a':0., 'drive_ff_rolling_resistance_mps2':0.,
+        'drive_ff_speed_damping_per_s':0., 'drive_ff_accel_limit_mps2':0.,
     }
     assert {k:airborne[k] for k in expected} == expected
     native = load_launch_overrides(settings.path,LONGITUDINAL,'airborne')
@@ -147,3 +168,4 @@ def test_checked_in_drive_envelopes_and_launch_mapping():
     assert request_data(native,1,0)[14] == 600.
     driving = load_launch_overrides(settings.path,LONGITUDINAL,'driving')
     assert driving == {**DEFAULT,'control_mode':'torque'}
+    assert request_data(driving,1,0)[15] == .00512  # feedforward gain on the wire

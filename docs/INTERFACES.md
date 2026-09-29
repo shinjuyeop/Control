@@ -593,26 +593,33 @@ Float32다. 후자는 KEYA Parameter 0003과 매뉴얼의 80% 식으로 계산�
 - `BrakeActuatorStatus`와 `/vehicle/state` input freshness 정책
 
 
-## Longitudinal calibration v1
+## Longitudinal calibration v2
 
-STM_A AUTO longitudinal config/status uses `std_msgs/msg/Float32MultiArray` with
+STM_A longitudinal config/status uses `std_msgs/msg/Float32MultiArray` with
 empty `layout.dim` and `layout.data_offset=0`. The bounded MCU buffers accept the exact
-v1 payload length. Unsupported version/length/nonfinite/config ranges are rejected;
+v2 payload length. Unsupported version/length/nonfinite/config ranges are rejected;
 malformed DDS sequences that cannot deserialize have no acknowledgment. No message
 or generated micro-ROS library changes are needed. Existing DriveActuatorStatus is unchanged.
+v2 adds the four feedforward fields and the feedforward current in the status block;
+a v1 payload is rejected on both directions, so board and host are updated together.
 
-`/drive/longitudinal_config`: reliable, volatile (never transient-local), 15 floats:
+`/drive/longitudinal_config`: reliable, volatile (never transient-local), 19 floats:
 
 | Index | Field |
 |---|---|
-| 0 | version=1 |
+| 0 | version=2 |
 | 1 | request_id: integer 1…16777215 |
 | 2 | expected_revision: integer 0…16777215 |
 | 3 | control_mode: 0=speed, 1=torque (different from EZ feedback bit!) |
 | 4–14 | Kp, Ki, max_drive_current, integrator_limit, slew_up, slew_down, deadband, hysteresis, reapply_current, reapply_slew, motor_rpm_limit |
+| 15–18 | ff_current_gain, ff_rolling_resistance, ff_speed_damping, ff_accel_limit |
 
 Current fields are phase amperes; Kp A/(m/s), Ki A/(m/s*s), slew A/s,
-deadband/hysteresis m/s, RPM motor rpm. Field order is defined by
+deadband/hysteresis m/s, RPM motor rpm. Feedforward inverts the identified plant
+`a = ff_current_gain * I - ff_rolling_resistance - ff_speed_damping * v`, so
+ff_current_gain is (m/s^2)/A, ff_rolling_resistance m/s^2, ff_speed_damping 1/s and
+ff_accel_limit m/s^2. ff_current_gain 0 disables feedforward; a nonzero value must be
+0.0005…0.05 so a near-zero divisor cannot become a large command. Field order is defined by
 `control_tuning.longitudinal.CONFIG_KEYS` and `Long_EncodeConfig`.
 
 STM_A validates the complete request, then hands it to a one-slot mailbox. The next
@@ -624,24 +631,28 @@ Duplicate last-applied request ID is idempotent. Revision exhaustion requires re
 IDs/revisions use the exact integer range of float32; they are not authorization tokens.
 Use the existing trusted vehicle ROS domain, not an untrusted network.
 
-`/drive/longitudinal_status`: best effort, 5 Hz, 27 floats:
+`/drive/longitudinal_status`: best effort, 5 Hz, 32 floats:
 
 | Index | Field |
 |---|---|
-| 0 | version=1 |
+| 0 | version=2 |
 | 1 | applied revision; boot=0 |
 | 2 | last request ID; malformed request=0 |
 | 3 | result: 0=idle, 1=applied, 2=invalid, 3=unsafe, 4=revision conflict, 5=busy |
 | 4 | calibration source: 0=DEFAULT, 1=HOST_OVERRIDE |
-| 5–16 | active config in CONFIG_KEYS order, including mode |
-| 17–21 | speed error, P, I/integrator state, unsaturated current, final PI current |
-| 22–25 | saturated, anti-windup, coasting, feedback valid (0/1) |
-| 26 | inhibit: 0=OK, 1=disabled, 2=feedback loss, 3=wait fresh command, 4=reverse unsupported, 5=stop |
+| 5–20 | active config in CONFIG_KEYS order, including mode |
+| 21–26 | speed error, P, I/integrator state, feedforward current, unsaturated current, final PI current |
+| 27–30 | saturated, anti-windup, coasting, feedback valid (0/1) |
+| 31 | inhibit: 0=OK, 1=disabled, 2=feedback loss, 3=wait fresh command, 4=reverse unsupported, 5=stop |
 
 Read actual CAN-transmitted current/RPM and actual phase/bus current from `/drive/status`.
 In speed mode its commanded_phase_current_a is a limit, not commanded torque.
 PI status final current is the controller output before CAN quantization, not measured current.
-MANUAL leaves the pedal path unchanged and resets PI. Safety gates bypass slew to zero/HALTED.
+MANUAL keeps the pedal as the torque demand and resets PI. Under a torque calibration the
+pedal uses the applied current limit, RPM ceiling and slew rates; under a speed calibration it
+keeps the legacy 0…480 A map. The pedal command carries no PI history, so an AUTO reset never
+changes it. Safety gates bypass slew to zero/HALTED. The inhibit field describes the AUTO
+speed loop only, so it reads `disabled` while a MANUAL driver is on the pedal.
 After Torque feedback recovery, a command received after recovery is required.
 Agent reconnect preserves RAM calibration but clears host commands/pending requests;
 MCU reboot restores source DEFAULT/revision 0/mode speed. Host clients do not auto-replay overrides.
@@ -651,7 +662,8 @@ readback before reporting success. The TUI only observes current settings and sa
 it does not send calibration or parameter writes. Saved values take effect on the next
 control-stack launch with that preset. For calibration, test procedure,
 range rationale and recorder coverage see
-[the implementation report](reports/2026-09-21_longitudinal_torque_pi.md).
+[the implementation report](reports/2026-09-21_longitudinal_torque_pi.md) and
+[the feedforward addition](reports/2026-09-29_longitudinal_feedforward.md).
 
 
 ## Control Tuning parameter names
@@ -671,17 +683,21 @@ S saves the selected preset for the next control-stack launch.
 
 ### AUTO drive envelope semantics
 
-The ABI v1 `max_drive_current_a` and `motor_rpm_limit` fields (canonical
+The ABI v2 `max_drive_current_a` and `motor_rpm_limit` fields (canonical
 `drive_current_limit_a`, `drive_motor_speed_limit_rpm`) apply to both AUTO modes.
 Speed uses them as the EZ native current-limit field and symmetric signed target-RPM
 envelope. Torque uses them as PI phase-current ceiling and EZ torque-mode RPM ceiling.
 The final sender still clamps forward to 4500 rpm and reverse to 1500 rpm.
-MANUAL pedal/gear bypasses this AUTO calibration envelope.
+Under a torque calibration MANUAL also uses this current limit, RPM ceiling and the
+slew rates for the pedal demand; under a speed calibration the legacy 0…480 A pedal
+map and 4500 rpm ceiling apply. MANUAL never runs the speed PI or feedforward.
 
 Airborne first-test candidate: Kp15/Ki2, 20 A, integral6 A, slew120/400 A/s,
-reapply5 A at40 A/s, RPM600, deadband0.05/release0.12 m/s.
-Driving remains 480 A/RPM4500 with unchanged gains and CAN baseline.
-PI gains, integral, deadband/coast and slew/reapply remain Torque-only. Firmware
+reapply5 A at40 A/s, RPM600, deadband0.05/release0.12 m/s, feedforward off.
+Driving remains 480 A/RPM4500 with the unchanged Speed CAN baseline, Kp380/Ki190 and the
+identified feedforward 0.00512 (m/s^2)/A, 0.228 m/s^2, 0.0288 1/s, accel limit 1.0 m/s^2.
+PI gains, integral, deadband/coast, slew/reapply and feedforward remain Torque-only,
+except for the pedal current/RPM/slew envelope noted above. Firmware
 Part I/II freshness is 200 ms: Speed status validity semantics stay unchanged;
 Torque resets/inhibits to 0 A/HALTED and requires a Host command received after feedback recovery.
 

@@ -16,7 +16,7 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from std_srvs.srv import Trigger
 from std_msgs.msg import Float32MultiArray
-from control_tuning.longitudinal import AIRBORNE, STATUS_TOPIC, config_wire
+from control_tuning.longitudinal import AIRBORNE, STATUS_TOPIC, VERSION, config_wire
 from rosidl_runtime_py.set_message import set_message_fields
 from starlette.websockets import WebSocketDisconnect
 
@@ -59,8 +59,10 @@ def vehicle(tmp_path):
                             message="CAN observation", values=[KeyValue(key="part1", value="valid")],
                         )])
                     elif msg_type is Float32MultiArray:
-                        msg = Float32MultiArray(data=[1., 1., 17., 1., 1., *config_wire(AIRBORNE),
-                                                      .2, 1.6, .3, 1.9, 1.9, 0., 0., 0., 1., 0.])
+                        msg = Float32MultiArray(data=[float(VERSION), 1., 17., 1., 1.,
+                                                      *config_wire(AIRBORNE),
+                                                      .2, 1.6, .3, 0., 1.9, 1.9,
+                                                      0., 0., 0., 1., 0.])
                     elif msg_type is ActuatorCommand:
                         msg = msg_type(speed_target_mps=1.5, steering_target_rad=0.2)
                     elif msg_type is DriveActuatorStatus:

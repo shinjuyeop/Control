@@ -428,7 +428,7 @@ export function DriveTelemetry({
         <Fact label="구동 제어 방식" value={String(config.drive_control_mode ?? legacyConfig.control_mode ?? "—").toUpperCase()} />
         <Fact label="Calibration 출처" value={String(lon.source ?? "—")} />
         <Fact label="구동 속도 P / I 게인" value={`${fmt(config.drive_speed_kp_a_per_mps ?? legacyConfig.speed_kp_a_per_mps)} / ${fmt(config.drive_speed_ki_a_per_mps_s ?? legacyConfig.speed_ki_a_per_mps_s)}`} />
-        <Fact label="PI P / I" value={`${fmt(lon.p_current_a)} / ${fmt(lon.i_current_a)} A`} />
+        <Fact label="FF / P / I" value={`${fmt(lon.ff_current_a)} / ${fmt(lon.p_current_a)} / ${fmt(lon.i_current_a)} A`} />
         <Fact label="PI 최종 전류" value={fmt(lon.current_command_a)} unit="A" />
         <Fact label="속도 오차" value={fmt(lon.speed_error_mps, 2)} unit="m/s" />
         <Fact label="포화 / Anti-windup / Coast" value={`${fmt(lon.saturated, 0)} / ${fmt(lon.anti_windup, 0)} / ${fmt(lon.coasting, 0)}`} />

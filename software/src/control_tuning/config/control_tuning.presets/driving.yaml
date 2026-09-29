@@ -19,8 +19,8 @@ steering:
   steering_min_vehicle_speed_kph: 0.5
 drive:
   drive_control_mode: torque
-  drive_speed_kp_a_per_mps: 180.0
-  drive_speed_ki_a_per_mps_s: 12.0
+  drive_speed_kp_a_per_mps: 380.0
+  drive_speed_ki_a_per_mps_s: 190.0
   drive_speed_deadband_mps: 0.05
   drive_coast_release_error_mps: 0.12
   drive_current_limit_a: 480.0
@@ -30,6 +30,10 @@ drive:
   drive_reapply_current_band_a: 20.0
   drive_reapply_current_slew_a_s: 200.0
   drive_motor_speed_limit_rpm: 4500.0
+  drive_ff_current_gain_mps2_per_a: 0.00512
+  drive_ff_rolling_resistance_mps2: 0.228
+  drive_ff_speed_damping_per_s: 0.0288
+  drive_ff_accel_limit_mps2: 1.0
 governor:
   governor_command_timeout_ms: 200.0
 timeouts:

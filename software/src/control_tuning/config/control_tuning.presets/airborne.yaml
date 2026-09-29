@@ -30,6 +30,10 @@ drive:
   drive_reapply_current_band_a: 5.0
   drive_reapply_current_slew_a_s: 40.0
   drive_motor_speed_limit_rpm: 600.0
+  drive_ff_current_gain_mps2_per_a: 0.0
+  drive_ff_rolling_resistance_mps2: 0.0
+  drive_ff_speed_damping_per_s: 0.0
+  drive_ff_accel_limit_mps2: 0.0
 governor:
   governor_command_timeout_ms: 200.0
 timeouts:

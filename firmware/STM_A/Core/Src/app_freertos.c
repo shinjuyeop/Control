@@ -206,6 +206,8 @@ static LongRequest s_long_pending;
 static uint8_t s_long_pending_valid;
 
 static uint8_t s_long_feedback_valid, s_long_inhibit = LONG_DISABLED;
+/* MANUAL pedal command after the configured slew; Control task only. */
+static float s_manual_current_a;
 static LongGate s_long_gate;
 static float s_long_status_data[LONG_STATUS_COUNT];
 static float s_long_request_data[LONG_REQUEST_COUNT];
@@ -400,6 +402,7 @@ void StartControl(void *argument)
     if (s_motor_handshake_done == 0u)
     {
       Long_Reset(&s_long_controller);
+      s_manual_current_a = 0.0f;
       s_tractive_commanded = 0u;
       RuntimeMetrics_End(RM_CONTROL, activation);
       osDelay(10);
@@ -437,6 +440,7 @@ void StartControl(void *argument)
     {
       if (MODE == 1u)
       {
+        s_manual_current_a = 0.0f;
         if (s_long_calibration.config.mode == LONG_SPEED) {
           /* Native speed loop with the active preset envelope; driving stays 480 A/4500 RPM. */
           Long_Reset(&s_long_controller);
@@ -456,14 +460,30 @@ void StartControl(void *argument)
       }
       else
       {
+        /* 수동주행: 페달 0~100%를 상전류로 매핑한다. Torque calibration에서는 적용된
+         * 전류 한도·회전수 상한·전류 상승/하강률을 AUTO Torque와 공유하고, Speed
+         * calibration에서는 기존 0~480 A 매핑을 그대로 쓴다. 두 경우 모두 페달이
+         * 토크 요구이며 속도 PI는 MANUAL에서 동작하지 않는다. */
         Long_Reset(&s_long_controller);
-        /* 수동주행: 페달 0~100%를 상전류 0~480 A로 선형 매핑한다. */
-        float torque_current = ((float)PEDAL / 100.0f) * MANUAL_TORQUE_LIMIT_A;
-        int16_t rpm_limit = RPM_FWD_MAX;
+        float torque_current;
+        int32_t rpm_limit;
+        if (s_long_calibration.config.mode == LONG_TORQUE)
+        {
+          s_manual_current_a = Long_PedalCommand(&s_long_calibration.config,
+              (float)PEDAL, s_manual_current_a, 0.05f);
+          torque_current = s_manual_current_a;
+          rpm_limit = (int32_t)s_long_calibration.config.rpm_limit;
+        }
+        else
+        {
+          s_manual_current_a = 0.0f;
+          torque_current = ((float)PEDAL / 100.0f) * MANUAL_TORQUE_LIMIT_A;
+          rpm_limit = RPM_FWD_MAX;
+        }
         if (GEAR == 1u)
         {
           torque_current = -torque_current;
-          rpm_limit = -RPM_REV_MAX;
+          rpm_limit = -rpm_limit;
         }
         send_motor_can(rpm_limit, torque_current, 1u, 0u);
       }
@@ -471,8 +491,10 @@ void StartControl(void *argument)
     // ESTOP 활성시
     else
     {
-      /* 정지 시 RPM/전류뿐 아니라 RUNNING bit도 내려 HALTED를 명령한다. */
+      /* 정지 시 RPM/전류뿐 아니라 RUNNING bit도 내려 HALTED를 명령한다.
+       * 안전 정지는 페달 slew도 거치지 않는다. */
       Long_Reset(&s_long_controller);
+      s_manual_current_a = 0.0f;
       if (s_long_inhibit == LONG_OK) s_long_inhibit = LONG_STOP;
       send_motor_can(0, 0.0f, 0u,
           (MODE == 1u && s_long_calibration.config.mode == LONG_SPEED) ? 1u : 0u);
@@ -1389,11 +1411,12 @@ static void publish_longitudinal(void)
   d[0] = LONG_VERSION; d[1] = s_long_calibration.revision; d[2] = s_long_calibration.request_id;
   d[3] = s_long_calibration.result; d[4] = s_long_calibration.source;
   Long_EncodeConfig(&s_long_calibration.config, d + 5);
-  d[17] = s_long_controller.error; d[18] = s_long_controller.p;
-  d[19] = s_long_controller.i; d[20] = s_long_controller.unsaturated;
-  d[21] = s_long_controller.current; d[22] = s_long_controller.saturated;
-  d[23] = s_long_controller.anti_windup; d[24] = s_long_controller.coasting;
-  d[25] = s_long_feedback_valid; d[26] = s_long_inhibit;
+  d[21] = s_long_controller.error; d[22] = s_long_controller.p;
+  d[23] = s_long_controller.i; d[24] = s_long_controller.ff;
+  d[25] = s_long_controller.unsaturated; d[26] = s_long_controller.current;
+  d[27] = s_long_controller.saturated; d[28] = s_long_controller.anti_windup;
+  d[29] = s_long_controller.coasting; d[30] = s_long_feedback_valid;
+  d[31] = s_long_inhibit;
   taskEXIT_CRITICAL();
   RCL_PUBLISH_BEST_EFFORT(&s_long_publisher, &s_long_status_msg);
 }

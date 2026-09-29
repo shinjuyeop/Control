@@ -36,6 +36,10 @@ KEY_ALIASES = {
     'reapply_current_a': 'drive_reapply_current_band_a',
     'reapply_slew_a_s': 'drive_reapply_current_slew_a_s',
     'motor_rpm_limit': 'drive_motor_speed_limit_rpm',
+    'ff_current_gain_mps2_per_a': 'drive_ff_current_gain_mps2_per_a',
+    'ff_rolling_resistance_mps2': 'drive_ff_rolling_resistance_mps2',
+    'ff_speed_damping_per_s': 'drive_ff_speed_damping_per_s',
+    'ff_accel_limit_mps2': 'drive_ff_accel_limit_mps2',
 }
 
 
