@@ -279,7 +279,7 @@ def begin(node, tick, scenario='speed_step'):
     assert node.state == 'COUNTDOWN'
 
 
-def test_latched_steering_controller_fault_prevents_run_before_auto(controlled):
+def test_reported_steering_fault_does_not_block_scenario_start(controlled):
     node, _, _ = controlled
     steering = node.received['/steering/status'][1]
     steering.state = steering.STATE_FAULT
@@ -288,10 +288,11 @@ def test_latched_steering_controller_fault_prevents_run_before_auto(controlled):
     node._receive('/steering/status', steering)
     node.request_run(settings_with_speed('steering_step'))
     node._tick()
-    assert node.state == 'IDLE'
-    assert not node.output_active
+    assert node.state == 'RECORD_START'
+    assert node.output_active
     assert node.output.speed_kph == 0
-    assert node.process_actions.empty()
+    assert not node.output.brake_engage
+    assert node.process_actions.qsize() == 1
 
 
 def test_steering_recovery_advice_uses_live_status_and_marks_stale_bits(controlled):
@@ -312,7 +313,7 @@ def test_steering_recovery_advice_uses_live_status_and_marks_stale_bits(controll
 
 
 @pytest.mark.parametrize('phase', ['COUNTDOWN', 'RUNNING'])
-def test_steering_controller_fault_stops_run_with_brake(controlled, phase):
+def test_reported_steering_fault_does_not_end_run(controlled, phase):
     node, tick, _ = controlled
     begin(node, tick, scenario='steering_step')
     if phase == 'RUNNING':
@@ -324,10 +325,9 @@ def test_steering_controller_fault_stops_run_with_brake(controlled, phase):
     steering.disable_reason = steering.REASON_MOTOR_FAULT
     steering.fault_bits = 1
     tick(auto=True, speed=10)
-    assert node.terminal_state == 'ERROR'
-    assert node.state == 'TAIL'
-    assert node.output.speed_kph == 0
-    assert node.output.brake_engage
+    assert node.terminal_state == 'COMPLETE'
+    assert node.state == phase
+    assert not node.output.brake_engage
 
 
 def test_run_waits_for_auto_then_five_seconds_and_manual_cancels(controlled):
@@ -350,6 +350,48 @@ def test_run_waits_for_auto_then_five_seconds_and_manual_cancels(controlled):
     tick(2.1, auto=True)
     assert node.state == 'CLOSING'
     assert node.output.speed_kph == 0
+
+
+def test_steering_stays_disabled_until_countdown_ends(controlled):
+    node, tick, _ = controlled
+    begin(node, tick, scenario='steering_step')
+    assert node.output.steering_deg is None
+    assert node.steering_control.ready.call_args.args == (False,)
+    tick(4.99, auto=True)
+    assert node.state == 'COUNTDOWN'
+    assert node.output.steering_deg is None
+    assert node.steering_control.ready.call_args.args == (False,)
+
+    node.steering_control.ready.return_value = False
+    tick(0.01, auto=True)
+    assert node.state == 'COUNTDOWN'
+    assert node.output.speed_kph == 0
+    assert node.output.steering_deg is None
+    assert node.steering_control.ready.call_args.args == (True,)
+
+    node.steering_control.ready.return_value = True
+    tick(auto=True)
+    assert node.state == 'CRUISE'
+    assert node.output.speed_kph > 0
+
+
+def test_operator_end_holds_zero_without_brake_until_recording_closes(controlled):
+    node, tick, _ = controlled
+    begin(node, tick)
+    tick(5, auto=True)
+    node.request_stop()
+    tick(auto=True)
+    assert node.state == 'TAIL'
+    assert node.output.speed_kph == 0
+    assert not node.output.brake_engage
+    tick(2.1, auto=True)
+    assert node.state == 'CLOSING'
+    assert node.process_actions.get_nowait()[0] == 'record'
+    assert node.process_actions.get_nowait()[0] == 'close'
+    node.commands.put(('record_closed', '/record'))
+    tick(auto=True)
+    assert node.state == 'ABORTED'
+    assert not node.record_open
 
 
 def test_duplicate_run_does_not_restart_recording_or_change_active_settings(controlled):
@@ -379,7 +421,7 @@ def test_route_start_waits_for_fresh_post_enable_command_and_stale_input_stops(
         node._receive(topic, message)
     tick(auto=True)
     assert node.state == 'ROUTE_ARMING'
-    assert node.output == baseline(settings=node.settings)
+    assert node.output == baseline(settings=node.settings, steering_enabled=False)
 
     clock[0] += 0.01
     data['/sysid/route_command'].brake_engage = False
@@ -388,8 +430,20 @@ def test_route_start_waits_for_fresh_post_enable_command_and_stale_input_stops(
     assert node.state == 'RUNNING'
     assert node.output.speed_kph == pytest.approx(3.6)
     tick(0.21, auto=True)
-    assert node.output.brake_engage
+    assert node.output.speed_kph == 0
+    assert not node.output.brake_engage
     assert node.terminal_state == 'ERROR'
+
+
+def test_route_arming_waits_at_zero_until_first_command(controlled):
+    node, tick, _ = controlled
+    begin(node, tick, scenario='route_quali')
+    tick(5, auto=True)
+    assert node.state == 'ROUTE_ARMING'
+    tick(1, auto=True)
+    assert node.state == 'ROUTE_ARMING'
+    assert node.output.speed_kph == 0
+    assert not node.output.brake_engage
 
 
 def test_route_without_recording_starts_and_closes_workers(controlled, tmp_path, monkeypatch):
@@ -412,7 +466,8 @@ def test_route_without_recording_starts_and_closes_workers(controlled, tmp_path,
         factory.assert_called_once_with(node, settings)
         node.request_stop()
         tick()
-        assert node.output.brake_engage
+        assert node.output.speed_kph == 0
+        assert not node.output.brake_engage
         assert node.busy
         action, value = node.process_actions.get_nowait()
         manager._finish_recording(value)
@@ -421,6 +476,27 @@ def test_route_without_recording_starts_and_closes_workers(controlled, tmp_path,
         assert node.state == 'ABORTED'
         assert not node.session_open
         assert not (tmp_path / 'unused').exists()
+    finally:
+        manager._close_route()
+
+
+def test_recording_failure_does_not_close_route_worker(controlled, tmp_path, monkeypatch):
+    from vehicle_test_scenarios import sysid_routes
+    node, tick, _ = controlled
+    route = Mock()
+    monkeypatch.setattr(sysid_routes, 'RouteProcesses', Mock(return_value=route))
+    settings = replace(default_run_settings('route_quali'), record_mcap=False)
+    manager = sysid_processes.ProcessManager(node, records_root=tmp_path)
+    try:
+        node.request_run(settings)
+        tick()
+        _, value = node.process_actions.get_nowait()
+        manager._start_recording(value)
+        tick()
+        manager._finish_recording('recorder_failed', close_route=False)
+        tick()
+        route.close.assert_not_called()
+        assert node.state == 'WAIT_AUTO'
     finally:
         manager._close_route()
 
@@ -459,16 +535,17 @@ def test_cruise_starts_steering_after_one_second_near_target(controlled):
     assert node.output.steering_deg == CENTER_DEG + 1
 
 
-def test_stop_and_recording_failure_request_brake(controlled):
+def test_recording_failure_is_reported_without_ending_run(controlled):
     node, tick, _ = controlled
     begin(node, tick)
     node.commands.put(('record_failed', 'disk full'))
     tick(auto=True)
-    assert node.state == 'CLOSING'
-    assert node.output.brake_engage
+    assert node.state == 'COUNTDOWN'
+    assert not node.output.brake_engage
+    assert node.record_error == 'disk full'
     node.commands.put(('record_closed', '/record'))
     tick(auto=True)
-    assert node.state == 'ERROR'
+    assert node.state == 'COUNTDOWN'
     assert not node.record_open
 
 
@@ -485,7 +562,8 @@ def test_route_failure_survives_recorder_cleanup_and_stop(controlled):
     tick(auto=True)
     assert node.finish_reason == reason
     assert node.terminal_state == 'ERROR'
-    assert node.output.brake_engage
+    assert node.output.speed_kph == 0
+    assert not node.output.brake_engage
     assert node.record_error
     node.request_run(default_run_settings())
     tick()
@@ -502,20 +580,22 @@ def test_motor_setting_wait_blocks_input_but_not_stop(controlled):
     node.steering_control.ready.assert_called_with(False)
     node.request_stop()
     tick(auto=True)
-    assert node.command_publisher.publish.call_args.args[0].brake_engage
+    assert node.command_publisher.publish.call_args.args[0].speed_target_mps == 0
+    assert not node.command_publisher.publish.call_args.args[0].brake_engage
 
 
-def test_lost_telemetry_stops_active_input(controlled):
+def test_lost_vehicle_telemetry_is_display_only(controlled):
     node, tick, clock = controlled
     begin(node, tick)
     tick(5, auto=True)
     clock[0] += 1.1
     node._tick()
-    assert node.output.brake_engage
-    assert node.terminal_state == 'ERROR'
+    assert node.state == 'RUNNING'
+    assert not node.output.brake_engage
+    assert node.terminal_state == 'COMPLETE'
 
 
-def test_ezkontrol_invalid_status_stops_only_after_500_ms_continuously(controlled):
+def test_part2_invalid_is_display_only(controlled):
     node, tick, _ = controlled
     begin(node, tick)
     tick(5, auto=True)
@@ -523,20 +603,25 @@ def test_ezkontrol_invalid_status_stops_only_after_500_ms_continuously(controlle
 
     drive.part2_valid = False
     tick(auto=True)
-    tick(0.49, auto=True)
     assert node.state == 'RUNNING'
     assert not node.output.brake_engage
+    assert 'EZkontrol Part II 미수신 1 s' in node.sensor_errors['/drive/status']
 
-    drive.part2_valid = True
-    tick(auto=True)
-    drive.part2_valid = False
+
+def test_part1_invalid_is_display_only_after_500_ms(controlled):
+    node, tick, _ = controlled
+    begin(node, tick)
+    tick(5, auto=True)
+    drive = node.received['/drive/status'][1]
+
+    drive.part1_valid = False
     tick(auto=True)
     tick(0.49, auto=True)
     assert node.state == 'RUNNING'
     tick(0.02, auto=True)
-    assert node.terminal_state == 'ERROR'
-    assert node.output.brake_engage
-    assert 'EZkontrol 상태 미수신 500 ms 지속' in node.finish_reason
+    assert node.state == 'RUNNING'
+    assert not node.output.brake_engage
+    assert 'EZkontrol Part I 미수신 500 ms 지속' in node.sensor_errors['/drive/status']
 
 
 @pytest.mark.parametrize('missing_topics', [
@@ -562,15 +647,15 @@ def test_missing_or_lost_optional_sensors_do_not_block_or_stop_run(
     assert not node.output.brake_engage
 
 
-def test_gnss_inputs_remain_required_for_route_following(controlled):
+def test_only_route_command_is_required_for_route_following(controlled):
     node, _, _ = controlled
     for topic in ('/gnss/fix', '/gnss/fix_velocity', '/tf_static'):
         node.received.pop(topic)
         node.sensor_errors.pop(topic)
     issues = node.issues(route_input=True)
-    assert any('/gnss/fix 미수신' == issue for issue in issues)
-    assert any('/gnss/fix_velocity 미수신' == issue for issue in issues)
-    assert any('/tf_static 미수신' == issue for issue in issues)
+    assert not any('/gnss/' in issue or '/tf_static' in issue for issue in issues)
+    assert any('/sysid/route_command 미수신' == issue for issue in issues)
+    assert not any('/sysid/route_context' in issue for issue in issues)
 
 
 @pytest.mark.parametrize('extra_planning', [True, False])
@@ -699,11 +784,14 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path, record_mcap):
         messages['/drive/status'].mode = 1
         spin_until(lambda: node.state == 'COUNTDOWN')
         spin_until(lambda: node.state == 'RUNNING')
-        spin_until(lambda: node.state in ('TAIL', 'CLOSING', 'COMPLETE'), seconds=16)
+        if record_mcap:
+            spin_until(lambda: any(m.speed_target_mps > 0.5 for m in received))
+            node.request_stop()
+        spin_until(lambda: node.state in ('TAIL', 'CLOSING', 'COMPLETE', 'ABORTED'), seconds=16)
         assert any(m.speed_target_mps > 0.5 for m in received)
         assert all(m.speed_target_mps <= 5 / 3.6 + 1e-6 for m in received)
-        spin_until(lambda: node.state in ('COMPLETE', 'ERROR'))
-        assert node.state == 'COMPLETE', list(node.logs)
+        spin_until(lambda: node.state in ('COMPLETE', 'ABORTED', 'ERROR'))
+        assert node.state == ('ABORTED' if record_mcap else 'COMPLETE'), list(node.logs)
         assert node.output == baseline(settings=node.settings)
         if record_mcap:
             import rosbag2_py
@@ -715,6 +803,8 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path, record_mcap):
             assert (Path(node.run_dir) / 'scenario.yaml').is_file()
             document = yaml.safe_load((Path(node.run_dir) / 'scenario.yaml').read_text())
             capture = yaml.safe_load((Path(node.run_dir) / 'control_parameters.yaml').read_text())
+            assert document['finish_reason'] == '사용자 종료'
+            assert document['recorder_exit_code'] == 0
             assert document['test_condition']['key'] == 'driving'
             assert document['control_parameters']['status'] == 'complete'
             assert capture['nodes']['/steering_actuator_node']['ros__parameters']['torque_kd'] == 1500.0
@@ -743,11 +833,12 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path, record_mcap):
             assert not list(tmp_path.iterdir())
             assert manager.recorder is None
         node.request_stop()
-        spin_until(lambda: received[-1].brake_engage)
+        spin_until(lambda: received[-1].speed_target_mps == 0 and not received[-1].brake_engage)
         manager.records_root = Path('/dev/null')
         node.request_run(replace(default_run_settings(), cruise_speed_kph=5.0))
-        spin_until(lambda: node.state == 'ERROR')
-        assert node.output.brake_engage
+        spin_until(lambda: bool(node.record_error))
+        assert node.state in {'RECORD_START', 'WAIT_AUTO', 'COUNTDOWN'}
+        assert not node.output.brake_engage
         assert not node.record_open
         assert manager.recorder is None
     finally:

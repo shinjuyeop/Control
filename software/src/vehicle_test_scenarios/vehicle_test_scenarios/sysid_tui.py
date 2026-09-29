@@ -480,7 +480,7 @@ def footer_panel(snapshot, menu, records_root):
     table.add_row('스크롤', '휠/PgUp/PgDn 전체 화면 · ↑↓ 항목 · ←→ 영역')
     table.add_row('선택', '↑↓ 값 선택 · Enter 완료 · Esc 취소' if menu.choice_options else
                   'Enter 선택/수정 · Esc 취소')
-    table.add_row('실행', 'R 실행 · S/Space 정지 · Q 종료')
+    table.add_row('실행', 'R 실행 · S/Space 시나리오 종료 · Q TUI 종료')
     return Panel(
         table,
         title='키 안내',
@@ -589,11 +589,14 @@ def main(*, use_sim_time=False, records_root=DEFAULT_RECORDS_ROOT,
             console.print('시험을 정리하고 종료합니다…')
         except OSError:
             pass
-        if node and node.output_active and rclpy.ok():
+        if node and node.busy and rclpy.ok():
             node.request_stop()
-            deadline = time.monotonic() + 1.0
-            while time.monotonic() < deadline and rclpy.ok():
+            deadline = time.monotonic() + 30.0
+            while node.busy and time.monotonic() < deadline and rclpy.ok():
                 time.sleep(0.05)
+            if node.busy:
+                exit_code = 1
+                node.log('시나리오 정리 시간 초과; 소유 프로세스 종료를 계속합니다.')
         if manager:
             cleanup_errors = manager.close()
             if cleanup_errors:

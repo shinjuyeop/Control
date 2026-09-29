@@ -1,7 +1,7 @@
-"""Display-only KEYA/Host steering recovery advice for the field console.
+"""Display-only KEYA fault advice for the field console.
 
 Bit meanings/reset categories: KEYA KY170DJD01005-08G-V1 manual, section 5.2,
-pages 19–20. A ROS node restart does not reset a latched fault in the driver.
+pages 19–20. Host does not clear KEYA hardware faults.
 """
 
 from dataclasses import dataclass
@@ -110,14 +110,11 @@ def steering_fault_advice(status, *, fresh=True) -> tuple[SteeringFaultAdvice, .
             'control 지연을 확인하세요. 정상 피드백과 유효한 새 명령이면 Host는 '
             '복귀합니다. timeout을 늘리기 전에 수신/지연 원인을 해결하세요.'))
 
-    # A cleared hardware fault can leave a Host latch awaiting explicit acknowledgment.
-    # Older binaries may also report Host conditions through this wire state.
     if not fault_bits and (status.state == 8 or status.disable_reason == 10):
         advice.append(SteeringFaultAdvice(
-            'Host FAULT 표시 · KEYA 실제 고장 비트 없음',
-            'bit0은 정상 Disable입니다. steering/safety의 latch와 clearable을 확인하고 '
-            'MANUAL·정지 상태에서 Console의 CLEAR HARD FAULT LATCH를 사용하세요. '
-            '해당 기능이 없으면 실행 버전과 /steering/torque_safety를 확인하세요.'))
+            '이전 조향 Host FAULT 상태 · KEYA 실제 고장 비트 없음',
+            'bit0은 정상 Disable입니다. /steering/status와 실행 버전을 확인하세요. '
+            '현재 조향 노드는 KEYA 비트만으로 FAULT 상태를 만들지 않습니다.'))
     elif not fault_bits and status.state not in range(9):
         advice.append(SteeringFaultAdvice(
             f'알 수 없는 조향 상태 ({status.state})',

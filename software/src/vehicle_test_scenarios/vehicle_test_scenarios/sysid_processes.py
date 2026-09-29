@@ -149,7 +149,7 @@ class ProcessManager:
         SettingsStore._replace(self.run_dir / 'scenario.yaml',
                                yaml.safe_dump(self.run_document, sort_keys=False, allow_unicode=True).encode('utf-8'))
 
-    def _finish_recording(self, reason):
+    def _finish_recording(self, reason, *, close_route=True):
         if self.parameter_capture is not None:
             capture, self.parameter_capture = self.parameter_capture, None
             try:
@@ -159,7 +159,18 @@ class ProcessManager:
             finally:
                 capture.close()
         if self.recorder is None:
-            self._close_route()
+            if self.run_log is not None:
+                self.run_document.update({
+                    'finished_at': datetime.now(ZoneInfo('Asia/Seoul')).isoformat(),
+                    'finish_reason': reason,
+                    'recording_error': reason,
+                })
+                self._save_document()
+                self._flush_logs()
+                self.run_log.close()
+                self.run_log = None
+            if close_route:
+                self._close_route()
             self.node.commands.put(('record_closed', ''))
             return
         if self.run_document['control_parameters']['status'] == 'pending':
@@ -189,7 +200,8 @@ class ProcessManager:
             self.run_log.close()
             self.run_log = None
             self.node.commands.put(('record_closed', str(self.run_dir)))
-            self._close_route()
+            if close_route:
+                self._close_route()
 
     def _close_route(self):
         if self.route is not None:
@@ -207,7 +219,7 @@ class ProcessManager:
             return
         if self.recorder.process.poll() is not None:
             self.node.commands.put(('record_failed', 'MCAP recorder가 종료되었습니다'))
-            self._finish_recording('recorder_failed')
+            self._finish_recording('recorder_failed', close_route=False)
             return
         if not self.recorder_ready:
             topics = (*self.record_topics_required, '/parameter_events')
@@ -230,14 +242,14 @@ class ProcessManager:
                         capture.close()
                     if capture.document['status'] != 'complete':
                         self.node.commands.put(('record_failed', '실제 제어 파라미터 조회 실패 · control_parameters.yaml 확인'))
-                        self._finish_recording('parameter_snapshot_failed')
+                        self._finish_recording('parameter_snapshot_failed', close_route=False)
                         return
                     self.node.control_parameters_publisher.publish(String(data=json.dumps(capture.document, ensure_ascii=False)))
                     self.recorder_ready = True
                     self.node.commands.put(('record_ready', None))
             elif time.monotonic() - self.record_started_at > 15:
                 self.node.commands.put(('record_failed', 'MCAP 필수 토픽 구독이 연결되지 않았습니다'))
-                self._finish_recording('subscription_timeout')
+                self._finish_recording('subscription_timeout', close_route=False)
 
     def _save_capture(self, document):
         SettingsStore._replace(self.run_dir / 'control_parameters.yaml',
@@ -261,11 +273,7 @@ class ProcessManager:
                             self._start_recording(value)
                         except Exception as error:
                             self.node.commands.put(('record_failed', str(error)))
-                            self._close_route()
-                            if self.run_log:
-                                self.run_log.close()
-                                self.run_log = None
-                            self.node.commands.put(('record_closed', str(self.run_dir or '')))
+                            self._finish_recording('record_start_failed', close_route=False)
                     elif action == 'close':
                         self._finish_recording(value)
                 self._record_status()
