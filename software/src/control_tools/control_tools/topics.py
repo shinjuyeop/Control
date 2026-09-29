@@ -31,6 +31,7 @@ CONTROL_TOPICS = (
     '/steering/angle',
     *TORQUE_TOPICS,
     '/drive/status',
+    '/drive/can_rx_diagnostics',
     '/drive/longitudinal_status',
     '/drive/longitudinal_config',
     '/brake/status',

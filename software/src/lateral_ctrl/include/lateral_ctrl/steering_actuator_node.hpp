@@ -2,7 +2,6 @@
 
 #include "lateral_ctrl/keya_fault_policy.hpp"
 #include <diagnostic_msgs/msg/diagnostic_array.hpp>
-#include <std_srvs/srv/trigger.hpp>
 
 #include "lateral_ctrl/keya_can_driver.hpp"
 #include "kaiev26_msgs/msg/actuator_command.hpp"
@@ -40,16 +39,10 @@ private:
   void stopMotor();
   void reconnectCan(std::chrono::steady_clock::time_point now);
   void publishSafety(double can_age, double position_age, double command_age, double fault_age);
-  std::string faultLatchClearRejection(std::chrono::steady_clock::time_point now) const;
-  void clearFaultLatch(std_srvs::srv::Trigger::Response & response);
-  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr clear_fault_service_;
-  KeyaRecoveryPolicy recovery_;
   double drive_speed_mps_{0.0};
   bool drive_speed_valid_{false};
   std::chrono::steady_clock::time_point last_brake_status_time_{};
-  double last_recovery_time_sec_{0.0};
-  bool recovery_probe_{false}, link_recovering_{false};
-  double probe_started_{0};
+  bool link_recovering_{false};
   int reconnect_delay_ms_{100};
   uint64_t reconnect_attempts_{0};
   std::chrono::steady_clock::time_point next_reconnect_{}, link_opened_{};

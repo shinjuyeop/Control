@@ -13,7 +13,7 @@ class Profile:
 
 
 OBSERVATION = ("observe_vehicle", "observe_runtime", "observe_diagnostics")
-VEHICLE = Profile("vehicle", OBSERVATION + ("clear_steering_fault_latch",))
+VEHICLE = Profile("vehicle", OBSERVATION)
 HIL = Profile("hil", OBSERVATION + (
     "control_bench", "fault_injection", "scenarios", "virtual_display", "virtual_touch",
 ))

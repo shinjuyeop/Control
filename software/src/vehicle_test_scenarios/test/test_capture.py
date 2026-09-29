@@ -160,7 +160,8 @@ def test_recorder_only_announces_ready_after_snapshot_saved(tmp_path, monkeypatc
     if complete:
         node.control_parameters_publisher.publish.assert_called_once()
     else:
-        manager._finish_recording.assert_called_once_with('parameter_snapshot_failed')
+        manager._finish_recording.assert_called_once_with(
+            'parameter_snapshot_failed', close_route=False)
         node.control_parameters_publisher.publish.assert_not_called()
 
 

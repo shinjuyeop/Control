@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { steeringState } from "../domain/presentation";
 import type { Data, Snapshot } from "../domain/types";
 import { LinearMeter } from "./SignalInstruments";
@@ -206,10 +205,10 @@ export function ActiveConditions({
       source: "steering.disable_reason",
       tone: "muted",
     });
-  if (s.state === 8)
+  if (typeof s.fault_bits === "number" && (s.fault_bits & ~1) !== 0)
     conditions.push({
-      text: `HARD FAULT ${bitHex(s.fault_bits)}`,
-      source: "steering.state",
+      text: `KEYA FAULT ${bitHex(s.fault_bits & ~1)}`,
+      source: "steering.fault_bits",
       tone: "danger",
     });
   return (
@@ -512,29 +511,10 @@ export function SteeringTelemetry({
   state: Snapshot;
   online: boolean;
 }) {
-  const [clearing, setClearing] = useState(false);
-  const [clearResult, setClearResult] = useState("");
   const s = received(state, online, "/steering/status");
   const safetySample = state.topics["/diagnostics"];
   const safety = safetySample?.data.status?.find((item: Data) => item.name === "steering/safety");
   const safetyFresh = !!safety && online && !!safetySample?.fresh && safety.fresh !== false;
-  const policy = Object.fromEntries((safety?.values ?? []).map((item: Data) => [item.key, item.value]));
-  const canAcknowledge = state.profile === "vehicle" && state.capabilities.includes("clear_steering_fault_latch");
-  async function clearLatch() {
-    setClearing(true);
-    setClearResult("");
-    try {
-      const response = await fetch("/api/steering/clear-fault-latch", { method: "POST" });
-      const result = await response.json();
-      setClearResult(response.ok
-        ? result.success ? result.message : `Clear rejected: ${String(result.message).replace(/^rejected:\s*/, "")}`
-        : String(result.detail ?? "Clear request failed"));
-    } catch {
-      setClearResult("Clear result unknown: connection lost. Check steering state before retrying.");
-    } finally {
-      setClearing(false);
-    }
-  }
   const source = (topic: string) => (
     <Source name={topic} sample={state.topics[topic]} online={online} />
   );
@@ -551,16 +531,6 @@ export function SteeringTelemetry({
         <span className="eyebrow">Host safety policy · {safetyFresh ? safety?.message : "STALE / NO DATA"}</span>
         {safety?.values?.map((item: Data) => <Fact key={item.key} label={item.key} value={item.value} />)}
       </div>
-      {canAcknowledge && <section className="steering-fault-clear" aria-label="Steering fault acknowledgment">
-        <h3>HARD fault latch</h3>
-        <Fact label="Latch" value={!safetyFresh ? "UNKNOWN / STALE" : policy.hard_fault_latched === "true" ? "LATCHED" : policy.hard_fault_latched === "false" ? "CLEAR" : "UNKNOWN"} />
-        <Fact label="Clearable" value={!safetyFresh ? "UNKNOWN / STALE" : policy.hard_fault_clearable === "true" ? "YES" : "NO"} />
-        <Fact label="Reason" value={safetyFresh ? policy.hard_fault_clear_reason ?? "No clear status reported" : "Fresh steering/safety diagnostics required"} />
-        <p className="muted">실제 KEYA 고장 해제 후 Host latch만 확인·해제합니다. 모터 Enable이나 주행 명령은 보내지 않습니다.</p>
-        <button type="button" disabled={clearing || !safetyFresh || policy.hard_fault_latched !== "true" || policy.hard_fault_clearable !== "true"}
-          onClick={clearLatch}>{clearing ? "CLEARING…" : "CLEAR HARD FAULT LATCH"}</button>
-        {clearResult && <p role="status">{clearResult}</p>}
-      </section>}
       <Fact label="해제 사유" value={enumText(reasons, s.disable_reason)} />
       <Details title="KEYA 모터 · 피드백 · 수신 상태">
         <Fact
@@ -604,7 +574,7 @@ export function SteeringTelemetry({
         <span className="eyebrow">KEYA · 상태 비트</span>
         <Fact label="KEYA Fault bits 원본" value={bitHex(s.fault_bits)} />
         <Fact
-          label="상태 비트 · bit0 제외 (정책 등급은 Host 진단 참조)"
+          label="상태 비트 · bit0 제외"
           value={
             typeof s.fault_bits === "number" ? bitHex(s.fault_bits & ~1) : "—"
           }

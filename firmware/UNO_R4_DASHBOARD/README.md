@@ -276,6 +276,9 @@ MSP4031 physical touch와 Web Virtual Touch는 같은 navigation을 사용합니
 snapshot은 최신 값으로 합친 뒤 200 ms cadence에서 고정 buffer로 만듭니다. 모든
 snapshot/event/timing 출력은 매 loop `availableForWrite()`가 허용한 byte만
 `Serial.write()`하고 남은 offset을 다음 loop에서 이어 보냅니다.
+Part II age가 1 s에 도달하면 Part II valid bit가 내려가 MANUAL 화면의
+`THERMAL DATA LOST`와 serial의 `INVALID`로 표시됩니다. AUTO 화면은
+`DRIVE MOTOR FEEDBACK LOST`로 표시합니다. 200 ms 중간 경고는 없습니다.
 정확한 byte layout과 source type/unit은
 [`../STM_B/README.md`](../STM_B/README.md#85-dashboard-snapshot과-wire-단위)가 canonical contract입니다.
 

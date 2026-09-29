@@ -10,15 +10,15 @@ using lateral_ctrl::SteeringDisableReason;
 
 namespace
 {
-// 노드는 항상 8인자 selectDisableReason을 호출한다. mode_timeout과
+// 노드는 항상 7인자 selectDisableReason을 호출한다. mode_timeout과
 // steer_command_timeout을 따로 보지 않는 경우를 읽기 쉽게 쓰기 위한 test 전용
 // helper이며, production header에는 축약 overload를 두지 않는다.
 SteeringDisableReason reasonWithoutTimeouts(
-  bool mode_received, DriveMode mode, const SafetyInputs & safety, bool motor_fault,
+  bool mode_received, DriveMode mode, const SafetyInputs & safety,
   bool can_timeout, bool feedback_valid)
 {
   return lateral_ctrl::selectDisableReason(
-    mode_received, false, mode, safety, motor_fault, can_timeout, feedback_valid, false);
+    mode_received, false, mode, safety, can_timeout, feedback_valid, false);
 }
 }  // namespace
 
@@ -26,16 +26,16 @@ TEST(SteeringSafetyLogic, ModeAndFeedbackGatesAuto)
 {
   SafetyInputs safety;
   EXPECT_EQ(
-    reasonWithoutTimeouts(false, DriveMode::UNKNOWN, safety, false, false, true),
+    reasonWithoutTimeouts(false, DriveMode::UNKNOWN, safety, false, true),
     SteeringDisableReason::MODE_NOT_RECEIVED);
   EXPECT_EQ(
-    reasonWithoutTimeouts(true, DriveMode::MANUAL, safety, false, false, true),
+    reasonWithoutTimeouts(true, DriveMode::MANUAL, safety, false, true),
     SteeringDisableReason::MANUAL_MODE);
   EXPECT_EQ(
-    reasonWithoutTimeouts(true, DriveMode::AUTO, safety, false, false, true),
+    reasonWithoutTimeouts(true, DriveMode::AUTO, safety, false, true),
     SteeringDisableReason::NONE);
   EXPECT_EQ(
-    reasonWithoutTimeouts(true, DriveMode::AUTO, safety, false, false, false),
+    reasonWithoutTimeouts(true, DriveMode::AUTO, safety, false, false),
     SteeringDisableReason::FEEDBACK_INVALID);
 }
 TEST(SteeringSafetyLogic, RealOrTestEstopActivates)
@@ -53,7 +53,7 @@ TEST(SteeringSafetyLogic, CommandBrakeDisablesAutoSteering)
   safety.command_brake = true;
   EXPECT_EQ(
     reasonWithoutTimeouts(
-      true, DriveMode::AUTO, safety, false, false, true),
+      true, DriveMode::AUTO, safety, false, true),
     SteeringDisableReason::COMMAND_BRAKE);
 }
 
@@ -98,7 +98,7 @@ TEST(SteeringSafetyLogic, AutoWithoutInhibitMapsToWaitCommand)
 {
   SafetyInputs safety;
   const auto reason =
-    reasonWithoutTimeouts(true, DriveMode::AUTO, safety, false, false, true);
+    reasonWithoutTimeouts(true, DriveMode::AUTO, safety, false, true);
   EXPECT_EQ(reason, SteeringDisableReason::NONE);
   EXPECT_EQ(
     lateral_ctrl::stateForDisableReason(reason), lateral_ctrl::SteeringState::WAIT_CMD);
@@ -107,21 +107,14 @@ TEST(SteeringSafetyLogic, InvalidModeDisables)
 {
   SafetyInputs safety;
   EXPECT_EQ(
-    reasonWithoutTimeouts(true, DriveMode::UNKNOWN, safety, false, false, true),
+    reasonWithoutTimeouts(true, DriveMode::UNKNOWN, safety, false, true),
     SteeringDisableReason::INVALID_MODE);
-}
-TEST(SteeringSafetyLogic, FaultDisables)
-{
-  SafetyInputs safety;
-  EXPECT_EQ(
-    reasonWithoutTimeouts(true, DriveMode::AUTO, safety, true, false, true),
-    SteeringDisableReason::MOTOR_FAULT);
 }
 TEST(SteeringSafetyLogic, CanTimeoutDisables)
 {
   SafetyInputs safety;
   EXPECT_EQ(
-    reasonWithoutTimeouts(true, DriveMode::AUTO, safety, false, true, true),
+    reasonWithoutTimeouts(true, DriveMode::AUTO, safety, true, true),
     SteeringDisableReason::CAN_TIMEOUT);
 }
 TEST(SteeringSafetyLogic, PriorityIsDeterministic)
@@ -130,11 +123,11 @@ TEST(SteeringSafetyLogic, PriorityIsDeterministic)
   safety.real_estop = true;
   safety.command_brake = true;
   EXPECT_EQ(
-    reasonWithoutTimeouts(true, DriveMode::AUTO, safety, true, true, false),
+    reasonWithoutTimeouts(true, DriveMode::AUTO, safety, true, false),
     SteeringDisableReason::ESTOP);
   safety.real_estop = false;
   EXPECT_EQ(
-    reasonWithoutTimeouts(true, DriveMode::AUTO, safety, true, true, false),
+    reasonWithoutTimeouts(true, DriveMode::AUTO, safety, true, true),
     SteeringDisableReason::CAN_TIMEOUT);
 }
 
@@ -193,11 +186,11 @@ TEST(SteeringSafetyLogic, ModeAndSteerTimeoutsMapSafely)
   SafetyInputs safety;
   EXPECT_EQ(
     lateral_ctrl::selectDisableReason(
-      true, true, DriveMode::AUTO, safety, false, false, true, false),
+      true, true, DriveMode::AUTO, safety, false, true, false),
     SteeringDisableReason::MODE_TIMEOUT);
   EXPECT_EQ(
     lateral_ctrl::selectDisableReason(
-      true, false, DriveMode::AUTO, safety, false, false, true, true),
+      true, false, DriveMode::AUTO, safety, false, true, true),
     SteeringDisableReason::STEER_COMMAND_TIMEOUT);
   EXPECT_EQ(
     lateral_ctrl::stateForDisableReason(SteeringDisableReason::STEER_COMMAND_TIMEOUT),
@@ -224,70 +217,8 @@ TEST(KeyaPolicy, EveryBitAndSimultaneousFaults)
     KeyaFaultClass::HARD, KeyaFaultClass::INFO, KeyaFaultClass::RECOVERABLE, KeyaFaultClass::INFO};
   for (unsigned bit = 0; bit < 16; ++bit) {
     EXPECT_EQ(keyaFaultClass(bit), expected[bit]) << bit;
-    const KeyaFaults faults(uint16_t{1} << bit);
-    EXPECT_EQ(faults.raw, uint16_t{1} << bit);
-    EXPECT_EQ(faults.hard | faults.recoverable | faults.info, faults.raw);
     EXPECT_STRNE(keyaFaultDefinitions[bit].name, "");
   }
-  const KeyaFaults all(0xffff);
-  EXPECT_EQ(all.hard, 0x198c); EXPECT_EQ(all.recoverable, 0x4652); EXPECT_EQ(all.info, 0xa021);
-}
-
-TEST(KeyaPolicy, HardNeverRecoversIncludingHallAndMixedFaults)
-{
-  for (uint16_t bits : {0x0004, 0x0800, 0x4014}) {
-    lateral_ctrl::KeyaRecoveryPolicy p;
-    p.update(bits, true, 0); p.update(0, true, 100);
-    EXPECT_TRUE(p.latched); EXPECT_FALSE(p.recovering); EXPECT_FALSE(p.probeDue(200));
-  }
-}
-
-TEST(KeyaPolicy, RecoverableClearNeedsContinuousFreshEvidence)
-{
-  lateral_ctrl::KeyaRecoveryPolicy p;
-  p.update(0x10, true, 0);
-  EXPECT_TRUE(p.recovering); EXPECT_EQ(p.attempts, 1U);
-  EXPECT_FALSE(p.update(0, true, 1));
-  EXPECT_FALSE(p.update(0, false, 1.4));
-  EXPECT_FALSE(p.update(0, true, 2));
-  EXPECT_TRUE(p.update(0, true, 2.5));
-  EXPECT_FALSE(p.recovering);
-}
-
-TEST(KeyaPolicy, RepeatedAndPersistentRecoverableFaultsNeverLatch)
-{
-  lateral_ctrl::KeyaRecoveryPolicy p;
-  for (int i = 0; i < 1000; ++i) {
-    p.update(0x4652, true, i * 2); p.update(0, true, i * 2 + 0.5);
-    EXPECT_TRUE(p.update(0, true, i * 2 + 1));
-    ASSERT_FALSE(p.latched);
-    EXPECT_EQ(p.total_attempts, static_cast<uint64_t>(i + 1));
-  }
-  EXPECT_EQ(p.last_recovery_sec, 1999);
-  lateral_ctrl::KeyaRecoveryPolicy persistent;
-  persistent.update(0x400, true, 0);
-  persistent.update(0x400, true, 86400);
-  EXPECT_TRUE(persistent.recovering);
-  EXPECT_FALSE(persistent.latched);
-}
-
-TEST(KeyaPolicy, InfiniteAttemptsHaveCappedBackoffAndNeverLatch)
-{
-  lateral_ctrl::KeyaRecoveryPolicy p;
-  p.update(0x4000, true, 0);
-  EXPECT_FALSE(p.probeDue(0.99)); EXPECT_TRUE(p.probeDue(1));
-  p.recordAttempt(1);
-  EXPECT_FALSE(p.probeDue(2.99)); EXPECT_TRUE(p.probeDue(3));
-  p.recordAttempt(3);
-  EXPECT_FALSE(p.probeDue(6.99)); EXPECT_TRUE(p.probeDue(7));
-  double now = 7;
-  for (int i = 0; i < 1000; ++i) {
-    ASSERT_TRUE(p.probeDue(now)); p.recordAttempt(now);
-    EXPECT_FALSE(p.probeDue(now + 4.99));
-    EXPECT_FALSE(p.latched); now += 5;
-  }
-  EXPECT_EQ(p.attempts, 1003U);
-  EXPECT_EQ(p.total_attempts, 1003U);
 }
 
 TEST(BrakeRelease, BothMcuConsumersRejectPreBrakeCommandsWithoutClockSync)
@@ -302,23 +233,4 @@ TEST(BrakeRelease, BothMcuConsumersRejectPreBrakeCommandsWithoutClockSync)
     EXPECT_TRUE(CommandBrakeOrder_Accept(&barrier, 0, 11, 1));
     EXPECT_TRUE(CommandBrakeOrder_Accept(&barrier, 1, 0, 0)); // stop always wins
   }
-}
-
-TEST(KeyaPolicy, LostCommunicationDoesNotPromoteCachedFaultToPersistentLatch)
-{
-  lateral_ctrl::KeyaRecoveryPolicy p;
-  p.update(0x10, true, 0); p.update(0x10, false, 100);
-  EXPECT_FALSE(p.latched);
-  p.update(0, true, 101);
-  EXPECT_TRUE(p.update(0, true, 102));
-}
-
-TEST(KeyaPolicy, CanDisconnectMayWaitForAutoCommandWithoutPersistenceLatch)
-{
-  lateral_ctrl::KeyaRecoveryPolicy p;
-  p.update(0x4000, true, 0); p.update(0x4000, true, 300);
-  EXPECT_FALSE(p.latched); EXPECT_TRUE(p.recovering);
-  for (int i = 0; i < 10; ++i) p.recordAttempt(301 + i * 5);
-  EXPECT_FALSE(p.latched);
-  EXPECT_EQ(p.attempts, 11U);
 }

@@ -63,11 +63,10 @@ inline bool driveSpeedPermitsSteering(
 
 inline SteeringDisableReason selectDisableReason(
   bool mode_received, bool mode_timeout, DriveMode mode, const SafetyInputs & safety,
-  bool motor_fault, bool can_timeout, bool feedback_valid, bool steer_command_timeout)
+  bool can_timeout, bool feedback_valid, bool steer_command_timeout)
 {
   if (safety.effectiveEstop()) return SteeringDisableReason::ESTOP;
   if (can_timeout) return SteeringDisableReason::CAN_TIMEOUT;
-  if (motor_fault) return SteeringDisableReason::MOTOR_FAULT;
   if (safety.command_brake) return SteeringDisableReason::COMMAND_BRAKE;
   if (!feedback_valid) return SteeringDisableReason::FEEDBACK_INVALID;
   if (mode_timeout) return SteeringDisableReason::MODE_TIMEOUT;

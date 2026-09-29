@@ -174,12 +174,8 @@ Host current loop가 아니다. 실제 peak 지속 오차는 control tick jitter
   간격은 `FEEDBACK_LOST`로 즉시 zero→Disable한다. 정상 feedback이 확인되면 잠금이나
   노드 재시작 없이 `WAIT_CMD`로 복귀하며, 차단 뒤 받은 새로운 command가 있어야 다시
   Enable한다. 단순 saturation은 fault가 아니다.
-- HARD KEYA fault만 `FAULT` latch한다. RECOVERABLE은 `WAIT_CMD + REASON_MOTOR_FAULT`
-  recovery hold이며 횟수·지속시간으로 영구 latch하지 않는다. INFO는 관측만 한다.
-  자동복구 완료 또는 HARD clear acknowledgment 이후 생성된 fresh command가 필요하다.
-  `/steering/clear_fault_latch`는 MANUAL·정지·fresh evidence·active HARD=0에서만 성공하고
-  zero/Disable, 목표·이력 폐기, WAIT_CMD까지만 수행한다. Enable하지 않는다.
-  `/diagnostics`의 `steering/safety`에서 authoritative latch/clearable/reason을 확인한다.
+- KEYA fault bit는 `/steering/status`와 `steering/safety`에 원본 값과 해석을
+  발행한다. 비트만으로 Host가 zero/Disable, latch, Enable probe를 실행하지 않는다.
   `/steering/torque_safety`는 별도의 Host 피드백 정지 원인이다.
   [2026-09-18 MCAP 분석](../../../docs/reports/2026-09-18_steering_fault.md)에 MANUAL 범위 초과가
   다음 시험까지 남았던 원인과 수정 내용을 정리했다.
