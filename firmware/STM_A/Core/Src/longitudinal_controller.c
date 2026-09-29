@@ -73,6 +73,14 @@ bool Long_ReceiveExternal(LongExternalInput *s, float current, int64_t stamp, ui
   return true;
 }
 
+bool Long_ReceiveRegen(LongExternalInput *s, float current, int64_t stamp, uint32_t tick)
+{
+  if (!isfinite(current) || current > 0 || current < -480 ||
+      stamp <= s->last_stamp_ns) return false;
+  *s = (LongExternalInput){current, tick, stamp, true};
+  return true;
+}
+
 bool Long_ExternalFresh(const LongExternalInput *s, uint32_t tick, uint32_t timeout)
 {
   return s->received && (uint32_t)(tick - s->received_tick) < timeout;

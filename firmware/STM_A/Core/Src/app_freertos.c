@@ -80,6 +80,9 @@ enum {
 #define AUTO_SPEED_MAX_MPS \
   ((float)RPM_FWD_MAX * 3.14159f * TIRE_DIAM_M / (60.0f * GEAR_RATIO))
 #define MANUAL_TORQUE_LIMIT_A 480.0f
+/* AUTO Torque 회생 시험: 조이스틱 LT 요청의 음수 상한과 전류 변화율. */
+#define AUTO_REGEN_MAX_A 20.0f
+#define AUTO_REGEN_SLEW_A_PER_S 100.0f
 #define PEDAL_ADC_MIN 560
 #define PEDAL_ADC_MAX 3000
 #define UART_RX_DMA_SIZE 64u
@@ -212,6 +215,8 @@ static uint8_t s_long_pending_valid;
 static uint8_t s_long_feedback_valid, s_long_inhibit = LONG_DISABLED;
 static LongGate s_long_gate;
 static LongExternalInput s_external_current;
+static LongExternalInput s_regen_request;
+static float s_regen_current;
 static int64_t s_command_stamp_ns;
 static uint8_t s_external_previous_mode = 0xffu;
 static kaiev26_msgs__msg__DriveCurrentCommand s_current_msg;
@@ -452,7 +457,23 @@ void StartControl(void *argument)
     {
       if (MODE == 1u)
       {
-        if (s_long_calibration.config.mode == LONG_SPEED) {
+        /* 회생 요청은 명령 전류를 0에서 목표까지 천천히 옮긴다. 요청이 끊기면
+         * 같은 기울기로 0에 돌아와 토크 부호가 한 번에 바뀌지 않게 한다. */
+        float regen_target = 0.0f;
+        taskENTER_CRITICAL();
+        if (s_long_calibration.config.mode == LONG_TORQUE && s_long_inhibit == LONG_OK &&
+            Long_ExternalFresh(&s_regen_request, HAL_GetTick(), HOST_COMMAND_TIMEOUT_MS))
+          regen_target = fmaxf(s_regen_request.current, -AUTO_REGEN_MAX_A);
+        taskEXIT_CRITICAL();
+        const float regen_step = AUTO_REGEN_SLEW_A_PER_S * 0.05f;
+        s_regen_current = fminf(fmaxf(regen_target, s_regen_current - regen_step),
+                                s_regen_current + regen_step);
+
+        if (s_regen_current < 0.0f) {
+          /* 전진 회생: 음수 상전류 + 목표 RPM 0 + RUNNING. */
+          Long_Reset(&s_long_controller);
+          send_motor_can(0, s_regen_current, 1u, 0u);
+        } else if (s_long_calibration.config.mode == LONG_SPEED) {
           /* Native speed loop with the active preset envelope; driving stays 480 A/4500 RPM. */
           Long_Reset(&s_long_controller);
           float wrpm = COMMAND_SPEED * 60.0f / (3.14159f * TIRE_DIAM_M);
@@ -480,6 +501,7 @@ void StartControl(void *argument)
       else
       {
         Long_Reset(&s_long_controller);
+        s_regen_current = 0.0f;
         /* 수동주행: 페달 0~100%를 상전류 0~480 A로 선형 매핑한다. */
         float torque_current = ((float)PEDAL / 100.0f) * MANUAL_TORQUE_LIMIT_A;
         int16_t rpm_limit = RPM_FWD_MAX;
@@ -496,6 +518,7 @@ void StartControl(void *argument)
     {
       /* 정지 시 RPM/전류뿐 아니라 RUNNING bit도 내려 HALTED를 명령한다. */
       Long_Reset(&s_long_controller);
+      s_regen_current = 0.0f;
       if (s_long_inhibit == LONG_OK) s_long_inhibit = LONG_STOP;
       send_motor_can(0, 0.0f, 0u,
           (MODE == 1u && s_long_calibration.config.mode == LONG_SPEED) ? 1u : 0u);
@@ -1489,6 +1512,12 @@ static void cb_current(const void *message)
   if (msg->header.stamp.sec < 0 || msg->header.stamp.nanosec >= 1000000000u) return;
   const int64_t stamp = (int64_t)msg->header.stamp.sec * 1000000000LL + msg->header.stamp.nanosec;
   taskENTER_CRITICAL();
+  /* TORQUE 모드의 0 이하 값은 회생 요청이다. governor가 명령을 다시 찍으므로
+   * 명령 stamp 창 대신 수신 시각으로 신선도를 본다. */
+  if (MODE == 1u && s_long_calibration.config.mode == LONG_TORQUE &&
+      msg->phase_current_a <= 0.0f && !s_command_brake_engage) {
+    (void)Long_ReceiveRegen(&s_regen_request, msg->phase_current_a, stamp, HAL_GetTick());
+  }
   if (MODE == 1u && s_long_calibration.config.mode == LONG_EXTERNAL_CURRENT &&
       s_motor_handshake_done && s_long_feedback_valid && !DRIVE_STOP_REQUEST &&
       s_controller_control_mode == CONTROLLER_CONTROL_MODE_TORQUE &&

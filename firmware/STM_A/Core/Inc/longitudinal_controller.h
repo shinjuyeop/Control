@@ -74,4 +74,7 @@ bool Long_ReceiveExternal(LongExternalInput *input, float current,
                           int64_t stamp_ns, uint32_t tick);
 bool Long_ExternalFresh(const LongExternalInput *input, uint32_t tick,
                        uint32_t timeout_ms);
+/* AUTO Torque regen request: nonpositive phase current, sent with target RPM 0. */
+bool Long_ReceiveRegen(LongExternalInput *input, float current,
+                       int64_t stamp_ns, uint32_t tick);
 #endif

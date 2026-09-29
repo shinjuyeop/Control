@@ -55,6 +55,14 @@ int main(void)
   assert(!Long_ReceiveExternal(&external, 120, 150, 100));
   assert(Long_ReceiveExternal(&external, 80, 201, UINT32_MAX-10));
   assert(Long_ExternalFresh(&external, 10, 500));
+  LongExternalInput regen = {0};
+  assert(!Long_ReceiveRegen(&regen, 1, 1, 10));
+  assert(!Long_ReceiveRegen(&regen, NAN, 1, 10));
+  assert(!Long_ReceiveRegen(&regen, -481, 1, 10));
+  assert(Long_ReceiveRegen(&regen, -10, 100, 10));
+  assert(Long_ExternalFresh(&regen, 509, 500) && regen.current == -10);
+  assert(!Long_ReceiveRegen(&regen, -20, 100, 20));
+  assert(Long_ReceiveRegen(&regen, 0, 101, 20));
   float external_wire[LONG_REQUEST_COUNT] = {2, 1, 0};
   LongConfig external_config=Long_DefaultConfig();
   external_config.mode=LONG_EXTERNAL_CURRENT;
