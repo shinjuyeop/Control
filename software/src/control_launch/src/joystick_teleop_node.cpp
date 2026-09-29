@@ -25,7 +25,7 @@ public:
     max_steering_deg_ = declare_parameter("max_steering_deg", 30.0, startup_parameter);
     max_speed_kph_ = declare_parameter("max_speed_kph", 20.0, startup_parameter);
     steering_step_deg_ = declare_parameter("steering_step_deg", 1.0, startup_parameter);
-    regen_max_a_ = declare_parameter("regen_max_a", 10.0, startup_parameter);
+    regen_max_a_ = declare_parameter("regen_max_a", 1.0, startup_parameter);
     left_steering_axis_ = declare_parameter("left_steering_axis", 0, startup_parameter);
     right_steering_axis_ = declare_parameter("right_steering_axis", 3, startup_parameter);
     lt_axis_ = declare_parameter("lt_axis", 2, startup_parameter);

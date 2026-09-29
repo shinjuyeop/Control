@@ -101,7 +101,7 @@ ros2 launch control_launch joystick_teleop.launch.py use_sim_time:=true
 | 왼쪽 스틱 좌우 | 스틱 값 × 런치 최대 조향각, 기본 −30°..+30° |
 | 오른쪽 스틱 좌우 | 스틱 값 × 동적 최대 조향각 |
 | RT | 누른 비율 × 런치 최대속도, 기본 0..20 km/h |
-| LT | 누른 비율 × `regen_max_a`의 회생 상전류 요청, 기본 0..−10 A |
+| LT | 누른 비율 × `regen_max_a`의 회생 상전류 요청, 기본 0..−1 A |
 | 십자키 ← / → | 동적 최대 조향각 감소 / 증가 |
 
 입력은 선형으로 매핑합니다. 오른쪽 스틱을 움직이면 오른쪽 입력이 우선하고,
@@ -126,7 +126,7 @@ LT는 `/vehicle/drive_current_command`로 0 이하의 상전류를 보냅니다.
 | `max_steering_deg` | 30.0 | 왼쪽 스틱의 한쪽 최대 조향각, 중앙 등가 Ackermann 각도 |
 | `max_speed_kph` | 20.0 | RT를 끝까지 눌렀을 때의 목표속도 |
 | `steering_step_deg` | 1.0 | 십자키 한 번당 조향 범위 변화량 |
-| `regen_max_a` | 10.0 | LT를 끝까지 눌렀을 때의 회생 상전류 크기 [A] |
+| `regen_max_a` | 1.0 | LT를 끝까지 눌렀을 때의 회생 상전류 크기 [A] |
 
 동적 범위는 실행 시 해당 런치 최대값으로 초기화하고 이후 독립적으로 증감합니다.
 최솟값은 0이며 런치 최대값보다 크게 설정할 수도 있습니다. 재실행하면 초기화합니다.
@@ -135,7 +135,7 @@ LT는 `/vehicle/drive_current_command`로 0 이하의 상전류를 보냅니다.
 ```bash
 ros2 launch control_launch joystick_teleop.launch.py \
   max_steering_deg:=30.0 max_speed_kph:=20.0 \
-  steering_step_deg:=1.0 regen_max_a:=10.0
+  steering_step_deg:=1.0 regen_max_a:=1.0
 ```
 
 기존 가제보 패드 배치를 사용합니다. 축 인덱스는 `left_steering_axis=0`,

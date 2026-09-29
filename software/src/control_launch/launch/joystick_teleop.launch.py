@@ -16,7 +16,7 @@ def generate_launch_description():
         'max_steering_deg': 30.0,
         'max_speed_kph': 20.0,
         'steering_step_deg': 1.0,
-        'regen_max_a': 10.0,
+        'regen_max_a': 1.0,
         'left_steering_axis': 0,
         'right_steering_axis': 3,
         'lt_axis': 2,
