@@ -30,7 +30,8 @@ STALE = DiagnosticStatus.STALE
 # docs/SAFETY.md의 timeout 표. 값을 바꿀 때는 그 문서를 함께 갱신한다.
 LIMIT_MS = {
     'drive_command': 500.0,      # AUTO traction. 초과 시 HALTED, 저장 속도 0
-    'ezkontrol_part': 200.0,     # Part I/II. 초과 시 status valid false
+    'ezkontrol_part1': 500.0,    # Part I invalid
+    'ezkontrol_part2': 1000.0,   # Part II invalid, with no intermediate warning
     'steer_command': 200.0,      # ACTIVE 조향. 초과 시 KEYA Disable
     'keya_feedback': 500.0,      # KEYA CAN·position
     'steer_mode': 1500.0,        # 조향이 보는 /drive/status
@@ -150,13 +151,17 @@ class DiagnosticsPublisher(Node):
         checks.append(('Host command age', lv, txt))
         if m.command_timeout:
             checks.append(('command_timeout', ERROR, 'true — AUTO traction HALTED'))
-        for label, age, valid in (
-            ('EZkontrol Part I', m.part1_age_ms, m.part1_valid),
-            ('EZkontrol Part II', m.part2_age_ms, m.part2_valid),
+        for label, age, valid, limit in (
+            ('EZkontrol Part I', m.part1_age_ms, m.part1_valid,
+             LIMIT_MS['ezkontrol_part1']),
+            ('EZkontrol Part II', m.part2_age_ms, m.part2_valid,
+             LIMIT_MS['ezkontrol_part2']),
         ):
-            lv, txt = age_level(age, LIMIT_MS['ezkontrol_part'])
+            lv, txt = age_level(age, limit)
             if not valid:
                 lv, txt = ERROR, f'valid=false ({txt})'
+            elif lv == WARN:
+                lv, txt = OK, f'{age:.0f} ms'
             checks.append((f'{label} age', lv, txt))
         level, msg = self._worst(checks)
         return self._status('구동 링크', 'STM_A / EZkontrol', level, msg,

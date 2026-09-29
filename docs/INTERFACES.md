@@ -33,6 +33,7 @@ CAN, Dashboard CAN, RP2350 LV 계측·정비, Arduino LCD/touch와 HIL UNO USB�
 | `command_governor` | STM_B | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 적용 안 함 | brake만 저장 |
 | `command_governor` | 조향 노드 | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 200 ms | ACTIVE 조향 freshness |
 | STM_A | Host·조향·상태·진단 | ROS 2 | `/drive/status` | `DriveActuatorStatus` | 20 ms | 조향에서 1500 ms | mode·gear·구동 진단 |
+| STM_A | Host·기록 | ROS 2 | `/drive/can_rx_diagnostics` | `std_msgs/UInt32MultiArray` | 1 s | 없음 | Part I/II RX 횟수·FDCAN RX 오류 관측 전용 |
 | STM_B | Host·조향·상태·진단 | ROS 2 | `/brake/status` | `BrakeActuatorStatus` | 50 ms 및 원인 변경 시 | 조향에서 별도 timeout 없음 | brake·E-stop 원인 |
 | 조향 노드 | Host·상태·진단 | ROS 2 | `/steering/status` | `SteeringActuatorStatus` | 20 ms | 상태 통합에서 별도 timeout 없음 | 조향 상태·진단 |
 | 조향 노드 | AUTO dashboard summary | ROS 2 | `/steering/target_motor_position_count` | `std_msgs/Int32` | 20 ms | summary에서 300 ms | 기존 equivalent-angle→KEYA count 변환 결과 |
@@ -52,7 +53,7 @@ CAN, Dashboard CAN, RP2350 LV 계측·정비, Arduino LCD/touch와 HIL UNO USB�
 | FT6336U | UNO R4 | I2C | address `0x38` | 최대 2점 raw touch | 20 ms polling | read 실패 시 1 s 재시도 | local navigation input |
 | HIL Console | UNO R4 | USB Serial | newline ASCII, 115200 | `HIL_LCD`, `HIL_TOUCH`, `VT D/M/U/C` | 보고 200/100 ms | Virtual Touch 1 s | HIL-only virtual HMI |
 | STM_A | EZkontrol | FDCAN1 | `0x0C01EFD0` | handshake ACK 또는 command | 50 ms command | 명시적 TX timeout 없음 | AUTO Speed/Torque / MANUAL direct torque |
-| EZkontrol | STM_A | FDCAN1 | `0x1801D0EF`, `0x1802D0EF` | Part I/II status | 외부 장치 설정 | 200 ms validity | AUTO Torque: PI reset·0 A/HALTED; Speed/MANUAL: 기존 validity 의미 |
+| EZkontrol | STM_A | FDCAN1 | `0x1801D0EF`, `0x1802D0EF` | Part I/II status | 외부 장치 설정 | Part I invalid 500 ms, Part II invalid 1 s | AUTO Torque는 둘 중 하나가 invalid면 PI reset·0 A/HALTED |
 | 조향 노드 | KEYA | SocketCAN | `0x06000001` | enable/disable/position/torque/query | 기본 20 ms | position 500 ms / torque 위치 100 ms | node ID 기본값 1 |
 | KEYA | 조향 노드 | SocketCAN | `0x05800001`, `0x07000001` | query response, heartbeat | 외부 장치 설정 | CAN·position 각 500 ms | ID는 node ID에 따라 변함 |
 | Host Agent | 각 STM | LPUART1 serial, 460800 8N1 | micro-ROS XRCE-DDS | ROS 2 serialization | event-driven | Agent ping 500/100 ms | 보드별 Agent 1개 |
@@ -332,7 +333,20 @@ nonzero RPM으로 최대 2회 hold한 뒤, 타이어 지름 `0.47 m`, 감속비 
 | 3..5 | fault bits | 24-bit little-endian 원본 |
 | 6..7 | 현재 코드에서 사용하지 않음 | - |
 
-Part I과 Part II는 마지막 수신 후 200 ms 미만일 때 각각 valid입니다.
+Part I은 마지막 수신 후 500 ms 미만, Part II는 1 s 미만일 때 valid입니다.
+Part I이 끊긴 동안 STM_A의 마지막 속도값은 유지되며 AUTO Torque는 500 ms까지
+그 값으로 PI를 계산합니다. 새 속도 관측으로 해석해서는 안 됩니다.
+Part I 수신 간격이 200 ms 이상 벌어진 뒤 다시 붙으면 RPM의 짧은 0샘플 보정 이력은
+새 stream으로 넘어가지 않도록 초기화합니다. 이는 500 ms 유효성 기준과 별개입니다.
+Part II는 1 s부터 invalid로 표시하고 AUTO Torque를 차단합니다.
+UNO와 Host 진단에는 Part II의 중간 경고가 없습니다.
+STM_A의 `/drive/can_rx_diagnostics`는 1 Hz `UInt32MultiArray`이며 data index
+0~6이 차례로 Part I 수신 누적, Part II 수신 누적, RX FIFO 손실 누적,
+FIFO 읽기 실패 누적, 현재 RX error counter, 현재 TX error counter,
+최대 255에서 포화하는 하드웨어 error logging counter입니다. 마지막 세 값의 `UINT32_MAX`는
+하드웨어 counter 조회 실패를 뜻합니다.
+수신 횟수는 STM_A가 받아 파싱한 프레임만 세므로, 송신 누락과 물리 버스 손실을
+단독으로 구분하지는 못합니다.
 AUTO Speed/MANUAL에서는 이 freshness가 기존 status validity에 반영됩니다.
 AUTO Torque에서는 둘 중 하나라도 stale이면 PI history reset·0 A/HALTED로 inhibit하며,
 두 Part의 fresh 복구를 확인한 뒤 받은 새 Host command가 필요합니다.
@@ -357,6 +371,7 @@ summary가 300 ms stale이면 STM_B가 `HOST_VALID`를 내리지만 native E-sto
 
 세부 byte layout, scale, signed type과 recovery 절차는
 [`STM_B README`](../firmware/STM_B/README.md#85-dashboard-snapshot과-wire-단위)를 따릅니다.
+native `0x321`의 Part II valid bit는 1 s부터 내려갑니다.
 
 Dashboard CAN은 STM_B에서 UNO로 차량 상태를 보내는 단방향 표시 경로입니다.
 Arduino는 LCD 출력과 physical/HIL touch navigation을 처리하는 local HMI이며 차량
@@ -537,7 +552,9 @@ Float32다. 후자는 KEYA Parameter 0003과 매뉴얼의 80% 식으로 계산�
 | Dashboard CAN snapshot | 50 ms | `DASHBOARD_CAN_SLOT_PERIOD_MS × DASHBOARD_CAN_SLOTS_PER_SNAPSHOT` | STM_B `dashboard_can.c` |
 | Arduino Dashboard CAN lost | 300 ms | `CAN_LOST_TIMEOUT_MS` | `UNO_R4_DASHBOARD.ino` |
 | Dashboard CAN recovery backoff | 1000 ms | `DASHBOARD_CAN_RECOVERY_BACKOFF_MS`, `CAN_REINIT_PERIOD_MS` | STM_B `dashboard_can.c`, UNO firmware |
-| EZkontrol status validity | 200 ms | `MOTOR_FEEDBACK_TIMEOUT_MS` | STM_A `app_freertos.c` |
+| EZkontrol Part I validity | 500 ms | `MOTOR_FEEDBACK_TIMEOUT_MS` | STM_A `app_freertos.c` |
+| Part I RPM 보정 이력 초기화 | 200 ms 수신 간격 | `MOTOR_RPM_STREAM_RESET_MS` | STM_A `app_freertos.c`; traction 차단 아님 |
+| EZkontrol Part II validity / AUTO Torque control gate | 1000 ms | `MOTOR_PART2_TIMEOUT_MS` | STM_A `app_freertos.c` |
 | STM Agent ping | 500 ms, call timeout 100 ms | `AGENT_PING_*` | 두 STM `app_freertos.c` |
 | 조향 control/status | 20 ms | `control_period_ms` | `steering_actuator.yaml` |
 | 조향 command timeout | 200 ms | `steer_command_timeout_ms` | `steering_actuator.yaml` |
@@ -554,7 +571,8 @@ Float32다. 후자는 KEYA Parameter 0003과 매뉴얼의 80% 식으로 계산�
 | diagnostics 입력 status stale | 1000 ms | `STATUS_STALE_SEC` | diagnostics publisher |
 
 경계 비교는 구현마다 다릅니다. STM Host와 UART timeout은 `>=`, EZkontrol valid는
-`age < 200 ms`, 조향 timeout은 `age > 설정값`을 사용합니다.
+Part I valid는 `age < 500 ms`, Part II status valid는 `age < 1000 ms`입니다.
+AUTO Torque는 둘 중 하나가 invalid면 차단합니다. 조향 timeout은 `age > 설정값`을 사용합니다.
 
 ### 9.1 Web HIL의 표시·조작 연결
 
@@ -586,7 +604,7 @@ Float32다. 후자는 KEYA Parameter 0003과 매뉴얼의 80% 식으로 계산�
 - Production `/planning/command` publisher (Planning)와 발행률.
   `/vehicle/command` 발행자는 `command_governor`로 확정됨
 - STM_A→STM_B UART timeout을 브레이크 판단에 포함할지 여부
-- EZkontrol Part I/II 손실을 traction stop 조건으로 포함할지 여부
+- EZkontrol Part II 장기 미수신을 traction stop 조건으로 포함할지 여부
 - EZkontrol status 실제 송신 주기
 - KEYA 내부 watchdog 시간과 현재 position command의 keep-alive 보장
 - STM_A·STM_B PCB connector 기준 실제 배선 및 signal ground
@@ -616,7 +634,7 @@ deadband/hysteresis m/s, RPM motor rpm. Field order is defined by
 `control_tuning.longitudinal.CONFIG_KEYS` and `Long_EncodeConfig`.
 
 STM_A validates the complete request, then hands it to a one-slot mailbox. The next
-Control cycle checks MANUAL, fresh Part I/II <200 ms, |speed|≤0.05 m/s, pedal=0,
+Control cycle checks MANUAL, fresh Part I <500 ms and Part II <1 s, |speed|≤0.05 m/s, pedal=0,
 |commanded phase|<0.1 A and |actual phase|≤1 A. Under one FreeRTOS critical section,
 expected_revision must equal applied revision; then all config fields/revision/source
 commit together and PI resets. A rejected request never waits for future motion state.
@@ -635,7 +653,7 @@ Use the existing trusted vehicle ROS domain, not an untrusted network.
 | 4 | calibration source: 0=DEFAULT, 1=HOST_OVERRIDE |
 | 5–16 | active config in CONFIG_KEYS order, including mode |
 | 17–21 | speed error, P, I/integrator state, unsaturated current, final PI current |
-| 22–25 | saturated, anti-windup, coasting, feedback valid (0/1) |
+| 22–25 | saturated, anti-windup, coasting, AUTO Torque control feedback usable (Part I <500 ms and Part II <1 s; 0/1) |
 | 26 | inhibit: 0=OK, 1=disabled, 2=feedback loss, 3=wait fresh command, 4=reverse unsupported, 5=stop |
 
 Read actual CAN-transmitted current/RPM and actual phase/bus current from `/drive/status`.
@@ -682,8 +700,9 @@ Airborne first-test candidate: Kp15/Ki2, 20 A, integral6 A, slew120/400 A/s,
 reapply5 A at40 A/s, RPM600, deadband0.05/release0.12 m/s.
 Driving remains 480 A/RPM4500 with unchanged gains and CAN baseline.
 PI gains, integral, deadband/coast and slew/reapply remain Torque-only. Firmware
-Part I/II freshness is 200 ms: Speed status validity semantics stay unchanged;
-Torque resets/inhibits to 0 A/HALTED and requires a Host command received after feedback recovery.
+Part I freshness is 500 ms; Part II status becomes invalid at 1 s.
+AUTO Torque resets/inhibits to 0 A/HALTED if either Part is invalid and requires a Host
+command received after feedback recovery. Speed/MANUAL continue to report the valid flags.
 
 ## 12. RP2350 LV 배터리 계측·정비
 

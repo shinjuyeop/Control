@@ -99,6 +99,36 @@ def test_diagnostic_identity_is_stable_across_waiting_live_stale_live():
         rclpy.shutdown()
 
 
+def test_ezkontrol_feedback_stays_normal_until_invalid():
+    rclpy.init()
+    node = DiagnosticsPublisher()
+    try:
+        node._on_drive(DriveActuatorStatus(
+            command_age_ms=0.0,
+            part1_age_ms=300.0, part1_valid=True,
+            part2_age_ms=800.0, part2_valid=True,
+        ))
+        status = node._drive_link()
+        assert status.level == DiagnosticStatus.OK
+
+        node._on_drive(DriveActuatorStatus(
+            command_age_ms=0.0,
+            part1_age_ms=500.0, part1_valid=False,
+            part2_age_ms=800.0, part2_valid=True,
+        ))
+        assert node._drive_link().level == DiagnosticStatus.ERROR
+
+        node._on_drive(DriveActuatorStatus(
+            command_age_ms=0.0,
+            part1_age_ms=25.0, part1_valid=True,
+            part2_age_ms=1000.0, part2_valid=False,
+        ))
+        assert node._drive_link().level == DiagnosticStatus.ERROR
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
 def test_manual_without_commands_is_normal_and_recovery_is_distinct():
     rclpy.init()
     node = DiagnosticsPublisher()

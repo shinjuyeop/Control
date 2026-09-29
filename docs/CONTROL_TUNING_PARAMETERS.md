@@ -72,7 +72,10 @@ TUI 상세에는 새 설정키와 기존 연결을 함께 표시한다.
 
 CAN 송신부의 최종 전진 4500 / 후진 1500 rpm 물리 clamp는 별도로 유지한다.
 Driving 480 A/4500 rpm에서 기존 Speed baseline CAN 명령은 동일하다.
-Airborne는 Kp15/Ki2, 20 A/600 rpm의 first-test candidate이며 두 AUTO mode에 같은 envelope를 쓴다.
+Airborne는 Kp15/Ki2, 40 A/4500 rpm의 first-test candidate이며 두 AUTO mode에 같은 envelope를 쓴다.
+RPM 한도는 driving과 같고, 전류 한도는 공중 시험용으로 낮게 유지한다. 기존
+20 A/600 rpm 기능 확인 후보와 달리 40 km/h 목표를 RPM에서 제한하지 않지만,
+실제 도달 속도와 전류는 아직 공중 시험으로 검증되지 않았다.
 나머지 speed PI, 적분 한도, deadband/coast, current slew/reapply 항목은 Torque 전용이다.
 MANUAL pedal/gear는 이 AUTO envelope의 영향을 받지 않는다.
 

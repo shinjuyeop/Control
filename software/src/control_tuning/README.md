@@ -65,18 +65,21 @@ v3는 `steering`, `drive`, `governor`, `timeouts`로 구분한다. 설정키는 
 |---|---:|---:|
 | mode | torque | torque |
 | Kp / Ki | 15 / 2 | 180 / 12 |
-| max / integrator A | 20 / 6 | 480 / 120 |
+| max / integrator A | 40 / 6 | 480 / 120 |
 | slew up / down A/s | 120 / 400 | 2400 / 4800 |
 | deadband / hysteresis m/s | 0.05 / 0.12 | 0.05 / 0.12 |
 | reapply band A / slew A/s | 5 / 40 | 20 / 200 |
-| RPM ceiling | 600 | 4500 |
+| RPM ceiling | 4500 | 4500 |
 
 [실측 근거·단위·airborne/A-B 절차](../../../docs/reports/2026-09-21_longitudinal_torque_pi.md)를 따른다.
 STM_A boot는 **speed/DEFAULT**다. `drive_current_limit_a`/`drive_motor_speed_limit_rpm`은
-Speed/Torque 공통 envelope다. airborne는 두 AUTO mode 모두 20 A/600 rpm,
+Speed/Torque 공통 envelope다. airborne는 두 AUTO mode 모두 40 A/4500 rpm,
 driving은 480 A/4500 rpm이다. Speed에서는 current-limit field와 signed target RPM 범위,
 Torque에서는 PI 전류 상한과 EZ RPM ceiling으로 쓰며 최종 물리 forward/reverse clamp는 별도다.
-PI gain·적분·deadband/coast·slew/reapply는 Torque 전용이다. MANUAL pedal은 기존 경로를 쓴다.
+PI gain·적분·deadband/coast·slew/reapply는 Torque 전용이다. 40 A는 공중 40 km/h
+시험용 초기 전류 한도다. 현재 타이어 지름·감속비 환산에서 40 km/h는 약 2077 motor rpm으로,
+4500 rpm 상한보다 낮다. 도달 시간과 실제 전류는 아직 검증되지 않았다.
+MANUAL pedal은 기존 경로를 쓴다.
 이 공통 envelope 동작에는 수정된 STM_A firmware가 필요하다. 그 이후 값 조정은 저장·구동 스택 재시작으로 반영한다.
 
 ```bash
@@ -121,7 +124,7 @@ STM_A 설정 송신 publisher나 조향 parameter 변경 client를 만들지 않
 
 구동 스택을 재시작하면 조향/Governor는 저장한 프리셋을 읽는다.
 STM_A calibration은 launch의 one-shot helper가 별도로 적용한다.
-STM_A가 MANUAL, fresh Part I/II <200 ms, |speed|≤0.05 m/s, pedal=0,
+STM_A가 MANUAL, fresh Part I <500 ms·Part II <1 s, |speed|≤0.05 m/s, pedal=0,
 |commanded current|<0.1 A, |actual phase current|≤1 A를 검사하고 revision과 함께 atomic commit한다.
 helper가 request/revision/full config readback을 확인하며 unsafe는 거절한다.
 [Wire 계약](../../../docs/INTERFACES.md#longitudinal-calibration-v1)은 그대로다.

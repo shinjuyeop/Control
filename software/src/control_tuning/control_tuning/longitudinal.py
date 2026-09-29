@@ -22,8 +22,8 @@ STATE_KEYS = ('speed_error_mps', 'p_current_a', 'i_current_a', 'unsaturated_curr
               'feedback_valid', 'inhibit')
 DEFAULT = dict(zip(CONFIG_KEYS, ('speed', 180., 12., 480., 120., 2400., 4800.,
                                .05, .12, 20., 200., 4500.)))
-AIRBORNE = dict(zip(CONFIG_KEYS, ('torque', 15., 2., 20., 6., 120., 400.,
-                                .05, .12, 5., 40., 600.)))
+AIRBORNE = dict(zip(CONFIG_KEYS, ('torque', 15., 2., 40., 6., 120., 400.,
+                                .05, .12, 5., 40., 4500.)))
 RESULTS = ('대기', '적용 완료', '잘못된 설정', 'MANUAL 정지·무전류 조건 불충족',
            '다른 설정이 먼저 적용됨', '다른 요청 처리 중')
 
