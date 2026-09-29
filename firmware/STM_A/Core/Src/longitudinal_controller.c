@@ -6,7 +6,8 @@ static float clamp(float x, float lo, float hi) { return fminf(hi, fmaxf(lo, x))
 
 LongConfig Long_DefaultConfig(void)
 {
-  return (LongConfig){LONG_SPEED, 180.0f, 12.0f, 480.0f, 120.0f,
+  /* 임시: EZkontrol 속도 제어를 쓰지 않는다. 부팅 기본도 AUTO Torque다. */
+  return (LongConfig){LONG_TORQUE, 180.0f, 12.0f, 480.0f, 120.0f,
                      2400.0f, 4800.0f, 0.05f, 0.12f, 20.0f, 200.0f, 4500.0f};
 }
 
@@ -22,7 +23,7 @@ bool Long_DecodeRequest(const float *d, size_t count, LongRequest *r)
   for (size_t n = 0; n < count; ++n) if (!isfinite(d[n])) return false;
   if ((d[0] != 1 && d[0] != LONG_VERSION) || d[1] < 1 || d[1] > LONG_ID_MAX ||
       floorf(d[1]) != d[1] || d[2] < 0 || d[2] > LONG_ID_MAX ||
-      floorf(d[2]) != d[2] || (d[3] != LONG_SPEED && d[3] != LONG_TORQUE &&
+      floorf(d[2]) != d[2] || (d[3] != LONG_TORQUE &&
       !(d[0] == LONG_VERSION && d[3] == LONG_EXTERNAL_CURRENT))) return false;
   LongConfig c = {(uint8_t)d[3], d[4], d[5], d[6], d[7], d[8], d[9],
                   d[10], d[11], d[12], d[13], d[14]};

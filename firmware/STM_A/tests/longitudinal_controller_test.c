@@ -73,8 +73,7 @@ int main(void)
   assert(!Long_DecodeRequest(external_wire, LONG_REQUEST_COUNT, &external_request));
   LongConfig c = Long_DefaultConfig();
   LongController s = {0};
-  assert(c.mode == LONG_SPEED && c.max_current == 480);
-  c.mode = LONG_TORQUE;
+  assert(c.mode == LONG_TORQUE && c.max_current == 480);
   near(Long_Update(&s, &c, 2, 2, .05f), 0);
   near(Long_Update(&s, &c, 6, 0, .05f), 120);
   assert(s.anti_windup && s.saturated); near(s.i, 0);
@@ -122,11 +121,12 @@ int main(void)
   }
   wire[6]=481;assert(!Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));wire[6]=480;
   wire[3]=2;assert(!Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));wire[3]=1;
+  wire[3]=LONG_SPEED;assert(!Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));wire[3]=1;
   assert(!Long_DecodeRequest(wire,LONG_REQUEST_COUNT-1,&r));
   assert(Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));
   LongCalibration cal={.config=Long_DefaultConfig()};
   Long_ApplyConfiguration(&cal,&r,false);assert(cal.result==LONG_UNSAFE && cal.revision==0);
-  assert(cal.config.mode==LONG_SPEED && cal.source==LONG_DEFAULT);
+  assert(cal.config.mode==LONG_TORQUE && cal.source==LONG_DEFAULT);
   Long_ApplyConfiguration(&cal,&r,true);assert(cal.result==LONG_APPLIED && cal.revision==1);
   assert(cal.config.mode==LONG_TORQUE && cal.source==LONG_HOST_OVERRIDE);
   Long_ApplyConfiguration(&cal,&r,true);assert(cal.revision==1); // duplicate is idempotent

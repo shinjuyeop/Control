@@ -486,13 +486,6 @@ void StartControl(void *argument)
           /* 전진 회생: 음수 상전류 + 목표 RPM 0 + RUNNING. */
           Long_Reset(&s_long_controller);
           send_motor_can(0, s_regen_current, 1u, 0u);
-        } else if (s_long_calibration.config.mode == LONG_SPEED) {
-          /* Native speed loop with the active preset envelope; driving stays 480 A/4500 RPM. */
-          Long_Reset(&s_long_controller);
-          float wrpm = COMMAND_SPEED * 60.0f / (3.14159f * TIRE_DIAM_M);
-          int32_t mrpm = (int32_t)(wrpm * GEAR_RATIO);
-          const LongMotorCommand command = Long_SpeedCommand(&s_long_calibration.config, mrpm);
-          send_motor_can(command.rpm, command.current, 1u, 1u);
         } else if (s_long_calibration.config.mode == LONG_EXTERNAL_CURRENT &&
                    s_long_inhibit == LONG_OK && COMMAND_SPEED > 0.0f) {
           taskENTER_CRITICAL();
@@ -533,8 +526,8 @@ void StartControl(void *argument)
       Long_Reset(&s_long_controller);
       s_regen_current = 0.0f;
       if (s_long_inhibit == LONG_OK) s_long_inhibit = LONG_STOP;
-      send_motor_can(0, 0.0f, 0u,
-          (MODE == 1u && s_long_calibration.config.mode == LONG_SPEED) ? 1u : 0u);
+      /* 임시: 속도 제어 정지 유지(0 rpm hold)도 쓰지 않는다. */
+      send_motor_can(0, 0.0f, 0u, 0u);
     }
     // 20Hz / 50ms 주기
     RuntimePeriodic_Wait(RM_CONTROL, &periodic, activation);
