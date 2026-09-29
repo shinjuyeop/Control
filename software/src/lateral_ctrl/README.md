@@ -140,10 +140,10 @@ ABI에 넣지 않은 최종 브레이크 명령입니다.
 | 5 | `BRAKE` | Disable | `/vehicle/command.brake_engage=true` |
 | 6 | `CAN_LOST` | Disable | KEYA CAN 통신 timeout |
 | 7 | `FEEDBACK_LOST` | Disable | position feedback timeout |
-| 8 | `FAULT` | Disable | bit0(Disable)을 제외한 KEYA 실제 fault |
+| 8 | `FAULT` | Disable | 이전 메시지 값으로 유지; 현재 노드는 KEYA fault bit만으로 진입하지 않음 |
 
 모터가 Enable될 수 있는 상태는 `ACTIVE`뿐입니다. 안전 입력, MANUAL 전환, CAN
-손실, 모터 fault 또는 명령 timeout이 발생하면 노드는 과거 target과 pending
+손실 또는 명령 timeout이 발생하면 노드는 과거 target과 pending
 command를 폐기하고 모터를 Disable합니다. 조건이 복구되어도 과거 목표를 되살리지
 않고, 차단 사건 이후 받은 fresh pending `/vehicle/command`가 필요합니다.
 차단 중 받은 명령도 복구 시점에 fresh하면 사용될 수 있습니다. Host torque

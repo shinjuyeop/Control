@@ -17,7 +17,7 @@ built browser UI. No firmware, CAN or actuator behavior is changed.
 | KEYA policy comes from Host | Raw bits remain visible; `steering/safety` diagnostics provide all decoded bits, classes, recovery and reconnect state. The UI does not classify raw bits as faults. |
 | Nominal flag polarity; unsupported feedback is informational | Shared drive/steering flag definitions; brake actual false → NOT WIRED; enable feedback valid false remains informational |
 | Detailed power, temperature, command age, steering pipeline and motor observations | Drive, Steering and Safety pages reuse the former HIL telemetry components |
-| Read-only subscriptions | VehicleObserver has no command publishers; only the fixed steering HARD-latch Trigger client is allowed. All inbound WebSocket messages remain rejected; same-origin POST performs acknowledgment; parameter services disabled |
+| Read-only subscriptions | VehicleObserver has no command publishers or fault-clear service client. All inbound WebSocket messages remain rejected; parameter services disabled |
 | ROS m/s and rad, operator km/h and degrees | Same unit conversion; Overview retains ROS speed beside operator speed; source messages unchanged |
 | Qt's stale fields remained visible beside stale badges | Web hides stale current readings and retains explicitly labeled historical graphs/diagnostics; browser source age keeps advancing during network silence |
 
