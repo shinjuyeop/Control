@@ -2,11 +2,12 @@
 <package format="3">
   <name>vehicle_console</name>
   <version>0.1.0</version>
-  <description>KAI Vehicle Console: read-only vehicle monitoring and controlled HIL validation.</description>
+  <description>KAI Vehicle Console: vehicle monitoring, steering fault acknowledgment and controlled HIL validation.</description>
   <maintainer email="shinjp02@gmail.com">shinjuyeop</maintainer>
   <license>TODO: License declaration</license>
   <buildtool_depend>ament_python</buildtool_depend>
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>control_tuning</exec_depend>
   <exec_depend>kaiev26_msgs</exec_depend>
   <exec_depend>diagnostic_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>

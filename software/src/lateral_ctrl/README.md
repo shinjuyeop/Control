@@ -13,7 +13,7 @@ TeamKAI-DL 차량의 KEYA 조향 액추에이터를 제어하는 ROS 2 Humble �
 설정을 Host가 자동 변경하거나 검증하지 않는다.
 
 Launch는 `params_file` 위에 `control_tuning_file`의 기존 공통 설정과
-`tuning_preset` 프리셋(기본 `driving`)을 읽는다. 다른 조건은 `airborne` / `ground_stationary`다.
+`tuning_preset` 프리셋(기본 `driving`)을 읽는다. 다른 조건은 `airborne`다.
 프리셋은 `control_tuning.presets/`의 조건별 YAML에 저장한다. 현재 기본은 `torque`이며,
 명시적 `actuation_mode:=position`/`torque`가 프리셋보다
 우선한다. 기존 HIL은 position 모델에 맞춰 position을 명시한다.
@@ -32,8 +32,7 @@ Torque는 LEFT-positive road-wheel target을 직접 받고, `P=peak/error_full_s
 1°→5° step과 지면 부하 튜닝, 긴급 정지 및 Foxglove 토픽**은
 [TORQUE_CONTROL.md](TORQUE_CONTROL.md)를 따른다. Torque 운용 중에는 아래 기존
 position 전용 rate-limiter/position frame 설명 대신 해당 문서가 적용된다.
-무부하 T0-T2 측정은 `torque_sysid_bench.launch.py`, MCAP 후처리는
-`torque_sysid_metrics.py`를 사용하며 외장 ROS artifact 저장소가 필요하다.
+무부하 T0-T2 측정과 MCAP 후처리는 [control_tools](../control_tools/README.md#토크-식별-t0t2)에서 실행한다.
 
 ## 실차 실행 전 주의
 
@@ -230,59 +229,11 @@ candump -L can0
 AUTO, 유효한 KEYA feedback과 구동 속력 조건을 충족한 뒤 새 명령을 받아야
 `ACTIVE`가 됩니다.
 
-## 순수 조향 벤치
+## 시험·측정·녹화
 
-벤치 노드는 `/drive/status`와 각도 시퀀스를 직접 발행합니다. 현재 기본 시험
-status는 유효한 구동 속력을 제공하지 않으므로 조향은 Disable 상태를 유지합니다.
-최저속도 설정이 0이어도 `part1_valid`와 fresh한 속도 피드백은 필요합니다.
-
-> **HIL bench와 동시에 실행하지 마십시오.** HIL 스택의 `command_governor`와
-> 이 노드가 모두 `/vehicle/command`를 발행하므로 명령이 서로 덮어써집니다.
-> 이 노드는 governor를 우회하는 조향 단독 벤치 전용입니다. HIL bench에서
-> 조향을 시험할 때는 `hil_command_generator`(governor 경유)만 사용합니다.
-> 확인은 다음과 같이 합니다.
->
-> ```bash
-> ros2 topic info -v /vehicle/command   # publisher가 하나인지
-> ```
-
-다음 launch는 actuator 노드와 벤치 명령 노드를 함께 실행합니다.
-
-```bash
-ros2 launch lateral_ctrl steering_bench_test.launch.py
-```
-
-기본 벤치 노드는 다음을 발행합니다.
-
-| 토픽 | 내용 | 주기 |
-| --- | --- | ---: |
-| `/drive/status` | 시험용 AUTO 상태 | 100 ms |
-| `/vehicle/command` | 절대 중앙 등가각 `+5/-5 deg`, 속도 0, 브레이크 해제 | 20 ms |
-| `/steering/test/estop` | 시험 E-stop 해제 | 50 ms |
-
-`steer_sequence_deg`는 중앙 등가각 degree·좌회전 양수입니다. 벤치 노드는 단위만
-canonical radian으로 바꾸어 발행합니다. 명령은 현재각 offset이 아닌 절대
-중앙 등가각입니다. 바퀴가 중앙에서 벗어난 상태에서는 첫 명령이 큰 이동을 만들 수
-있습니다.
-
-시험 E-stop은 다음처럼 조작합니다.
-
-```bash
-ros2 param set /steering_bench_test_node test_estop_active true
-ros2 param set /steering_bench_test_node test_estop_active false
-```
-
-STM_A와 STM_B의 실제 모드·E-stop을 사용하고 벤치 노드만 조향 명령을 발행하게
-하려면 다음처럼 실행합니다.
-
-```bash
-ros2 launch lateral_ctrl steering_bench_test.launch.py \
-  drive_mode_publish_enabled:=false \
-  safety_injection_enabled:=false
-```
-
-이 혼합 벤치에서는 STM_A가 `/drive/status`, STM_B가 `/brake/status`, 벤치 노드가
-`/vehicle/command`를 각각 발행합니다. 시험 E-stop publisher는 생성되지 않습니다.
+조향 단독 벤치, 데드존·토크 식별, 바퀴 각도 측정과 MCAP 도구는
+[`control_tools`](../control_tools/README.md)에서 실행합니다.
+실차 시나리오 TUI는 [`vehicle_test_scenarios`](../vehicle_test_scenarios/README.md)를 사용합니다.
 
 ## 주요 파라미터
 
@@ -308,16 +259,7 @@ shape입니다. 같은 날 K-City 주행의 GNSS 속도·차체 IMU 곡률로 �
 약 -5480..+5357이고 명령 상한은 그 안의 ±5300으로 설정했습니다.
 관측 끝단만으로 기계적 end-stop 여유는 확인되지 않았습니다.
 
-벤치 시퀀스의 기본값은 다음과 같습니다.
-
-```yaml
-steer_command_publish_period_ms: 20
-steer_target_change_interval_ms: 3000
-steer_sequence_start_delay_sec: 3.0
-steer_sequence_repeat: true
-```
-
-측정 전용 `deadzone_measure_node`는 `DEADZONE_MEASUREMENT.md`의 오프라인 절차에만
+측정 전용 `deadzone_measure_node`는 [`control_tools/DEADZONE_MEASUREMENT.md`](../control_tools/DEADZONE_MEASUREMENT.md)의 오프라인 절차에만
 사용합니다. 각도와 전류는 `steering_actuator_node`를 읽기 전용
 (`actuator_output_enabled:=false`)으로 띄워 `/steering/status`에서 받습니다. 출력이
 살아 있는 actuator 노드와 동시에 실행하지 마십시오.

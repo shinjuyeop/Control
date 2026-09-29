@@ -2,8 +2,34 @@
 
 > 이 디렉터리는 현재 production build 대상이 아닌 과거 구현 보관소입니다.
 > 구형 PID/Gazebo SILS 실험과 모델은 [`software/gazebo`](software/gazebo/README.md)에 보관합니다.
-> 2026-09-02 이전 direct-SPI LCD STM_B는
-> [`firmware/STM_B_DIRECT_LCD`](firmware/STM_B_DIRECT_LCD)에 보관합니다.
+> 작년 계통의 기존 코드와 Gazebo 실험은 유지합니다. 올해 대체 완료된 보관본만 아래 기록에 따라 정리했습니다.
+
+## 2026년 대체 완료 보관본 정리
+
+2026-09-22에 올해 프로젝트에서 대체 완료된 다음 5개 보관본만 작업 트리에서 제거했습니다.
+작년 계통의 Arduino MEGA·EV, throttle·motor·steering 패키지와 기타 기존 보관 코드는 유지합니다.
+Gazebo 실험 및 현행 `longitudinal_mpc`도 이번 정리 대상이 아닙니다.
+
+| 제거한 보관 경로 | 현행 구현 |
+|---|---|
+| `software/kaiev26_hil` | `software/src/vehicle_console/vehicle_console/hil` |
+| `software/legacy_hil_gui` | `vehicle_console` HIL Web 화면 |
+| `software/legacy_vehicle_dashboard` | `vehicle_console` Vehicle Web 화면 |
+| `software/control_gui_common` | Qt 화면 폐기로 소비자 제거; 공용 Console은 `vehicle_console.common` |
+| `firmware/STM_B_DIRECT_LCD` | `firmware/STM_B` Dashboard CAN + `firmware/UNO_R4_DASHBOARD` |
+
+표의 제거 경로는 `archive/` 기준, 현행 경로는 Control 루트 기준입니다.
+정리 전 기준 commit은 `b0532fa7e9d4`입니다. Git 이력은 삭제하지 않았습니다.
+과거 구현을 확인할 때 Control 루트에서 아래처럼 필요한 파일만 읽을 수 있습니다.
+
+```bash
+git show b0532fa7e9d4:archive/software/kaiev26_hil/README.md
+git show b0532fa7e9d4:archive/firmware/STM_B_DIRECT_LCD/README.md
+```
+
+이전 전환 이력은 HIL 통합 `78510e5`, Qt 대체 `16222f7`, CAN dashboard 승격
+`3545a4f`에서도 확인할 수 있습니다.
+아래 내용은 기존 세대의 보관 문서이며 현행 실행 절차는 상위 README를 따릅니다.
 
 ## 목차
 - [시스템 개요](#시스템-개요)

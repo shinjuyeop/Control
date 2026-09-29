@@ -29,4 +29,5 @@ def editor(store):
     result.key('right')
     result.key('enter')  # Select airborne and enter its parameter editor directly.
     result.key('s')
+    result.selected = next(i for i, f in enumerate(result.fields) if f.key == 'steering_kp_a_per_deg')
     return result

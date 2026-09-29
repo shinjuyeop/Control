@@ -2,10 +2,11 @@
 
 from dataclasses import dataclass
 import math
+from .longitudinal import LONGITUDINAL, validate_config
 
 STEERING = 'steering_actuator_node'
 GOVERNOR = 'command_governor'
-GROUPS = ('조향 응답', '출력 제한·보호', '운용 설정', '수신 시간 제한')
+GROUPS = ('조향응답', '조향출력', '구동응답', '구동출력', '수신제한')
 
 
 @dataclass(frozen=True)
@@ -18,58 +19,84 @@ class Field:
     help: str
     step: float = 0.0
     node: str = STEERING
-    live: bool = True
     integer: bool = False
     choices: tuple = ()
 
 
 FIELDS = (
-    Field('p_gain_a_per_deg', 'P 게인', 'A/deg', GROUPS[0],
+    Field('steering_control_mode', '조향 제어 방식', '', GROUPS[0],
+          'actuation_mode', '재시작 필요. KEYA 내부 0020도 torque=2 / position=3으로 별도 설정해야 합니다.',
+          choices=('torque', 'position')),
+    Field('steering_kp_a_per_deg', '조향 P 게인', 'A/deg', GROUPS[0],
           'torque_full_scale_error_deg',
           '높일수록 목표각을 더 강하게 따라갑니다. 최대 전류 명령을 바꿔도 P 게인은 유지됩니다.', 1.6),
-    Field('d_gain_a_per_deg_s', 'D 게인', 'A/(deg/s)', GROUPS[0],
+    Field('steering_kd_a_per_deg_s', '조향 D 게인', 'A/(deg/s)', GROUPS[0],
           'torque_kd', '높일수록 조향 움직임을 더 강하게 억제합니다. 너무 크면 목표각을 따라가는 속도가 느려질 수 있습니다.',
           1500 * math.pi / 180 * 0.0016 * 0.05),
-    Field('settle_error_deg', '목표 도달 오차', 'deg', GROUPS[0],
+    Field('steering_settle_error_deg', '조향 정착 오차', 'deg', GROUPS[0],
           'torque_settle_angle_deg', '각도 오차와 조향속도가 모두 판정 기준 미만이면 목표에 도달한 것으로 보고 전류 명령을 0으로 합니다.', 0.01),
-    Field('settle_rate_deg_s', '목표 도달 속도', 'deg/s', GROUPS[0],
+    Field('steering_settle_rate_deg_s', '조향 정착 각속도', 'deg/s', GROUPS[0],
           'torque_settle_rate_deg_s', '목표각 변화율과 필터 적용 전·후 실제 조향속도가 모두 이 값보다 작아야 합니다.', 0.1),
-    Field('rate_filter_cutoff_hz', '조향속도 필터', 'Hz', GROUPS[0],
+    Field('steering_rate_filter_hz', '조향 각속도 필터', 'Hz', GROUPS[0],
           'torque_rate_filter_hz', '낮출수록 속도 측정 잡음을 더 줄이지만, 실제 움직임을 늦게 반영합니다.', 0.5),
-    Field('peak_current_command_a', '최대 전류 명령', 'A', GROUPS[1],
+    Field('steering_peak_current_limit_a', '조향 최대 전류 한도', 'A', GROUPS[1],
           'torque_peak_limit_raw', '순간적으로 허용할 전류 명령의 상한입니다. 실제 측정 전류나 모터 정격을 설정하는 값은 아닙니다.', 0.1),
-    Field('continuous_current_command_a', '지속 전류 명령', 'A', GROUPS[1],
+    Field('steering_sustained_current_limit_a', '조향 지속 전류 한도', 'A', GROUPS[1],
           'torque_sustained_limit_raw', '고출력 허용 시간을 모두 사용한 뒤 적용할 전류 명령의 상한입니다.', 0.1),
-    Field('peak_budget_ms', '고출력 허용 시간', 'ms', GROUPS[1],
+    Field('steering_peak_duration_ms', '조향 고출력 허용시간', 'ms', GROUPS[1],
           'torque_peak_duration_ms', '지속 전류 한도를 넘긴 시간을 누적합니다. 목표각을 바꿔도 사용한 시간은 초기화되지 않습니다.', 100, integer=True),
-    Field('peak_recovery_hold_ms', '고출력 재사용 대기시간', 'ms', GROUPS[1],
+    Field('steering_peak_recovery_ms', '조향 고출력 회복대기', 'ms', GROUPS[1],
           'torque_peak_recovery_ms', '지속 전류 한도의 50% 이하 출력을 이 시간 동안 유지하면 고출력을 다시 사용할 수 있습니다.', 100, integer=True),
-    Field('angle_limit_margin_deg', '조향 한계 보호 여유각', 'deg', GROUPS[1],
+    Field('steering_angle_margin_deg', '조향 한계각 여유', 'deg', GROUPS[1],
           'torque_soft_limit_margin_deg', '측정된 조향 범위 안쪽으로 목표를 제한하고, 끝 부근의 바깥 방향 출력을 줄입니다.', 0.1),
-    Field('actuation_mode', '조향 제어 방식', '', GROUPS[2],
-          'actuation_mode', '재시작 필요. KEYA 내부 0020도 torque=2 / position=3으로 별도 설정해야 합니다.',
-          live=False, choices=('torque', 'position')),
-    Field('minimum_vehicle_speed_kph', '조향 허용 최소 차속', 'km/h', GROUPS[2],
-          'minimum_steering_speed_kph', '0이면 정지 상태에서도 조향합니다. 최근에 수신한 유효한 차속 피드백은 계속 필요합니다.', 0.1, live=False),
-    Field('steering_command_timeout_ms', '조향 명령 수신 제한', 'ms', GROUPS[3],
-          'steer_command_timeout_ms', '/vehicle/command가 이 시간 이상 오래되면 조향 명령을 만료시킵니다.', 10, live=False, integer=True),
-    Field('can_timeout_ms', 'CAN 수신 제한', 'ms', GROUPS[3],
-          'can_timeout_ms', 'KEYA CAN frame 수신 단절 기준입니다.', 10, live=False, integer=True),
-    Field('position_feedback_timeout_ms', '위치 피드백 수신 제한', 'ms', GROUPS[3],
-          'feedback_timeout_ms', '위치 피드백 수신 제한입니다. torque에서는 torque 피드백 제한과 작은 값이 적용됩니다.', 10, live=False, integer=True),
-    Field('torque_feedback_timeout_ms', '토크 제어 피드백 제한', 'ms', GROUPS[3],
-          'torque_feedback_timeout_ms', 'Torque 위치 피드백·샘플 간격·제어 지연의 제한입니다. 제어 주기의 2배 이상, 200 ms 이하.', 10, live=False, integer=True),
-    Field('mode_timeout_ms', '차량 모드 수신 제한', 'ms', GROUPS[3],
-          'mode_timeout_ms', '/drive/status의 모드 수신 단절 기준입니다.', 50, live=False, integer=True),
-    Field('drive_status_timeout_ms', '차속 피드백 수신 제한', 'ms', GROUPS[3],
-          'drive_status_timeout_ms', '조향 허용 판단에 사용하는 차속의 수신 단절 기준입니다.', 10, live=False, integer=True),
-    Field('governor_input_timeout_ms', '상위 명령 유효시간', 'ms', GROUPS[3],
+    Field('steering_min_vehicle_speed_kph', '조향 허용 최소 차속', 'km/h', GROUPS[1],
+          'minimum_steering_speed_kph', '0이면 정지 상태에서도 조향합니다. 최근에 수신한 유효한 차속 피드백은 계속 필요합니다.', 0.1),
+    Field('governor_command_timeout_ms', '거버너 명령 유효시간', 'ms', GROUPS[4],
           'input_timeout_ms', '/planning/command의 생성 시각을 검사합니다. 너무 오래되거나 미래 시각인 명령을 중계하지 않습니다.',
-          10, node=GOVERNOR, live=False),
+          10, node=GOVERNOR),
+    Field('steering_command_timeout_ms', '조향 명령 수신 제한', 'ms', GROUPS[4],
+          'steer_command_timeout_ms', '/vehicle/command가 이 시간 이상 오래되면 조향 명령을 만료시킵니다.', 10, integer=True),
+    Field('steering_can_timeout_ms', '조향 CAN 수신 제한', 'ms', GROUPS[4],
+          'can_timeout_ms', 'KEYA CAN frame 수신 단절 기준입니다.', 10, integer=True),
+    Field('steering_position_feedback_timeout_ms', '조향 위치 피드백 제한', 'ms', GROUPS[4],
+          'feedback_timeout_ms', '위치 피드백 수신 제한입니다. torque에서는 torque 피드백 제한과 작은 값이 적용됩니다.', 10, integer=True),
+    Field('steering_torque_feedback_timeout_ms', '조향 토크모드 피드백 제한', 'ms', GROUPS[4],
+          'torque_feedback_timeout_ms', '조향 Torque 모드의 위치 피드백·샘플 간격·제어 지연 제한입니다. 구동 STM_A에는 적용되지 않습니다. 제어 주기의 2배 이상, 200 ms 이하.', 10, integer=True),
+    Field('steering_vehicle_mode_timeout_ms', '조향용 차량모드 수신 제한', 'ms', GROUPS[4],
+          'mode_timeout_ms', '조향 허용 판단에 사용하는 /drive/status의 MANUAL/AUTO 차량모드 수신 단절 기준입니다.', 50, integer=True),
+    Field('steering_vehicle_speed_timeout_ms', '조향용 차속 수신 제한', 'ms', GROUPS[4],
+          'drive_status_timeout_ms', '조향 허용 판단에 사용하는 차속의 수신 단절 기준입니다.', 10, integer=True),
+
+)
+FIELDS += (
+    Field('drive_control_mode', '구동 제어 방식', '', GROUPS[2], 'control_mode',
+          'S로 저장하고 선택한 프리셋으로 구동 스택을 재시작합니다. Torque 값은 초기 시험 후보입니다.',
+          node=LONGITUDINAL, choices=('speed', 'torque')),
+    Field('drive_speed_kp_a_per_mps', '구동 속도 P 게인', 'A/(m/s)', GROUPS[2], 'speed_kp_a_per_mps',
+          '구동 Torque 모드 전용입니다. MCAP 기반 초기 시험 후보이며 S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 10, node=LONGITUDINAL),
+    Field('drive_speed_ki_a_per_mps_s', '구동 속도 I 게인', 'A/(m/s*s)', GROUPS[2], 'speed_ki_a_per_mps_s',
+          '구동 Torque 모드 전용입니다. MCAP 기반 초기 시험 후보이며 S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 1, node=LONGITUDINAL),
+    Field('drive_speed_deadband_mps', '구동 속도 데드밴드', 'm/s', GROUPS[2], 'speed_deadband_mps',
+          '구동 Torque 모드 전용입니다. MCAP 기반 초기 시험 후보이며 S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 0.01, node=LONGITUDINAL),
+    Field('drive_coast_release_error_mps', '구동 타력 해제 오차', 'm/s', GROUPS[2], 'speed_hysteresis_mps',
+          '구동 Torque 모드 전용입니다. MCAP 기반 초기 시험 후보이며 S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 0.01, node=LONGITUDINAL),
+    Field('drive_current_limit_a', '구동 전류 한도', 'A', GROUPS[3], 'max_drive_current_a',
+          'Speed/Torque 공통 구동 한도입니다. Torque에서는 PI 상전류 명령 상한, Speed에서는 EZ 내부 속도제어의 전류 한도입니다.', 10, node=LONGITUDINAL),
+    Field('drive_integrator_limit_a', '구동 적분 전류 한도', 'A', GROUPS[3], 'integrator_limit_a',
+          '구동 Torque 모드 전용입니다. MCAP 기반 초기 시험 후보이며 S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 5, node=LONGITUDINAL),
+    Field('drive_current_slew_up_a_s', '구동 전류 상승률', 'A/s', GROUPS[3], 'current_slew_up_a_s',
+          '구동 Torque 모드 전용입니다. MCAP 기반 초기 시험 후보이며 S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 100, node=LONGITUDINAL),
+    Field('drive_current_slew_down_a_s', '구동 전류 하강률', 'A/s', GROUPS[3], 'current_slew_down_a_s',
+          '구동 Torque 모드 전용입니다. MCAP 기반 초기 시험 후보이며 S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 100, node=LONGITUDINAL),
+    Field('drive_reapply_current_band_a', '구동 재인가 전류 구간', 'A', GROUPS[3], 'reapply_current_a',
+          '구동 Torque 모드 전용입니다. MCAP 기반 초기 시험 후보이며 S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 1, node=LONGITUDINAL),
+    Field('drive_reapply_current_slew_a_s', '구동 재인가 전류 상승률', 'A/s', GROUPS[3], 'reapply_slew_a_s',
+          '구동 Torque 모드 전용입니다. MCAP 기반 초기 시험 후보이며 S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 20, node=LONGITUDINAL),
+    Field('drive_motor_speed_limit_rpm', '구동 모터 회전수 한도', 'rpm', GROUPS[3], 'motor_rpm_limit',
+          'Speed/Torque 공통 RPM 한도입니다. Torque에서는 EZ 모터 회전수 상한, Speed에서는 목표 RPM 범위를 제한합니다. 최종 전진/후진 물리 한도는 펌웨어에 별도로 적용됩니다.', 100, node=LONGITUDINAL),
 )
 BY_KEY = {f.key: f for f in FIELDS}
-OWNED = {node: {f.native for f in FIELDS if f.node == node} for node in (STEERING, GOVERNOR)}
-LIVE_NAMES = tuple(f.native for f in FIELDS if f.live)
+OWNED = {node: {f.native for f in FIELDS if f.node == node} for node in (STEERING, GOVERNOR, LONGITUDINAL)}
 # Read these as well so conversions, limits and concurrent edits use actual node values.
 CONTEXT_NAMES = (
     'keya_protection_current_a', 'torque_control_period_ms', 'count_scale',
@@ -99,10 +126,10 @@ def decode_node(node, native):
     values = {f.key: native[f.native] for f in FIELDS if f.node == node}
     if node == STEERING:
         scale = current_per_raw(native)
-        values['p_gain_a_per_deg'] = native['torque_peak_limit_raw'] * scale / native['torque_full_scale_error_deg']
-        values['d_gain_a_per_deg_s'] = native['torque_kd'] * math.pi / 180.0 * scale
-        values['peak_current_command_a'] = native['torque_peak_limit_raw'] * scale
-        values['continuous_current_command_a'] = native['torque_sustained_limit_raw'] * scale
+        values['steering_kp_a_per_deg'] = native['torque_peak_limit_raw'] * scale / native['torque_full_scale_error_deg']
+        values['steering_kd_a_per_deg_s'] = native['torque_kd'] * math.pi / 180.0 * scale
+        values['steering_peak_current_limit_a'] = native['torque_peak_limit_raw'] * scale
+        values['steering_sustained_current_limit_a'] = native['torque_sustained_limit_raw'] * scale
     return values
 
 
@@ -112,7 +139,7 @@ def decode(native):
 
 def encode(values, context):
     """Convert amperes to existing ROS parameters; preserve P when changing peak."""
-    result = {STEERING: {}, GOVERNOR: {}}
+    result = {STEERING: {}, GOVERNOR: {}, LONGITUDINAL: {}}
     for f in FIELDS:
         value = values[f.key]
         if f.choices:
@@ -129,18 +156,19 @@ def encode(values, context):
         result[f.node][f.native] = value
     s = result[STEERING]
     scale = current_per_raw(context)
-    if values['p_gain_a_per_deg'] <= 0:
+    if values['steering_kp_a_per_deg'] <= 0:
         raise ValueError('P 게인은 0보다 커야 합니다.')
-    for key, native in (('peak_current_command_a', 'torque_peak_limit_raw'),
-                        ('continuous_current_command_a', 'torque_sustained_limit_raw')):
+    for key, native in (('steering_peak_current_limit_a', 'torque_peak_limit_raw'),
+                        ('steering_sustained_current_limit_a', 'torque_sustained_limit_raw')):
         amps = values[key]
         if not 0 < amps <= scale * 10000:
             raise ValueError(f'{BY_KEY[key].label}: 0 초과, {scale * 10000:g} A 이하입니다.')
         s[native] = round(amps / scale)
     # Integer wire quantization is reflected in the converted full-scale error too.
-    s['torque_full_scale_error_deg'] = s['torque_peak_limit_raw'] * scale / values['p_gain_a_per_deg']
-    s['torque_kd'] = values['d_gain_a_per_deg_s'] / scale * 180.0 / math.pi
+    s['torque_full_scale_error_deg'] = s['torque_peak_limit_raw'] * scale / values['steering_kp_a_per_deg']
+    s['torque_kd'] = values['steering_kd_a_per_deg_s'] / scale * 180.0 / math.pi
     validate_native({**context, **s}, result[GOVERNOR])
+    validate_config(result[LONGITUDINAL])
     return result
 
 
@@ -184,22 +212,32 @@ def validate_native(s, governor):
 
 def range_hint(field, values, context):
     """Controller acceptance bounds, not experimentally verified tuning guidance."""
-    peak = values['peak_current_command_a']
+    if field.node == LONGITUDINAL:
+        return {
+            'drive_control_mode': 'speed / torque; 저장 후 재시작',
+            'drive_speed_kp_a_per_mps': '0 초과 ~ 1000', 'drive_speed_ki_a_per_mps_s': '0~200',
+            'drive_current_limit_a': '0 초과 ~ 480', 'drive_integrator_limit_a': '0~최대 구동 전류',
+            'drive_current_slew_up_a_s': '0 초과 ~ 9600', 'drive_current_slew_down_a_s': '0 초과 ~ 9600',
+            'drive_speed_deadband_mps': '0~0.2', 'drive_coast_release_error_mps': 'deadband 초과 ~ 0.5',
+            'drive_reapply_current_band_a': '0~최대 구동 전류', 'drive_reapply_current_slew_a_s': '0 초과 ~ 상승률',
+            'drive_motor_speed_limit_rpm': '100~4500',
+        }[field.key]
+    peak = values['steering_peak_current_limit_a']
     period = context['torque_control_period_ms']
     hints = {
-        'p_gain_a_per_deg': f'0 초과, {peak / values["settle_error_deg"]:g} 미만' if values['settle_error_deg'] > 0 else '0 초과',
-        'd_gain_a_per_deg_s': '0 이상 · 코드상 고정 상한 없음',
-        'peak_current_command_a': f'지속 명령 이상, {current_per_raw(context) * 10000:g} 이하',
-        'continuous_current_command_a': f'{current_per_raw(context):g} 이상, 최대 명령 이하',
-        'peak_budget_ms': f'{period}~5000',
-        'peak_recovery_hold_ms': '고출력 허용 시간 이상',
-        'rate_filter_cutoff_hz': f'0 초과, {500 / period:g} 이하',
-        'settle_error_deg': f'0 초과, {peak / values["p_gain_a_per_deg"]:g} 미만' if values['p_gain_a_per_deg'] > 0 else '0 초과',
-        'settle_rate_deg_s': '0 초과',
-        'angle_limit_margin_deg': '0 초과, 측정된 좌우 한계각 안쪽',
-        'torque_feedback_timeout_ms': f'{period * 2}~200',
-        'minimum_vehicle_speed_kph': '0 이상',
-        'actuation_mode': 'Torque / Position',
+        'steering_kp_a_per_deg': f'0 초과, {peak / values["steering_settle_error_deg"]:g} 미만' if values['steering_settle_error_deg'] > 0 else '0 초과',
+        'steering_kd_a_per_deg_s': '0 이상 · 코드상 고정 상한 없음',
+        'steering_peak_current_limit_a': f'지속 명령 이상, {current_per_raw(context) * 10000:g} 이하',
+        'steering_sustained_current_limit_a': f'{current_per_raw(context):g} 이상, 최대 명령 이하',
+        'steering_peak_duration_ms': f'{period}~5000',
+        'steering_peak_recovery_ms': '고출력 허용 시간 이상',
+        'steering_rate_filter_hz': f'0 초과, {500 / period:g} 이하',
+        'steering_settle_error_deg': f'0 초과, {peak / values["steering_kp_a_per_deg"]:g} 미만' if values['steering_kp_a_per_deg'] > 0 else '0 초과',
+        'steering_settle_rate_deg_s': '0 초과',
+        'steering_angle_margin_deg': '0 초과, 측정된 좌우 한계각 안쪽',
+        'steering_torque_feedback_timeout_ms': f'{period * 2}~200',
+        'steering_min_vehicle_speed_kph': '0 이상',
+        'steering_control_mode': 'Torque / Position',
     }
     return hints.get(field.key, '0 초과')
 

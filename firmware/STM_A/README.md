@@ -119,7 +119,7 @@ Queue, semaphore, mutex, software timer는 생성하지 않습니다. ISR→Task
 |---|---|---|---|---:|
 | `Control` | EZkontrol command / HALTED | absolute 50 ms; handshake 대기 10 ms | `Realtime` (48) | 512 |
 | `Inputs` | 페달 ADC 8회 평균, mode·gear GPIO | absolute 50 ms | `High` (40) | 256 |
-| `uROS` | Agent 상태, command·torque command 수신, status 발행 | 상태 머신; running 후 5 ms delay, status 목표 20 ms | `Normal` (24) | 1536 |
+| `uROS` | Agent 상태, command 수신, status 발행 | 상태 머신; running 후 5 ms delay, status 목표 20 ms | `Normal` (24) | 1536 |
 | `BRx` | safety frame parse, timeout·stop 계산 | 작업 후 1 ms delay | `High1` (41) | 256 |
 | `BTx` | vehicle status / drive detail 송신 | absolute 20 ms / detail 100 ms | `Low` (8) | 256 |
 | `PerfMon` | runtime snapshot 집계 | 약 1 Hz | `Low` (8) | 256 |
@@ -158,7 +158,6 @@ LPUART1(`PA2`/`PA3`) custom transport가 별도의 micro-ROS Agent에 연결됩�
 | Topic | Type | Callback | 설명 |
 |---|---|---|---|
 | `/vehicle/command` | `kaiev26_msgs/msg/ActuatorCommand` | `cb_cmd` | `speed_target_mps`, `brake_engage` 사용 |
-| `/drive/torque_command` | `kaiev26_msgs/msg/DriveTorqueCommand` | `cb_torque_cmd` | AUTO torque control 요청. `torque_mode`, `phase_current_target_a`(±480 A clamp), `motor_rpm_limit`(0..4500) |
 
 ### Publishers
 
@@ -171,20 +170,15 @@ LPUART1(`PA2`/`PA3`) custom transport가 별도의 micro-ROS Agent에 연결됩�
 ### 8.1 EZkontrol CAN (`PA11`/`PA12`)
 
 STM_A는 handshake ACK가 CAN TX FIFO에 들어가기 전에는 traction command를 보내지
-않습니다. 완료 후 `Control` Task가 AUTO speed-control 또는 MANUAL torque-control
-command를 50 ms nominal 주기로 보냅니다. AUTO에서 마지막 수신 후 200 ms 안의
-`/drive/torque_command(torque_mode=true)`가 있으면 그 상전류 목표와 RPM 상한으로
-torque-control command를 보내고, 없으면 speed-control로 돌아갑니다. torque 명령의
-음의 전류는 `CURRENT_SPEED`가 0.3 m/s 미만이면 0으로 잘라 후진 구동을 막습니다.
+않습니다. 완료 후 `Control` Task가 AUTO의 선택된 Speed/Torque 또는 MANUAL torque-control
+command를 50 ms nominal 주기로 보냅니다.
 
 - command: `0x0C01EFD0`
 - status Part I: `0x1801D0EF`
 - status Part II: `0x1802D0EF`
 - 전진 motor RPM 한계: `4500`
 - 후진 motor RPM 한계: `-1500`
-- AUTO phase-current 한계: `480 A` (speed-control의 한도이자 torque-control 명령의 clamp)
-- AUTO torque command timeout: `200 ms` (`DRIVE_TORQUE_COMMAND_TIMEOUT_MS`)
-- AUTO torque 회생 허용 최저 차속: `0.3 m/s` (`TORQUE_REGEN_MIN_SPEED_MPS`)
+- AUTO Speed/Torque current/RPM envelope: active `LongConfig` (driving 480 A/4500 rpm, airborne 20 A/600 rpm)
 - MANUAL torque-current 한계: `480 A`
 
 Part I의 motor RPM 원본은 `/drive/status.motor_rpm`에 그대로 발행합니다. 차량 속도는
@@ -242,7 +236,6 @@ sequenceDiagram
     Motor->>A: Part I 0x55 handshake request
     A->>Motor: 0xAA handshake ACK
     Host->>A: /vehicle/command
-    Host-->>A: /drive/torque_command (AUTO torque, 선택)
     B->>A: Safety status UART (20 ms)
     A->>A: mode + command freshness + safety 판단
     A->>Motor: CAN speed/torque 또는 HALTED (50 ms)
@@ -252,15 +245,11 @@ sequenceDiagram
     A->>Host: /drive/status (목표 20 ms)
 ```
 
-AUTO 속도는 `speed_target_mps`를 타이어 지름 `0.47 m`, 감속비 `4.60`으로
-motor RPM에 변환합니다. MANUAL에서는 pedal percentage를 torque current로
-변환하고 물리 gear로 부호를 정합니다.
-
-AUTO torque control은 Host `longitudinal_ctrl`의 `/drive/torque_command`를 그대로
-전달하는 경로입니다. STM_A는 전류·RPM 상한 clamp, 200 ms freshness, 정지 근처 회생
-절단만 수행하고 속도 루프를 계산하지 않습니다. `/drive/status`의
-`commanded_phase_current_a`·`commanded_motor_rpm`은 실제로 나간 값이고, EZkontrol
-Part II의 `controller_control_mode`가 실제 적용된 모드입니다.
+AUTO Speed는 `speed_target_mps`를 타이어 지름 `0.47 m`, 감속비 `4.60`으로 motor RPM에
+변환한 뒤 active preset RPM envelope를 적용하고 active current limit으로 EZ speed-control을 명령합니다.
+AUTO Torque는 STM_A 20 Hz Speed PI의 phase-current 출력을 active current limit으로 제한하며
+EZ RPM ceiling도 active preset을 사용합니다. 최종 전진/후진 물리 RPM clamp는 별도로 유지합니다.
+MANUAL은 기존 pedal percentage→torque current와 물리 gear 부호 경로를 유지합니다.
 
 ### 8.5 안전 동작
 
@@ -271,6 +260,7 @@ command를 보냅니다.
 - STM_B safety frame invalid 또는 100 ms timeout
 - AUTO Host `brake_engage`
 - AUTO Host command 미수신 또는 500 ms timeout
+- AUTO Torque에서 Part I/II 200 ms freshness 상실
 
 상세 논리와 복구 조건은
 [`../../docs/SAFETY.md`](../../docs/SAFETY.md)를 기준으로 합니다.
@@ -293,7 +283,7 @@ toolchain과 micro-ROS Agent 빌드는 [`../README.md`](../README.md)를 참고�
 
 `STM32_Programmer_CLI`로 probe SN을 지정해 flash합니다. 절차 전체(빌드,
 SN 확인, flash, 고정 이름·역할 확인)는
-[`../../docs/VEHICLE_RUNBOOK.md`](../../docs/VEHICLE_RUNBOOK.md#5-보드-교체-시)를
+[보드 교체 절차](../README.md#보드-교체-절차)를
 따르고, 여러 보드가 꽂힌 상태라면 먼저
 [`../../docs/HIL_RUNBOOK.md`](../../docs/HIL_RUNBOOK.md#플래시-전-swd-target-확인)의
 SWD target 확인을 거칩니다.
@@ -325,8 +315,8 @@ ros2 topic echo /drive/status
 
 ## 12. 알려진 제한사항
 
-- EZkontrol Part I/II 200 ms timeout은 진단 valid flag만 내리고 traction을
-  HALTED로 만들지 않습니다.
+- EZkontrol Part I/II 200 ms timeout은 Speed/MANUAL에서는 기존처럼 진단 valid flag에 반영됩니다.
+  AUTO Torque에서는 PI history reset·0 A/HALTED로 inhibit하고 feedback 복구 확인 뒤 새 Host command를 요구합니다.
 - CAN TX 실패를 latch하는 fault 상태 머신은 없습니다. `tractive_commanded`는 매
   주기 덮어써지므로 순간적인 TX 실패는 흔적 없이 사라집니다.
 - STM_A 자신의 FDCAN controller 상태를 알 수 없습니다. `part1_valid=false`는
@@ -393,3 +383,23 @@ ros2 topic echo /stm_a/runtime_stats --once --qos-reliability best_effort
 RuntimeStats 적용 firmware의 LPUART1과 Agent는 모두 **460800 baud**를 사용합니다.
 이전 115200 firmware를 사용할 때만 launch에 `agent_baud:=115200`을 지정하십시오.
 보드 간 USART1과 STM_TEST/Arduino serial은 115200으로 유지합니다.
+
+
+## AUTO longitudinal mode
+
+Driving Speed의 기존 CAN baseline 및 MANUAL 동작은 보존된다. `Core/Src/longitudinal_controller.c`는
+기존 20 Hz Control task에서 호출하는 positive-current PI다. 새 task는 없다.
+부팅 기본은 speed/DEFAULT, driving gain은 MCAP first-test candidate다.
+PC→RAM calibration과 5 Hz readback은 [wire 계약](../../docs/INTERFACES.md#longitudinal-calibration-v1),
+reset/feedback/전류 정책과 시험 절차는 [실측 보고서](../../docs/reports/2026-09-21_longitudinal_torque_pi.md)를 따른다.
+
+Host 알고리즘/상태 전이 테스트 (HAL/ROS/보드 불필요):
+
+```bash
+gcc -std=c11 -Wall -Wextra -Werror -ICore/Inc tests/longitudinal_controller_test.c Core/Src/longitudinal_controller.c -lm -o /tmp/kai_longitudinal_test
+/tmp/kai_longitudinal_test
+```
+
+Torque는 forward만 지원한다. feedback <200 ms가 아니면 HALTED, 복구 뒤 새 명령이 필요하다.
+Speed reverse에는 signed preset RPM envelope와 기존 reverse 1500 rpm physical clamp가 함께 적용된다.
+Airborne 20 A/600 rpm은 두 AUTO mode의 공통 envelope이고 MANUAL pedal은 이 envelope를 사용하지 않는다.

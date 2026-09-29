@@ -5,6 +5,8 @@ import time
 from collections import defaultdict, deque
 
 from diagnostic_msgs.msg import DiagnosticArray
+from std_msgs.msg import Float32MultiArray
+from control_tuning.longitudinal import STATUS_TOPIC, decode_status
 from kaiev26_msgs.msg import (ActuatorCommand, BrakeActuatorStatus, DriveActuatorStatus, RuntimeStats, SteeringActuatorStatus)
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
@@ -18,6 +20,7 @@ RATE_WINDOW_SECONDS = 5.0
 VEHICLE_TOPICS = (
     (ActuatorCommand, "/vehicle/command"),
     (DriveActuatorStatus, "/drive/status"),
+    (Float32MultiArray, STATUS_TOPIC),
     (SteeringActuatorStatus, "/steering/status"),
     (BrakeActuatorStatus, "/brake/status"),
     *((RuntimeStats, topic) for topic in BOARDS),
@@ -50,6 +53,7 @@ class ObserverNode(Node):
     def __init__(self, name, *, stale_seconds=None, runtime_health=None, **kwargs):
         super().__init__(name, **kwargs)
         self.samples = {}
+        self.diagnostics = {}
         self.runtime_health = runtime_health if runtime_health is not None else RuntimeHealth()
         self.received_times = defaultdict(deque)
         self.received_count = defaultdict(int)
@@ -65,8 +69,17 @@ class ObserverNode(Node):
         )
 
     def receive(self, topic, data):
+        if topic == STATUS_TOPIC:
+            try:
+                data = decode_status(data['data'])
+            except (KeyError, ValueError):
+                return
         now = time.monotonic()
         self.samples[topic] = (now, data)
+        if topic == "/diagnostics":
+            for status in data["status"]:
+                # Identity and freshness belong to each status, never to its publisher's array.
+                self.diagnostics[(status["hardware_id"], status["name"])] = (now, status)
         if topic in BOARDS:
             self.runtime_health.receive(topic, data, now)
         arrivals = self.received_times[topic]
@@ -85,6 +98,12 @@ class ObserverNode(Node):
             period = span / (len(arrivals) - 1) if span > 0 else None
             stale_after = self.stale_seconds.get(name, RUNTIME_STALE_SECONDS if name in BOARDS else STALE_SECONDS)
             fresh = now - received < stale_after
+            if name == "/diagnostics":
+                data = {"status": [
+                    {**status, "age_ms": round((now - stamp) * 1000),
+                     "fresh": now - stamp < stale_after}
+                    for stamp, status in self.diagnostics.values()
+                ]}
             topics[name] = dict(
                 data=data,
                 age_ms=round((now - received) * 1000),

@@ -23,9 +23,16 @@ def create_web_app(lifespan, *, allowed_hosts=()):
     return app
 
 
+def same_origin(headers):
+    try:
+        origin = urlsplit(headers.get("origin", ""))
+    except ValueError:
+        return False
+    return origin.scheme in ("http", "https") and origin.netloc == headers.get("host")
+
+
 async def accept_websocket(ws):
-    origin = urlsplit(ws.headers.get("origin", ""))
-    if origin.scheme not in ("http", "https") or origin.netloc != ws.headers.get("host"):
+    if not same_origin(ws.headers):
         await ws.close(code=1008)
         return False
     await ws.accept()

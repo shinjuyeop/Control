@@ -6,21 +6,22 @@ KAI Vehicle Console을 하나의 ROS package로 설치·실행한다. 공용 fro
 ```text
 vehicle_console/
 ├── vehicle_console/common/   Web · ROS reception · runtime interpretation
-├── vehicle_console/vehicle.py Vehicle read-only backend
+├── vehicle_console/vehicle.py Vehicle monitoring + steering fault acknowledgment
 ├── vehicle_console/hil/      장비 · 명령 · scenario · fault · virtual HMI · vcan
 ├── launch/                  vehicle.launch.py / hil.launch.py
 └── web/                     단일 React/Vite frontend
 ```
 
 ```bash
-ros2 launch vehicle_console vehicle.launch.py  # VEHICLE · READ ONLY / 8766
+ros2 launch vehicle_console vehicle.launch.py  # VEHICLE · MONITOR + FAULT ACK / 8766
 ros2 launch vehicle_console hil.launch.py      # HIL / 8767
 ```
 
-The profile is fixed by the launched server. Vehicle exposes only canonical topic
-subscriptions and an outbound WebSocket stream; inbound application messages are
-closed with code 1008. It creates no vehicle/HIL command publisher, service client,
-parameter-write service, serial connection or scenario runner.
+The profile is fixed by the launched server. Vehicle subscribes to canonical topics
+and streams telemetry over an outbound WebSocket; inbound WebSocket application
+messages are closed with code 1008. Its only ROS service client acknowledges the
+Host steering HARD latch through an explicit same-origin POST. It creates no
+vehicle/HIL command publisher, parameter-write service, serial connection or scenario runner.
 
 ROS's standard parameter-events publisher is the only implicit rclpy publisher;
 remote parameter services and rosout are disabled. The Web server exposes health,
@@ -76,7 +77,7 @@ HIL의 Scenarios는 벤치 시험 기능이며 실차 입력 응답·경로 추�
 
 | Profile | Pages / capabilities |
 |---|---|
-| VEHICLE · READ ONLY | Overview, Drive, Steering, Safety / Brake, ECU Runtime, Diagnostics |
+| VEHICLE · MONITOR + FAULT ACK | Overview, Drive, Steering, Safety / Brake, ECU Runtime, Diagnostics |
 | HIL | Bench, 공용 Drive/Steering/Safety/Runtime/Diagnostics, Fault Injection, Scenarios, Virtual LCD/Touch, control ownership/ARM/heartbeat |
 
 Profile은 선택한 서버 진입점에 고정되며 브라우저 전환 기능이 없다.
@@ -128,12 +129,37 @@ Wall time은 관측 시간이며 WCET가 아니다. Stack free는 minimum-ever H
 Deadline 누적 이력과 최근 증가, timing unavailable, counter discontinuity 해석은
 기존 구현을 공유한다. Firmware/message wire 계약은 바꾸지 않았다.
 
+
+## Steering HARD fault 확인·해제
+
+Steering의 Host safety policy는 원본 fault, 활성 bit별 이름/등급, recovery attempts와
+lifetime total, 성공 시각, reconnect, command/CAN/position/fault age를 표시한다.
+RECOVERABLE attempts는 통계이며 횟수나 지속시간으로 영구 FAULT가 되지 않는다.
+
+**CLEAR HARD FAULT LATCH**는 실제 KEYA 고장이 사라진 뒤 Host latch만 acknowledge한다.
+`hard_fault_clearable=true`인 fresh 진단에서 버튼이 활성화되며, 실제 서비스가
+호출 시점의 조건을 다시 검사한다. MANUAL, 유효 |속도|≤0.05 m/s, fresh drive/brake/CAN/
+position/fault, E-stop·command brake inactive, active HARD=0, reconnect·movement·probe
+미진행, stop TX 완료가 필요하다. 성공해도 Enable하지 않고 목표·이력을 지운 뒤 WAIT_CMD로
+이동한다. 이후 AUTO와 clear 이후에 생성된 fresh command가 필요하다.
+
+`POST /api/steering/clear-fault-latch`는 고정된 `/steering/clear_fault_latch`
+(`std_srvs/srv/Trigger`)에만 연결된다. 결과는 Console에 그대로 표시하며 성공 응답만으로
+관측 상태를 바꾸지 않는다. 동시 요청은 409, 서비스 미준비는 503, 3초 응답 timeout은
+504/result unknown이며 자동 재시도하지 않는다. WebSocket은 관측 전용이고 주행 명령,
+임의 ROS service, parameter 변경은 제공하지 않는다. 기본 localhost/명시적 Host allowlist와
+same-origin 검사를 유지하며 이 경계 안의 운영자가 해제 요청을 수행한다.
+
+`/diagnostics`는 공용 ObserverNode에서 `(hardware_id, name)`별로 병합한다. 각 항목의
+freshness가 독립적이므로 drive/brake array가 steering/safety를 삭제하거나 오래된 상태를
+fresh로 만들지 않는다. Vehicle 3초, HIL 기본 1초 stale 기준은 유지한다.
+
 ## 원격 접속
 
 기본 bind는 `127.0.0.1`이다. `bind`, `port`, `allowed_hosts`는 startup/launch 인자다.
 `allowed_hosts`는 쉼표로 나눈 **명시적 host/IP**이며 wildcard는 허용하지 않는다.
 Host 검사는 HTTP와 WebSocket 모두에 적용하고, WebSocket은 동일한 Host와 Origin의
-HTTP/HTTPS 요청만 받는다. Vehicle read-only도 이 검사를 통과해야 한다.
+HTTP/HTTPS 요청만 받는다. HARD latch clear POST도 동일한 Host/Origin 검사를 통과해야 한다.
 
 SSH 터널:
 
@@ -189,18 +215,16 @@ npm run build
 Browser tests use the existing Playwright/Chrome surface and skip if those tools
 are absent. Backend tests use actual isolated ROS pub/sub, with no hardware.
 Full results and remaining physical limits are in [CONSOLE_VALIDATION.md](CONSOLE_VALIDATION.md).
-Qt source/tests/launch/docs are preserved in `archive/software/legacy_hil_gui` and
-`legacy_vehicle_dashboard`, with the unused helper in `archive/software/control_gui_common`.
-The subtree is excluded by `COLCON_IGNORE`. See [parity matrix](CONSOLE_PARITY.md).
+구형 Qt 화면 2개와 공통 helper의 보관본은 대체 완료 후 정리했습니다.
+대체 범위는 [parity matrix](CONSOLE_PARITY.md), Git 복구 기준은
+[archive 정리 기록](../../../archive/README.md#2026년-대체-완료-보관본-정리)에 있습니다.
 Tkinter and Matplotlib remain active dependencies of the vcan SIL GUI.
 
 HIL operational details: [HIL_WEB.md](HIL_WEB.md); headless/serial/SIL: [HIL_BACKEND.md](HIL_BACKEND.md).
 
 ## 이전 패키지 이관
 
-`kaiev26_hil` 전체의 source/tests/config/launch/docs는
-`archive/software/kaiev26_hil`에 보관한다. 그 archive는 `COLCON_IGNORE`로 제외되며,
-active backend는 `vehicle_console.hil`이다. 노드 이름과 ROS topic/service/parameter는
+`kaiev26_hil`은 `vehicle_console.hil`로 통합되었으며 독립 패키지 보관본은 정리했다. 노드 이름과 ROS topic/service/parameter는
 유지하므로 firmware 및 다른 제어 노드의 계약은 바뀌지 않는다.
 
 | 이전 실행 | 현재 실행 |
@@ -215,8 +239,10 @@ HIL 결과 기본값 `~/.local/state/kaiev26_hil/web_results`는 이전 결과�
 위해 유지했다. 구버전 프로세스 종료를 확인한 뒤 옛 source 경로의 호환 symlink와
 `build/kaiev26_hil`, `install/kaiev26_hil`을 제거했다. Archive와 기존 시험 결과는 보존한다.
 
-Active launch는 세 개다: HIL의 Web/headless를 제공하는 `hil.launch.py`, 실차 read-only
+Active launch는 세 개다: HIL의 Web/headless를 제공하는 `hil.launch.py`, 실차 관측·HARD latch acknowledgment
 `vehicle.launch.py`, 독립 CAN simulator인 `vcan_sim.launch.py`.
 HIL 중간 launch 두 개의 기능은 `hil.launch.py`로 통합했다. `web:=false`에서도
 `start_bench:=true`를 지정해야 backend를 시작한다. Headless generator 기본값은 기존과
 같이 enabled=true/watchdog=0이며 Web은 항상 DISARMED/watchdog=3 s로 시작한다.
+
+구동 calibration은 `drive_` 설정키로 구분해 표시합니다. 기존 STM_A v1 readback의 native `config`와 새 `display_values` 매핑은 [파라미터 호환표](../../../docs/CONTROL_TUNING_PARAMETERS.md)를 따릅니다.

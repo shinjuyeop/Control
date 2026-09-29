@@ -9,6 +9,7 @@ import tempfile
 
 import yaml
 
+from .longitudinal import LONGITUDINAL, DEFAULT
 from .schema import STEERING, GOVERNOR, FIELDS, OWNED, decode, encode, equivalent
 
 
@@ -98,6 +99,7 @@ class SettingsStore:
             calibration or lateral / 'steering_motor_calibration.yaml',
         ))
         self.base = {
+            LONGITUDINAL: dict(DEFAULT),
             STEERING: read_document(self.base_paths[0])[STEERING]['ros__parameters'],
             GOVERNOR: read_document(self.base_paths[1])[GOVERNOR]['ros__parameters'],
         }

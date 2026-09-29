@@ -1,4 +1,4 @@
-# XIAO RP2350 LV battery gauge bring-up
+# XIAO RP2350 LV battery gauge
 
 이 디렉터리는 XIAO RP2350이 INA228 측정, 전력/Ah/Wh 적산, SOC와 상태 저장을
 독립적으로 수행하는 LV 적산계 펌웨어와 정비 TUI입니다. XIAO는 ROS나 PC가 없어도
@@ -200,8 +200,8 @@ RP2350 LPF 결과이고 raw 레지스터 값은 미필터입니다. 이 payload 
 
 ## 업로드 절차
 
-이번 단계에서는 업로드하지 않습니다. 실제 업로드할 때의 첫 업로드 절차는 다음과
-같습니다.
+최초 업로드 또는 bootloader를 통한 복구 절차입니다. USB 정비 시 외부
+`5V/VBUS` 전원을 분리합니다.
 
 1. USB를 분리하고 XIAO의 `BOOT` 버튼을 누른 상태로 USB를 연결해 RP2350 ROM
    bootloader(UF2 드라이브)로 진입합니다.
@@ -216,11 +216,11 @@ arduino-cli upload \
   --input-file firmware/XIAO_RP2350_LV_GAUGE/build/XIAO_RP2350_LV_GAUGE.ino.uf2
 ```
 
-4. 보드가 재부팅되어 `/dev/serial/by-id/usb-Seeed_XIAO_RP2350_A89369E2B2DEE7A4-if00`
-   로 다시 나타나면 USB serial을 엽니다.
+4. 재부팅 후 `/dev/serial/by-id/usb-Seeed_XIAO_RP2350_*-if00` 장치가 나타나면
+   USB 정비 TUI를 엽니다. serial suffix는 보드마다 다릅니다.
 
 ```bash
-python3 firmware/XIAO_RP2350_LV_GAUGE/tools/lv_battery_gauge_tui.py
+python3 firmware/XIAO_RP2350_LV_GAUGE/tools/lv_battery_gauge_tui.py --usb
 ```
 
 TUI에서 출력되는 상태는 다음 의미를 갖습니다.
@@ -230,7 +230,7 @@ INA address=0x40 manufacturer=0x5449 device=0x2281
 bus_voltage=... V; shunt_voltage=... mV; current=+... A; power=+... W
 ```
 
-이번 단계에서는 업로드하지 않았습니다. 현재 보드는 USB만 공급 중이고 실제
-배터리·부하는 연결되지 않았으므로, 이후 ID 출력이 확인되어도 전압·전류 정확도,
-정전 복구, 차량 연결 상태가 입증되는 것은 아닙니다. STM32/계기판 연동은 현재
-STM_B의 실제 포트와 소비자 계약을 별도 검토한 뒤 다음 지시에서 구현합니다.
+STM_B UART4 수신, `/lv_battery/state` 및 정비 payload 중계, UNO의 LV 전압·SOC
+표시는 코드에 구현되어 있습니다. 펌웨어 빌드나 센서 ID 확인만으로 실제 전압·전류
+정확도와 정전 복구가 검증되는 것은 아닙니다. 장착 구성과 확인 항목은
+[LV 배터리 구성 문서](../../docs/rp2350/lv_battery_gauge.md)를 참고합니다.

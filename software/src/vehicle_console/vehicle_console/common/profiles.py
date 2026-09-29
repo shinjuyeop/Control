@@ -12,9 +12,8 @@ class Profile:
         return dict(profile=self.name, capabilities=self.capabilities)
 
 
-VEHICLE = Profile("vehicle", (
-    "observe_vehicle", "observe_runtime", "observe_diagnostics",
-))
-HIL = Profile("hil", VEHICLE.capabilities + (
+OBSERVATION = ("observe_vehicle", "observe_runtime", "observe_diagnostics")
+VEHICLE = Profile("vehicle", OBSERVATION + ("clear_steering_fault_latch",))
+HIL = Profile("hil", OBSERVATION + (
     "control_bench", "fault_injection", "scenarios", "virtual_display", "virtual_touch",
 ))

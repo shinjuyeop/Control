@@ -14,7 +14,7 @@ vehicle_test_scenario_runner:
     auto_start_delay_sec: 10.0  # AUTO 감지 후 speed_target=0, brake=false countdown
     command_topic: /planning/command
     drive_status_topic: /drive/status
-    scenario_status_topic: /sysid/scinario
+    scenario_status_topic: /sysid/scenario
     scenario_label: A13_steering_square_center_pm1_8s
     publish_rate_hz: 20.0
 

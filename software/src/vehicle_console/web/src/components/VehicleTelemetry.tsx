@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { steeringState } from "../domain/presentation";
 import type { Data, Snapshot } from "../domain/types";
 import { LinearMeter } from "./SignalInstruments";
 import { sourceTopics } from "../domain/profile";
@@ -132,7 +134,7 @@ export function VehicleSummary({
         />
         <Metric
           label="조향 상태"
-          value={enumText(states, steer.state)}
+          value={steeringState(steer).label}
           note={enumText(reasons, steer.disable_reason)}
         />
         <Metric
@@ -194,7 +196,7 @@ export function ActiveConditions({
     });
   if (typeof s.state === "number" && s.state !== 3)
     conditions.push({
-      text: enumText(states, s.state),
+      text: steeringState(s).label,
       source: "steering.state",
       tone: s.state === 8 ? "danger" : "muted",
     });
@@ -204,10 +206,10 @@ export function ActiveConditions({
       source: "steering.disable_reason",
       tone: "muted",
     });
-  if (typeof s.fault_bits === "number" && s.fault_bits & ~1)
+  if (s.state === 8)
     conditions.push({
-      text: `FAULT ${bitHex(s.fault_bits & ~1)}`,
-      source: "steering.fault_bits (bit0 제외)",
+      text: `HARD FAULT ${bitHex(s.fault_bits)}`,
+      source: "steering.state",
       tone: "danger",
     });
   return (
@@ -407,6 +409,9 @@ export function DriveTelemetry({
   online: boolean;
 }) {
   const d = received(state, online, "/drive/status");
+  const lon = received(state, online, "/drive/longitudinal_status");
+  const config = (lon.display_values ?? {}) as Record<string, unknown>;
+  const legacyConfig = (lon.config ?? {}) as Record<string, unknown>;
   const source = (topic: string) => (
     <Source name={topic} sample={state.topics[topic]} online={online} />
   );
@@ -418,6 +423,18 @@ export function DriveTelemetry({
       title="구동 보드 관측"
       eyebrow="STM_A / DRIVE STATUS"
     >
+      <div className="telemetry-group">
+        <span className="eyebrow">AUTO LONGITUDINAL · FIRST-TEST CANDIDATE</span>
+        <Fact label="구동 제어 방식" value={String(config.drive_control_mode ?? legacyConfig.control_mode ?? "—").toUpperCase()} />
+        <Fact label="Calibration 출처" value={String(lon.source ?? "—")} />
+        <Fact label="구동 속도 P / I 게인" value={`${fmt(config.drive_speed_kp_a_per_mps ?? legacyConfig.speed_kp_a_per_mps)} / ${fmt(config.drive_speed_ki_a_per_mps_s ?? legacyConfig.speed_ki_a_per_mps_s)}`} />
+        <Fact label="PI P / I" value={`${fmt(lon.p_current_a)} / ${fmt(lon.i_current_a)} A`} />
+        <Fact label="PI 최종 전류" value={fmt(lon.current_command_a)} unit="A" />
+        <Fact label="속도 오차" value={fmt(lon.speed_error_mps, 2)} unit="m/s" />
+        <Fact label="포화 / Anti-windup / Coast" value={`${fmt(lon.saturated, 0)} / ${fmt(lon.anti_windup, 0)} / ${fmt(lon.coasting, 0)}`} />
+        <Fact label="종방향 허용 상태" value={enumText(["허용", "비활성", "피드백 단절", "새 명령 대기", "역방향 미지원", "정지"], lon.inhibit)} />
+        {source("/drive/longitudinal_status")}
+      </div>
       <Fact
         label="모터 RPM"
         value={num(d.motor_rpm, !!d.part1_valid)}
@@ -437,7 +454,7 @@ export function DriveTelemetry({
         unit="RPM"
       />
       <Fact
-        label="STM_A 명령 상전류"
+        label={d.controller_control_mode === 1 ? "Speed 전류 한도" : "Torque 전류 명령"}
         value={fmt(d.commanded_phase_current_a)}
         unit="A"
       />
@@ -495,7 +512,29 @@ export function SteeringTelemetry({
   state: Snapshot;
   online: boolean;
 }) {
+  const [clearing, setClearing] = useState(false);
+  const [clearResult, setClearResult] = useState("");
   const s = received(state, online, "/steering/status");
+  const safetySample = state.topics["/diagnostics"];
+  const safety = safetySample?.data.status?.find((item: Data) => item.name === "steering/safety");
+  const safetyFresh = !!safety && online && !!safetySample?.fresh && safety.fresh !== false;
+  const policy = Object.fromEntries((safety?.values ?? []).map((item: Data) => [item.key, item.value]));
+  const canAcknowledge = state.profile === "vehicle" && state.capabilities.includes("clear_steering_fault_latch");
+  async function clearLatch() {
+    setClearing(true);
+    setClearResult("");
+    try {
+      const response = await fetch("/api/steering/clear-fault-latch", { method: "POST" });
+      const result = await response.json();
+      setClearResult(response.ok
+        ? result.success ? result.message : `Clear rejected: ${String(result.message).replace(/^rejected:\s*/, "")}`
+        : String(result.detail ?? "Clear request failed"));
+    } catch {
+      setClearResult("Clear result unknown: connection lost. Check steering state before retrying.");
+    } finally {
+      setClearing(false);
+    }
+  }
   const source = (topic: string) => (
     <Source name={topic} sample={state.topics[topic]} online={online} />
   );
@@ -507,7 +546,21 @@ export function SteeringTelemetry({
       title="조향 보드 관측"
       eyebrow="LATERAL CONTROLLER / KEYA"
     >
-      <Fact label="제어 상태" value={enumText(states, s.state)} />
+      <Fact label="제어 상태" value={steeringState(s).label} />
+      <div className="telemetry-group">
+        <span className="eyebrow">Host safety policy · {safetyFresh ? safety?.message : "STALE / NO DATA"}</span>
+        {safety?.values?.map((item: Data) => <Fact key={item.key} label={item.key} value={item.value} />)}
+      </div>
+      {canAcknowledge && <section className="steering-fault-clear" aria-label="Steering fault acknowledgment">
+        <h3>HARD fault latch</h3>
+        <Fact label="Latch" value={!safetyFresh ? "UNKNOWN / STALE" : policy.hard_fault_latched === "true" ? "LATCHED" : policy.hard_fault_latched === "false" ? "CLEAR" : "UNKNOWN"} />
+        <Fact label="Clearable" value={!safetyFresh ? "UNKNOWN / STALE" : policy.hard_fault_clearable === "true" ? "YES" : "NO"} />
+        <Fact label="Reason" value={safetyFresh ? policy.hard_fault_clear_reason ?? "No clear status reported" : "Fresh steering/safety diagnostics required"} />
+        <p className="muted">실제 KEYA 고장 해제 후 Host latch만 확인·해제합니다. 모터 Enable이나 주행 명령은 보내지 않습니다.</p>
+        <button type="button" disabled={clearing || !safetyFresh || policy.hard_fault_latched !== "true" || policy.hard_fault_clearable !== "true"}
+          onClick={clearLatch}>{clearing ? "CLEARING…" : "CLEAR HARD FAULT LATCH"}</button>
+        {clearResult && <p role="status">{clearResult}</p>}
+      </section>}
       <Fact label="해제 사유" value={enumText(reasons, s.disable_reason)} />
       <Details title="KEYA 모터 · 피드백 · 수신 상태">
         <Fact
@@ -551,7 +604,7 @@ export function SteeringTelemetry({
         <span className="eyebrow">KEYA · 상태 비트</span>
         <Fact label="KEYA Fault bits 원본" value={bitHex(s.fault_bits)} />
         <Fact
-          label="Fault bits · bit0 제외"
+          label="상태 비트 · bit0 제외 (정책 등급은 Host 진단 참조)"
           value={
             typeof s.fault_bits === "number" ? bitHex(s.fault_bits & ~1) : "—"
           }
@@ -587,7 +640,7 @@ export function SteeringSummary({
   return (
     <section className="steering-summary" aria-label="로드휠 각도 경로">
       <div className="steering-state">
-        <strong>{enumText(states, s.state)}</strong>
+        <strong>{steeringState(s).label}</strong>
         <span>{enumText(reasons, s.disable_reason)}</span>
       </div>
       <div className="telemetry-group">

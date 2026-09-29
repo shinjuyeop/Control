@@ -15,10 +15,10 @@ def write_yaml(path, document):
 
 def test_default_unit_conversion_and_round_trip(store):
     values = store.saved
-    assert values['p_gain_a_per_deg'] == pytest.approx(32)
-    assert values['d_gain_a_per_deg_s'] == pytest.approx(1500 * math.pi / 180 * .0016)
-    assert values['peak_current_command_a'] == 16
-    assert values['continuous_current_command_a'] == 8
+    assert values['steering_kp_a_per_deg'] == pytest.approx(32)
+    assert values['steering_kd_a_per_deg_s'] == pytest.approx(1500 * math.pi / 180 * .0016)
+    assert values['steering_peak_current_limit_a'] == 16
+    assert values['steering_sustained_current_limit_a'] == 8
     native = encode(values, store.saved_native[STEERING])
     for node, params in native.items():
         for key, value in params.items():
@@ -27,27 +27,27 @@ def test_default_unit_conversion_and_round_trip(store):
 
 
 def test_peak_change_preserves_p_and_quantizes_current(store):
-    values = {**store.saved, 'peak_current_command_a': 12.0007}
+    values = {**store.saved, 'steering_peak_current_limit_a': 12.0007}
     native = encode(values, store.saved_native[STEERING])
     assert native[STEERING]['torque_peak_limit_raw'] == 7500
     assert native[STEERING]['torque_full_scale_error_deg'] == .375
     decoded = decode({n: {**store.base[n], **p} for n, p in native.items()})
-    assert decoded['p_gain_a_per_deg'] == 32
-    assert decoded['peak_current_command_a'] == 12
+    assert decoded['steering_kp_a_per_deg'] == 32
+    assert decoded['steering_peak_current_limit_a'] == 12
 
 
 @pytest.mark.parametrize('key,value', [
-    ('p_gain_a_per_deg', 0), ('p_gain_a_per_deg', 320),
-    ('d_gain_a_per_deg_s', -1), ('d_gain_a_per_deg_s', float('nan')),
-    ('peak_current_command_a', 16.1), ('peak_current_command_a', .0001),
-    ('continuous_current_command_a', 17), ('peak_budget_ms', 19),
-    ('peak_budget_ms', 5001), ('peak_budget_ms', 100.1),
-    ('peak_recovery_hold_ms', 4999), ('rate_filter_cutoff_hz', 25.1),
-    ('settle_error_deg', .5), ('settle_rate_deg_s', 0),
-    ('angle_limit_margin_deg', 30),
-    ('minimum_vehicle_speed_kph', -1), ('actuation_mode', 'bad'),
-    ('torque_feedback_timeout_ms', 39), ('torque_feedback_timeout_ms', 201),
-    ('mode_timeout_ms', 2**32), ('governor_input_timeout_ms', 0),
+    ('steering_kp_a_per_deg', 0), ('steering_kp_a_per_deg', 320),
+    ('steering_kd_a_per_deg_s', -1), ('steering_kd_a_per_deg_s', float('nan')),
+    ('steering_peak_current_limit_a', 16.1), ('steering_peak_current_limit_a', .0001),
+    ('steering_sustained_current_limit_a', 17), ('steering_peak_duration_ms', 19),
+    ('steering_peak_duration_ms', 5001), ('steering_peak_duration_ms', 100.1),
+    ('steering_peak_recovery_ms', 4999), ('steering_rate_filter_hz', 25.1),
+    ('steering_settle_error_deg', .5), ('steering_settle_rate_deg_s', 0),
+    ('steering_angle_margin_deg', 30),
+    ('steering_min_vehicle_speed_kph', -1), ('steering_control_mode', 'bad'),
+    ('steering_torque_feedback_timeout_ms', 39), ('steering_torque_feedback_timeout_ms', 201),
+    ('steering_vehicle_mode_timeout_ms', 2**32), ('governor_command_timeout_ms', 0),
 ])
 def test_invalid_settings_rejected_before_save(store, key, value):
     with pytest.raises(ValueError):
@@ -57,8 +57,8 @@ def test_invalid_settings_rejected_before_save(store, key, value):
 
 def test_save_differences_reload_backup_and_restore(store):
     initial = dict(store.saved)
-    saved = store.save({**initial, 'p_gain_a_per_deg': 40,
-                        'governor_input_timeout_ms': 250, 'minimum_vehicle_speed_kph': 1})
+    saved = store.save({**initial, 'steering_kp_a_per_deg': 40,
+                        'governor_command_timeout_ms': 250, 'steering_min_vehicle_speed_kph': 1})
     document = yaml.safe_load(store.path.read_text())
     assert document[STEERING]['ros__parameters'] == {
         'torque_full_scale_error_deg': .4, 'minimum_steering_speed_kph': 1.0}
@@ -79,15 +79,15 @@ def test_conflicts_never_overwrite(store, target):
         store.base_paths[0].write_text(store.base_paths[0].read_text() + '\n# external edit\n')
     else:
         other = SettingsStore(store.path, *store.base_paths)
-        other.save({**other.saved, 'p_gain_a_per_deg': 40})
+        other.save({**other.saved, 'steering_kp_a_per_deg': 40})
     original = store.path.read_bytes() if store.path.exists() else None
     with pytest.raises(ValueError, match='외부'):
-        store.save({**store.saved, 'p_gain_a_per_deg': 35})
+        store.save({**store.saved, 'steering_kp_a_per_deg': 35})
     assert (store.path.read_bytes() if store.path.exists() else None) == original
 
 
 def test_failed_atomic_replace_preserves_file(store, monkeypatch):
-    store.save({**store.saved, 'p_gain_a_per_deg': 40})
+    store.save({**store.saved, 'steering_kp_a_per_deg': 40})
     original = store.path.read_bytes()
     import os
     replace = os.replace
@@ -99,14 +99,14 @@ def test_failed_atomic_replace_preserves_file(store, monkeypatch):
 
     monkeypatch.setattr(os, 'replace', fail_main)
     with pytest.raises(OSError):
-        store.save({**store.saved, 'p_gain_a_per_deg': 50})
+        store.save({**store.saved, 'steering_kp_a_per_deg': 50})
     assert store.path.read_bytes() == original
     assert not list(store.path.parent.glob('.tuning.yaml*'))
 
 
 @pytest.mark.parametrize('parameters', [
     {'can_interface': 'other'}, {'torque_kd': True}, {'torque_kd': float('inf')},
-    {'torque_peak_limit_raw': 100.5}, {'mode_timeout_ms': 100.0}, {'actuation_mode': 'unknown'},
+    {'torque_peak_limit_raw': 100.5}, {'steering_vehicle_mode_timeout_ms': 100.0}, {'steering_control_mode': 'unknown'},
 ])
 def test_launch_rejects_unmanaged_or_bad_types(store, parameters):
     write_yaml(store.path, {STEERING: {'ros__parameters': parameters}})

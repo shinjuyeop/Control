@@ -70,6 +70,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ../common/runtime_metrics.c
     ../common/runtime_stats_ros.c
     Core/Src/globals.c
+    Core/Src/longitudinal_controller.c
     # Add user sources here
 )
 

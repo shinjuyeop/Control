@@ -8,6 +8,7 @@
 /* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
+#include "command_brake_order.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "main.h"
@@ -81,8 +82,8 @@ typedef enum {
   ((uint16_t)(BRAKE_SERVO_ZERO_DEG_PULSE_US + (BRAKE_SERVO_US_PER_DEG) * (deg_) + 0.5f))
 
 /* ---- 여기 두 각도만 바꾸면 engage/release pulse가 자동으로 재계산된다 ---- */
-#define BRAKE_ENGAGED_ANGLE_DEG   55.0f
-#define BRAKE_RELEASED_ANGLE_DEG  120.0f
+#define BRAKE_ENGAGED_ANGLE_DEG   125.0f
+#define BRAKE_RELEASED_ANGLE_DEG  172.0f
 
 #define BRAKE_ENGAGED_PULSE_US   BRAKE_SERVO_DEG_TO_PULSE_US(BRAKE_ENGAGED_ANGLE_DEG)
 #define BRAKE_RELEASED_PULSE_US  BRAKE_SERVO_DEG_TO_PULSE_US(BRAKE_RELEASED_ANGLE_DEG)
@@ -177,6 +178,10 @@ static uint8_t s_ros_executor_initialized = 0u;
 /* Host에서는 최종 브레이크 명령만 받는다. Vehicle Status는 STM_A UART에서 수신한다. */
 static void cb_cmd(const void *m)
 {
+  const kaiev26_msgs__msg__ActuatorCommand *cmd = m;
+  static int64_t last_brake_stamp_ns = 0;
+  if (!CommandBrakeOrder_Accept(&last_brake_stamp_ns, cmd->brake_engage,
+      cmd->header.stamp.sec, cmd->header.stamp.nanosec)) return;
   const uint32_t now = HAL_GetTick();
   taskENTER_CRITICAL();
   COMMAND_BRAKE_REQUEST =

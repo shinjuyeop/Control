@@ -104,7 +104,7 @@ class SysidNode(Node):
         self.record_error = ''
         self.command_publisher = self.create_publisher(ActuatorCommand, '/planning/command', 10)
         self.steering_control = SteeringControl(self)
-        self.label_publisher = self.create_publisher(String, '/sysid/scinario', 10)
+        self.label_publisher = self.create_publisher(String, '/sysid/scenario', 10)
         self.control_parameters_publisher = self.create_publisher(
             String, '/sysid/control_parameters', 10)
         self.route_enable_publisher = self.create_publisher(Bool, '/sysid/route_enabled', 10)
@@ -190,8 +190,6 @@ class SysidNode(Node):
         elif topic == '/steering/status':
             if message.estop_active:
                 error = '조향 E-stop'
-            elif message.fault_bits & ~1:
-                error = f'조향 fault 0x{message.fault_bits:x}'
             elif (message.state == SteeringActuatorStatus.STATE_FAULT
                   or message.disable_reason == SteeringActuatorStatus.REASON_MOTOR_FAULT):
                 error = '조향 제어 안전 정지'

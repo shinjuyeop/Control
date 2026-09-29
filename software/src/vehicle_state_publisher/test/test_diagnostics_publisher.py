@@ -97,3 +97,24 @@ def test_diagnostic_identity_is_stable_across_waiting_live_stale_live():
     finally:
         node.destroy_node()
         rclpy.shutdown()
+
+
+def test_manual_without_commands_is_normal_and_recovery_is_distinct():
+    rclpy.init()
+    node = DiagnosticsPublisher()
+    try:
+        node._on_steering(SteeringActuatorStatus(
+            state=1, disable_reason=3, communication_ok=True, feedback_valid=True,
+            steer_command_age_ms=float('inf')))
+        assert node._steer_link().level == DiagnosticStatus.OK
+        assert node._steer_state().level == DiagnosticStatus.OK
+        assert 'MANUAL' in node._steer_state().message
+        node._steering.state = 2
+        node._steering.disable_reason = 10
+        assert 'RECOVERING' in node._steer_state().message
+        node._steering.state = 8
+        assert node._steer_state().level == DiagnosticStatus.ERROR
+        assert 'HARD FAULT' in node._steer_state().message
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()

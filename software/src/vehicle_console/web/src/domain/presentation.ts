@@ -34,7 +34,9 @@ export function reported(
 
 export function steeringState(data: Data): Indicator {
   return {
-    label: states[data.state] ?? "UNKNOWN",
+    label: data.state === 1 && data.disable_reason === 3 ? "MANUAL" :
+      data.state === 2 ? (data.disable_reason === 10 ? "RECOVERING" : "WAITING FOR COMMAND") :
+      data.state === 8 ? "HARD FAULT" : states[data.state] ?? "UNKNOWN",
     tone:
       data.state === 3
         ? "good"

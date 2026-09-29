@@ -19,6 +19,7 @@ from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 
 from control_tuning.runtime import TuningNode
+from control_tuning.tui import Editor
 from control_tuning.schema import STEERING, GOVERNOR
 from control_tuning.storage import SettingsStore
 from control_tuning.presets import PresetStore, load_launch_overrides
@@ -41,8 +42,8 @@ def test_launch_defaults_read_the_same_source_file_as_tui(store, tmp_path, monke
     monkeypatch.setattr(storage, '__file__', str(source_package / 'control_tuning/storage.py'))
     settings = SettingsStore(None, *store.base_paths)
     presets = PresetStore(settings)
-    presets.save('driving', {**settings.saved, 'p_gain_a_per_deg': 40., 'governor_input_timeout_ms': 250.})
-    presets.save('airborne', {**settings.saved, 'p_gain_a_per_deg': 80., 'governor_input_timeout_ms': 100.})
+    presets.save('driving', {**settings.saved, 'steering_kp_a_per_deg': 40., 'governor_command_timeout_ms': 250.})
+    presets.save('airborne', {**settings.saved, 'steering_kp_a_per_deg': 80., 'governor_command_timeout_ms': 100.})
     source = Path(__file__).resolve().parents[2] / package / 'launch' / filename
     spec = importlib.util.spec_from_file_location('test_default_launch_module', source)
     module = importlib.util.module_from_spec(spec)
@@ -82,7 +83,7 @@ def test_launch_defaults_read_the_same_source_file_as_tui(store, tmp_path, monke
 @pytest.mark.parametrize('condition', CONDITION_KEYS)
 def test_launch_helpers_layer_profile_before_explicit_overrides(store, monkeypatch, package, filename, helper, condition):
     presets = PresetStore(store)
-    presets.save(condition, {**store.saved, 'p_gain_a_per_deg': 40., 'governor_input_timeout_ms': 250.})
+    presets.save(condition, {**store.saved, 'steering_kp_a_per_deg': 40., 'governor_command_timeout_ms': 250.})
     source = Path(__file__).resolve().parents[2] / package / 'launch' / filename
     spec = importlib.util.spec_from_file_location('test_launch_module', source)
     module = importlib.util.module_from_spec(spec)
@@ -108,7 +109,7 @@ def test_launch_helpers_layer_profile_before_explicit_overrides(store, monkeypat
             assert node['respawn'] is True
 
 
-def test_actual_nodes_save_apply_restart_and_cli_priority(store, monkeypatch, tmp_path):
+def test_actual_nodes_save_then_restart_and_cli_priority(store, monkeypatch, tmp_path):
     if os.environ.get('CONTROL_TUNING_LAUNCH_TESTS') != '1':
         pytest.skip('Opt in with CONTROL_TUNING_LAUNCH_TESTS=1 after building lateral_ctrl and command_governor')
     for package in ('lateral_ctrl', 'command_governor', 'control_tuning'):
@@ -118,11 +119,11 @@ def test_actual_nodes_save_apply_restart_and_cli_priority(store, monkeypatch, tm
             pytest.fail(f'Build {package} before running the launch integration test')
     monkeypatch.setenv('ROS_DOMAIN_ID', '219')
     monkeypatch.setenv('ROS_LOCALHOST_ONLY', '1')
-    preset = {**store.saved, 'p_gain_a_per_deg': 40., 'peak_current_command_a': 12.,
-              'minimum_vehicle_speed_kph': 1., 'governor_input_timeout_ms': 250.}
+    preset = {**store.saved, 'steering_kp_a_per_deg': 40., 'steering_peak_current_limit_a': 12.,
+              'steering_min_vehicle_speed_kph': 1., 'governor_command_timeout_ms': 250.}
     presets = PresetStore(store)
     presets.save('driving', preset)
-    presets.save('airborne', {**preset, 'p_gain_a_per_deg': 24., 'governor_input_timeout_ms': 300.})
+    presets.save('airborne', {**preset, 'steering_kp_a_per_deg': 24., 'governor_command_timeout_ms': 300.})
     processes = []
 
     @contextmanager
@@ -162,30 +163,31 @@ def test_actual_nodes_save_apply_restart_and_cli_priority(store, monkeypatch, tm
             if until():
                 return
         logs = '\n'.join(p.read_text() for p in tmp_path.glob('*.log'))
-        pytest.fail(f'Actual-node condition timed out: {client.errors}, {client.result}\n{logs}')
+        pytest.fail(f'Actual-node condition timed out: {client.errors}\n{logs}')
 
     try:
         with launch('command_governor', 'command_governor.launch.py'):
             with launch('lateral_ctrl', 'steering_actuator.launch.py',
                         'hardware_can_enabled:=false', 'actuator_output_enabled:=false'):
-                pump(lambda: client.fresh_values(STEERING) and client.fresh_values(GOVERNOR)
-                     and not client.apply_reason(store.saved_native[STEERING]))
+                pump(lambda: client.fresh_values(STEERING) and client.fresh_values(GOVERNOR))
                 assert client.values[STEERING]['torque_full_scale_error_deg'] == .3
                 assert client.values[STEERING]['minimum_steering_speed_kph'] == 1.
                 assert client.values[GOVERNOR]['input_timeout_ms'] == 250.
-                client.begin_apply({**preset, 'p_gain_a_per_deg': 48.},
-                                   store.saved_native[STEERING], dict(client.values[STEERING]))
-                pump(lambda: client.result is not None)
-                assert client.result[0], client.result
-                assert client.values[STEERING]['torque_full_scale_error_deg'] == .25
-                assert presets.load('driving')['p_gain_a_per_deg'] == 40.
+                editor = Editor(store)
+                editor.key('enter')
+                editor.draft['steering_kp_a_per_deg'] = 48.
+                editor.key('s', client)
+                presets.reload()
+                assert presets.load('driving')['steering_kp_a_per_deg'] == 48.
+                client.tick(force=True)
+                pump(lambda: not client.requests)
+                assert client.values[STEERING]['torque_full_scale_error_deg'] == .3
             client.received.pop(STEERING, None)
             with launch('lateral_ctrl', 'steering_actuator.launch.py',
                         'hardware_can_enabled:=false', 'actuator_output_enabled:=false',
                         'actuation_mode:=position'):
                 pump(lambda: client.fresh_values(STEERING) and client.values[STEERING]['actuation_mode'] == 'position')
-                assert client.values[STEERING]['torque_full_scale_error_deg'] == .3
-                assert 'Position' in client.apply_reason(store.saved_native[STEERING])
+                assert client.values[STEERING]['torque_full_scale_error_deg'] == .25
         client.received.clear()
         with launch('command_governor', 'command_governor.launch.py', 'tuning_preset:=airborne'):
             with launch('lateral_ctrl', 'steering_actuator.launch.py',
@@ -214,6 +216,22 @@ def test_selected_preset_is_required_and_other_conditions_are_ignored(store, nod
     presets.path_for('airborne').write_text('malformed: [')
     assert load_launch_overrides(store.path, node, **kwargs)
     path = presets.path_for('driving')
-    path.write_text(path.read_text().replace('current_reference_a: 20.0', 'current_reference_a: 10.0'))
+    path.write_text(path.read_text().replace('steering_current_reference_a: 20.0', 'steering_current_reference_a: 10.0'))
     with pytest.raises(ValueError, match='환산 기준'):
         load_launch_overrides(store.path, node, **kwargs)
+
+
+@pytest.mark.parametrize('condition', CONDITION_KEYS)
+def test_vehicle_launch_passes_selected_longitudinal_config(store, monkeypatch, condition):
+    presets = PresetStore(store)
+    presets.save(condition, {**store.saved, 'drive_control_mode': 'torque', 'drive_speed_kp_a_per_mps': 180.})
+    source = Path(__file__).resolve().parents[2] / 'control_launch/launch/vehicle.launch.py'
+    spec = importlib.util.spec_from_file_location('longitudinal_launch', source)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, 'Node', lambda **kwargs: kwargs)
+    context = LaunchContext()
+    context.launch_configurations.update(control_tuning_file=str(store.path), tuning_preset=condition)
+    node = module._longitudinal(context)[0]
+    assert node['parameters'][0]['control_mode'] == 'torque'
+    assert node['parameters'][0]['speed_kp_a_per_mps'] == 180.

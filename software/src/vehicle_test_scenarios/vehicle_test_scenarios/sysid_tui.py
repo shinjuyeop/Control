@@ -29,7 +29,7 @@ from .sysid_profiles import (
     SCENARIO_KEYS, SCENARIO_SPECS, default_run_settings, update_setting,
 )
 from .sysid_runtime import SysidNode
-from control_tuning.conditions import CONDITION_KEYS, condition_label
+from control_tuning.conditions import CONDITION_KEYS, TEST_CONDITION_KEYS, condition_label
 
 
 CLEAR_VIEWPORT = '\x1b[2J\x1b[H'
@@ -224,7 +224,7 @@ class MenuState:
         if self.edit_field == 'record_mcap':
             return (True, False)
         if self.edit_field == 'test_condition':
-            return CONDITION_KEYS
+            return TEST_CONDITION_KEYS
         return ()
 
     def cancel_edit(self):

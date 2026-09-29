@@ -555,7 +555,7 @@
       "paths": [
         {
           "timestampMethod": "receiveTime",
-          "value": "/sysid/scinario.data",
+          "value": "/sysid/scenario.data",
           "label": "시험 시나리오"
         },
         {
@@ -771,7 +771,7 @@
       "paths": [
         {
           "timestampMethod": "receiveTime",
-          "value": "/sysid/scinario.data",
+          "value": "/sysid/scenario.data",
           "label": "시험 시나리오"
         },
         {

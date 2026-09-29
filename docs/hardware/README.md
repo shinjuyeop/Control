@@ -1,6 +1,6 @@
 # Hardware Documents
 
-이 디렉터리에는 차량의 구동 및 조향 시스템에 사용되는 하드웨어의 제조사 매뉴얼과 통신 프로토콜 문서를 보관합니다.
+이 디렉터리에는 차량의 구동 및 조향 시스템에 사용되는 하드웨어의 제조사 매뉴얼과 통신 프로토콜 문서를 보관합니다. 내부 설정 메모는 아래에서 공식 자료와 구분합니다.
 
 ## Display Controller
 
@@ -48,6 +48,24 @@ UNO 드라이버의 주소/리셋 절차는 제품 페이지의 MSP4030/MSP4031 
 - CAN_H, CAN_L 및 종단저항 배선 안내
 - 통신 속도, 컨트롤러 주소, 핸드셰이크 및 데이터 변환 예제 포함
 
+### GoldenMotor EZkontrol MCU-to-Meter CAN Protocol V1.1
+
+- 파일: [GoldenMotor_EZkontrol_MCU_to_Meter_CAN_Protocol_V1.1.pdf](./GoldenMotor_EZkontrol_MCU_to_Meter_CAN_Protocol_V1.1.pdf)
+- 모터 컨트롤러에서 계기판으로 전달하는 CAN 상태 데이터 규격 (V1.1, 2023-07-27)
+- MCU-to-VCU 제어 명령 프로토콜과 구분해서 참고
+
+### LCD 상태·고장 표시용 SIF 프로토콜
+
+- 파일: [新思维-高标100513.pdf](./新思维-高标100513.pdf)
+- LCD 통신 프로토콜 2.0: 컨트롤러에서 표시기로 보내는 단선 SIF 상태·고장 전송 자료
+- EZkontrol CAN 제어 명령이나 회생 torque 명령의 근거로 사용하지 않음
+
+### 내부 설정 참고 메모
+
+- 파일: [EZKONTROL_SETTINGS_NOTES.md](./EZKONTROL_SETTINGS_NOTES.md)
+- 설정 항목 해설, 2026-09-08 설정 기록, 날짜 미상 설정 목록
+- 제조사 공식 문서 및 현재 장치 readback과 구분
+
 ## Steering Motor
 
 ### KEYA KY170 Auto Steering Motor User Manual V1.1
@@ -56,3 +74,10 @@ UNO 드라이버의 주소/리셋 절차는 제품 페이지의 MSP4030/MSP4031 
 - 적용 모델: `KY170DJD01005-08G-V1`
 - 조향 모터의 전기적 사양, 핀맵, 절대 엔코더 및 설정 방법
 - CAN 기반 속도, 토크, 절대 위치 및 상대 위치 제어 명령 포함
+
+## LV 배터리 계측
+
+- [LV 배터리 구성](../rp2350/lv_battery_gauge.md): 100 A/75 mV 외장 션트, INA228,
+  XIAO RP2350, 전원·UART 배선과 계측 경계
+- [RP2350 펌웨어·정비](../../firmware/XIAO_RP2350_LV_GAUGE/README.md): 현재 센서 설정,
+  빌드·업로드, 적산·저장과 ROS/USB TUI

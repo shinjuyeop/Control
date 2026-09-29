@@ -2,9 +2,8 @@
 실차 구동 스택 통합 launch.
 
 구동에 필요한 것만 띄운다: 차량·INS 기준 정적 TF, STM_A/B micro-ROS Agent,
-command_governor, steering_actuator, longitudinal_actuator(종방향 torque control)와
-vehicle_state_publisher package의 상태 합성, diagnostics_publisher,
-auto_dashboard_summary를 실행한다.
+command_governor, steering_actuator와 vehicle_state_publisher package의 상태 합성,
+diagnostics_publisher, auto_dashboard_summary를 실행한다.
 관측 화면은 별도 실행한다: `ros2 launch vehicle_console vehicle.launch.py` 또는
 `ros2 launch foxglove foxglove_bridge.launch.py`.
 
@@ -23,10 +22,11 @@ Torque 조향의 invalid/stale feedback과 control stall은 `FEEDBACK_LOST`로 �
 정상 feedback과 차단 뒤 받은 새 `/vehicle/command`가 확인되면 노드 재시작 없이
 자동 복구한다. `FAULT`는 KEYA bit0(Disable)을 제외한 실제 fault bit에만 사용한다.
 
-can0는 launch 전에 올라와 있어야 한다. 조향 노드는 SocketCAN을 시작 시 한
-번만 열고 실패해도 재시도하지 않으므로, can0가 늦으면 조향만 조용히 CAN이
-죽은 채 뜬다. host/systemd/의 networkd 설정을 설치하면 부팅·USB 재연결 시
-자동으로 준비된다(HIL_RUNBOOK 10.1).
+can0는 launch 전에 준비한다. 조향 노드는 SocketCAN timeout 또는 open/read/write
+실패 시 링크를 닫고 backoff를 두고 다시 연다. 재연결 뒤 fresh fault/position
+feedback을 확인하고 과거 명령을 폐기하며 새 command가 있어야 재개한다.
+host/systemd/의 networkd 설정을 설치하면 부팅·USB 재연결 시 인터페이스를
+자동으로 준비한다(HIL_RUNBOOK 10.1).
 
 command_governor는 /vehicle/command의 유일한 발행자라서 죽으면 명령이
 끊긴다(안전망은 위 timeout들). 노드가 stateless라 재시작만 하면 그대로
@@ -61,6 +61,14 @@ def _governor(context, config):
             LaunchConfiguration("tuning_preset").perform(context), governor_config=config)],
         respawn=True, respawn_delay=2.0,
     )]
+
+
+def _longitudinal(context):
+    return [Node(package='control_tuning', executable='longitudinal_calibration',
+                 name='longitudinal_calibration', output='screen',
+                 parameters=[load_launch_overrides(
+                     LaunchConfiguration('control_tuning_file').perform(context),
+                     'stm_a_longitudinal', LaunchConfiguration('tuning_preset').perform(context))])]
 
 
 def _agent(name, port, baud):
@@ -108,10 +116,6 @@ def generate_launch_description():
         get_package_share_directory("lateral_ctrl"),
         "launch", "steering_actuator.launch.py",
     )
-    longitudinal_launch = os.path.join(
-        get_package_share_directory("longitudinal_ctrl"),
-        "launch", "longitudinal_actuator.launch.py",
-    )
     baud = LaunchConfiguration("agent_baud")
     return LaunchDescription([
         DeclareLaunchArgument("stm_a_port", default_value="/dev/stm_a"),
@@ -119,7 +123,7 @@ def generate_launch_description():
         DeclareLaunchArgument("agent_baud", default_value="460800"),
         DeclareLaunchArgument("control_tuning_file", default_value=str(default_settings_path())),
         DeclareLaunchArgument("tuning_preset", default_value="driving", choices=list(CONDITION_KEYS),
-                              description="주행 / 공중 / 접지 정지 제어 프리셋"),
+                              description="주행 / 공중 제어 프리셋"),
         DeclareLaunchArgument(
             "agents", default_value="true",
             description="STM_A/B micro-ROS Agent를 함께 띄운다. 이미 따로 실행 중이면 false.",
@@ -131,19 +135,6 @@ def generate_launch_description():
         DeclareLaunchArgument("actuation_mode", default_value="", choices=["", "position", "torque"]),
         DeclareLaunchArgument("steering_enabled", default_value=""),
         DeclareLaunchArgument(
-            "longitudinal", default_value="true",
-            description="종방향 torque 노드(longitudinal_actuator_node)를 함께 띄운다.",
-        ),
-        DeclareLaunchArgument(
-            "longitudinal_torque", default_value="", choices=["", "true", "false"],
-            description="빈 값은 longitudinal_actuator.yaml(기본 false). true면 시작부터 AUTO에서 "
-                        "EZkontrol torque control을 사용한다. 실행 중에는 ros2 param set으로 바꾼다.",
-        ),
-        DeclareLaunchArgument(
-            "longitudinal_speed_source", default_value="", choices=["", "drive_status", "gnss"],
-            description="종방향 차속 피드백 원천. 빈 값은 YAML(drive_status).",
-        ),
-        DeclareLaunchArgument(
             "can_interface", default_value="can0",
             description="KEYA SocketCAN 인터페이스.",
         ),
@@ -151,6 +142,7 @@ def generate_launch_description():
         _robot_state_publisher(),
         _agent("stm_a_agent", LaunchConfiguration("stm_a_port"), baud),
         _agent("stm_b_agent", LaunchConfiguration("stm_b_port"), baud),
+        OpaqueFunction(function=_longitudinal),
         # /vehicle/command의 유일한 발행자. stateless라 respawn으로 복구한다.
         OpaqueFunction(function=_governor, kwargs={"config": governor_config}),
         # 조향 armed 기본값을 launch 인자로 명시해, lateral_ctrl 쪽 기본값이
@@ -167,18 +159,6 @@ def generate_launch_description():
                 "actuator_output_enabled": "true",
             }.items(),
             condition=IfCondition(LaunchConfiguration("steering")),
-        ),
-        # 종방향 torque control. torque_control_enabled=false이면 torque_mode=false만
-        # 발행하므로 STM_A는 기존 EZkontrol speed control을 유지한다. 예전 STM_A 펌웨어는
-        # /drive/torque_command를 구독하지 않으므로 어느 쪽이든 동작이 바뀌지 않는다.
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(longitudinal_launch),
-            launch_arguments={
-                "torque_control_enabled": LaunchConfiguration("longitudinal_torque"),
-                "speed_source": LaunchConfiguration("longitudinal_speed_source"),
-                "tuning_preset": LaunchConfiguration("tuning_preset"),
-            }.items(),
-            condition=IfCondition(LaunchConfiguration("longitudinal")),
         ),
         Node(
             package="vehicle_state_publisher",

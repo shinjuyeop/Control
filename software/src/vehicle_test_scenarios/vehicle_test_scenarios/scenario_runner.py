@@ -264,7 +264,7 @@ class VehicleTestScenarioRunner(Node):
         self.declare_parameter("drive_status_topic", "/drive/status")
         self.declare_parameter("wait_for_auto_mode", False)
         self.declare_parameter("auto_start_delay_sec", 0.0)
-        self.declare_parameter("scenario_status_topic", "/sysid/scinario")
+        self.declare_parameter("scenario_status_topic", "/sysid/scenario")
         self.declare_parameter("scenario_label", "")
 
         self._enabled = bool(self.get_parameter("enabled").value)

@@ -105,3 +105,19 @@ TEST(KeyaCanDriver, KernelArrivalTimestampPreventsQueuedFeedbackLookingFresh)
   EXPECT_EQ(driver.motorState().last_position_feedback, stamp);
   close(sockets[0]);
 }
+
+TEST(KeyaCanDriver, EveryFaultBitIsPreservedWithIndependentFreshness)
+{
+  lateral_ctrl::KeyaMotorState state;
+  const auto received = std::chrono::steady_clock::now();
+  for (unsigned bit = 0; bit < 16; ++bit) {
+    const uint16_t bits = uint16_t{1} << bit;
+    std::array<uint8_t, 8> payload{0x60, 0x12, 0x21, 0x01,
+      static_cast<uint8_t>(bits >> 8), static_cast<uint8_t>(bits), 0, 0};
+    ASSERT_TRUE(lateral_ctrl::detail::applyKeyaCanFrame(
+      state, 0x05800001, 0x07000001, 0x05800001, 8, payload.data(), received));
+    EXPECT_EQ(state.fault_bits, bits);
+    EXPECT_TRUE(state.fault_valid); EXPECT_EQ(state.last_fault_feedback, received);
+    EXPECT_FALSE(state.position_valid);
+  }
+}

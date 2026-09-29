@@ -11,9 +11,8 @@ Host brake를 조합해 최종 `BRAKE_REQUEST`를 만들고, 브레이크 서보
 보냅니다.
 
 Dashboard CAN 오류나 Arduino 고장은 E-stop, brake PWM, STM_A safety UART와
-micro-ROS 동작을 변경하지 않습니다. 이전 직접-SPI LCD 구현은
-[`../../archive/firmware/STM_B_DIRECT_LCD`](../../archive/firmware/STM_B_DIRECT_LCD)에
-보관합니다.
+micro-ROS 동작을 변경하지 않습니다. 이전 직접-SPI LCD 구현의 보관본은 대체 완료 후 정리했습니다.
+[archive 정리 기록](../../archive/README.md#2026년-대체-완료-보관본-정리)에 복구 기준을 남겼습니다.
 
 ## 2. 담당 기능
 
@@ -318,8 +317,9 @@ Actual/target은 모두 `int32` KEYA count입니다. actual은
 `equivalentDegToCount()`로 만든 값입니다. UNO가 둘 다 `count * 360 / 10000`으로
 표시하므로 motor-axis 영점·부호·회전수를 전송 단계에서 줄이지 않습니다.
 
-Repository의 standard ID `0x20`-`0x22` battery 계획과 겹치지 않습니다. EZkontrol과
-KEYA가 사용하는 ID는 extended frame입니다.
+LV 전압·SOC는 기존 `0x324`에 포함하며 별도 battery CAN ID를 사용하지 않습니다.
+EZkontrol과 KEYA가 사용하는 ID는 extended frame입니다.
+계측·정비 구성은 [LV 배터리 문서](../../docs/rp2350/lv_battery_gauge.md)를 참고합니다.
 
 ### 8.6 FDCAN 오류와 복구
 
@@ -443,14 +443,10 @@ recovery counter는 증가하지 않습니다. Arduino Serial의 `complete`는 �
   정지 상태 bus/phase current 0.0 A가 Arduino까지 전달되는 것을 확인했습니다.
 - Arduino와 LCD는 표시 전용이며 STM_B safety feedback을 보내지 않습니다.
 - `motor_fault_bits`는 기존 STM_B LCD와 동일하게 low 24 bits만 전송·표시합니다.
-- Direct SPI LCD source는
-  [`archive/firmware/STM_B_DIRECT_LCD`](../../archive/firmware/STM_B_DIRECT_LCD)에
-  보관하며 production build에는 포함되지 않습니다.
 - Firmware flash/reset 검증만으로 brake servo와 drivetrain safety를 증명할 수 없습니다.
 
 ## 13. 관련 문서
 
-- 기존 direct-LCD STM_B: [`../../archive/firmware/STM_B_DIRECT_LCD/README.md`](../../archive/firmware/STM_B_DIRECT_LCD/README.md)
 - Arduino receiver/UI: [`../UNO_R4_DASHBOARD/README.md`](../UNO_R4_DASHBOARD/README.md)
 - 공통 firmware 개요: [`../README.md`](../README.md)
 - 차량 interface: [`../../docs/INTERFACES.md`](../../docs/INTERFACES.md)

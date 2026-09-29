@@ -1,6 +1,7 @@
 from pathlib import Path
 from queue import SimpleQueue
 import time
+import math
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -10,7 +11,8 @@ from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 import yaml
 
-from vehicle_test_scenarios.sysid_capture import ParameterCapture, TORQUE_TOPICS
+from control_tools.parameter_capture import ParameterCapture
+from control_tools.topics import TORQUE_TOPICS
 from vehicle_test_scenarios import sysid_processes
 from control_tuning.schema import STEERING, GOVERNOR
 
@@ -60,7 +62,12 @@ def test_capture_reads_actual_values_all_names_and_clock(parameter_nodes):
     document = capture()
     assert document['status'] == 'complete'
     actual = document['nodes']['/steering_actuator_node']
+    assert document['schema_version'] == 2
     assert actual['ros__parameters']['torque_kd'] == 1723.
+    assert actual['display_values']['steering_kd_a_per_deg_s'] == pytest.approx(1723 * math.pi / 180 * .0016)
+    assert actual['display_units']['steering_kd_a_per_deg_s'] == 'A/(deg/s)'
+    assert actual['display_values']['steering_torque_feedback_timeout_ms'] == 100
+    assert document['nodes']['/command_governor']['display_values']['governor_command_timeout_ms'] == 234.
     assert actual['ros__parameters']['torque_direction_sign'] == -1
     assert actual['ros__parameters']['operator_note'] == 'actual runtime parameter'
     assert actual['received_ros_time_ns'] >= document['requested_ros_time_ns'] > 0
@@ -73,8 +80,8 @@ def test_tui_adopts_running_launch_preset_and_preserves_operator_choice(paramete
     from vehicle_test_scenarios.sysid_tui import MenuState
     _, steering, _, capture = parameter_nodes
     steering.declare_parameter('tuning_preset', 'airborne')
-    document = capture('ground_stationary')
-    assert document['test_condition']['key'] == 'ground_stationary'
+    document = capture('stationary')
+    assert document['test_condition']['key'] == 'stationary'
     assert document['nodes']['/steering_actuator_node']['ros__parameters']['tuning_preset'] == 'airborne'
     node = SysidNode()
     executor = SingleThreadedExecutor()
@@ -88,9 +95,9 @@ def test_tui_adopts_running_launch_preset_and_preserves_operator_choice(paramete
         assert node.launch_preset == 'airborne'
         menu.adopt_launch_preset(node.snapshot()['launch_preset'])
         assert menu.run_settings().test_condition == 'airborne'
-        menu.test_condition = 'ground_stationary'
+        menu.test_condition = 'stationary'
         menu.adopt_launch_preset('airborne')
-        assert menu.run_settings().test_condition == 'ground_stationary'
+        assert menu.run_settings().test_condition == 'stationary'
     finally:
         executor.remove_node(steering)
         executor.shutdown()
@@ -110,7 +117,7 @@ def test_missing_parameter_is_explicit_not_filled_from_yaml(parameter_nodes):
 
 def test_snapshot_unavailable_node_times_out_and_cleans_clients(parameter_nodes):
     reader, _, _, _ = parameter_nodes
-    capture = ParameterCapture(reader, 'ground_stationary', timeout=0)
+    capture = ParameterCapture(reader, 'stationary', timeout=0)
     capture.started -= 1
     assert capture.tick()
     assert capture.document['status'] == 'incomplete'

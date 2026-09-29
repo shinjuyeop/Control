@@ -127,7 +127,7 @@ def test_test_condition_must_be_selected_and_never_changes_scenario_commands():
     handle_key(menu, 'enter', busy=True)
     assert menu.edit_field is None and menu.test_condition == 'airborne'
     edit_choice(menu, 1, 'down', 'enter')
-    assert menu.test_condition == 'ground_stationary'
+    assert menu.test_condition == 'stationary'
     assert active.test_condition == 'airborne'
     assert menu.run_settings().to_scenario_config() == before
     assert active.document()['test_condition'] == {
@@ -135,7 +135,7 @@ def test_test_condition_must_be_selected_and_never_changes_scenario_commands():
     edit_choice(menu, 1, 'down', 'enter')
     assert menu.test_condition == 'driving'
     edit_choice(menu, 1, 'up', 'enter')
-    assert menu.test_condition == 'ground_stationary'
+    assert menu.test_condition == 'stationary'
     with pytest.raises(ValueError):
         replace(active, test_condition='inferred_from_speed')
 
@@ -612,7 +612,13 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path, record_mcap):
     # Existing ROS transports are used; the test supplies telemetry instead of hardware.
     rclpy.init()
     node = SysidNode()
+    from std_msgs.msg import Float32MultiArray
+    from control_tuning.longitudinal import AIRBORNE, config_wire
     source = Node('steering_actuator_node')
+    lon_pub = source.create_publisher(Float32MultiArray, '/drive/longitudinal_status', 10)
+    source.create_timer(.1, lambda: lon_pub.publish(Float32MultiArray(data=[
+        1., 1., 1., 1., 1., *config_wire(AIRBORNE),
+        .1, 1., 2., 3., 3., 0., 0., 0., 1., 0.])))
     source.declare_parameter('steering_enabled', True)
     source.declare_parameter('tuning_preset', 'driving')
     lateral_config = Path(get_package_share_directory('lateral_ctrl')) / 'config'
@@ -635,7 +641,7 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path, record_mcap):
                if topic == '/tf_static' else 10)
         publishers[topic] = source.create_publisher(kind, topic, qos)
     from std_msgs.msg import Bool, Float32, Int32, String
-    from vehicle_test_scenarios.sysid_capture import TORQUE_TOPICS
+    from control_tools.topics import TORQUE_TOPICS
     for topic in TORQUE_TOPICS:
         if topic.endswith(('/actuation_mode', '/torque_safety')):
             kind, message = String, String(data='torque' if topic.endswith('/actuation_mode') else 'none')

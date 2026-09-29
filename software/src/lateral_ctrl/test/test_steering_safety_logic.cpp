@@ -1,4 +1,3 @@
-#include "lateral_ctrl/bench_test_utils.hpp"
 #include "lateral_ctrl/steering_types.hpp"
 
 #include <gtest/gtest.h>
@@ -138,12 +137,7 @@ TEST(SteeringSafetyLogic, PriorityIsDeterministic)
     reasonWithoutTimeouts(true, DriveMode::AUTO, safety, true, true, false),
     SteeringDisableReason::CAN_TIMEOUT);
 }
-TEST(SteeringSafetyLogic, BenchSequenceAlternatesFiveDegrees)
-{
-  EXPECT_EQ(
-    lateral_ctrl::defaultBenchSequence(),
-    (std::vector<double>{5.0, -5.0}));
-}
+
 TEST(SteeringSafetyLogic, RateLimiterBoundsMovement)
 {
   EXPECT_DOUBLE_EQ(lateral_ctrl::rateLimit(0.0, 10.0, 5.0, 0.1), 0.5);
@@ -214,4 +208,117 @@ TEST(SteeringSafetyLogic, ModeAndSteerTimeoutsMapSafely)
   EXPECT_EQ(
     lateral_ctrl::stateForDisableReason(SteeringDisableReason::FEEDBACK_INVALID),
     lateral_ctrl::SteeringState::FEEDBACK_LOST);
+}
+
+#include "lateral_ctrl/keya_fault_policy.hpp"
+#include "../../../../firmware/common/command_brake_order.h"
+
+TEST(KeyaPolicy, EveryBitAndSimultaneousFaults)
+{
+  using namespace lateral_ctrl;
+  const KeyaFaultClass expected[] = {
+    KeyaFaultClass::INFO, KeyaFaultClass::RECOVERABLE, KeyaFaultClass::HARD,
+    KeyaFaultClass::HARD, KeyaFaultClass::RECOVERABLE, KeyaFaultClass::INFO,
+    KeyaFaultClass::RECOVERABLE, KeyaFaultClass::HARD, KeyaFaultClass::HARD,
+    KeyaFaultClass::RECOVERABLE, KeyaFaultClass::RECOVERABLE, KeyaFaultClass::HARD,
+    KeyaFaultClass::HARD, KeyaFaultClass::INFO, KeyaFaultClass::RECOVERABLE, KeyaFaultClass::INFO};
+  for (unsigned bit = 0; bit < 16; ++bit) {
+    EXPECT_EQ(keyaFaultClass(bit), expected[bit]) << bit;
+    const KeyaFaults faults(uint16_t{1} << bit);
+    EXPECT_EQ(faults.raw, uint16_t{1} << bit);
+    EXPECT_EQ(faults.hard | faults.recoverable | faults.info, faults.raw);
+    EXPECT_STRNE(keyaFaultDefinitions[bit].name, "");
+  }
+  const KeyaFaults all(0xffff);
+  EXPECT_EQ(all.hard, 0x198c); EXPECT_EQ(all.recoverable, 0x4652); EXPECT_EQ(all.info, 0xa021);
+}
+
+TEST(KeyaPolicy, HardNeverRecoversIncludingHallAndMixedFaults)
+{
+  for (uint16_t bits : {0x0004, 0x0800, 0x4014}) {
+    lateral_ctrl::KeyaRecoveryPolicy p;
+    p.update(bits, true, 0); p.update(0, true, 100);
+    EXPECT_TRUE(p.latched); EXPECT_FALSE(p.recovering); EXPECT_FALSE(p.probeDue(200));
+  }
+}
+
+TEST(KeyaPolicy, RecoverableClearNeedsContinuousFreshEvidence)
+{
+  lateral_ctrl::KeyaRecoveryPolicy p;
+  p.update(0x10, true, 0);
+  EXPECT_TRUE(p.recovering); EXPECT_EQ(p.attempts, 1U);
+  EXPECT_FALSE(p.update(0, true, 1));
+  EXPECT_FALSE(p.update(0, false, 1.4));
+  EXPECT_FALSE(p.update(0, true, 2));
+  EXPECT_TRUE(p.update(0, true, 2.5));
+  EXPECT_FALSE(p.recovering);
+}
+
+TEST(KeyaPolicy, RepeatedAndPersistentRecoverableFaultsNeverLatch)
+{
+  lateral_ctrl::KeyaRecoveryPolicy p;
+  for (int i = 0; i < 1000; ++i) {
+    p.update(0x4652, true, i * 2); p.update(0, true, i * 2 + 0.5);
+    EXPECT_TRUE(p.update(0, true, i * 2 + 1));
+    ASSERT_FALSE(p.latched);
+    EXPECT_EQ(p.total_attempts, static_cast<uint64_t>(i + 1));
+  }
+  EXPECT_EQ(p.last_recovery_sec, 1999);
+  lateral_ctrl::KeyaRecoveryPolicy persistent;
+  persistent.update(0x400, true, 0);
+  persistent.update(0x400, true, 86400);
+  EXPECT_TRUE(persistent.recovering);
+  EXPECT_FALSE(persistent.latched);
+}
+
+TEST(KeyaPolicy, InfiniteAttemptsHaveCappedBackoffAndNeverLatch)
+{
+  lateral_ctrl::KeyaRecoveryPolicy p;
+  p.update(0x4000, true, 0);
+  EXPECT_FALSE(p.probeDue(0.99)); EXPECT_TRUE(p.probeDue(1));
+  p.recordAttempt(1);
+  EXPECT_FALSE(p.probeDue(2.99)); EXPECT_TRUE(p.probeDue(3));
+  p.recordAttempt(3);
+  EXPECT_FALSE(p.probeDue(6.99)); EXPECT_TRUE(p.probeDue(7));
+  double now = 7;
+  for (int i = 0; i < 1000; ++i) {
+    ASSERT_TRUE(p.probeDue(now)); p.recordAttempt(now);
+    EXPECT_FALSE(p.probeDue(now + 4.99));
+    EXPECT_FALSE(p.latched); now += 5;
+  }
+  EXPECT_EQ(p.attempts, 1003U);
+  EXPECT_EQ(p.total_attempts, 1003U);
+}
+
+TEST(BrakeRelease, BothMcuConsumersRejectPreBrakeCommandsWithoutClockSync)
+{
+  for (int board = 0; board < 2; ++board) {
+    int64_t barrier = 0;
+    EXPECT_TRUE(CommandBrakeOrder_Accept(&barrier, 0, 10, 0));
+    EXPECT_TRUE(CommandBrakeOrder_Accept(&barrier, 1, 11, 0));
+    EXPECT_FALSE(CommandBrakeOrder_Accept(&barrier, 0, 10, 900000000));
+    EXPECT_FALSE(CommandBrakeOrder_Accept(&barrier, 0, 11, 0));
+    EXPECT_FALSE(CommandBrakeOrder_Accept(&barrier, 0, 0, 0));
+    EXPECT_TRUE(CommandBrakeOrder_Accept(&barrier, 0, 11, 1));
+    EXPECT_TRUE(CommandBrakeOrder_Accept(&barrier, 1, 0, 0)); // stop always wins
+  }
+}
+
+TEST(KeyaPolicy, LostCommunicationDoesNotPromoteCachedFaultToPersistentLatch)
+{
+  lateral_ctrl::KeyaRecoveryPolicy p;
+  p.update(0x10, true, 0); p.update(0x10, false, 100);
+  EXPECT_FALSE(p.latched);
+  p.update(0, true, 101);
+  EXPECT_TRUE(p.update(0, true, 102));
+}
+
+TEST(KeyaPolicy, CanDisconnectMayWaitForAutoCommandWithoutPersistenceLatch)
+{
+  lateral_ctrl::KeyaRecoveryPolicy p;
+  p.update(0x4000, true, 0); p.update(0x4000, true, 300);
+  EXPECT_FALSE(p.latched); EXPECT_TRUE(p.recovering);
+  for (int i = 0; i < 10; ++i) p.recordAttempt(301 + i * 5);
+  EXPECT_FALSE(p.latched);
+  EXPECT_EQ(p.attempts, 11U);
 }

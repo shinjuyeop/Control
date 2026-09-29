@@ -14,7 +14,7 @@ public:
   KeyaCanDriver(std::string interface_name, uint8_t node_id);
   virtual ~KeyaCanDriver();
   virtual bool open();
-  void close();
+  virtual void close();
   virtual bool isOpen() const { return socket_fd_ >= 0; }
   virtual bool sendEnable();
   virtual bool sendDisable();

@@ -26,6 +26,8 @@ struct KeyaMotorState
   double bus_voltage_v{0.0};
   double driver_temperature_c{0.0};
   uint16_t fault_bits{0};
+  bool fault_valid{false};
+  std::chrono::steady_clock::time_point last_fault_feedback{};
   bool position_valid{false};
   bool speed_valid{false};
   bool current_valid{false};

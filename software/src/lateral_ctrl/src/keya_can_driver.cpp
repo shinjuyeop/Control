@@ -45,6 +45,8 @@ bool applyKeyaCanFrame(
     state.motor_current_a = be16(&data[4]);
     state.fault_bits = static_cast<uint16_t>(
       (static_cast<uint16_t>(data[6]) << 8) | data[7]);
+    state.fault_valid = true;
+    state.last_fault_feedback = received_at;
     state.speed_valid = state.current_valid = true;
     return true;
   }
@@ -62,6 +64,8 @@ bool applyKeyaCanFrame(
     state.current_valid = true;
   } else if (index_lo == 0x12 && index_hi == 0x21 && sub == 0x01) {
     state.fault_bits = static_cast<uint16_t>((data[4] << 8) | data[5]);
+    state.fault_valid = true;
+    state.last_fault_feedback = received_at;
   } else if (index_lo == 0x0D && index_hi == 0x21 && sub == 0x02) {
     state.bus_voltage_v = data[7];
     state.voltage_valid = true;
@@ -109,9 +113,13 @@ bool KeyaCanDriver::open()
     close();
     return false;
   }
+  const int interface_index = ifr.ifr_ifindex;
+  if (ioctl(socket_fd_, SIOCGIFFLAGS, &ifr) < 0 || !(ifr.ifr_flags & IFF_UP)) {
+    close(); return false;
+  }
   sockaddr_can address{};
   address.can_family = AF_CAN;
-  address.can_ifindex = ifr.ifr_ifindex;
+  address.can_ifindex = interface_index;
   if (bind(socket_fd_, reinterpret_cast<sockaddr *>(&address), sizeof(address)) < 0) {
     close(); return false;
   }
@@ -121,6 +129,9 @@ void KeyaCanDriver::close()
 {
   if (socket_fd_ >= 0) ::close(socket_fd_);
   socket_fd_ = -1;
+  // Preserve raw faults as evidence, but never treat cached samples as fresh.
+  state_.communication_ok = state_.position_valid = state_.fault_valid = false;
+  state_.last_feedback = state_.last_position_feedback = state_.last_fault_feedback = {};
 }
 std::array<uint8_t, 8> KeyaCanDriver::enablePayload()
 {
@@ -154,7 +165,9 @@ bool KeyaCanDriver::send(const std::array<uint8_t, 8> & data)
   frame.can_id = command_id_ | CAN_EFF_FLAG;
   frame.can_dlc = 8;
   std::memcpy(frame.data, data.data(), data.size());
-  return write(socket_fd_, &frame, sizeof(frame)) == static_cast<ssize_t>(sizeof(frame));
+  const bool ok = write(socket_fd_, &frame, sizeof(frame)) == static_cast<ssize_t>(sizeof(frame));
+  if (!ok) close();
+  return ok;
 }
 bool KeyaCanDriver::sendEnable() { return send(enablePayload()); }
 bool KeyaCanDriver::sendDisable() { return send(disablePayload()); }
@@ -201,7 +214,11 @@ void KeyaCanDriver::receiveAvailableFrames()
     message.msg_iovlen = 1;
     message.msg_control = control;
     message.msg_controllen = sizeof(control);
-    if (recvmsg(socket_fd_, &message, MSG_DONTWAIT) != static_cast<ssize_t>(sizeof(frame))) break;
+    const auto size = recvmsg(socket_fd_, &message, MSG_DONTWAIT);
+    if (size != static_cast<ssize_t>(sizeof(frame))) {
+      if (size < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) close();
+      break;
+    }
     if (!(frame.can_id & CAN_EFF_FLAG) || (frame.can_id & (CAN_RTR_FLAG | CAN_ERR_FLAG))) continue;
     // Timestamp arrival, not queue-drain time: queued feedback must not look fresh,
     // and the wheel derivative must follow real sample intervals.

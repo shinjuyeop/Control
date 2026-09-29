@@ -5,10 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 import json
-import os
 from pathlib import Path
-import signal
-import subprocess
 import sys
 import threading
 import time
@@ -17,7 +14,10 @@ from zoneinfo import ZoneInfo
 import yaml
 from std_msgs.msg import String
 from control_tuning.storage import SettingsStore
-from .sysid_capture import ParameterCapture, TORQUE_TOPICS, LONGITUDINAL_TOPICS
+from control_tools.parameter_capture import ParameterCapture
+from control_tools.topics import recording_topics
+from control_tools.recording import STORAGE_PRESET
+from control_tools.process import OwnedProcess, group_members
 
 
 DEFAULT_RECORDS_ROOT = next((
@@ -27,89 +27,8 @@ DEFAULT_RECORDS_ROOT = next((
 ), Path.home() / 'KAI_ws/records')
 
 
-RECORD_TOPICS = (
-    '/planning/command', '/vehicle/command', '/sysid/scinario',
-    '/drive/status', '/steering/status', '/steering/angle', '/brake/status',
-    '/vehicle/state', '/vehicle/wheel_twist',
-    '/gnss/fix', '/gnss/fix_velocity', '/gnss/status', '/gnss/status_verbose',
-    '/imu/data', '/imu/data_raw', '/ebimu/status', '/tf', '/tf_static', '/diagnostics',
-    '/perception/camera/left/source/camera_info',
-    '/perception/camera/left/source/image_raw/compressed',
-    '/perception/camera/right/source/camera_info',
-    '/perception/camera/right/source/image_raw/compressed',
-    '/ouster/imu_packets', '/ouster/lidar_packets', '/ouster/metadata',
-    '/sysid/odometry', '/sysid/odometry_gnss', '/sysid/route_context',
-    '/sysid/target_path', '/sysid/target_speed', '/sysid/route_command',
-    '/sysid/route_enabled', '/sysid/tf',
-    '/parameter_events', '/sysid/control_parameters', *TORQUE_TOPICS, *LONGITUDINAL_TOPICS,
-)
-RECORDER_CODE = """
-import sys, json
-import rosbag2_py
-storage = rosbag2_py.StorageOptions(uri=sys.argv[1], storage_id='mcap')
-options = rosbag2_py.RecordOptions()
-options.topics = json.loads(sys.argv[2])
-options.rmw_serialization_format = 'cdr'
-try:
-    rosbag2_py.Recorder().record(storage, options)
-except KeyboardInterrupt:
-    pass
-"""
-
-
-def group_members(pgid):
-    result = []
-    for path in Path('/proc').glob('[0-9]*/stat'):
-        try:
-            fields = path.read_text().rsplit(')', 1)[1].split()
-            if int(fields[2]) == pgid and fields[0] != 'Z':
-                result.append(int(path.parent.name))
-        except (OSError, ValueError, IndexError):
-            continue
-    return result
-
-
-class OwnedProcess:
-    """Direct executables each own a session; no ROS CLI daemon is started."""
-
-    def __init__(self, name, argv, emit):
-        self.name, self.emit = name, emit
-        self.last_output = ''
-        self.process = subprocess.Popen(
-            argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace',
-            start_new_session=True, bufsize=1,
-        )
-        self.pgid = self.process.pid
-        self.reader = threading.Thread(target=self._read, daemon=True)
-        self.reader.start()
-
-    def _read(self):
-        for line in self.process.stdout:
-            self.last_output = line.rstrip()
-            self.emit(f'{self.name}: {self.last_output}')
-        self.process.stdout.close()
-
-    def stop(self):
-        for sig, timeout in ((signal.SIGINT, 5), (signal.SIGTERM, 2), (signal.SIGKILL, 2)):
-            if not group_members(self.pgid):
-                break
-            try:
-                os.killpg(self.pgid, sig)
-            except ProcessLookupError:
-                break
-            deadline = time.monotonic() + timeout
-            while time.monotonic() < deadline:
-                self.process.poll()
-                if not group_members(self.pgid):
-                    break
-                time.sleep(0.05)
-        self.process.wait(timeout=1)
-        self.reader.join(timeout=1)
-        remaining = group_members(self.pgid)
-        if remaining:
-            raise RuntimeError(f'{self.name}: remaining owned PIDs {remaining}')
-        return self.process.returncode
+RECORD_TOPICS = recording_topics('scenario')
+RECORDER_CODE = "from control_tools.recording import worker_main; worker_main()"
 
 
 @dataclass(frozen=True)
@@ -145,6 +64,7 @@ class ProcessManager:
         self.run_log = None
         self.recorder_ready = False
         self.parameter_capture = None
+        self.require_longitudinal = False
         self.cleanup_errors = []
         self.record_started_at = 0.0
         self.subscribers_before_recording = {}
@@ -187,6 +107,9 @@ class ProcessManager:
         self.run_dir = None
         self.record_topics_required = self.node.required_topics_for(settings.follows_route) + (
             '/planning/command', '/vehicle/command', '/sysid/control_parameters')
+        self.require_longitudinal = bool(self.node.require_ezkontrol_status)
+        if self.require_longitudinal:
+            self.record_topics_required += ('/drive/longitudinal_status',)
         if settings.follows_route:
             from .sysid_routes import RouteProcesses
             self.route = RouteProcesses(self.node, settings)
@@ -204,6 +127,7 @@ class ProcessManager:
         self.run_document.update({
             'started_at': datetime.now(ZoneInfo('Asia/Seoul')).isoformat(),
             'topics': list(RECORD_TOPICS),
+            'storage_preset': STORAGE_PRESET,
             'control_parameters': {'file': 'control_parameters.yaml', 'status': 'pending'},
         })
         self._save_document()
@@ -295,8 +219,9 @@ class ProcessManager:
             if subscribed:
                 if self.parameter_capture is None:
                     self.parameter_capture = ParameterCapture(
-                        self.node, self.run_document['test_condition']['key'])
-                    self.node.log('실행 중인 조향·거버너 파라미터를 기록합니다.')
+                        self.node, self.run_document['test_condition']['key'],
+                        require_longitudinal=self.require_longitudinal)
+                    self.node.log('실제 제어 파라미터와 STM_A readback을 기록합니다.')
                 if self.parameter_capture.tick():
                     capture, self.parameter_capture = self.parameter_capture, None
                     try:

@@ -96,7 +96,7 @@ HALTED로 정지한다.
 
 `input_timeout_ms`는 [Control Tuning](../control_tuning/README.md)의 `수신 시간 제한` 분류에서
 수정하고 `S`로 선택한 프리셋을 저장한다. 단독 launch와 `control_launch vehicle.launch.py` 모두
-`tuning_preset`(기본 `driving`)을 읽는다. `airborne` / `ground_stationary`도 선택할 수 있다.
+`tuning_preset`(기본 `driving`)을 읽는다. `airborne`도 선택할 수 있다.
 기본 프리셋 폴더는 Control 저장소의 `software/src/control_tuning/config/control_tuning.presets/`다.
 사용자 지정 `control_tuning_file:=bench.yaml`이면 `bench.presets/`를 읽는다.
 저장 후 거버너를 포함한 launch를 같은 프리셋으로 재시작한다.

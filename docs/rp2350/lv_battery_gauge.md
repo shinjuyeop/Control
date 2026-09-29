@@ -1,6 +1,10 @@
 # 12 V LFP LV 배터리 SOC 적산계
 
-## 1. 목표와 경계
+## 1. 현재 구성과 경계
+
+이 문서는 현재 코드의 계측·통신 구성과 장착 시 확인할 전기 조건을 정리합니다.
+빌드·업로드·정비와 적산 알고리즘의 상세는
+[RP2350 펌웨어 README](../../firmware/XIAO_RP2350_LV_GAUGE/README.md)를 따릅니다.
 
 LV 배터리 옆에 100 A shunt, INA228, XIAO RP2350과 local DC-DC를 장착해 전압,
 충·방전 전류, 전력, Ah/Wh와 SOC를 계산합니다. 상태는 STM_B로 보내고 STM_B가
@@ -72,22 +76,21 @@ Adafruit product 5832는 INA228과 정밀 15 mΩ shunt가 한 PCB에 있으며 �
 
 100 A 주전류가 breakout terminal이나 PCB trace로 흐르는 구성은 허용하지 않습니다.
 
-## 5. INA228 설정 초안
+## 5. 현재 INA228 설정
 
-INA228은 2.7–5.5 V로 동작하고 최대 85 V common-mode를 지원하므로 XIAO 3.3 V I2C와
-12 V급 LFP high-side 측정 범위에 들어옵니다.
+| 설정 | 구현값 |
+|---|---|
+| I2C | XIAO `Wire1`, D4/GPIO6 SDA, D5/GPIO7 SCL, 400 kHz, 3.3 V |
+| shunt resistance | 0.00075 Ω |
+| ADC range | ±163.84 mV (`ADCRANGE=0`) |
+| current scale / calibration | `0.0002 A/bit`, `SHUNT_CAL=1966` |
+| conversion | VBUS/VSHUNT/DIETEMP 각 50 µs, averaging 1회, `ADC_CONFIG=0xF000` |
+| address | 시작 시 `0x40`–`0x4F` 검색 후 manufacturer/device ID 확인 |
+| 외부 status | 100 ms (10 Hz), 실제 완료 변환 수집과 별개 |
 
-| 설정 | 초기값 | 근거 |
-|---|---:|---|
-| I2C supply/logic | 3.3 V | XIAO logic과 일치 |
-| shunt resistance | 0.00075 Ω | 100 A / 75 mV shunt |
-| ADC range | ±163.84 mV | 75 mV가 ±40.96 mV range를 초과 |
-| sample output | 10 Hz | SOC와 dashboard에 충분, averaging 조정 여유 |
-| I2C address | 입고 후 확인 | original 5832 default는 `0x40` |
-
-conversion time과 averaging은 bench에서 zero-current noise와 load step을 측정한 뒤
-선택합니다. INA228의 charge/energy accumulator를 사용하되 XIAO가 주기적으로 읽어
-전원 차단 전후의 persistent SOC state와 결합합니다.
+`CNVRF` 변환 완료와 설정 레지스터를 확인한 샘플만 사용합니다. 화면의 전압·전류·전력은
+100 ms 시정수 LPF를 적용하며, 적산은 INA228 CHARGE 증가량을 사용합니다.
+실제 샘플 수집률은 I2C 읽기 시간에 제한되므로 10 Hz status를 ADC 측정률로 해석하지 않습니다.
 
 ## 6. ACS758 비교 측정
 
@@ -117,7 +120,7 @@ LM2596 adjustable module은 LV battery에서 전자장치용 5 V를 만듭니다
 
 ## 8. STM_B 양방향 UART
 
-현재 STM_B에서 비어 있는 UART4를 사용합니다.
+STM_B UART4를 LV 적산계 전용으로 사용합니다.
 
 | 방향 | STM_B | NUCLEO connector | Battery XIAO |
 |---|---|---|---|
@@ -136,40 +139,49 @@ stale이며 brake나 traction safety logic에는 연결하지 않습니다.
 
 ## 9. Battery UART protocol
 
-전송 envelope는 [공통 RP Link v0.1](README.md#52-rp-link-v01)을 사용합니다.
+USB CDC와 UART는 같은 version 1 binary frame을 사용합니다.
 
-| Type | 이름 | 방향 | 설명 |
-|---:|---|---|---|
-| `0x01` | `BATTERY_STATUS` | XIAO→STM_B | 10 Hz 계측·SOC·상태 |
-| `0x10` | `BATTERY_COMMAND` | STM_B→XIAO | 설정·보정 request |
-| `0x11` | `BATTERY_COMMAND_ACK` | XIAO→STM_B | transaction 결과와 적용값 |
+```text
+A5 5A | version:u8 | type:u8 | length:u16 LE | sequence:u32 LE | payload | CRC32:u32 LE
+```
 
-### 9.1 `BATTERY_STATUS` 주요 필드
+CRC32 범위는 version부터 payload 끝까지입니다. byte layout의 기준 구현은
+[`lv_battery_protocol.h`](../../firmware/STM_B/Core/Inc/lv_battery_protocol.h)와
+[`lv_battery_protocol.c`](../../firmware/STM_B/Core/Src/lv_battery_protocol.c)입니다.
 
-| 필드 | type/단위 | 설명 |
+| Type | 이름 | Payload | 방향 |
+|---:|---|---:|---|
+| `0x01` | status | 136 byte | RP2350 → STM_B / USB, 100 ms |
+| `0x10` | command | 12 byte | STM_B / USB → RP2350 |
+| `0x11` | 저장 결과 ACK | 16 byte | RP2350 → STM_B / USB |
+
+### 9.1 Status 주요 필드
+
+| 필드 | 단위 / 의미 |
+|---|---|
+| `bus_voltage_uV`, `shunt_voltage_nV` | µV, nV; LPF 적용 |
+| `current_uA`, `power_mW` | µA, mW; 방전 양수·충전 음수, LPF 적용 |
+| `remaining_uAs`, `capacity_mAh` | µA·s, mAh; remaining 미설정은 `-1` |
+| `soc_centi_percent` | 0.01%; 미설정은 `-1` |
+| `charge_trip_uAs`, `discharge_trip_uAs` | 방향별 트립 전하량 µA·s |
+| `charge_trip_mWs`, `discharge_trip_mWs` | 방향별 트립 에너지 mW·s |
+| `active_time_ms` | 유효 계측 가동 누적시간; 전원 OFF 시간 제외 |
+| `die_temperature_mC` | INA die 온도 m°C; 배터리 온도 아님 |
+| `flags`, raw register, error counters | 센서·설정·저장·계측 유효성 진단 |
+
+### 9.2 정비 명령
+
+| Command | TUI 키 | 의미 |
 |---|---|---|
-| `bus_voltage_mv` | uint32, mV | pack bus voltage |
-| `current_ma` | int32, mA | gauge 내부는 방전 양수 |
-| `power_mw` | int32, mW | 부호는 current와 동일 |
-| `remaining_charge_mah` | int32, mAh | SOC 계산 상태 |
-| `capacity_mah` | uint32, mAh | 설정 용량 |
-| `soc_centi_percent` | uint16, 0.01% | 0–10000 |
-| `charge_total_mah` | uint64, mAh | lifetime 충전 누적 |
-| `discharge_total_mah` | uint64, mAh | lifetime 방전 누적 |
-| `ina_die_temperature_dc` | int16, 0.1 °C | module 진단, cell 온도 아님 |
-| `status_flags` | uint32 | sensor, config, persistence 상태 |
-| error counters | uint32[] | I2C, UART CRC, persistence 오류 |
+| `0x01` SET_FULL | `f` | 실제 완충 확인 후 SOC 100% 기준점 설정 |
+| `0x02` RESET_TRIP | `t` | 충전·방전 트립 Ah/Wh 및 계측 가동시간 초기화 |
+| `0x03` ZERO_CURRENT | `z` | 무부하·충전기 분리 상태에서 영점 보정 |
+| `0x04` SET_CAPACITY | `c` | 배터리 용량 설정 |
 
-### 9.2 Command 초안
-
-- `GET_CONFIG`: 현재 용량, shunt scale과 offset 조회
-- `SET_FULL`: remaining charge를 capacity로 설정
-- `SET_CAPACITY`: 정격 용량 Ah 변경
-- `ZERO_CURRENT`: 무부하 상태에서 current offset 갱신
-- `RESET_TRIP`: trip Ah/Wh만 초기화하고 lifetime 값은 유지
-
-상태 변경 command는 `transaction_id`를 포함하고 ACK를 받은 뒤에만 PC에 성공으로
-보고합니다. CRC가 틀리거나 지원하지 않는 command는 적용하지 않습니다.
+command는 `request_id`를 포함하고 저장·읽기 검증이 완료된 성공 ACK를 받은 뒤에만
+TUI가 성공으로 표시합니다. 성공한 동일 request의 재수신은 ACK만 재전송하며
+상태 변경을 중복 적용하지 않습니다. 별도 lifetime 적산 필드나 GET_CONFIG 명령은 없고,
+현재 설정과 적산 상태는 주기 status에서 확인합니다.
 
 ## 10. SOC와 persistence
 
@@ -181,28 +193,25 @@ charge current    < 0  -> remaining charge 증가
 SOC = clamp(remaining_charge_Ah / capacity_Ah, 0, 1)
 ```
 
-- 초기 capacity는 배터리 명판 확인 후 설정합니다.
-- LFP의 평탄한 voltage curve만으로 운행 중 SOC를 강제 보정하지 않습니다.
-- `SET_FULL`은 사용자가 실제 완충을 확인한 뒤 실행하는 v1 기준점입니다.
-- zero-current deadband와 charge/discharge efficiency는 bench 결과로 결정하고 설정값으로
-  보존합니다.
+- 초기 capacity는 100 Ah이고 SOC·remaining은 미설정입니다. 실제 명판 용량을 정비 TUI에서 설정합니다.
+- 전압만으로 SOC를 강제 보정하지 않습니다. `SET_FULL`은 실제 완충 확인 후 실행합니다.
+- 영점 보정은 새 변환 완료 current raw count 64개를 평균합니다. 자동 영점이나 임의 deadband는 없습니다.
+- CHARGE 증가량에 영점을 보정해 Ah를 계산하고 구간 양끝 평균 전압으로 Wh를 계산합니다.
+- 센서 무효·연결 단절 구간은 0 A로 채우거나 적산하지 않습니다.
 
 ### 10.2 Flash 저장
 
-- 설정과 SOC state는 CRC와 generation을 가진 순환 journal에 저장합니다.
-- 한 sample마다 flash를 쓰지 않고 누적 charge 변화량 또는 최대 저장 주기를 넘을 때만
-  새 record를 append합니다.
-- 부팅 시 CRC-valid record 중 가장 최신 generation을 복원합니다.
-- 쓰기 도중 전원이 꺼져도 직전 valid record가 남도록 in-place overwrite를 하지
-  않습니다.
-- 저장 간격과 flash 영역 크기는 실제 capacity, 최대 전류와 SDK flash endurance를
-  대조해 firmware 구현 때 고정합니다.
+LittleFS 256 KB 영역의 두 journal에 CRC/generation을 가진 84-byte record를
+각각 최대 512개씩 append합니다. 상태가 변경되면 60초 주기로 저장하고,
+정비 변경은 저장과 읽기 검증을 마친 뒤 ACK를 보냅니다. 부팅 시 최신 유효 record를
+복원하며 전원 차단 시 마지막 저장 이후 최대 60초의 적산이 손실될 수 있습니다.
+저장 구조와 정전 손실 계산은 [펌웨어 README](../../firmware/XIAO_RP2350_LV_GAUGE/README.md#적산과-저장-의미)를 참고합니다.
 
 ## 11. STM_B와 ROS 2
 
-STM_B의 현재 정적 micro-ROS library에는 `sensor_msgs/msg/BatteryState` type support가 이미
-포함되어 있습니다. 새 message generation 없이 `/lv_battery/state` publisher를 추가할
-수 있습니다.
+STM_B는 `sensor_msgs/msg/BatteryState`를 `/lv_battery/state`에 100 ms마다
+발행합니다. 유효 계측이 없으면 전압·전류는 NaN이고, SOC 미설정이면 charge와
+percentage는 NaN입니다.
 
 | `BatteryState` field | 값 |
 |---|---|
@@ -212,7 +221,7 @@ STM_B의 현재 정적 micro-ROS library에는 `sensor_msgs/msg/BatteryState` ty
 | `capacity` | 설정된 last-full capacity Ah |
 | `design_capacity` | 설정 정격 용량 Ah |
 | `percentage` | 0–1 SOC |
-| `power_supply_status` | current deadband 기준 charging/discharging/not charging |
+| `power_supply_status` | 유효 전류의 부호 기준 charging/discharging/not charging |
 | `power_supply_health` | cell/BMS 정보가 없으므로 unknown |
 | `power_supply_technology` | LiFe (`LIFE`) |
 | `present` | fresh CRC-valid battery status 수신 여부 |
@@ -251,3 +260,14 @@ request ID를 1초마다 재전송하므로 ACK 유실에도 RP journal mutation
 6. `/lv_battery/state`의 단위·전류 부호·SOC와 gauge 상태 비교
 7. LCD LV card와 ROS 값 일치 확인
 8. 실제 harness routing에서 CRC/sequence error와 LM2596 ripple·온도 기록
+
+## 12. 계기판과 검증 범위
+
+STM_B는 UART 상태를 ROS와 독립적으로 Dashboard CAN `0x324` byte 5–7에 담습니다.
+각각 LV flags, 0.1 V 단위 전압, 0–100% SOC이며 미설정 SOC는 `0xFF`입니다.
+UNO는 전압과 SOC의 validity를 별도로 확인합니다. UART가 1초간 끊기면 LV flags를
+내리며 브레이크·traction 제어에는 사용하지 않습니다.
+
+코드 연결과 실제 차량 검증을 구분합니다. 센서 ID/통신 확인 외에 known-current 비교,
+극성·영점, 충·방전 적산, 저장 중 정전 복구, UART 분리 시 ROS·LCD 무효 표시를
+실장 상태에서 확인해야 합니다. 이 문서는 해당 실차 시험의 완료 기록이 아닙니다.
