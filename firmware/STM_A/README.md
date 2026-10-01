@@ -397,7 +397,7 @@ RuntimeStats 적용 firmware의 LPUART1과 Agent는 모두 **460800 baud**를 �
 Driving Speed의 기존 CAN baseline은 보존된다. `Core/Src/longitudinal_controller.c`는
 기존 20 Hz Control task에서 호출하는 positive-current PI + 선택적 feedforward다. 새 task는 없다.
 부팅 기본은 Torque/DEFAULT이고 EZ 사인파(FOC) 기준이다: 회전 중 최소 전류 0, feedforward 0.
-PC→RAM calibration과 5 Hz readback은 [wire 계약](../../docs/INTERFACES.md#longitudinal-calibration-v4),
+PC→RAM calibration과 5 Hz readback은 [wire 계약](../../docs/INTERFACES.md#longitudinal-calibration-v5),
 reset/feedback/전류 정책과 시험 절차는 [실측 보고서](../../docs/reports/2026-09-21_longitudinal_torque_pi.md),
 v4 구동 보호와 방형파/사인파 값은 [재구성 보고서](../../docs/reports/2026-10-01_ezkontrol_sine_rework.md)를 따른다.
 
@@ -408,6 +408,15 @@ ABI v4(2026-10-01)에서 `StartControl()`은 분기마다 `motor_request_t`만 �
 하한에서 시작한다. 역회전은 −0.30 m/s가 3프레임 이어질 때만 HALTED이고 그 전에는 RUN·0 A다.
 Part I마다 `Long_CollapseUpdate()`가 EZ 속도 추정 붕괴를 세고 status에 스냅샷을 낸다(관측 전용,
 `collapse_hold_frames`로 AUTO 반응 선택). 안전 정지 경로의 우선순위는 그대로다.
+
+ABI v5(2026-10-02)는 회생제동을 calibration으로 옮겼다(예전 `AUTO_REGEN_MAX_A` 20 A·100 A/s 상수 삭제,
+기본 `regen_max_current` 0 = 꺼짐). AUTO Torque·외부 전류에서 `Long_RegenFrame()`이 LT/외부 요청과
+속도 PI 요청(`pi_regen`) 중 큰 값을 `regen_slew`로 옮기고, 속도(1.5→0.8 m/s)·bus 전압(57→58 V)·충전전류
+(30 A) 한도와 Part I 단절은 같은 프레임에 적용한다. 회생 중에는 구동 PI를 동결하고, 회생이 0 A로
+돌아오는 프레임까지 회생 경로가 차지해 전류 부호가 한 프레임에 바뀌지 않는다. 목표 0·브레이크·
+E-stop·safety·host timeout은 회생을 즉시 지우고 기존 HALTED를 보낸다. 붕괴 감지는 직전·최신 명령 중
+큰 값과 크기로 비교하고 RPM 허용폭을 명령 전류에 비례(3 rpm/A)시키며, 음수 상전류 임계는 파형별
+설정값(`collapse_phase_low`, 사인파 −60 A)이며 최신·직전 명령이 모두 0 이상일 때만 본다.
 
 Host 알고리즘/상태 전이 테스트 (HAL/ROS/보드 불필요):
 

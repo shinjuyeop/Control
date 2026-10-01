@@ -70,7 +70,7 @@ class Editor:
         candidate = {**self.draft, f.key: value}
         # Single-field edits may temporarily violate coupled limits; validate the
         # complete batch at save so either edit order is possible.
-        if not f.choices and (not math.isfinite(value) or value < 0):
+        if not f.choices and (not math.isfinite(value) or (value < 0 and not f.signed)):
             raise ValueError('0 이상의 유한한 숫자를 입력하십시오.')
         self.draft = candidate
         self.editing = None
@@ -122,7 +122,7 @@ class Editor:
         entry = self.presets.entry(condition)
         self.tell('이전 이름의 v2 프리셋을 읽었습니다. S로 저장하면 v3로 변환됩니다.'
                   if entry and entry['schema_version'] == 2 else
-                  '파일에 없던 항목을 기본값으로 채웠습니다(STM_A v4 이전 프리셋은 파형=방형파). S로 저장하세요.'
+                  '파일의 옛 항목을 정리했습니다(새 항목은 기본값, 거버너 slew는 제거됨). S로 저장하세요.'
                   if entry and not self.presets.is_current(condition) else '')
 
     def preset_values(self, condition):

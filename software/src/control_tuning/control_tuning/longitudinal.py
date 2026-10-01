@@ -1,4 +1,4 @@
-"""STM_A longitudinal ABI v4: named host representation of fixed Float32 arrays.
+"""STM_A longitudinal ABI v5: named host representation of fixed Float32 arrays.
 
 Keep field order in sync with longitudinal_controller.h and docs/INTERFACES.md.
 Configuration is RAM-only and conditional on the STM_A revision and stop gate.
@@ -10,10 +10,11 @@ import struct
 
 from .naming import canonical_values
 
-VERSION = 4
+VERSION = 5
 MODES = ('speed', 'torque', 'external_current')
 WAVEFORMS = ('square', 'sine')
 SWITCH = ('disabled', 'enabled')
+REGEN_RPM_FIELD = ('zero', 'ceiling')
 LONGITUDINAL = 'stm_a_longitudinal'
 CONFIG_TOPIC = '/drive/longitudinal_config'
 STATUS_TOPIC = '/drive/longitudinal_status'
@@ -26,8 +27,12 @@ WIRE_KEYS = (
     'motor_waveform', 'start_step', 'hold_on_speed_mps', 'hold_off_speed_mps',
     'reverse_speed_mps', 'reverse_debounce_frames', 'collapse_hold_frames',
     'ff_current_gain_mps2_per_a', 'ff_rolling_resistance_mps2', 'ff_speed_damping_per_s',
-    'ff_accel_limit_mps2',
+    'ff_accel_limit_mps2', 'regen_max_current_a', 'regen_slew_a_s', 'regen_fade_speed_mps',
+    'regen_cutoff_speed_mps', 'regen_voltage_soft_v', 'regen_voltage_hard_v',
+    'regen_bus_current_limit_a', 'regen_rpm_field_mode', 'pi_regen_enabled',
+    'regen_enter_error_mps', 'regen_exit_error_mps', 'regen_kp_a_per_mps', 'collapse_phase_low_a',
 )
+V4_KEYS = WIRE_KEYS[:24]
 # v1..v3 readbacks: slot 12 was the coast-only floor (v3 only).
 LEGACY_KEYS = WIRE_KEYS[:12] + ('coast_current_floor_a',)
 # Values that depend on the EZ commutation, stored per waveform (WAVEFORMS order).
@@ -35,11 +40,15 @@ SPECIFIC = {
     'min_drive_current_a': ('min_drive_current_square_a', 'min_drive_current_sine_a'),
     'ff_current_gain_mps2_per_a': ('ff_current_gain_square_mps2_per_a',
                                    'ff_current_gain_sine_mps2_per_a'),
+    'collapse_phase_low_a': ('collapse_phase_low_square_a', 'collapse_phase_low_sine_a'),
 }
 CONFIG_KEYS = tuple(name for key in WIRE_KEYS for name in SPECIFIC.get(key, (key,)))
-CHOICES = {'control_mode': MODES, 'motor_waveform': WAVEFORMS, 'start_step': SWITCH}
+CHOICES = {'control_mode': MODES, 'motor_waveform': WAVEFORMS, 'start_step': SWITCH,
+           'regen_rpm_field_mode': REGEN_RPM_FIELD, 'pi_regen_enabled': SWITCH}
 INTEGER_KEYS = ('reverse_debounce_frames', 'collapse_hold_frames')
 MIN_CURRENT_CAP_A = 30.
+# Battery (14S, 58.8 V full, 39 A continuous charge) and controller ceilings.
+REGEN_CURRENT_CAP_A, REGEN_VOLTAGE_CAP_V, REGEN_BUS_CURRENT_CAP_A = 60., 60., 39.
 STATE_KEYS = (
     'speed_error_mps', 'p_current_a', 'i_current_a', 'ff_current_a', 'unsaturated_current_a',
     'current_command_a', 'saturated', 'anti_windup', 'coasting', 'feedback_valid', 'inhibit',
@@ -47,8 +56,10 @@ STATE_KEYS = (
     'reverse_frames', 'collapse_events', 'collapse_flags', 'collapse_age_s',
     'collapse_command_a', 'collapse_phase_current_a', 'collapse_bus_current_a',
     'collapse_rpm', 'collapse_previous_rpm', 'collapse_path', 'collapse_hold',
-    'collapse_reaction_frames',
+    'collapse_reaction_frames', 'regen_request_a', 'regen_limit_a', 'regen_speed_factor',
+    'regen_voltage_factor', 'regen_bus_scale', 'regen_current_a', 'regen_active', 'pi_regen_mode',
 )
+V4_STATE_KEYS = STATE_KEYS[:28]
 LEGACY_STATE_KEYS = ('speed_error_mps', 'p_current_a', 'i_current_a', 'unsaturated_current_a',
                      'current_command_a', 'saturated', 'anti_windup', 'coasting',
                      'feedback_valid', 'inhibit')
@@ -61,7 +72,14 @@ PROTECTION = dict(
     start_step='enabled', hold_on_speed_mps=.35, hold_off_speed_mps=.2,
     reverse_speed_mps=.3, reverse_debounce_frames=3, collapse_hold_frames=0,
     ff_current_gain_square_mps2_per_a=0., ff_current_gain_sine_mps2_per_a=0.,
-    ff_rolling_resistance_mps2=0., ff_speed_damping_per_s=0., ff_accel_limit_mps2=0.)
+    ff_rolling_resistance_mps2=0., ff_speed_damping_per_s=0., ff_accel_limit_mps2=0.,
+    # Regeneration is off (0 A) until a preset enables it explicitly.
+    regen_max_current_a=0., regen_slew_a_s=100., regen_fade_speed_mps=1.5,
+    regen_cutoff_speed_mps=.8, regen_voltage_soft_v=57., regen_voltage_hard_v=58.,
+    regen_bus_current_limit_a=30., regen_rpm_field_mode='zero', pi_regen_enabled='disabled',
+    regen_enter_error_mps=.3, regen_exit_error_mps=.1, regen_kp_a_per_mps=0.,
+    # FOC current noise at 0 A reached -51 A at 2350 rpm on 2026-10-01.
+    collapse_phase_low_square_a=-30., collapse_phase_low_sine_a=-60.)
 DEFAULT = {**dict(zip(WIRE_KEYS[:12], ('speed', 180., 12., 480., 120., 2400., 4800.,
                                         .05, .12, 20., 200., 4500.))), **PROTECTION}
 AIRBORNE = {**dict(zip(WIRE_KEYS[:12], ('torque', 25., 2., 40., 6., 120., 400.,
@@ -70,22 +88,27 @@ RESULTS = ('대기', '적용 완료', '잘못된 설정', 'MANUAL 정지·무전
            '다른 설정이 먼저 적용됨', '다른 요청 처리 중')
 # Same rules as LONG_COLLAPSE_* in longitudinal_controller.h, for MCAPs recorded
 # before the firmware counter existed (square-wave baseline) and for FOC runs.
-COLLAPSE_RULES = dict(rpm_min=400., rpm_step=200., phase_margin_a=60., phase_negative_a=30.,
+COLLAPSE_RULES = dict(rpm_min=400., rpm_step=200., rpm_per_a=3., phase_margin_a=60.,
                       bus_margin_a=60., rearm_frames=20)
+# Phase-low threshold by waveform when a recording predates collapse_phase_low.
+COLLAPSE_PHASE_LOW = {'square': -30., 'sine': -60.}
 
 
-def collapse_flags(command, phase, bus, rpm, previous_rpm, running, torque_command):
-    """Bitmask of one Part I frame, mirroring Long_CollapseFlags."""
+def collapse_flags(command, previous_command, phase, bus, rpm, previous_rpm, running,
+                   torque_command, phase_low):
+    """Bitmask of one Part I frame, mirroring Long_CollapseFlags (v5)."""
     r = COLLAPSE_RULES
-    flags = 0
     if not running:
         return 0
-    if abs(previous_rpm) >= r['rpm_min'] and (rpm * previous_rpm <= 0 or abs(rpm - previous_rpm) > r['rpm_step']):
+    flags = 0
+    reference = max(abs(command), abs(previous_command))
+    step = max(r['rpm_step'], r['rpm_per_a'] * reference)
+    if abs(previous_rpm) >= r['rpm_min'] and (rpm * previous_rpm <= 0 or abs(rpm - previous_rpm) > step):
         flags |= 1
-    if torque_command and command >= 0:
-        flags |= (2 if phase > command + r['phase_margin_a'] else 0)
-        flags |= (4 if phase < -r['phase_negative_a'] else 0)
-        flags |= (8 if bus > command + r['bus_margin_a'] else 0)
+    if torque_command:
+        flags |= 2 if abs(phase) > reference + r['phase_margin_a'] else 0
+        flags |= 4 if min(command, previous_command) >= 0 and phase < phase_low else 0
+        flags |= 8 if abs(bus) > reference + r['bus_margin_a'] else 0
     return flags
 
 
@@ -150,6 +173,21 @@ def validate_config(config):
     }
     for name in SPECIFIC['ff_current_gain_mps2_per_a']:
         checks[name] = config[name] == 0 or .0005 <= config[name] <= .2
+    # Mirrors Long_DecodeRequest: battery ceilings and non-degenerate fade bands.
+    checks.update({
+        'regen_max_current_a': 0 <= config['regen_max_current_a'] <= REGEN_CURRENT_CAP_A,
+        'regen_slew_a_s': 10 <= config['regen_slew_a_s'] <= 1000,
+        'regen_fade_speed_mps': .3 <= config['regen_fade_speed_mps'] <= 5,
+        'regen_cutoff_speed_mps': .1 <= config['regen_cutoff_speed_mps'] < config['regen_fade_speed_mps'],
+        'regen_voltage_soft_v': 40 <= config['regen_voltage_soft_v'] < config['regen_voltage_hard_v'],
+        'regen_voltage_hard_v': config['regen_voltage_hard_v'] <= REGEN_VOLTAGE_CAP_V,
+        'regen_bus_current_limit_a': 1 <= config['regen_bus_current_limit_a'] <= REGEN_BUS_CURRENT_CAP_A,
+        'regen_enter_error_mps': .05 <= config['regen_enter_error_mps'] <= 2,
+        'regen_exit_error_mps': 0 <= config['regen_exit_error_mps'] < config['regen_enter_error_mps'],
+        'regen_kp_a_per_mps': 0 <= config['regen_kp_a_per_mps'] <= 500,
+    })
+    for name in SPECIFIC['collapse_phase_low_a']:
+        checks[name] = -200 <= config[name] <= -10
     for key, ok in checks.items():
         if not ok:
             raise ValueError(f'{key}: 허용 범위를 확인하세요.')
@@ -181,25 +219,27 @@ def status_data(config, state=None, *, revision=1, request_id=1, result=1, sourc
 
 def decode_status(data):
     layouts = {1: (12, LEGACY_STATE_KEYS), 2: (12, LEGACY_STATE_KEYS),
-               3: (13, LEGACY_STATE_KEYS), 4: (len(WIRE_KEYS), STATE_KEYS)}
+               3: (13, LEGACY_STATE_KEYS), 4: (len(V4_KEYS), V4_STATE_KEYS),
+               5: (len(WIRE_KEYS), STATE_KEYS)}
     if (not data or data[0] not in layouts or not all(math.isfinite(x) for x in data) or
             len(data) != 5 + layouts[int(data[0])][0] + len(layouts[int(data[0])][1])):
-        raise ValueError('STM_A longitudinal status ABI v1/v2/v3/v4가 필요합니다.')
+        raise ValueError('STM_A longitudinal status ABI v1~v5가 필요합니다.')
     version = int(data[0])
     count, state_keys = layouts[version]
     if data[5] not in (range(3) if version >= 2 else range(2)) or data[4] not in (0, 1) or data[3] not in range(len(RESULTS)):
         raise ValueError('STM_A longitudinal status enum 오류')
     raw = list(data[5:5 + count])
-    if version == VERSION:
-        if raw[13] not in (0, 1) or raw[14] not in (0, 1):
+    if version >= 4:
+        keys = WIRE_KEYS[:count]
+        wire = dict(zip(keys, raw))
+        if any(wire[key] not in range(len(CHOICES[key])) for key in CHOICES if key in wire):
             raise ValueError('STM_A longitudinal status enum 오류')
-        wire = dict(zip(WIRE_KEYS, raw))
-        wire.update({key: CHOICES[key][int(wire[key])] for key in CHOICES})
+        wire.update({key: CHOICES[key][int(wire[key])] for key in CHOICES if key in wire})
         wire.update({key: int(wire[key]) for key in INTEGER_KEYS})
         # Readback names the active waveform's slot; the other one is not on the wire.
         index = WAVEFORMS.index(wire['motor_waveform'])
         config = {}
-        for key in WIRE_KEYS:
+        for key in keys:
             config[SPECIFIC[key][index] if key in SPECIFIC else key] = wire[key]
     else:
         config = dict(zip(LEGACY_KEYS, [MODES[int(raw[0])], *raw[1:]]))

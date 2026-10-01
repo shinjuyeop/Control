@@ -136,6 +136,10 @@ float HilLogic_EZPlantTargetRpm(const HilEZCommand_t *command)
   }
   if (command->speed_control) return command->rpm_field;
 
+  /* Regen: negative current against a forward RPM ceiling brakes the wheel
+   * toward a stop (STM_A sends RPM 0 or a positive ceiling with regen). */
+  if (command->phase_current_a < 0.0f && command->rpm_field > 0.0f) return 0.0f;
+
   /* Torque control: the RPM field is only a limit, so the commanded phase
    * current decides how much of it the motor actually reaches. */
   float fraction = command->phase_current_a / HIL_EZ_PLANT_TORQUE_FULL_SCALE_A;

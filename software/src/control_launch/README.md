@@ -109,10 +109,17 @@ ros2 launch control_launch joystick_teleop.launch.py use_sim_time:=true
 같습니다. 두 스틱이 중앙이고 RT를 놓으면 목표 조향각과 속도는 모두 0입니다.
 
 LT는 `/vehicle/drive_current_command`로 0 이하의 상전류를 보냅니다. 놓으면 0을
-보냅니다. STM_A는 AUTO TORQUE 모드에서만 이 값을 회생 요청으로 받아, 목표 RPM 0과
-함께 EZkontrol에 보냅니다. 펌웨어가 음수 쪽을 20 A로 제한하고 100 A/s로 천천히
-바꾸며, LT를 누르는 동안에는 RT 구동보다 회생이 우선합니다. `longitudinal_mpc`도
-같은 토픽에 발행하므로 함께 실행하지 않습니다.
+보냅니다. STM_A는 AUTO Torque 모드에서 이 값을 회생 요청으로 받습니다. **최종 상한은
+STM_A calibration의 `regen_max_current_a`(TUI `회생 최대 전류`, 기본 0 = 꺼짐)가 정합니다.**
+`regen_max_a`가 더 커도 그 값을 넘지 못하고, 펌웨어가 회생 변화율(`regen_slew_a_s`, 기본
+100 A/s), 차단 속도(0.8 m/s 이하 0 A), bus 전압(57→58 V), 충전전류(30 A) 한도를 함께
+적용합니다. LT를 누르는 동안에는 RT 구동보다 회생이 우선합니다. 회생 중 EZ RPM 필드는
+`regen_rpm_field_mode`(0 또는 RPM 한도)를 따릅니다. `longitudinal_mpc`도 같은 토픽에
+발행하므로 함께 실행하지 않습니다.
+
+공중 R1 시험은 프리셋의 `회생 최대 전류`를 5 → 10 → 20 A로 한 단계씩 올리고, 조이스틱도
+`regen_max_a:=5`(10, 20)로 같은 값을 지정해 LT 1~2 s를 요청합니다. 기본 1 A는 안전한
+시작값으로 유지합니다.
 
 십자키는 다른 조작과 관계없이 언제든 사용할 수 있습니다. 한 번 누를 때 한 단계
 변경되며 길게 누르면 그 값이 유지됩니다. 방향을 놓았다가 다시 누르거나 반대 방향으로
@@ -126,7 +133,7 @@ LT는 `/vehicle/drive_current_command`로 0 이하의 상전류를 보냅니다.
 | `max_steering_deg` | 30.0 | 왼쪽 스틱의 한쪽 최대 조향각, 중앙 등가 Ackermann 각도 |
 | `max_speed_kph` | 20.0 | RT를 끝까지 눌렀을 때의 목표속도 |
 | `steering_step_deg` | 1.0 | 십자키 한 번당 조향 범위 변화량 |
-| `regen_max_a` | 1.0 | LT를 끝까지 눌렀을 때의 회생 상전류 크기 [A] |
+| `regen_max_a` | 1.0 | LT를 끝까지 눌렀을 때의 회생 상전류 요청 크기 [A]. STM_A `regen_max_current_a`를 넘지 못함 |
 
 동적 범위는 실행 시 해당 런치 최대값으로 초기화하고 이후 독립적으로 증감합니다.
 최솟값은 0이며 런치 최대값보다 크게 설정할 수도 있습니다. 재실행하면 초기화합니다.

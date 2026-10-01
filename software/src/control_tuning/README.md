@@ -63,24 +63,29 @@ v3는 `steering`, `drive`, `governor`, `timeouts`로 구분한다. 설정키는 
 
 | 값 | airborne | driving |
 |---|---:|---:|
-| mode | torque | torque |
-| Kp / Ki | 15 / 2 | 180 / 12 |
-| max / integrator A | 40 / 6 | 480 / 120 |
+| mode | torque | speed |
+| 모터 파형 | sine | sine |
+| Kp / Ki | 15 / 10 | 180 / 12 |
+| max / integrator A | 80 / 25 | 480 / 120 |
 | slew up / down A/s | 120 / 400 | 2400 / 4800 |
 | deadband / hysteresis m/s | 0.05 / 0.12 | 0.05 / 0.12 |
-| reapply band A / slew A/s | 5 / 40 | 20 / 200 |
+| reapply band A / slew A/s | 5 / 20 | 20 / 200 |
 | RPM ceiling | 4500 | 4500 |
+| 회전 중 최소 전류 square / sine A | 12 / 0 | 12 / 0 |
+| 회생 최대 전류 A | 0 (꺼짐) | 0 (꺼짐) |
 
+위 표는 체크인된 프리셋 파일 값이다(2026-10-02). airborne 적분 한도 25 A는 2026-10-01 사인파 공중
+시험에서 정속 유지에 10~17 A가 필요했기 때문이다(6 A에서는 −0.3~−0.7 m/s 정상상태 오차).
 [실측 근거·단위·airborne/A-B 절차](../../../docs/reports/2026-09-21_longitudinal_torque_pi.md)를 따른다.
-STM_A boot는 **speed/DEFAULT**다. `drive_current_limit_a`/`drive_motor_speed_limit_rpm`은
-Speed/Torque 공통 envelope다. airborne는 두 AUTO mode 모두 40 A/4500 rpm,
-driving은 480 A/4500 rpm이다. Speed에서는 current-limit field와 signed target RPM 범위,
-Torque에서는 PI 전류 상한과 EZ RPM ceiling으로 쓰며 최종 물리 forward/reverse clamp는 별도다.
-PI gain·적분·deadband/coast·slew/reapply는 Torque 전용이다. 40 A는 공중 40 km/h
-시험용 초기 전류 한도다. 현재 타이어 지름·감속비 환산에서 40 km/h는 약 2077 motor rpm으로,
-4500 rpm 상한보다 낮다. 도달 시간과 실제 전류는 아직 검증되지 않았다.
-MANUAL pedal은 기존 경로를 쓴다.
-이 공통 envelope 동작에는 수정된 STM_A firmware가 필요하다. 그 이후 값 조정은 저장·구동 스택 재시작으로 반영한다.
+STM_A boot는 **torque/DEFAULT**(480 A, Kp 180, 사인파, 회생 꺼짐)다. 런치 helper가 프리셋 적용에
+실패하면 이 DEFAULT로 남으므로, 시나리오 TUI는 STM_A readback이 런치 프리셋과 다르면 구동 Run을
+거부한다. `drive_current_limit_a`/`drive_motor_speed_limit_rpm`은 Speed/Torque 공통 envelope다.
+airborne는 80 A/4500 rpm, driving은 480 A/4500 rpm이다. Speed에서는 current-limit field와 signed
+target RPM 범위, Torque에서는 PI 전류 상한과 EZ RPM ceiling으로 쓰며 최종 물리 forward/reverse
+clamp는 별도다. PI gain·적분·deadband/coast·slew/reapply는 Torque 전용이다.
+MANUAL pedal은 Torque·외부 전류 calibration에서 같은 전류 한도·RPM 상한·상승/하강률을 쓰고
+Speed calibration에서는 0~480 A 직접 매핑이다.
+값 조정은 저장·구동 스택 재시작으로 반영한다.
 
 ```bash
 cd ~/KAI_ws
@@ -104,8 +109,8 @@ config/
 fsync/atomic replace, `.yaml.bak`과 외부 변경 검사를 사용한다. TUI는 Git push를 하지 않는다.
 
 **v2 프리셋은 그대로 읽을 수 있고 S 저장 시 v3 이름으로 전환한다.** 읽기만으로 원본 파일을 바꾸지 않는다.
-새·옛 이름의 값이 충돌하면 오류로 표시한다. 나중에 추가된 Governor slew와 STM_A v4 구동 보호·feedforward
-항목만 기본값으로 채운다. STM_A v4 이전 프리셋은 방형파 EZ로 튜닝됐으므로 파형을 `square`로 읽고,
+새·옛 이름의 값이 충돌하면 오류로 표시한다. 나중에 추가된 STM_A v4 구동 보호·feedforward와 v5 회생 항목만
+기본값(회생 꺼짐)으로 채운다. 2026-10-02에 없앤 거버너 slew 두 키는 오류 없이 무시한다. STM_A v4 이전 프리셋은 방형파 EZ로 튜닝됐으므로 파형을 `square`로 읽고,
 옛 `drive_coast_current_floor_a`를 방형파 회전 중 최소 전류로 옮긴다. 채운 항목이 있으면 TUI가 알리며
 S로 저장해야 파일에 남는다. v1 flat preset은 종방향 값까지 명시해 이관해야 한다.
 공통 `control_tuning.yaml`의 native ROS override 형식은 유지한다.
@@ -119,7 +124,16 @@ EZkontrol 정류 방식(PC 설정의 Square-wave/Sine-wave)은 STM_A가 CAN으�
 |---|---|---|
 | 파형별 | 회전 중 최소 구동 전류 (`drive_min_current_square_a` / `drive_min_current_sine_a`) | 방형파 12 A, 사인파 0 A(꺼짐) |
 | 파형별 | FF 전류 이득 (`drive_ff_current_gain_square_mps2_per_a` / `..._sine_...`) | 같은 상전류의 토크가 파형마다 다름. 둘 다 0(꺼짐) |
-| 공통 | 출발 스텝, hold 0.35/0.20 m/s, 역회전 0.30 m/s·3프레임, 붕괴 반응 프레임, FF 구름저항·감쇠·가속 한도, PI·slew·한도 | |
+| 파형별 | 붕괴 감지 음수 상전류 (`drive_collapse_phase_low_square_a` / `..._sine_a`) | 방형파 −30 A, 사인파 −60 A(FOC 0 A 잡음) |
+| 공통 | 출발 스텝, hold 0.35/0.20 m/s, 역회전 0.30 m/s·3프레임, 붕괴 반응 프레임, FF 구름저항·감쇠·가속 한도, PI·slew·한도, 회생 전체 | |
+
+## 회생제동 (STM_A v5)
+
+회생은 기본으로 꺼져 있다(`회생 최대 전류` 0). 켜는 순서는 조이스틱 LT 수동 회생(R1·R2) →
+속도 PI 자동 회생이다. `구동출력`의 회생 최대 전류를 5 → 10 → 20 A로 한 단계씩 올리고 시험한다.
+`구동보호`의 감소 시작·차단 속도(1.5/0.8 m/s), 전압 감소 시작·차단(57/58 V), 충전전류 한도(30 A)는
+배터리 조건(58.8 V, 39 A)을 지키는 공통값이다. `구동응답`의 `속도 PI 자동 회생`은 R1·R2 통과 뒤
+enabled로 바꾸고 `PI 회생 P 게인`을 작은 값부터 올린다. 진입/해제 과속 0.3/0.1 m/s 사이는 0 A 타력이다.
 
 TUI는 선택한 파형의 값만 보여 주고 다른 파형 값은 그대로 저장해 둔다. STM_A에는 선택한
 파형의 값 하나와 파형 선언이 가며, readback과 MCAP 캡처에 파형이 함께 남는다.
@@ -145,8 +159,8 @@ STM_A calibration은 launch의 one-shot helper가 별도로 적용한다.
 STM_A가 MANUAL, fresh Part I <500 ms·Part II <1 s, |speed|≤0.05 m/s, pedal=0,
 |commanded current|<0.1 A, |actual phase current|≤1 A를 검사하고 revision과 함께 atomic commit한다.
 helper가 request/revision/full config readback을 확인하며 unsafe는 거절한다.
-[Wire 계약](../../../docs/INTERFACES.md#longitudinal-calibration-v4)은 STM_A longitudinal ABI v4다.
-helper는 v4만 보내므로 v3 이하 STM_A에는 적용을 거부한다. STM_A와 host를 함께 갱신한다.
+[Wire 계약](../../../docs/INTERFACES.md#longitudinal-calibration-v5)은 STM_A longitudinal ABI v5다.
+helper는 v5만 보내므로 v4 이하 STM_A에는 적용을 거부한다. STM_A와 host를 함께 갱신한다.
 
 helper는 15 s 안에 safe stop/readback을 기다려 한 번 적용한다. 실패하면 오류를 표시하고
 종료하므로 실제 source/mode와 정지 상태를 확인하고 선택한 프리셋으로 구동 스택을 재시작한다.

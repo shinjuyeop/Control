@@ -16,50 +16,16 @@ constexpr double kTimeoutMs = 200.0;
 constexpr float kNan = std::numeric_limits<float>::quiet_NaN();
 constexpr float kInf = std::numeric_limits<float>::infinity();
 
-TEST(SpeedSlew, AccelerationStartsAtZeroAndUsesIndependentUpAndDownRates)
+TEST(ForwardedSpeed, BrakeIsZeroAndEverythingElsePassesUnshaped)
 {
-  command_governor::SpeedSlew slew;
-  EXPECT_FLOAT_EQ(slew.update(5, false, 0, .2, .5, 1), 0);
-  for (int i = 1; i <= 50; ++i) {
-    EXPECT_NEAR(slew.update(5, false, i * .1, .2, .5, 1), i * .1, 1e-5);
-  }
-  EXPECT_NEAR(slew.update(2, false, 5.1, .2, .5, 1), 4.95, 1e-5);
-  EXPECT_FLOAT_EQ(slew.update(0, false, 5.15, .2, .5, 1), 0);
-  EXPECT_NEAR(slew.update(5, false, 5.2, .2, .5, 1), .05, 1e-5);
-  EXPECT_FLOAT_EQ(slew.update(5, true, 5.25, .2, .5, 1), 0);
-  EXPECT_NEAR(slew.update(5, false, 5.3, .2, .5, 1), .05, 1e-5);
-  EXPECT_FLOAT_EQ(slew.update(5, false, 6, .2, .5, 1), 0);
-  EXPECT_NEAR(slew.update(5, false, 6.1, .2, .5, 1), .1, 1e-5);
-  EXPECT_FLOAT_EQ(slew.update(5, false, 6.15, .2, .5, 0), 5);
-}
-
-TEST(SpeedSlew, DownwardStepConvergesAtConfiguredRateWithVariablePeriods)
-{
-  command_governor::SpeedSlew slew;
-  EXPECT_FLOAT_EQ(slew.update(5, false, 0, .2, .5), 5);
-  EXPECT_FLOAT_EQ(slew.update(2, false, .1, .2, .5), 4.95f);
-  EXPECT_FLOAT_EQ(slew.update(2, false, .15, .2, .5), 4.925f);
-  for (int i = 2; i <= 60; ++i) {
-    const float output = slew.update(2, false, i * .1, .2, .5);
-    EXPECT_NEAR(output, std::max(2.0, 5.0 - i * .05), 1e-5);
-  }
-  EXPECT_FLOAT_EQ(slew.update(2, false, 6.1, .2, .5), 2);
-  EXPECT_FLOAT_EQ(slew.update(5, false, 6.15, .2, .5), 5);
-}
-
-TEST(SpeedSlew, ZeroBrakeReverseAndStreamRecoveryNeverRetainOldSpeed)
-{
-  command_governor::SpeedSlew slew;
-  slew.update(5, false, 0, .2, .5);
-  EXPECT_FLOAT_EQ(slew.update(0, false, .05, .2, .5), 0);
-  EXPECT_FLOAT_EQ(slew.update(2, false, .1, .2, .5), 2);
-  EXPECT_FLOAT_EQ(slew.update(5, true, .15, .2, .5), 0);
-  EXPECT_FLOAT_EQ(slew.update(1, false, .2, .2, .5), 1);
-  EXPECT_FLOAT_EQ(slew.update(-1, false, .25, .2, .5), -1);
-  slew.update(5, false, .3, .2, .5);
-  EXPECT_FLOAT_EQ(slew.update(1, false, 1, .2, .5), 1);
-  slew.update(5, false, 1.05, .2, .5);
-  EXPECT_FLOAT_EQ(slew.update(1, false, 1.1, .2, 0), 1);
+  using command_governor::forwarded_speed;
+  EXPECT_FLOAT_EQ(forwarded_speed(5.0f, true), 0.0f);
+  EXPECT_FLOAT_EQ(forwarded_speed(-1.0f, true), 0.0f);
+  EXPECT_FLOAT_EQ(forwarded_speed(0.0f, false), 0.0f);
+  EXPECT_FLOAT_EQ(forwarded_speed(-1.0f, false), -1.0f);
+  // No speed slew: a downward or upward step reaches STM_A in the same message.
+  EXPECT_FLOAT_EQ(forwarded_speed(8.3f, false), 8.3f);
+  EXPECT_FLOAT_EQ(forwarded_speed(2.0f, false), 2.0f);
 }
 
 TEST(EvaluateInput, AcceptsFreshFiniteCommand)

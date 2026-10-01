@@ -19,7 +19,9 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from sensor_msgs.msg import Imu, NavSatFix
 from std_msgs.msg import Bool, String, Float32MultiArray
-from control_tuning.longitudinal import decode_status
+from control_tuning.longitudinal import LONGITUDINAL, decode_status, wire_equal
+from control_tuning.presets import load_launch_overrides
+from control_tuning.storage import default_settings_path
 from tf2_msgs.msg import TFMessage
 
 from .scenario_runner import ScenarioSetpoint, CURRENT_SCENARIOS, current_setpoint, external_current_ready
@@ -289,6 +291,41 @@ class SysidNode(Node):
         return [detail for _, go, detail in self.gate_rows(
             now, route_input=route_input) if not go]
 
+    def calibration_problem(self, now=None, scenario=None):
+        """A driving Run needs STM_A on the launch preset, not DEFAULT after a reboot.
+
+        The launch helper applies the preset once and the stack keeps running when
+        it fails, so this compares the readback with the preset file instead.
+        """
+        now = self.clock() if now is None else now
+        sample = self.longitudinal_sample
+        if not sample or now - sample[0] > .7:
+            return 'STM_A 종방향 readback 미수신'
+        status = sample[1]
+        if status['source'] != 'HOST_OVERRIDE':
+            return ('STM_A 종방향 설정이 DEFAULT(재부팅 또는 프리셋 적용 실패): '
+                    '선택한 프리셋으로 구동 스택을 재시작하세요')
+        preset = self.launch_preset
+        if preset not in CONDITION_KEYS:
+            return '런치 프리셋 확인 대기'
+        try:
+            cached = getattr(self, '_preset_expected', None)
+            if not cached or cached[0] != preset or time.monotonic() - cached[1] > 2.0:
+                cached = (preset, time.monotonic(),
+                          load_launch_overrides(default_settings_path(), LONGITUDINAL, preset))
+                self._preset_expected = cached
+            expected = cached[2]
+            # An external longitudinal controller launch forces external_current.
+            if scenario in CURRENT_SCENARIOS or status['config'].get('control_mode') == 'external_current':
+                expected = {**expected, 'control_mode': 'external_current'}
+            same = wire_equal(status['config'], expected)
+        except (KeyError, ValueError, OSError) as error:
+            return f'{preset} 프리셋과 STM_A 설정 비교 실패: {error}'
+        if not same:
+            return (f'STM_A 종방향 설정이 {preset} 프리셋과 다름(revision {status["revision"]}): '
+                    '프리셋 저장 후 구동 스택을 재시작하세요')
+        return None
+
     def request_run(self, settings):
         self.commands.put(('run', settings))
 
@@ -322,6 +359,11 @@ class SysidNode(Node):
                 if problems:
                     self.log('Run 대기: ' + '; '.join(problems))
                     continue
+                if value.max_speed_kph > 0 or value.scenario in CURRENT_SCENARIOS:
+                    calibration = self.calibration_problem(now, value.scenario)
+                    if calibration:
+                        self.log('Run 거부: ' + calibration)
+                        continue
                 if value.scenario in CURRENT_SCENARIOS:
                     if (not self.longitudinal_sample or self.clock()-self.longitudinal_sample[0]>.7 or
                         self.longitudinal_sample[1]['config']['control_mode'] != 'external_current'):
@@ -586,6 +628,7 @@ class SysidNode(Node):
                     [self.steering_control.error]
                     if self.output_active and self.state in {'RECORD_START', 'WAIT_AUTO', 'COUNTDOWN'}
                     and self.steering_control.error else []),
+                'calibration': None if self.busy else self.calibration_problem(now),
                 'logs': list(self.logs)[-7:],
                 'run_dir': self.run_dir, 'recording': self.record_open,
                 'settings': self.settings,

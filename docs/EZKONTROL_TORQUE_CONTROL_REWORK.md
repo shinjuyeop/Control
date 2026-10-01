@@ -256,7 +256,7 @@ MANUAL·AUTO 모두에서 **회전 중 상전류가 음수로 크게 튀고(수�
 
 P0-1~P0-6, P1-1, P1-3은 STM_A longitudinal ABI v4로 구현했고 P1-2는 범위 검증만 유지했다.
 상세 매핑, 데이터 분석, 사인파 시험 계획은 [재구성 보고서](reports/2026-10-01_ezkontrol_sine_rework.md),
-wire 계약은 [INTERFACES v4](INTERFACES.md#longitudinal-calibration-v4)를 따른다.
+wire 계약은 [INTERFACES v4](INTERFACES.md#longitudinal-calibration-v5)를 따른다.
 이 문서와 달라진 점:
 
 - 기준 파형은 사인파다. 부팅 기본·프리셋 모두 사인파 하한 0(회피 동작 비활성)이고, 방형파 12 A는

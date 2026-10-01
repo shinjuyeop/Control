@@ -300,3 +300,5 @@ AUTO 종방향 Speed/Torque PI 및 first-test calibration은 [구현·실측 보
 [feedforward 기록](docs/reports/2026-09-29_longitudinal_feedforward.md)에서 시작했고,
 EZkontrol 사인파(FOC) 기준 재구성(ABI v4: 회전 중 최소 전류의 방형파/사인파 값, 역회전 디바운스,
 붕괴 감지)과 사인파 시험 계획은 [재구성 보고서](docs/reports/2026-10-01_ezkontrol_sine_rework.md)를 따릅니다.
+회생제동(ABI v5: 회생 한도·속도/전압/충전전류 보호, 기본 꺼짐의 속도 PI 자동 회생), 거버너 속도 slew 제거,
+사인파 붕괴 감지 조정과 공중 회생 시험(R1·R2) 계획은 [회생 보고서](docs/reports/2026-10-02_regen_governor_rework.md)를 따릅니다.

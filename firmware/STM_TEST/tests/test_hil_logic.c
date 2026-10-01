@@ -100,6 +100,14 @@ static void test_ez_command_decode(void)
   encode_ez_command(data, -1500, 240.0f, true, false);
   command = HilLogic_EZDecodeCommand(data);
   assert(HilLogic_EZPlantTargetRpm(&command) < -700.0f);
+
+  /* Regen brakes toward 0 whether STM_A sends RPM 0 or a positive ceiling. */
+  encode_ez_command(data, 4500, -20.0f, true, false);
+  command = HilLogic_EZDecodeCommand(data);
+  assert(fabsf(HilLogic_EZPlantTargetRpm(&command)) < 0.001f);
+  encode_ez_command(data, 0, -20.0f, true, false);
+  command = HilLogic_EZDecodeCommand(data);
+  assert(fabsf(HilLogic_EZPlantTargetRpm(&command)) < 0.001f);
 }
 
 static void test_ez_plant_step(void)

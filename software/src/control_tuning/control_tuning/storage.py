@@ -10,7 +10,7 @@ import tempfile
 import yaml
 
 from .longitudinal import LONGITUDINAL, DEFAULT
-from .schema import STEERING, GOVERNOR, FIELDS, OWNED, decode, encode, equivalent
+from .schema import STEERING, GOVERNOR, FIELDS, OWNED, RETIRED, decode, encode, equivalent
 
 
 def default_settings_path():
@@ -55,7 +55,8 @@ def load_overrides(path, node):
     block = document.get(node, {})
     if not isinstance(block, dict) or not isinstance(block.get('ros__parameters', {}), dict):
         raise ValueError(f'{path}: {node}.ros__parameters 형식 오류')
-    values = block.get('ros__parameters', {})
+    values = {key: value for key, value in block.get('ros__parameters', {}).items()
+              if key not in RETIRED.get(node, ())}
     unknown = set(values) - OWNED[node]
     if unknown:
         raise ValueError(f'{path}: TUI 관리 대상이 아닌 설정: {", ".join(sorted(unknown))}')

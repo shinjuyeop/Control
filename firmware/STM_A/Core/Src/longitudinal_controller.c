@@ -16,7 +16,13 @@ LongConfig Long_DefaultConfig(void)
     .reapply_slew = 200.0f, .rpm_limit = 4500.0f, .min_current = 0.0f,
     .waveform = LONG_SINE, .start_step = true,
     .hold_on_speed = 0.35f, .hold_off_speed = 0.20f,
-    .reverse_speed = 0.30f, .reverse_frames = 3u, .collapse_hold_frames = 0u};
+    .reverse_speed = 0.30f, .reverse_frames = 3u, .collapse_hold_frames = 0u,
+    /* Regeneration stays off (max 0) until a preset enables it. */
+    .regen_max_current = 0.0f, .regen_slew = 100.0f, .regen_fade_speed = 1.5f,
+    .regen_cutoff_speed = 0.8f, .regen_voltage_soft = 57.0f, .regen_voltage_hard = 58.0f,
+    .regen_bus_current_limit = 30.0f, .regen_rpm_field = 0u, .pi_regen = false,
+    .regen_enter_error = 0.3f, .regen_exit_error = 0.1f, .regen_kp = 0.0f,
+    .collapse_phase_low = -60.0f};
 }
 
 LongMotorCommand Long_SpeedCommand(const LongConfig *c, int32_t target_rpm)
@@ -30,7 +36,9 @@ bool Long_DecodeRequest(const float *d, size_t count, LongRequest *r)
   if (count < 3u) return false;
   for (size_t n = 0; n < count; ++n) if (!isfinite(d[n])) return false;
   const size_t fields = count - 3u;
-  const bool v4 = d[0] == LONG_VERSION && fields == LONG_CONFIG_COUNT;
+  const bool v5 = d[0] == LONG_VERSION && fields == LONG_CONFIG_COUNT;
+  /* v4 is true for every request that carries the v4 fields (v4 and v5). */
+  const bool v4 = v5 || (d[0] == 4 && fields == LONG_V4_CONFIG_COUNT);
   const bool v3 = d[0] == 3 && fields == LONG_V3_CONFIG_COUNT;
   const bool v12 = (d[0] == 1 || d[0] == 2) && fields == LONG_V3_CONFIG_COUNT - 1u;
   if (!(v4 || v3 || v12) || !whole(d[1], 1, LONG_ID_MAX) || !whole(d[2], 0, LONG_ID_MAX) ||
@@ -50,6 +58,14 @@ bool Long_DecodeRequest(const float *d, size_t count, LongRequest *r)
     c.hold_on_speed = d[18]; c.hold_off_speed = d[19]; c.reverse_speed = d[20];
     c.reverse_frames = (uint8_t)d[21]; c.collapse_hold_frames = (uint8_t)d[22];
     c.ff_gain = d[23]; c.ff_rolling = d[24]; c.ff_damping = d[25]; c.ff_accel_limit = d[26];
+  }
+  if (v5) {
+    if (!whole(d[34], 0, 1) || !whole(d[35], 0, 1)) return false;
+    c.regen_max_current = d[27]; c.regen_slew = d[28]; c.regen_fade_speed = d[29];
+    c.regen_cutoff_speed = d[30]; c.regen_voltage_soft = d[31]; c.regen_voltage_hard = d[32];
+    c.regen_bus_current_limit = d[33]; c.regen_rpm_field = (uint8_t)d[34];
+    c.pi_regen = d[35] != 0; c.regen_enter_error = d[36]; c.regen_exit_error = d[37];
+    c.regen_kp = d[38]; c.collapse_phase_low = d[39];
   }
   /* Bounds protect current/RPM capability and 20 Hz numerical authority, not a
    * claim of vehicle-validated tuning. Integral/slew must fit the output range. */
@@ -73,6 +89,18 @@ bool Long_DecodeRequest(const float *d, size_t count, LongRequest *r)
   if (!(c.ff_gain == 0 || (c.ff_gain >= .0005f && c.ff_gain <= .2f)) ||
       c.ff_rolling < 0 || c.ff_rolling > 2 || c.ff_damping < 0 || c.ff_damping > 1 ||
       c.ff_accel_limit < 0 || c.ff_accel_limit > 5) return false;
+  /* Regeneration stays within the battery (58.8 V, 39 A charge) and keeps its
+   * fade bands non-degenerate. Checked in every mode; only AUTO uses it. */
+  if (c.regen_max_current < 0 || c.regen_max_current > LONG_REGEN_CURRENT_CAP_A ||
+      c.regen_slew < 10 || c.regen_slew > 1000 ||
+      c.regen_fade_speed < .3f || c.regen_fade_speed > 5 ||
+      c.regen_cutoff_speed < .1f || c.regen_cutoff_speed >= c.regen_fade_speed ||
+      c.regen_voltage_soft < 40 || c.regen_voltage_hard <= c.regen_voltage_soft ||
+      c.regen_voltage_hard > LONG_REGEN_VOLTAGE_CAP_V ||
+      c.regen_bus_current_limit < 1 || c.regen_bus_current_limit > LONG_REGEN_BUS_CURRENT_CAP_A ||
+      c.regen_enter_error < .05f || c.regen_enter_error > 2 || c.regen_exit_error < 0 ||
+      c.regen_exit_error >= c.regen_enter_error || c.regen_kp < 0 || c.regen_kp > 500 ||
+      c.collapse_phase_low < -200 || c.collapse_phase_low > -10) return false;
   *r = (LongRequest){(uint32_t)d[1], (uint32_t)d[2], c};
   return true;
 }
@@ -84,7 +112,10 @@ void Long_EncodeConfig(const LongConfig *c, float *d)
     c->reapply_current, c->reapply_slew, c->rpm_limit, c->min_current, c->waveform,
     c->start_step, c->hold_on_speed, c->hold_off_speed, c->reverse_speed,
     c->reverse_frames, c->collapse_hold_frames, c->ff_gain, c->ff_rolling,
-    c->ff_damping, c->ff_accel_limit};
+    c->ff_damping, c->ff_accel_limit, c->regen_max_current, c->regen_slew,
+    c->regen_fade_speed, c->regen_cutoff_speed, c->regen_voltage_soft,
+    c->regen_voltage_hard, c->regen_bus_current_limit, c->regen_rpm_field, c->pi_regen,
+    c->regen_enter_error, c->regen_exit_error, c->regen_kp, c->collapse_phase_low};
   memcpy(d, values, sizeof(values));
 }
 
@@ -246,17 +277,23 @@ uint8_t Long_CollapseFlags(const LongCollapseInput *in)
   uint8_t flags = 0;
   if (!in->running) return 0;
   const float previous = (float)in->previous_rpm, rpm = (float)in->rpm;
-  /* A reported speed that collapses to zero, flips sign or jumps beyond any
-   * physical acceleration. Low-speed 0-dropouts are benign Part I artefacts. */
+  /* The frame may still reflect the previous command, so currents compare in
+   * magnitude with the larger of the two. */
+  const float reference = fmaxf(fabsf(in->command), fabsf(in->previous_command));
+  /* A reported speed that collapses to zero, flips sign or jumps beyond the
+   * acceleration the commanded current can make. Low-speed 0-dropouts are
+   * benign Part I artefacts. */
+  const float step = fmaxf(LONG_COLLAPSE_RPM_STEP, LONG_COLLAPSE_RPM_PER_A * reference);
   if (fabsf(previous) >= LONG_COLLAPSE_RPM_MIN &&
-      (rpm * previous <= 0 || fabsf(rpm - previous) > LONG_COLLAPSE_RPM_STEP))
+      (rpm * previous <= 0 || fabsf(rpm - previous) > step))
     flags |= LONG_COLLAPSE_RPM;
-  /* Current rules need a known forward torque demand; regen and reverse
-   * sign conventions are not characterised, so only the RPM rule applies. */
-  if (in->torque_command && in->command >= 0) {
-    if (in->phase > in->command + LONG_COLLAPSE_PHASE_MARGIN_A) flags |= LONG_COLLAPSE_PHASE_HIGH;
-    if (in->phase < -LONG_COLLAPSE_PHASE_NEGATIVE_A) flags |= LONG_COLLAPSE_PHASE_LOW;
-    if (in->bus > in->command + LONG_COLLAPSE_BUS_MARGIN_A) flags |= LONG_COLLAPSE_BUS;
+  if (in->torque_command) {
+    if (fabsf(in->phase) > reference + LONG_COLLAPSE_PHASE_MARGIN_A) flags |= LONG_COLLAPSE_PHASE_HIGH;
+    /* Negative phase current is the normal state under regen, and the frame
+     * after regen returns to 0 A may still show it. */
+    if (in->command >= 0 && in->previous_command >= 0 && in->phase < in->phase_low)
+      flags |= LONG_COLLAPSE_PHASE_LOW;
+    if (fabsf(in->bus) > reference + LONG_COLLAPSE_BUS_MARGIN_A) flags |= LONG_COLLAPSE_BUS;
   }
   return flags;
 }
@@ -280,6 +317,66 @@ bool Long_CollapseUpdate(LongCollapse *s, const LongCollapseInput *in, uint8_t p
   s->hold = hold;
   s->snapshot = *in;
   return true;
+}
+
+float Long_PiRegen(LongController *s, const LongConfig *c, float target, float actual)
+{
+  if (!c->pi_regen || !(c->regen_max_current > 0) || !(target > 0)) {
+    s->regen_mode = false;
+    return 0;
+  }
+  const float error = target - actual;
+  /* Enter only once the drive output is down at 0 A, so the current crosses 0
+   * on the slews and never flips sign in one frame. Between the two thresholds
+   * the drive PI coasts at 0 A. */
+  if (!s->regen_mode && error < -c->regen_enter_error && !(s->current > 0)) s->regen_mode = true;
+  else if (s->regen_mode && error > -c->regen_exit_error) s->regen_mode = false;
+  return s->regen_mode ? fmaxf(0, c->regen_kp * (-error - c->regen_exit_error)) : 0;
+}
+
+void Long_RegenReset(LongRegen *r) { memset(r, 0, sizeof(*r)); }
+
+float Long_RegenFrame(LongRegen *r, LongController *s, const LongConfig *c,
+                      const LongRegenInput *in, float dt)
+{
+  float pi_request = 0;
+  if (in->pi && in->allowed) pi_request = Long_PiRegen(s, c, in->target, in->speed);
+  else s->regen_mode = false;
+  r->request = fmaxf(isfinite(in->external_request) ? fmaxf(in->external_request, 0) : 0,
+                     pi_request);
+  const bool known = in->part1_fresh && isfinite(in->speed) && isfinite(in->bus_voltage);
+  /* Fade to 0 toward the cutoff: the brake must never reverse a stopping wheel. */
+  r->speed_factor = !known || in->speed <= c->regen_cutoff_speed ? 0 :
+      in->speed >= c->regen_fade_speed ? 1 :
+      (in->speed - c->regen_cutoff_speed) / (c->regen_fade_speed - c->regen_cutoff_speed);
+  r->voltage_factor = !known || in->bus_voltage >= c->regen_voltage_hard ? 0 :
+      in->bus_voltage <= c->regen_voltage_soft ? 1 :
+      (c->regen_voltage_hard - in->bus_voltage) / (c->regen_voltage_hard - c->regen_voltage_soft);
+  /* Bus guard: measured charge beyond the limit cuts the limit each frame;
+   * it recovers at the regen slew once the charge current is back inside. */
+  if (known && isfinite(in->bus_current) && in->bus_current < -c->regen_bus_current_limit)
+    r->bus_cut = 1 - (1 - r->bus_cut) * (1 - LONG_REGEN_BUS_CUT_PER_FRAME);
+  else if (c->regen_max_current > 0)
+    r->bus_cut = fmaxf(0, r->bus_cut - c->regen_slew * dt / c->regen_max_current);
+  r->limit = c->regen_max_current > 0 ?
+      c->regen_max_current * r->speed_factor * r->voltage_factor * (1 - r->bus_cut) : 0;
+  /* The request ramps (also back to 0 when the gate drops); the limit applies
+   * at once so the cutoff, the voltage ceiling and stale Part I never wait. */
+  const float target = in->allowed ? -fminf(r->request, r->limit) : 0;
+  const float step = c->regen_slew * dt;
+  const bool was_negative = r->current < 0;
+  r->current = clamp(clamp(target, r->current - step, r->current + step), -r->limit, 0);
+  /* The frame that brings regen back to 0 A still belongs to it: the motor
+   * sees one 0 A frame before the drive PI may apply positive current. */
+  r->active = r->current < 0 || was_negative;
+  if (r->active) {
+    /* Regen owns the motor: the drive output restarts from 0 A through the
+     * reapply band. The integrator and the PI regen mode are kept. */
+    s->current = 0;
+    s->reapplying = true;
+    s->have_target = false;
+  }
+  return r->current;
 }
 
 /* Caller serializes with the producer/reader critical section. All fields commit

@@ -351,43 +351,78 @@ static void test_reverse_debounce(void)
   assert(Long_CheckInhibit(&s,&g1,&one,true,true,true,false,1,-.5f,&discard)==LONG_REVERSE);
 }
 
-/* P0-6: logged collapses are flagged, normal airborne launches are not. */
+static LongCollapseInput frame(float command, float previous, float phase, float bus,
+                               int32_t rpm, int32_t before, bool torque, float phase_low)
+{
+  return (LongCollapseInput){.command = command, .previous_command = previous, .phase = phase,
+    .bus = bus, .phase_low = phase_low, .rpm = rpm, .previous_rpm = before, .running = true,
+    .torque_command = torque};
+}
+
+/* P0-6/B3: logged collapses are flagged; normal launches, FOC 0 A noise and
+ * regen are not. Square frames use -30 A, sine frames -60 A. */
 static void test_collapse(void)
 {
-  LongCollapseInput in = {12, 15.4f, 6.1f, 1094, 1113, true, true};
+  LongCollapseInput in = frame(12, 12, 15.4f, 6.1f, 1094, 1113, true, -30);
   assert(Long_CollapseFlags(&in) == 0);
   // 2026-09-30 00:11 t=7.95: +257.6 A phase, +171.7 A bus at a 12 A command.
-  in = (LongCollapseInput){12, 257.6f, 171.7f, 802, 948, true, true};
+  in = frame(12, 12, 257.6f, 171.7f, 802, 948, true, -30);
   assert(Long_CollapseFlags(&in) == (LONG_COLLAPSE_PHASE_HIGH | LONG_COLLAPSE_BUS));
   // t=9.75: -230.4 A phase while slewing down through 11.1 A.
-  in = (LongCollapseInput){11.1f, -230.4f, 176.2f, 842, 1003, true, true};
-  assert(Long_CollapseFlags(&in) == (LONG_COLLAPSE_PHASE_LOW | LONG_COLLAPSE_BUS));
+  in = frame(11.1f, 13.6f, -230.4f, 176.2f, 842, 1003, true, -30);
+  assert(Long_CollapseFlags(&in) ==
+         (LONG_COLLAPSE_PHASE_HIGH | LONG_COLLAPSE_PHASE_LOW | LONG_COLLAPSE_BUS));
   // 00:07 t=21.1: speed estimate jumps at a constant 12 A command.
-  in = (LongCollapseInput){12, 6.5f, -16.9f, 1633, 2515, true, true};
+  in = frame(12, 12, 6.5f, -16.9f, 1633, 2515, true, -30);
   assert(Long_CollapseFlags(&in) == LONG_COLLAPSE_RPM);
-  in = (LongCollapseInput){1, 6, -.9f, -380, 483, true, true};
+  in = frame(1, 0, 6, -.9f, -380, 483, true, -30);
   assert(Long_CollapseFlags(&in) == LONG_COLLAPSE_RPM);
   // Normal 80 A airborne launch (+98 rpm/frame) and benign low-speed dropout.
-  in = (LongCollapseInput){80, 92.2f, 40, 574, 476, true, true};
+  in = frame(80, 74.4f, 92.2f, 40, 574, 476, true, -30);
   assert(Long_CollapseFlags(&in) == 0);
-  in = (LongCollapseInput){3.5f, 6.2f, 8.1f, 0, 216, true, true};
+  in = frame(3.5f, 0, 6.2f, 8.1f, 0, 216, true, -30);
   assert(Long_CollapseFlags(&in) == 0);
   // Native Speed: EZ commands its own negative current; only the RPM rule counts.
-  in = (LongCollapseInput){80, -78, -26, 465, 472, true, false};
+  in = frame(80, 80, -78, -26, 465, 472, false, -30);
   assert(Long_CollapseFlags(&in) == 0);
   in.rpm = 0; assert(Long_CollapseFlags(&in) == LONG_COLLAPSE_RPM);
-  // Regen/reverse commands: current sign conventions unverified, RPM rule only.
-  in = (LongCollapseInput){-10, -60, -40, 900, 905, true, true};
+  // 2026-10-01 sine: FOC current noise at 0 A and 2350 rpm passes the sine
+  // threshold; the square threshold would have flagged it.
+  in = frame(0, 0, -51.3f, 2.6f, 2354, 2318, true, -60);
   assert(Long_CollapseFlags(&in) == 0);
+  in.phase_low = -30; assert(Long_CollapseFlags(&in) == LONG_COLLAPSE_PHASE_LOW);
+  // A 350 A launch moves 381 rpm in a frame: inside 3 rpm per commanded amp.
+  in = frame(353.5f, 426.8f, 341.4f, 77.2f, 959, 578, true, -60);
+  assert(Long_CollapseFlags(&in) == 0);
+  in = frame(0, 0, 20, 5, 959, 578, true, -60);
+  assert(Long_CollapseFlags(&in) == LONG_COLLAPSE_RPM); // the same jump at 0 A is not physical
+  // Sine 23:11 run t=27.8: RPM 0 with a 166 A spike at a 20~60 A command.
+  in = frame(59.7f, 20, 166, 8.4f, 0, 728, true, -60);
+  assert(Long_CollapseFlags(&in) == (LONG_COLLAPSE_RPM | LONG_COLLAPSE_PHASE_HIGH));
+  // A fast cut: the frame still shows the previous 240 A command.
+  in = frame(0, 240, 230, 50, 1500, 1480, true, -60);
+  assert(Long_CollapseFlags(&in) == 0);
+  // Regen: negative phase is normal; magnitude rules still catch a spike.
+  in = frame(-20, -15, -22, -12, 1200, 1190, true, -60);
+  assert(Long_CollapseFlags(&in) == 0);
+  in = frame(-20, -20, -150, -30, 1200, 1190, true, -60);
+  assert(Long_CollapseFlags(&in) == LONG_COLLAPSE_PHASE_HIGH);
+  in = frame(-20, -20, -25, -95, 1200, 1190, true, -60);
+  assert(Long_CollapseFlags(&in) == LONG_COLLAPSE_BUS);
+  // The cutoff drops -40 A regen to 0 A at once; the next frame still shows it.
+  in = frame(0, -40, -38, -12, 260, 300, true, -30);
+  assert(Long_CollapseFlags(&in) == 0);
+  in.previous_command = 0; assert(Long_CollapseFlags(&in) == LONG_COLLAPSE_PHASE_LOW);
   // HALTED: nothing is commanded, nothing is attributed.
-  in = (LongCollapseInput){0, -100, 200, 0, 2000, false, false};
+  in = frame(0, 0, -100, 200, 0, 2000, false, -60);
+  in.running = false;
   assert(Long_CollapseFlags(&in) == 0);
 
   // One event per episode; a new event needs 20 clean frames (1 s).
   LongCollapse s = {0};
-  LongCollapseInput clean = {12, 15, 6, 1100, 1100, true, true};
-  LongCollapseInput spike = {12, 257.6f, 171.7f, 802, 948, true, true};
-  LongCollapseInput drop = {12, 3, 2, 0, 802, true, true};
+  LongCollapseInput clean = frame(12, 12, 15, 6, 1100, 1100, true, -30);
+  LongCollapseInput spike = frame(12, 12, 257.6f, 171.7f, 802, 948, true, -30);
+  LongCollapseInput drop = frame(12, 12, 3, 2, 0, 802, true, -30);
   assert(!Long_CollapseUpdate(&s,&clean,LONG_PATH_TORQUE,true) && s.events == 0);
   assert(Long_CollapseUpdate(&s,&spike,LONG_PATH_TORQUE,true) && s.events == 1);
   assert(!Long_CollapseUpdate(&s,&drop,LONG_PATH_TORQUE,false) && s.events == 1);
@@ -399,6 +434,139 @@ static void test_collapse(void)
   for (int n=0;n<20;n++) assert(!Long_CollapseUpdate(&s,&clean,LONG_PATH_TORQUE,true));
   assert(Long_CollapseUpdate(&s,&drop,LONG_PATH_MANUAL,false) && s.events == 2);
   assert(s.flags == LONG_COLLAPSE_RPM && s.path == LONG_PATH_MANUAL && !s.hold);
+}
+
+static LongRegenInput regen_input(float speed, float voltage, float bus, float request)
+{
+  return (LongRegenInput){.target = 2, .speed = speed, .bus_voltage = voltage,
+    .bus_current = bus, .external_request = request, .part1_fresh = true,
+    .allowed = true, .pi = false};
+}
+
+/* B1: limit, fade, cutoff, voltage, bus guard and slew of the regen current. */
+static void test_regen(void)
+{
+  LongConfig c = Long_DefaultConfig();
+  LongController s = {0};
+  LongRegen r = {0};
+  // Off by default: no request reaches the motor.
+  LongRegenInput in = regen_input(5, 52, 0, 20);
+  for (int n=0;n<10;n++) near(Long_RegenFrame(&r,&s,&c,&in,.05f),0);
+  assert(!r.active && r.limit == 0);
+  c.regen_max_current = 20; // regen_slew 100 A/s = 5 A per frame
+  near(Long_RegenFrame(&r,&s,&c,&in,.05f),-5); assert(r.active);
+  near(Long_RegenFrame(&r,&s,&c,&in,.05f),-10);
+  near(Long_RegenFrame(&r,&s,&c,&in,.05f),-15);
+  near(Long_RegenFrame(&r,&s,&c,&in,.05f),-20);
+  near(Long_RegenFrame(&r,&s,&c,&in,.05f),-20); near(r.limit,20);
+  // The request is capped by the configured maximum.
+  in.external_request = 60; near(Long_RegenFrame(&r,&s,&c,&in,.05f),-20);
+  // Speed fade: half way between cutoff 0.8 and fade 1.5 m/s halves the limit at once.
+  in.speed = 1.15f; near(Long_RegenFrame(&r,&s,&c,&in,.05f),-10); near(r.speed_factor,.5f);
+  // Cutoff: 0 in the same frame, never negative at or below it. That 0 A
+  // frame still belongs to regen; the drive may resume on the next one.
+  in.speed = .8f; near(Long_RegenFrame(&r,&s,&c,&in,.05f),0); assert(r.active);
+  near(Long_RegenFrame(&r,&s,&c,&in,.05f),0); assert(!r.active);
+  for (float v = .8f; v > -1.0f; v -= .05f) {
+    LongRegen fresh = {.current = -20};
+    in.speed = v;
+    near(Long_RegenFrame(&fresh,&s,&c,&in,.05f),0);
+    near(Long_RegenFrame(&r,&s,&c,&in,.05f),0);
+  }
+  // Voltage: linear from soft 57 V to hard 58 V, immediate 0 at the hard limit.
+  Long_RegenReset(&r);
+  in = regen_input(5, 52, 0, 20);
+  for (int n=0;n<4;n++) Long_RegenFrame(&r,&s,&c,&in,.05f);
+  near(r.current,-20);
+  in.bus_voltage = 57.5f; near(Long_RegenFrame(&r,&s,&c,&in,.05f),-10); near(r.voltage_factor,.5f);
+  in.bus_voltage = 58; near(Long_RegenFrame(&r,&s,&c,&in,.05f),0);
+  // Bus guard: charge beyond 30 A cuts the limit 20 % per frame, then recovers at the slew.
+  Long_RegenReset(&r);
+  in = regen_input(5, 52, 0, 20);
+  for (int n=0;n<4;n++) Long_RegenFrame(&r,&s,&c,&in,.05f);
+  in.bus_current = -35;
+  near(Long_RegenFrame(&r,&s,&c,&in,.05f),-16); near(r.limit,16);
+  near(Long_RegenFrame(&r,&s,&c,&in,.05f),-12.8f);
+  in.bus_current = -20;
+  near(Long_RegenFrame(&r,&s,&c,&in,.05f),-17.8f); // recovers 5 A per frame
+  near(Long_RegenFrame(&r,&s,&c,&in,.05f),-20); near(r.bus_cut,0);
+  // Stale Part I: voltage and charge unknown, limit 0 at once.
+  in.part1_fresh = false; near(Long_RegenFrame(&r,&s,&c,&in,.05f),0);
+  // A dropped gate ramps back to 0 at the slew instead of cutting.
+  Long_RegenReset(&r);
+  in = regen_input(5, 52, 0, 20);
+  for (int n=0;n<4;n++) Long_RegenFrame(&r,&s,&c,&in,.05f);
+  in.allowed = false;
+  near(Long_RegenFrame(&r,&s,&c,&in,.05f),-15);
+  near(Long_RegenFrame(&r,&s,&c,&in,.05f),-10);
+  // Safety stops reset at once.
+  Long_RegenReset(&r); near(r.current,0); assert(!r.active);
+  // While regen owns the motor the drive output restarts from 0 and keeps I.
+  LongController drive = {.current = 30, .i = 6};
+  in = regen_input(5, 52, 0, 20);
+  Long_RegenFrame(&r,&drive,&c,&in,.05f);
+  near(drive.current,0); near(drive.i,6); assert(drive.reapplying);
+  in.external_request = NAN;
+  LongRegen idle = {0};
+  near(Long_RegenFrame(&idle,&drive,&c,&in,.05f),0);
+}
+
+/* B2: speed-PI regen hysteresis, zero crossing, frozen integral, and a
+ * disabled configuration that leaves the drive output bit-identical. */
+static void test_pi_regen(void)
+{
+  LongConfig c = Long_DefaultConfig();
+  c.kp = 15; c.ki = 10; c.max_current = 80; c.integrator_limit = 25;
+  c.slew_up = 120; c.slew_down = 400; c.reapply_current = 5; c.reapply_slew = 20;
+  LongController s = {0};
+  near(Long_PiRegen(&s,&c,5,6),0); assert(!s.regen_mode); // off by default
+  c.regen_max_current = 20; c.pi_regen = true; c.regen_kp = 50;
+  s.current = 10;
+  near(Long_PiRegen(&s,&c,5,5.5f),0); assert(!s.regen_mode); // drive still above 0 A
+  s.current = 0;
+  near(Long_PiRegen(&s,&c,5,5.2f),0); assert(!s.regen_mode); // inside the coast band
+  near(Long_PiRegen(&s,&c,5,5.5f),20); assert(s.regen_mode); // 50 * (0.5 - 0.1)
+  near(Long_PiRegen(&s,&c,5,5.2f),5); assert(s.regen_mode);  // stays until the exit band
+  near(Long_PiRegen(&s,&c,5,5.05f),0); assert(!s.regen_mode);
+  near(Long_PiRegen(&s,&c,0,9),0); assert(!s.regen_mode);    // target 0 never regenerates
+
+  // Closed loop on an airborne-like plant: 30 -> 10 km/h step.
+  LongRegen r = {0};
+  float v = 30 / 3.6f, previous = 0, frozen = -1;
+  int regen_frames = 0;
+  for (int n=0;n<400;n++) {
+    const float target = n < 40 ? 30 / 3.6f : 10 / 3.6f;
+    LongRegenInput in = {.target = target, .speed = v, .bus_voltage = 52, .bus_current = 0,
+                         .part1_fresh = true, .allowed = true, .pi = true};
+    const float i_before = s.i;
+    const float regen = Long_RegenFrame(&r,&s,&c,&in,.05f);
+    // Same composition as StartControl: regen owns the frame while active.
+    const float current = r.active ? regen : Long_Update(&s,&c,target,v,.05f,0);
+    if (r.active) { regen_frames++; near(s.i,i_before); frozen = s.i; }
+    assert(!(previous > 0 && current < 0) && !(previous < 0 && current > 0));
+    previous = current;
+    const float a = current > 0 ? .07f*current - .8f - .09f*v : .07f*current - .5f;
+    v = fmaxf(0, v + a*.05f);
+  }
+  assert(regen_frames > 10 && frozen >= 0);
+  assert(fabsf(v - 10 / 3.6f) < .5f);
+
+  // Disabled: the drive output matches plain Long_Update bit for bit.
+  LongConfig off = c; off.pi_regen = false; off.regen_max_current = 0;
+  LongController a = {0}, b = {0};
+  LongRegen ra = {0};
+  float va = 0, vb = 0;
+  for (int n=0;n<300;n++) {
+    const float target = n < 150 ? 8 : 3;
+    LongRegenInput in = {.target = target, .speed = va, .bus_voltage = 52,
+                         .part1_fresh = true, .allowed = true, .pi = true};
+    const float regen = Long_RegenFrame(&ra,&a,&off,&in,.05f);
+    const float ca = ra.active ? regen : Long_Update(&a,&off,target,va,.05f,0);
+    const float cb = Long_Update(&b,&off,target,vb,.05f,0);
+    assert(memcmp(&ca,&cb,sizeof(ca)) == 0);
+    va = fmaxf(0, va + (.07f*ca - .8f - .09f*va)*.05f);
+    vb = fmaxf(0, vb + (.07f*cb - .8f - .09f*vb)*.05f);
+  }
 }
 
 /* P1-1: identified-plant feedforward on top of the continuous PI (gain 0 = off). */
@@ -470,19 +638,28 @@ static void test_decode(void)
   v3[0]=3;v3[15]=12;
   assert(Long_DecodeRequest(v3,3+LONG_V3_CONFIG_COUNT,&r));
   near(r.config.min_current,12); assert(r.config.waveform==LONG_SINE && r.config.reverse_frames==3);
-  near(r.config.ff_gain,0);
+  near(r.config.ff_gain,0); near(r.config.regen_max_current,0); near(r.config.collapse_phase_low,-60);
   v3[0]=LONG_VERSION;assert(!Long_DecodeRequest(v3,3+LONG_V3_CONFIG_COUNT,&r));
   v3[0]=2;assert(Long_DecodeRequest(v3,2+LONG_V3_CONFIG_COUNT,&r));
   near(r.config.min_current,0);
   v3[0]=3;assert(!Long_DecodeRequest(v3,2+LONG_V3_CONFIG_COUNT,&r));
   assert(!Long_DecodeRequest(wire,LONG_REQUEST_COUNT-1,&r));
   assert(!Long_DecodeRequest(wire,2,&r));
+  // v4 hosts keep working: regeneration stays off.
+  wire[0]=4;assert(Long_DecodeRequest(wire,3+LONG_V4_CONFIG_COUNT,&r));
+  near(r.config.regen_max_current,0); assert(!r.config.pi_regen);
+  assert(!Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));
+  wire[0]=LONG_VERSION;assert(!Long_DecodeRequest(wire,3+LONG_V4_CONFIG_COUNT,&r));
   // v4 field bounds: integer flags/counts, floor cap, a real hysteresis band.
   const struct { size_t index; float bad, good; } bounds[] = {
     {15,-1,0}, {15,30.5f,30}, {16,2,1}, {16,.5f,0}, {17,.5f,1}, {18,.05f,.25f},
     {18,2.5f,2}, {19,-.1f,0}, {19,.35f,.2f}, {20,.04f,.05f}, {20,1.1f,1},
     {21,0,1}, {21,11,10}, {21,1.5f,3}, {22,41,40}, {22,-1,0}, {23,.0001f,.0005f},
     {23,.3f,.2f}, {24,-.1f,2}, {25,1.1f,1}, {26,5.1f,5},
+    {27,-1,0}, {27,61,60}, {28,9,10}, {28,1001,1000}, {29,.2f,.9f}, {29,5.1f,5},
+    {30,.05f,.1f}, {30,1.5f,.5f}, {31,39,40}, {31,58,57.5f}, {32,57,57.5f}, {32,61,60},
+    {33,.5f,1}, {33,40,39}, {34,2,1}, {34,.5f,0}, {35,2,1}, {36,.04f,.2f}, {36,2.1f,2}, {36,.1f,.2f},
+    {37,-.1f,0}, {37,.3f,.2f}, {38,-1,0}, {38,501,500}, {39,-5,-10}, {39,-201,-200},
   };
   for (size_t i=0;i<sizeof(bounds)/sizeof(bounds[0]);++i) {
     const float old = wire[bounds[i].index];
@@ -494,10 +671,15 @@ static void test_decode(void)
   wire[6]=480;wire[15]=12;wire[16]=LONG_SQUARE;wire[23]=.064f;
   assert(Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));
   near(r.config.min_current,12); assert(r.config.waveform==LONG_SQUARE); near(r.config.ff_gain,.064f);
+  wire[27]=20;wire[34]=1;wire[35]=1;wire[38]=40;wire[39]=-30;
+  assert(Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));
+  near(r.config.regen_max_current,20); assert(r.config.regen_rpm_field==1 && r.config.pi_regen);
+  near(r.config.regen_kp,40); near(r.config.collapse_phase_low,-30);
   float round[LONG_CONFIG_COUNT];
   Long_EncodeConfig(&r.config,round);
   assert(memcmp(round,wire+3,sizeof(round))==0);
   wire[15]=0;wire[16]=LONG_SINE;wire[23]=0;
+  wire[27]=0;wire[34]=0;wire[35]=0;wire[38]=0;wire[39]=-60;
   assert(Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));
   LongCalibration cal={.config=Long_DefaultConfig()};
   Long_ApplyConfiguration(&cal,&r,false);assert(cal.result==LONG_UNSAFE && cal.revision==0);
@@ -553,9 +735,12 @@ int main(void)
   test_pedal();
   test_reverse_debounce();
   test_collapse();
+  test_regen();
+  test_pi_regen();
   test_feedforward();
   test_decode();
   test_can_encoding();
   puts("longitudinal PI, rolling floor/seeding/release, pedal map, reverse debounce, "
-       "collapse detector, feedforward, calibration atomic commit/rejection: PASS");
+       "collapse detector, regen limit/fade/guard/slew, PI regen, feedforward, "
+       "calibration atomic commit/rejection: PASS");
 }

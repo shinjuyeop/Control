@@ -285,6 +285,11 @@ STATUS 형식(protocol 3)은 바뀌지 않으므로 주입 결과는 STM_A `/dri
 붕괴 카운터로 확인합니다. 기대 동작은
 [재구성 보고서](../../docs/reports/2026-10-01_ezkontrol_sine_rework.md) 7장 E6을 따릅니다.
 
+회생 명령(음수 상전류)은 RPM 필드가 0이든 양수 상한이든 목표 RPM을 0으로 두어 plant가 감속하게
+합니다(STM_A v5 `regen_rpm_field`의 두 선택지). 감속 크기는 시정수로만 정해지며 실제 회생 토크를
+재현하지 않습니다. STM_A의 차단 속도에서 회생이 0 A로 돌아오는지는 `/drive/longitudinal_status`의
+회생 전류로 확인합니다.
+
 `ez_target_rpm`은 이렇게 계산한 목표값이며 STATUS로 관찰할 수 있습니다.
 원본 command의 `ez_running`, `ez_speed_control`, `ez_command_rpm`,
 `ez_command_current`도 함께 노출하므로 target 계산과 실제 RPM 추종을 분리해 볼 수

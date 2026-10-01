@@ -53,6 +53,21 @@ KEY_ALIASES = {
     'ff_rolling_resistance_mps2': 'drive_ff_rolling_resistance_mps2',
     'ff_speed_damping_per_s': 'drive_ff_speed_damping_per_s',
     'ff_accel_limit_mps2': 'drive_ff_accel_limit_mps2',
+    # STM_A ABI v5: regenerative braking and the per-waveform collapse threshold.
+    'regen_max_current_a': 'drive_regen_max_current_a',
+    'regen_slew_a_s': 'drive_regen_slew_a_s',
+    'regen_fade_speed_mps': 'drive_regen_fade_speed_mps',
+    'regen_cutoff_speed_mps': 'drive_regen_cutoff_speed_mps',
+    'regen_voltage_soft_v': 'drive_regen_voltage_soft_v',
+    'regen_voltage_hard_v': 'drive_regen_voltage_hard_v',
+    'regen_bus_current_limit_a': 'drive_regen_bus_current_limit_a',
+    'regen_rpm_field_mode': 'drive_regen_rpm_field',
+    'pi_regen_enabled': 'drive_pi_regen',
+    'regen_enter_error_mps': 'drive_regen_enter_error_mps',
+    'regen_exit_error_mps': 'drive_regen_exit_error_mps',
+    'regen_kp_a_per_mps': 'drive_regen_kp_a_per_mps',
+    'collapse_phase_low_square_a': 'drive_collapse_phase_low_square_a',
+    'collapse_phase_low_sine_a': 'drive_collapse_phase_low_sine_a',
 }
 
 

@@ -7,17 +7,30 @@ from control_tuning.schema import STEERING, GOVERNOR
 from control_tuning.tui import Editor
 
 
-@pytest.mark.parametrize('mode', ['speed', 'torque', 'external_current'])
-def test_acceleration_slew_only_reaches_governor_for_speed_preset(store, mode):
+def test_retired_governor_slew_is_ignored_and_dropped_on_save(store):
+    """The governor speed slew was removed; old presets still load."""
     presets = PresetStore(store)
-    presets.save('driving', {**store.saved, 'drive_control_mode': mode,
-                             'governor_acceleration_slew_mps2': 1.2})
-    assert presets.load('driving')['governor_acceleration_slew_mps2'] == 1.2
+    presets.save('driving', store.saved)
+    path = presets.path_for('driving')
+    document = yaml.safe_load(path.read_text())
+    document['governor'].update(governor_deceleration_slew_mps2=.5, governor_acceleration_slew_mps2=1.)
+    path.write_text(yaml.safe_dump(document, allow_unicode=True, sort_keys=False))
+    presets = PresetStore(store)
+    assert not presets.is_current('driving')
+    values = presets.load('driving')
+    assert not {'governor_deceleration_slew_mps2', 'governor_acceleration_slew_mps2'} & set(values)
     parameters = load_launch_overrides(store.path, GOVERNOR, 'driving',
                                       steering_config=store.base_paths[0],
                                       governor_config=store.base_paths[1],
                                       calibration=store.base_paths[2])
-    assert parameters['acceleration_slew_mps2'] == (1.2 if mode == 'speed' else 0.)
+    assert set(parameters) == {'input_timeout_ms'}
+    presets.save('driving', values)
+    assert 'slew_mps2' not in path.read_text() and presets.is_current('driving')
+    # A shared settings file that still names them is read without error too.
+    store.path.write_text(yaml.safe_dump({GOVERNOR: {'ros__parameters': {
+        'deceleration_slew_mps2': .5, 'input_timeout_ms': 210.}}}))
+    from control_tuning.storage import SettingsStore
+    assert SettingsStore(store.path, *store.base_paths).saved['governor_command_timeout_ms'] == 210.
 
 
 def test_presets_save_in_independent_files_with_individual_backups(store):

@@ -25,6 +25,8 @@ class Field:
     waveform: str = ''
     # Integer settings where 0 is meaningful (for example "reaction off").
     zero: bool = False
+    # Negative values are the meaningful range (a negative current threshold).
+    signed: bool = False
 
 
 FIELDS = (
@@ -80,14 +82,6 @@ FIELDS += (
           'EZkontrol PC 설정의 정류 방식과 같게 맞춥니다. STM_A는 판별하지 못하고 기록만 합니다. '
           '선택한 파형의 최소 전류·feedforward 이득만 보내며 나머지 값은 공통입니다.',
           node=LONGITUDINAL, choices=('sine', 'square')),
-    Field('governor_deceleration_slew_mps2', '거버너 감속 slew', 'm/s²', GROUPS[2], 'deceleration_slew_mps2',
-          '양수 속도 목표를 낮추는 최대 변화율입니다. 작을수록 천천히 감속합니다. '
-          '0.5이면 5→2 m/s에 6초. 목표 0·브레이크는 즉시 처리합니다. 0이면 제한 해제.',
-          0.1, node=GOVERNOR),
-    Field('governor_acceleration_slew_mps2', '거버너 가속 slew', 'm/s²', GROUPS[2], 'acceleration_slew_mps2',
-          'Speed 전용 목표속도 상승률입니다. 1이면 0→5 m/s에 5초. '
-          '첫 명령과 수신 재개 시 0부터 시작합니다. 0이면 제한 해제. 저장 후 스택 재시작에 반영됩니다.',
-          0.1, node=GOVERNOR),
     Field('drive_speed_kp_a_per_mps', '구동 속도 P 게인', 'A/(m/s)', GROUPS[2], 'speed_kp_a_per_mps',
           '구동 Torque 모드 전용입니다. MCAP 기반 초기 시험 후보이며 S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 10, node=LONGITUDINAL),
     Field('drive_speed_ki_a_per_mps_s', '구동 속도 I 게인', 'A/(m/s*s)', GROUPS[2], 'speed_ki_a_per_mps_s',
@@ -113,6 +107,19 @@ FIELDS += (
     Field('drive_ff_accel_limit_mps2', '구동 FF 가속 항 한도', 'm/s²', GROUPS[2], 'ff_accel_limit_mps2',
           '목표속도 변화율에서 가져오는 가속도 항의 크기 한도입니다. 목표 계단이 1/dt로 커지지 않게 합니다.',
           0.1, node=LONGITUDINAL),
+    Field('drive_pi_regen', '속도 PI 자동 회생', '', GROUPS[2], 'pi_regen_enabled',
+          'enabled면 목표보다 진입 오차 이상 빠르고 구동 전류가 0까지 내려온 뒤 속도 PI가 회생을 요청합니다. '
+          '회생 최대 전류가 0이면 동작하지 않습니다. 조이스틱 수동 회생(R1·R2) 확인 전에는 disabled로 둡니다.',
+          node=LONGITUDINAL, choices=('disabled', 'enabled')),
+    Field('drive_regen_enter_error_mps', 'PI 회생 진입 과속', 'm/s', GROUPS[2], 'regen_enter_error_mps',
+          '목표보다 이만큼 빠르면 회생에 들어갑니다. 해제 과속보다 커야 하며 그 사이에서는 0 A로 타력 주행합니다.',
+          0.05, node=LONGITUDINAL),
+    Field('drive_regen_exit_error_mps', 'PI 회생 해제 과속', 'm/s', GROUPS[2], 'regen_exit_error_mps',
+          '과속이 이보다 작아지면 회생을 끝냅니다. 회생 전류는 회생 변화율로 0까지 돌아온 뒤 구동이 다시 시작됩니다.',
+          0.05, node=LONGITUDINAL),
+    Field('drive_regen_kp_a_per_mps', 'PI 회생 P 게인', 'A/(m/s)', GROUPS[2], 'regen_kp_a_per_mps',
+          '회생 요청 = 게인 × (과속 − 해제 과속). 회생 중 적분은 동결됩니다. 0이면 PI 회생 요청이 없습니다.',
+          5, node=LONGITUDINAL),
     Field('drive_current_limit_a', '구동 전류 한도', 'A', GROUPS[3], 'max_drive_current_a',
           'Speed/Torque 공통 구동 한도입니다. Torque에서는 PI 상전류 명령 상한, Speed에서는 EZ 내부 속도제어의 전류 한도입니다.', 10, node=LONGITUDINAL),
     Field('drive_integrator_limit_a', '구동 적분 전류 한도', 'A', GROUPS[3], 'integrator_limit_a',
@@ -127,6 +134,17 @@ FIELDS += (
           '구동 Torque 모드 전용입니다. MCAP 기반 초기 시험 후보이며 S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 20, node=LONGITUDINAL),
     Field('drive_motor_speed_limit_rpm', '구동 모터 회전수 한도', 'rpm', GROUPS[3], 'motor_rpm_limit',
           'Speed/Torque 공통 RPM 한도입니다. Torque에서는 EZ 모터 회전수 상한, Speed에서는 목표 RPM 범위를 제한합니다. 최종 전진/후진 물리 한도는 펌웨어에 별도로 적용됩니다.', 100, node=LONGITUDINAL),
+    Field('drive_regen_max_current_a', '회생 최대 전류', 'A', GROUPS[3], 'regen_max_current_a',
+          'AUTO Torque/외부 전류에서 회생 상전류 크기의 상한입니다(음수로 송신). 0이면 모든 회생이 꺼집니다. '
+          '조이스틱 LT 요청도 이 값을 넘지 못합니다. 공중 R1 시험은 5 → 10 → 20 A 순서로 올립니다.',
+          1, node=LONGITUDINAL),
+    Field('drive_regen_slew_a_s', '회생 전류 변화율', 'A/s', GROUPS[3], 'regen_slew_a_s',
+          '회생 전류가 늘고 줄 때의 변화율입니다. 허용 조건이 깨지면 이 변화율로 0에 돌아옵니다. '
+          '속도·전압·충전전류 한도와 안전 정지는 즉시 적용됩니다.', 10, node=LONGITUDINAL),
+    Field('drive_regen_rpm_field', '회생 RPM 필드', '', GROUPS[3], 'regen_rpm_field_mode',
+          'zero는 회생 중 EZ RPM 필드를 0으로(기존), ceiling은 구동 RPM 한도를 양수 상한으로 보냅니다. '
+          'EZ가 어느 쪽에서 정지 후 역회전을 막는지 공중 시험으로 정합니다.',
+          node=LONGITUDINAL, choices=('zero', 'ceiling')),
     Field('drive_min_current_square_a', '회전 중 최소 구동 전류 (방형파)', 'A', GROUPS[4], 'min_drive_current_square_a',
           '굴러가는 동안 MANUAL 전진·AUTO Torque·외부 전류의 최종 명령을 이 값 이상으로 유지합니다. '
           '방형파 EZ의 0 A·저전류 재인가 붕괴 회피용이며 0이면 끕니다. 2026-09-29/30 공중 시험 기준 12 A.',
@@ -154,6 +172,26 @@ FIELDS += (
           'STM_A가 상전류·RPM 붕괴를 감지하면 AUTO에서 이 프레임 동안 최소 전류(없으면 0 A)에 머물고 PI를 멈춥니다. '
           '0이면 관측·집계만 합니다.',
           1, node=LONGITUDINAL, integer=True, zero=True),
+    Field('drive_collapse_phase_low_square_a', '붕괴 감지 음수 상전류 (방형파)', 'A', GROUPS[4],
+          'collapse_phase_low_square_a',
+          '회생이 아닌 명령 중 상전류가 이 값보다 낮으면 붕괴로 셉니다. 방형파 2026-09-29/30 기록 기준 -30 A.',
+          5, node=LONGITUDINAL, waveform='square', signed=True),
+    Field('drive_collapse_phase_low_sine_a', '붕괴 감지 음수 상전류 (사인파)', 'A', GROUPS[4],
+          'collapse_phase_low_sine_a',
+          '회생이 아닌 명령 중 상전류가 이 값보다 낮으면 붕괴로 셉니다. FOC 0 A 잡음이 2350 rpm에서 -51 A까지 나와 -60 A.',
+          5, node=LONGITUDINAL, waveform='sine', signed=True),
+    Field('drive_regen_fade_speed_mps', '회생 감소 시작 속도', 'm/s', GROUPS[4], 'regen_fade_speed_mps',
+          '이 속도 아래부터 회생 한도를 선형으로 줄입니다.', 0.1, node=LONGITUDINAL),
+    Field('drive_regen_cutoff_speed_mps', '회생 차단 속도', 'm/s', GROUPS[4], 'regen_cutoff_speed_mps',
+          '이 속도 이하에서는 회생이 즉시 0입니다. 정지 후 역구동을 막는 값이며 감소 시작 속도보다 작아야 합니다.',
+          0.1, node=LONGITUDINAL),
+    Field('drive_regen_voltage_soft_v', '회생 전압 감소 시작', 'V', GROUPS[4], 'regen_voltage_soft_v',
+          'bus 전압이 이 값부터 회생 한도를 선형으로 줄입니다. 팩 상한 58.8 V.', 0.5, node=LONGITUDINAL),
+    Field('drive_regen_voltage_hard_v', '회생 전압 차단', 'V', GROUPS[4], 'regen_voltage_hard_v',
+          '이 bus 전압 이상에서는 회생이 즉시 0입니다. 감소 시작보다 커야 하고 60 V 이하입니다.', 0.5, node=LONGITUDINAL),
+    Field('drive_regen_bus_current_limit_a', '회생 충전전류 한도', 'A', GROUPS[4], 'regen_bus_current_limit_a',
+          '측정 bus 충전전류가 이 크기를 넘으면 회생 한도를 프레임마다 20 % 줄이고 회복 시 회생 변화율로 돌립니다. '
+          '배터리 연속 충전 39 A 이하.', 1, node=LONGITUDINAL),
 )
 BY_KEY = {f.key: f for f in FIELDS}
 
@@ -161,10 +199,6 @@ BY_KEY = {f.key: f for f in FIELDS}
 def applies_to_drive_mode(field, mode, waveform=None):
     if field.waveform and waveform is not None and field.waveform != waveform:
         return False
-    if field.key == 'governor_acceleration_slew_mps2':
-        return mode == 'speed'
-    if field.key == 'governor_deceleration_slew_mps2':
-        return mode in ('speed', 'torque')
     if field.node != LONGITUDINAL:
         return True
     # MANUAL applies the rolling floor whatever the calibration mode is.
@@ -172,13 +206,23 @@ def applies_to_drive_mode(field, mode, waveform=None):
                         'min_drive_current_square_a', 'min_drive_current_sine_a', 'start_step',
                         'hold_on_speed_mps', 'hold_off_speed_mps'):
         return True
-    if field.native in ('reverse_speed_mps', 'reverse_debounce_frames', 'collapse_hold_frames'):
+    if field.native in ('collapse_phase_low_square_a', 'collapse_phase_low_sine_a'):
+        return True  # the detector watches MANUAL and every AUTO path
+    if field.native in ('pi_regen_enabled', 'regen_enter_error_mps', 'regen_exit_error_mps',
+                        'regen_kp_a_per_mps'):
+        return mode == 'torque'
+    if field.native in ('reverse_speed_mps', 'reverse_debounce_frames', 'collapse_hold_frames') \
+            or field.native.startswith('regen_'):
         return mode in ('torque', 'external_current')
     # Retain the old hysteresis setting in presets/ABI; continuous PI does not use it.
     return mode == 'torque' and field.native != 'speed_hysteresis_mps'
 
 
 OWNED = {node: {f.native for f in FIELDS if f.node == node} for node in (STEERING, GOVERNOR, LONGITUDINAL)}
+# Settings that existed once and are now ignored when an old file still names them.
+# The governor speed slew was removed on 2026-10-02; STM_A owns the rate limits.
+RETIRED = {GOVERNOR: {'deceleration_slew_mps2', 'acceleration_slew_mps2'}}
+RETIRED_KEYS = {'governor_deceleration_slew_mps2', 'governor_acceleration_slew_mps2'}
 # Read these as well so conversions, limits and concurrent edits use actual node values.
 CONTEXT_NAMES = (
     'keya_protection_current_a', 'torque_control_period_ms', 'count_scale',
@@ -293,10 +337,6 @@ def validate_native(s, governor):
         raise ValueError('조향 한계 여유각이 캘리브레이션 범위를 벗어납니다.')
     if not math.isfinite(governor['input_timeout_ms']) or governor['input_timeout_ms'] <= 0:
         raise ValueError('상위 명령 유효시간은 0보다 큰 유한한 값이어야 합니다.')
-    if not math.isfinite(governor['deceleration_slew_mps2']) or governor['deceleration_slew_mps2'] < 0:
-        raise ValueError('거버너 감속 slew는 0 이상의 유한한 값이어야 합니다. 0이면 제한 해제입니다.')
-    if not math.isfinite(governor['acceleration_slew_mps2']) or governor['acceleration_slew_mps2'] < 0:
-        raise ValueError('거버너 가속 slew는 0 이상의 유한한 값이어야 합니다. 0이면 제한 해제입니다.')
 
 
 def range_hint(field, values, context):
@@ -321,12 +361,17 @@ def range_hint(field, values, context):
             'drive_ff_current_gain_sine_mps2_per_a': '0 또는 0.0005~0.2',
             'drive_ff_rolling_resistance_mps2': '0~2', 'drive_ff_speed_damping_per_s': '0~1',
             'drive_ff_accel_limit_mps2': '0~5',
+            'drive_regen_max_current_a': '0~60 · 0이면 회생 꺼짐', 'drive_regen_slew_a_s': '10~1000',
+            'drive_regen_rpm_field': 'zero / ceiling', 'drive_pi_regen': 'disabled / enabled',
+            'drive_regen_enter_error_mps': '0.05~2, 해제보다 큼', 'drive_regen_exit_error_mps': '0 ~ 진입 미만',
+            'drive_regen_kp_a_per_mps': '0~500', 'drive_regen_fade_speed_mps': '0.3~5',
+            'drive_regen_cutoff_speed_mps': '0.1 ~ 감소 시작 미만', 'drive_regen_voltage_soft_v': '40 ~ 차단 미만',
+            'drive_regen_voltage_hard_v': '감소 시작 초과 ~ 60', 'drive_regen_bus_current_limit_a': '1~39',
+            'drive_collapse_phase_low_square_a': '-200~-10', 'drive_collapse_phase_low_sine_a': '-200~-10',
         }[field.key]
     peak = values['steering_peak_current_limit_a']
     period = context['torque_control_period_ms']
     hints = {
-        'governor_deceleration_slew_mps2': '0 이상 · 0이면 제한 해제',
-        'governor_acceleration_slew_mps2': '0 이상 · 0이면 제한 해제',
         'steering_kp_a_per_deg': f'0 초과, {peak / values["steering_settle_error_deg"]:g} 미만' if values['steering_settle_error_deg'] > 0 else '0 초과',
         'steering_kd_a_per_deg_s': '0 이상 · 코드상 고정 상한 없음',
         'steering_peak_current_limit_a': f'지속 명령 이상, {current_per_raw(context) * 10000:g} 이하',

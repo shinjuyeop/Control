@@ -5,15 +5,17 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* ABI v4 appends drive-protection and feedforward fields. Slot 12 (v3
- * coast_current_floor) is now the rolling minimum drive current applied to the
- * final forward command of every drive path. v1/v2/v3 requests remain valid and
- * take the v4 defaults for the appended fields. */
-#define LONG_VERSION 4u
-#define LONG_CONFIG_COUNT 24u
+/* ABI v5 appends regenerative braking and the waveform-specific collapse
+ * threshold to v4. Regeneration is off unless regen_max_current > 0. v4 added
+ * drive protection and feedforward; slot 12 (v3 coast_current_floor) is the
+ * rolling minimum drive current. v1..v4 requests remain valid and take the v5
+ * defaults for the appended fields. */
+#define LONG_VERSION 5u
+#define LONG_CONFIG_COUNT 37u
+#define LONG_V4_CONFIG_COUNT 24u
 #define LONG_V3_CONFIG_COUNT 13u
 #define LONG_REQUEST_COUNT (3u + LONG_CONFIG_COUNT)
-#define LONG_STATE_COUNT 28u
+#define LONG_STATE_COUNT 36u
 #define LONG_STATUS_COUNT (5u + LONG_CONFIG_COUNT + LONG_STATE_COUNT)
 #define LONG_ID_MAX 16777215u
 /* MANUAL pedal full scale outside a Torque/External calibration. */
@@ -21,16 +23,25 @@
 /* Validation cap for the rolling minimum current: a floor is a dead-zone
  * workaround, never a traction demand. */
 #define LONG_MIN_CURRENT_CAP_A 30.0f
+/* Regeneration ceilings: 14S pack (58.8 V full), 39 A continuous charge. */
+#define LONG_REGEN_CURRENT_CAP_A 60.0f
+#define LONG_REGEN_VOLTAGE_CAP_V 60.0f
+#define LONG_REGEN_BUS_CURRENT_CAP_A 39.0f
+/* Bus guard: each frame above the charge limit cuts the regen limit by this
+ * fraction; it recovers at regen_slew. */
+#define LONG_REGEN_BUS_CUT_PER_FRAME 0.2f
 
-/* Collapse detector (P0-6). Bounds come from the 2026-09-29/30 airborne
- * square-wave MCAPs: 49 collapses vs 33,901 normal RUN frames. Below 400 rpm
- * Part I reports benign 0-dropouts; an 80 A airborne launch changes at most
- * 147 rpm per 50 ms frame. Normal |phase-command| stayed below 33 A and the
- * bus current never exceeded the command by more than 21 A. */
+/* Collapse detector. Bounds come from the 2026-09-29/30 airborne square-wave
+ * MCAPs (49 collapses vs 33,901 normal RUN frames) and the 2026-10-01 sine
+ * runs. Below 400 rpm Part I reports benign 0-dropouts. A sine 350 A airborne
+ * launch moved up to 600 rpm per 50 ms frame (about 1.7 rpm per amp), so the
+ * RPM allowance grows with the commanded current. Currents compare in
+ * magnitude against the latest or previous command (the frame may lag one);
+ * the negative-phase threshold is configured per waveform (collapse_phase_low). */
 #define LONG_COLLAPSE_RPM_MIN 400.0f
 #define LONG_COLLAPSE_RPM_STEP 200.0f
+#define LONG_COLLAPSE_RPM_PER_A 3.0f
 #define LONG_COLLAPSE_PHASE_MARGIN_A 60.0f
-#define LONG_COLLAPSE_PHASE_NEGATIVE_A 30.0f
 #define LONG_COLLAPSE_BUS_MARGIN_A 60.0f
 /* Clean Part I frames (50 ms) before the next anomaly counts as a new event. */
 #define LONG_COLLAPSE_REARM_FRAMES 20u
@@ -74,6 +85,22 @@ typedef struct {
    * feedforward. ff_gain 0 disables all feedforward; ff_accel_limit bounds the
    * term taken from the commanded target rate. */
   float ff_gain, ff_rolling, ff_damping, ff_accel_limit;
+  /* Regenerative braking (v5). regen_max_current 0 disables every regen path.
+   * The limit fades to 0 from regen_fade_speed down to regen_cutoff_speed and
+   * from regen_voltage_soft up to regen_voltage_hard, and shrinks while the
+   * measured charge current exceeds regen_bus_current_limit. */
+  float regen_max_current, regen_slew, regen_fade_speed, regen_cutoff_speed;
+  float regen_voltage_soft, regen_voltage_hard, regen_bus_current_limit;
+  /* RPM field sent with regen: 0 (as before) or rpm_limit as a positive ceiling. */
+  uint8_t regen_rpm_field;
+  /* Speed PI may request regen: enter below -regen_enter_error once the drive
+   * output is 0, leave above -regen_exit_error, P gain on the overspeed beyond
+   * the exit band. */
+  bool pi_regen;
+  float regen_enter_error, regen_exit_error, regen_kp;
+  /* Phase current (A, negative) below which a non-regen torque frame is a
+   * collapse. The host sends the value for the declared waveform. */
+  float collapse_phase_low;
 } LongConfig;
 
 typedef struct {
@@ -81,6 +108,7 @@ typedef struct {
   bool saturated, anti_windup, coasting, reapplying;
   float target_previous;
   bool have_target;
+  bool regen_mode;   /* speed PI holds a regen request (pi_regen) */
 } LongController;
 
 typedef struct {
@@ -134,9 +162,10 @@ float Long_DriveFloor(LongDrive *drive, const LongConfig *config, float current)
 float Long_PedalCommand(const LongConfig *config, float pedal_percent, bool envelope,
                         bool hold, float previous_current, float dt);
 
-/* Collapse detector input for one Part I frame. */
+/* Collapse detector input for one Part I frame. command/previous_command are
+ * the latest and the previous transmitted phase currents. */
 typedef struct {
-  float command, phase, bus;
+  float command, previous_command, phase, bus, phase_low;
   int32_t rpm, previous_rpm;
   bool running, torque_command;
 } LongCollapseInput;
@@ -151,6 +180,32 @@ uint8_t Long_CollapseFlags(const LongCollapseInput *input);
  * command that was in effect for the snapshot. */
 bool Long_CollapseUpdate(LongCollapse *collapse, const LongCollapseInput *input,
                          uint8_t path, bool hold);
+
+/* Regenerative braking for one AUTO current-path frame (Torque or external). */
+typedef struct {
+  float target, speed;             /* m/s: commanded target, measured forward speed */
+  float bus_voltage, bus_current;  /* Part I; negative bus current is charging */
+  float external_request;          /* LT/external request magnitude, A >= 0; 0 when stale */
+  bool part1_fresh;                /* bus voltage/current known */
+  bool allowed;                    /* AUTO current path, OK inhibit, fresh feedback, no fault, EZ torque mode */
+  bool pi;                         /* AUTO Torque speed PI path: pi_regen may add a request */
+} LongRegenInput;
+typedef struct {
+  float request, limit, speed_factor, voltage_factor, bus_cut, current;
+  bool active;
+} LongRegen;
+/* Speed-PI regen request (A >= 0) with its enter/exit hysteresis. */
+float Long_PiRegen(LongController *controller, const LongConfig *config,
+                   float target, float actual);
+/* Returns the regen current (<= 0). The limit (speed fade/cutoff, voltage,
+ * bus guard, stale Part I) applies at once; the request ramps at regen_slew,
+ * also back to 0 when allowed drops. While regen->active the caller sends the
+ * regen current instead of the drive PI; that includes the frame that returns
+ * to 0 A. The drive output then restarts from 0 A. */
+float Long_RegenFrame(LongRegen *regen, LongController *controller,
+                      const LongConfig *config, const LongRegenInput *input, float dt);
+/* Safety stops, MANUAL and Speed mode: no regen, no ramp. */
+void Long_RegenReset(LongRegen *regen);
 
 /* Shared by the MCU receiver and SITL. Receipt time owns the watchdog;
  * source stamps reject queued/reordered commands across a stop or mode change. */

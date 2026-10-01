@@ -114,20 +114,18 @@ UNO USB는 별개 인터페이스이며 115200을 유지합니다.
 
 `/vehicle/command`의 발행자는 `command_governor` 하나입니다. 거버너는
 `/planning/command`를 수신 즉시 정합성 게이트(stamp 0·음수, 나이 ±200 ms,
-finite)를 거쳐 양수 목표의 하강률을 제한하고 재-stamp 후 재발행하며,
+finite)를 거쳐 재-stamp 후 재발행하며, 속도 목표는 가공하지 않습니다.
 자체 타이머와 keep-alive가 없으므로 발행률은
 입력을 그대로 따릅니다. 따라서 상류(실차 시험은
 `vehicle_test_scenario_runner`, HIL은 `hil_command_generator`, 모두 20 Hz)가
 STM_A의 500 ms와 조향의 200 ms freshness 한계보다 충분히 빠르게 발행해야
 합니다. 5 Hz는 조향 200 ms의 경계라 간헐 timeout이 납니다.
-감속 slew는 `deceleration_slew_mps2` (기본 0.5 m/s², 0이면 해제)입니다.
-Speed 프리셋에서는 `acceleration_slew_mps2` (초기값 1.0 m/s², 0이면 해제)로
-양수 목표 상승률도 제한합니다. Torque/외부 전류에서는 가속 제한을 해제합니다.
-가속 제한이 켜져 있으면 첫 명령과 입력 공백 후 재개는 0부터 시작합니다.
-음수 목표는 그대로 전달하고, 0 목표는 즉시 전달해 STM_A가 0 A/HALTED
-Torque 명령으로 타력감속합니다. Speed의 0 RPM hold나 회생 ramp를 유지하지 않습니다.
-`brake_engage`도 지연하지 않습니다. 유효 입력 공백이 `input_timeout_ms`를 넘으면
-이전 slew 이력을 버립니다. Speed 선택은 정지 상태 설정 적용 후 CAN control-mode bit 1로 반영합니다.
+2026-10-02부터 거버너에는 속도 slew가 없습니다(옛 `deceleration_slew_mps2`,
+`acceleration_slew_mps2`는 제거). 양수·음수·계단 목표를 그대로 전달하고
+`brake_engage=true`면 속도 목표를 0으로 만듭니다. 0 목표는 즉시 전달해 STM_A가 0 A/HALTED
+Torque 명령으로 타력감속합니다. 종방향 변화율은 STM_A의 전류 slew, 속도 PI,
+회생 한도·변화율(calibration v5)과 상위 계획기가 맡습니다.
+Speed 선택은 정지 상태 설정 적용 후 CAN control-mode bit 1로 반영합니다.
 `/planning/command`의 production Planning publisher는 아직 구현되지 않았습니다.
 실차 시험·HIL·production publisher 중 하나만 실행합니다.
 
@@ -620,24 +618,24 @@ AUTO Torque는 둘 중 하나가 invalid면 차단합니다. 조향 timeout은 `
 - `BrakeActuatorStatus`와 `/vehicle/state` input freshness 정책
 
 
-## Longitudinal calibration v4
+## Longitudinal calibration v5
 
 STM_A AUTO longitudinal config/status uses `std_msgs/msg/Float32MultiArray` with
 empty `layout.dim` and `layout.data_offset=0`. The bounded MCU buffers accept the exact
-27-float v4 request and publish a 57-float v4 status. v3 (16-float) and v1/v2 (15-float)
-requests remain accepted; their missing fields take the v4 boot defaults below and a v3
-slot 12 value becomes the v4 rolling minimum current. New Host clients send only v4 and
-refuse older firmware, because slot 12 changed meaning. Unsupported
+40-float v5 request and publish a 78-float v5 status. v4 (27-float), v3 (16-float) and
+v1/v2 (15-float) requests remain accepted; their missing fields take the v5 boot defaults
+below (regeneration off), and a v3 slot 12 value becomes the rolling minimum current.
+New Host clients send only v5 and refuse older firmware. Unsupported
 version/length/nonfinite/config ranges are rejected; malformed DDS sequences that cannot
 deserialize have no acknowledgment. `DriveCurrentCommand` and regenerated micro-ROS
 libraries are required for external-current control. `DriveActuatorStatus` retains its
 existing layout.
 
-`/drive/longitudinal_config`: reliable, volatile (never transient-local), 27 floats:
+`/drive/longitudinal_config`: reliable, volatile (never transient-local), 40 floats:
 
 | Index | Field |
 |---|---|
-| 0 | version=4 |
+| 0 | version=5 |
 | 1 | request_id: integer 1…16777215 |
 | 2 | expected_revision: integer 0…16777215 |
 | 3 | control_mode: 0=speed, 1=torque PI, 2=external_current (different from EZ feedback bit!) |
@@ -652,14 +650,25 @@ existing layout.
 | 22 | collapse_hold_frames: integer 0…40; 0 = observe/count only |
 | 23 | ff_current_gain: 0 (feedforward off) or 0.0005…0.2 (m/s²)/A |
 | 24–26 | ff_rolling_resistance 0…2 m/s², ff_speed_damping 0…1 1/s, ff_accel_limit 0…5 m/s² |
+| 27 | regen_max_current: 0…60 A regen magnitude limit (sent negative); **0 disables all regen** |
+| 28 | regen_slew: 10…1000 A/s, up and down |
+| 29–30 | regen_fade_speed 0.3…5 m/s; regen_cutoff_speed 0.1 … < fade m/s |
+| 31–32 | regen_voltage_soft 40 … < hard V; regen_voltage_hard … 60 V |
+| 33 | regen_bus_current_limit: 1…39 A measured charge current |
+| 34 | regen_rpm_field: 0 = RPM field 0 (as before), 1 = motor_rpm_limit as positive ceiling |
+| 35 | pi_regen: 0/1. Speed PI may request regen (AUTO Torque only) |
+| 36–38 | regen_enter_error 0.05…2 m/s; regen_exit_error 0 … < enter; regen_kp 0…500 A/(m/s) |
+| 39 | collapse_phase_low: −200…−10 A; phase current below it is a collapse on a torque frame whose latest and previous commands are both ≥ 0 |
 
 Current fields are phase amperes; Kp A/(m/s), Ki A/(m/s*s), slew A/s,
 deadband/hysteresis m/s, RPM motor rpm. Field order is defined by
 `control_tuning.longitudinal.WIRE_KEYS` and `Long_EncodeConfig`. The Host stores
-`min_drive_current` and `ff_current_gain` per waveform (`*_square_*`, `*_sine_*`) and
-sends the value of the declared waveform; every other field is common to both.
-Boot defaults: Torque, sine, min current 0 (all drive protection inert), start step on,
-hold 0.35/0.20 m/s, reverse 0.30 m/s × 3 frames, collapse reaction 0, feedforward 0.
+`min_drive_current`, `ff_current_gain` and `collapse_phase_low` per waveform (`*_square_*`,
+`*_sine_*`) and sends the value of the declared waveform; every other field is common.
+Boot defaults: Torque, sine, min current 0 (drive protection inert), start step on,
+hold 0.35/0.20 m/s, reverse 0.30 m/s × 3 frames, collapse reaction 0, feedforward 0,
+regen max 0 (off), regen slew 100 A/s, fade/cutoff 1.5/0.8 m/s, voltage 57/58 V,
+charge 30 A, RPM field 0, PI regen off with 0.3/0.1 m/s and gain 0, collapse phase low −60 A.
 
 STM_A validates the complete request, then hands it to a one-slot mailbox. The next
 Control cycle checks MANUAL, fresh Part I <500 ms and Part II <1 s, |speed|≤0.05 m/s, pedal=0,
@@ -670,34 +679,64 @@ Duplicate last-applied request ID is idempotent. Revision exhaustion requires re
 IDs/revisions use the exact integer range of float32; they are not authorization tokens.
 Use the existing trusted vehicle ROS domain, not an untrusted network.
 
-`/drive/longitudinal_status`: best effort, 5 Hz, 57 floats (v3: 28):
+`/drive/longitudinal_status`: best effort, 5 Hz, 78 floats (v4: 57, v3: 28):
 
 | Index | Field |
 |---|---|
-| 0 | version=4 |
+| 0 | version=5 |
 | 1 | applied revision; boot=0 |
 | 2 | last request ID; malformed request=0 |
 | 3 | result: 0=idle, 1=applied, 2=invalid, 3=unsafe, 4=revision conflict, 5=busy |
 | 4 | calibration source: 0=DEFAULT, 1=HOST_OVERRIDE |
-| 5–28 | active config in wire order (indices 3–26 of the request) |
-| 29–34 | speed error, P, I/integrator state, feedforward current, unsaturated current, final PI current |
-| 35–38 | saturated, anti-windup, coasting, AUTO Torque control feedback usable (Part I <500 ms and Part II <1 s; 0/1) |
-| 39 | inhibit: 0=OK, 1=disabled, 2=feedback loss, 3=wait fresh command, 4=reverse, 5=stop, 6=reverse pending (RUN at 0 A) |
-| 40 | drive path: 0=HALTED, 1=MANUAL, 2=AUTO Speed, 3=AUTO Torque, 4=external current, 5=regen, 6=RUN at 0 A |
-| 41 | final commanded phase current after the rolling floor (A, signed as sent) |
-| 42–44 | rolling hold active, floor decided the output (request ≤ min current), start step applied (0/1) |
-| 45 | consecutive reverse-speed frames (debounce progress) |
-| 46 | collapse events since boot (episodes; a new one needs 20 clean Part I frames) |
-| 47 | collapse flags of the latest event: 1=RPM, 2=phase high, 4=phase low, 8=bus |
-| 48 | seconds since the latest event; −1 = none |
-| 49–53 | latest event first frame: command, phase current, bus current, raw RPM, previous raw RPM |
-| 54–56 | latest event drive path, rolling hold at that frame, AUTO reaction frames left |
+| 5–41 | active config in wire order (indices 3–39 of the request) |
+| 42–47 | speed error, P, I/integrator state, feedforward current, unsaturated current, final PI current |
+| 48–51 | saturated, anti-windup, coasting, AUTO Torque control feedback usable (Part I <500 ms and Part II <1 s; 0/1) |
+| 52 | inhibit: 0=OK, 1=disabled, 2=feedback loss, 3=wait fresh command, 4=reverse, 5=stop, 6=reverse pending (RUN at 0 A) |
+| 53 | drive path: 0=HALTED, 1=MANUAL, 2=AUTO Speed, 3=AUTO Torque, 4=external current, 5=regen, 6=RUN at 0 A |
+| 54 | final commanded phase current after the rolling floor (A, signed as sent) |
+| 55–57 | rolling hold active, floor decided the output (request ≤ min current), start step applied (0/1) |
+| 58 | consecutive reverse-speed frames (debounce progress) |
+| 59 | collapse events since boot (episodes; a new one needs 20 clean Part I frames) |
+| 60 | collapse flags of the latest event: 1=RPM, 2=phase high, 4=phase low, 8=bus |
+| 61 | seconds since the latest event; −1 = none |
+| 62–66 | latest event first frame: command, phase current, bus current, raw RPM, previous raw RPM |
+| 67–69 | latest event drive path, rolling hold at that frame, AUTO reaction frames left |
+| 70–71 | regen request (A ≥ 0: LT/external or speed PI, the larger), regen limit (A ≥ 0) |
+| 72–74 | regen speed factor, voltage factor, charge-current scale (1 = no bus guard cut) |
+| 75–77 | regen current sent (A ≤ 0), regen path active (0/1), speed-PI regen mode (0/1) |
 
-Collapse rules per Part I frame while RUN (constants in `longitudinal_controller.h`):
-raw RPM at ≥400 rpm drops to ≤0, flips sign or changes >200 rpm in one frame; and for a
-forward torque command C: phase > C+60 A, phase < −30 A, or bus > C+60 A. The thresholds
-come from the 2026-09-29/30 airborne square-wave MCAPs (49 collapses, no false alarm in
-33,901 RUN frames); see [the rework report](reports/2026-10-01_ezkontrol_sine_rework.md).
+Regeneration (AUTO Torque and external current only). Requests: LT `/vehicle/drive_current_command`
+≤ 0 in Torque, any ≤ 0 value in external-current mode (positive values reset the request and
+keep the external drive input fresh at their value), and the speed PI when `pi_regen=1`.
+STM_A takes the larger request and computes every 50 ms
+
+```
+limit = regen_max × speed_factor(v) × voltage_factor(V) × bus_scale
+speed_factor: 0 at v ≤ cutoff, linear to 1 at v ≥ fade
+voltage_factor: 1 at V ≤ soft, linear to 0 at V ≥ hard
+bus_scale: × 0.8 per frame while bus current < −regen_bus_current_limit, back at regen_slew
+target = allowed ? −min(request, limit) : 0;  current = slew(target, regen_slew), then clamp to −limit
+```
+
+The limit applies in the same frame (cutoff, voltage, charge guard, stale Part I → 0). The gate
+`allowed` = AUTO current path, inhibit OK, Part I/II fresh, fault 0, EZ in torque mode; when it
+drops the current returns to 0 at `regen_slew`. Target 0, brake, E-stop, STM_B safety and host
+timeout keep their HALTED path and reset regen at once; MANUAL and AUTO Speed never regenerate.
+While regen is active (including the frame that returns to 0 A) STM_A sends it instead of the
+drive PI: the PI integrator and mode are frozen and the drive output restarts from 0 A through
+the reapply band, so the phase current never changes sign within one frame. Speed-PI regen
+enters below −`regen_enter_error` only after the drive output reached 0 A, requests
+`regen_kp × (overspeed − regen_exit_error)` and leaves above −`regen_exit_error`.
+
+Collapse rules per Part I frame while RUN (constants in `longitudinal_controller.h`), with C the
+larger magnitude of the latest and the previous transmitted command: raw RPM at ≥400 rpm drops to
+≤0, flips sign or changes more than max(200, 3·C) rpm in one frame; and for a torque command
+|phase| > C+60 A, |bus| > C+60 A, or, when neither command is negative (regen), phase <
+`collapse_phase_low`.
+The bounds come from the 2026-09-29/30 square-wave MCAPs (48/49 collapses, no false alarm) and the
+2026-10-01 sine runs (FOC 0 A noise to −51 A, 350 A launches up to 600 rpm per frame); see
+[the sine rework report](reports/2026-10-01_ezkontrol_sine_rework.md) and
+[the regen rework report](reports/2026-10-02_regen_governor_rework.md).
 
 Read actual CAN-transmitted current/RPM and actual phase/bus current from `/drive/status`.
 In speed mode its commanded_phase_current_a is a limit, not commanded torque.
@@ -759,10 +798,10 @@ requirement for a new upper-level command. Safety inhibits bypass current slew a
 
 The MCU performs no speed PI in this mode. CAN current remains in phase amperes, torque mode is
 bit1=0, and the configured motor RPM is a ceiling. Read actual CAN-transmitted current from
-`/drive/status.commanded_phase_current_a`; calibration status elements 29–39 are PI diagnostics
-and element 41 is the final command after the rolling floor.
+`/drive/status.commanded_phase_current_a`; calibration status elements 42–52 are PI diagnostics,
+element 54 is the final command after the rolling floor and 70–77 describe regeneration.
 The new current message type, STM_A library/firmware and Host must be deployed together. Host
-configuration clients read v1–v4 status for recordings but send v4 requests only.
+configuration clients read v1–v5 status for recordings but send v5 requests only.
 
 The current MPC model and all controller settings are fixed for a run. The Host publishes read-only
 `model_A`, `model_B`, `model_c` and `model_dt` parameters containing the loaded coefficients.

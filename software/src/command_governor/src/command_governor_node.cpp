@@ -1,8 +1,9 @@
 // /planning/command를 받아 /vehicle/command로 재발행하는 명령 파이프의 한 단계.
 // 이 노드가 /vehicle/command의 유일한 발행자다.
 //
-// 양수 속도 목표의 가·감속 slew. 0은 즉시 토크컷이다.
-// 수신 즉시 재발행하므로 자체 타이머가 없고,
+// 입력 검증·timeout·재발행만 한다. 속도 목표는 바꾸지 않고 그대로 전달하며
+// brake_engage=true면 0이다. 종방향 변화율은 STM_A(전류 slew·PI·회생 slew)와
+// 상위 계획기가 맡는다. 수신 즉시 재발행하므로 자체 타이머가 없고,
 // 입력이 끊기면 출력도 끊긴다 — 그러면 STM_A의 500 ms Host timeout과 조향의
 // 200 ms freshness가 기존 그대로 안전망 역할을 한다. 마지막 값 유지(keep-alive)는
 // 상류 정지를 가리므로 의도적으로 두지 않는다.
@@ -13,7 +14,6 @@
 // 되살아남을 막는다.
 
 #include <cstdint>
-#include <chrono>
 #include <cmath>
 #include <memory>
 #include <stdexcept>
@@ -39,14 +39,6 @@ public:
     const std::string output_topic =
       declare_parameter<std::string>("output_topic", "/vehicle/command");
     input_timeout_ms_ = declare_parameter<double>("input_timeout_ms", 200.0);
-    deceleration_slew_mps2_ = declare_parameter<double>("deceleration_slew_mps2", 0.5);
-    acceleration_slew_mps2_ = declare_parameter<double>("acceleration_slew_mps2", 0.0);
-    if (!std::isfinite(acceleration_slew_mps2_) || acceleration_slew_mps2_ < 0.0) {
-      throw std::invalid_argument("acceleration_slew_mps2 must be finite and >= 0");
-    }
-    if (!std::isfinite(deceleration_slew_mps2_) || deceleration_slew_mps2_ < 0.0) {
-      throw std::invalid_argument("deceleration_slew_mps2 must be finite and >= 0");
-    }
     if (!std::isfinite(input_timeout_ms_) || !(input_timeout_ms_ > 0.0)) {
       // 0 이하나 NaN이면 모든 입력이 거부되어 출력이 아예 없어진다.
       // 설정 오류는 조용한 무출력 대신 launch 실패로 드러낸다.
@@ -62,8 +54,7 @@ public:
         for (const auto & parameter : parameters) {
           const std::string & name = parameter.get_name();
           if (name == "input_topic" || name == "output_topic" ||
-            name == "input_timeout_ms" || name == "deceleration_slew_mps2" ||
-            name == "acceleration_slew_mps2")
+            name == "input_timeout_ms")
           {
             result.successful = false;
             result.reason = name + " is read at startup (restart required)";
@@ -83,9 +74,8 @@ public:
       });
 
     RCLCPP_INFO(
-      get_logger(), "governor: %s -> %s, input_timeout_ms=%.0f, deceleration_slew_mps2=%.3f, acceleration_slew_mps2=%.3f",
-      input_topic.c_str(), output_topic.c_str(), input_timeout_ms_, deceleration_slew_mps2_,
-      acceleration_slew_mps2_);
+      get_logger(), "governor: %s -> %s, input_timeout_ms=%.0f",
+      input_topic.c_str(), output_topic.c_str(), input_timeout_ms_);
   }
 
 private:
@@ -115,20 +105,14 @@ private:
       return;
     }
 
-    const double receipt_s = std::chrono::duration<double>(
-      std::chrono::steady_clock::now().time_since_epoch()).count();
-    message->speed_target_mps = speed_slew_.update(
-      message->speed_target_mps, message->brake_engage, receipt_s,
-      input_timeout_ms_ / 1000.0, deceleration_slew_mps2_, acceleration_slew_mps2_);
+    message->speed_target_mps =
+      forwarded_speed(message->speed_target_mps, message->brake_engage);
     message->header.stamp = now;
     ++accepted_count_;
     publisher_->publish(std::move(message));
   }
 
   double input_timeout_ms_{200.0};
-  double deceleration_slew_mps2_{0.5};
-  double acceleration_slew_mps2_{0.0};
-  SpeedSlew speed_slew_;
   uint64_t accepted_count_{0};
   uint64_t rejected_count_{0};
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr parameter_callback_;
