@@ -25,9 +25,10 @@ def test_camera_lidar_and_other_sensor_selections_are_preserved():
 
 
 def longitudinal_data(p=1., revision=1):
-    from control_tuning.longitudinal import config_wire, AIRBORNE
-    return [1., float(revision), 1., 1., 1., *config_wire(AIRBORNE),
-            .1, p, 2., p + 2., p + 2., 0., 0., 0., 1., 0.]
+    from control_tuning.longitudinal import status_data, AIRBORNE
+    return status_data(AIRBORNE, dict(speed_error_mps=.1, p_current_a=p, i_current_a=2.,
+                                      unsaturated_current_a=p + 2., current_command_a=p + 2.),
+                       revision=revision)
 
 
 def test_analysis_preserves_pi_samples_with_unchanged_revision(tmp_path):
@@ -71,7 +72,8 @@ def test_independent_recording_snapshot_shutdown_and_missing_feedback(tmp_path, 
     values.update(steering_enabled=True, torque_direction_sign=-1)
     for key, value in values.items():
         steering.declare_parameter(key, value)
-    for key, value in dict(input_topic='/planning/command', output_topic='/vehicle/command', input_timeout_ms=234.).items():
+    for key, value in dict(input_topic='/planning/command', output_topic='/vehicle/command', input_timeout_ms=234.,
+                           deceleration_slew_mps2=.5, acceleration_slew_mps2=0.).items():
         governor.declare_parameter(key, value)
     publisher = stm.create_publisher(Float32MultiArray, '/drive/longitudinal_status', qos_profile_sensor_data) if provide_longitudinal else None
     executor = SingleThreadedExecutor()

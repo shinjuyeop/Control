@@ -13,11 +13,15 @@ import rosbag2_py
 from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
 
-from control_tuning.longitudinal import STATUS_TOPIC, decode_status
+from control_tuning.longitudinal import COLLAPSE_RULES, STATUS_TOPIC, collapse_flags, decode_status
 from control_tuning.naming import canonical_capture
 
 TOPICS = ('/drive/status', '/vehicle/command', '/brake/status', '/gnss/fix_velocity',
           '/parameter_events', '/sysid/control_parameters', STATUS_TOPIC)
+PI_KEYS = ('speed_error_mps', 'p_current_a', 'i_current_a', 'ff_current_a', 'unsaturated_current_a',
+           'current_command_a', 'saturated', 'anti_windup', 'coasting', 'feedback_valid', 'inhibit',
+           'drive_path', 'output_current_a', 'rolling_hold', 'floor_applied', 'start_stepped',
+           'reverse_frames', 'collapse_events', 'collapse_flags')
 
 
 def read_bag(path):
@@ -32,7 +36,7 @@ def read_bag(path):
         '/drive/status': ('mode', 'gear', 'speed_mps', 'motor_rpm', 'phase_current_a',
                           'bus_current_a', 'bus_voltage_v', 'commanded_phase_current_a',
                           'commanded_motor_rpm', 'controller_control_mode', 'part1_valid',
-                          'part2_valid', 'part1_age_ms', 'stop_request'),
+                          'part2_valid', 'part1_age_ms', 'stop_request', 'tractive_commanded'),
     }
     while reader.has_next():
         topic, data, stamp = reader.read_next()
@@ -48,9 +52,8 @@ def read_bag(path):
             row['gnss'] = math.hypot(msg.twist.twist.linear.x, msg.twist.twist.linear.y)
         elif topic == STATUS_TOPIC:
             status = decode_status(msg.data)
-            rows[topic].append({'t': row['t'], **{key: status[key] for key in
-                ('speed_error_mps', 'p_current_a', 'i_current_a', 'unsaturated_current_a',
-                 'current_command_a', 'saturated', 'anti_windup', 'coasting', 'feedback_valid', 'inhibit')},
+            # v4 adds feedforward, rolling hold and collapse fields; v1~v3 lack them.
+            rows[topic].append({'t': row['t'], **{key: status[key] for key in PI_KEYS if key in status},
                 'revision': status['revision']})
             if not snapshots or status['revision'] != snapshots[-1]['revision']:
                 snapshots.append({'t': row['t'], **status})
@@ -137,6 +140,8 @@ def summarize(d, start=0., end=None, target=None):
             gain, offset = np.linalg.lstsq(np.column_stack((i, np.ones(len(i)))), a, rcond=None)[0]
             result['net_acceleration_per_amp_p10_median_p90'] = np.quantile(a/i,[.1,.5,.9]).tolist()
             result['exploratory_fit_accel_equals_gain_current_plus_offset'] = [float(gain),float(offset)]
+    result['collapse'] = collapse_summary(d, origin + start,
+                                          origin + end if end is not None else d['t'][-1])
     # Reapplication/coast from actual current only, not speed-mode current limit.
     coast = ok & (abs(current) < 5)
     result['coast_seconds_below_5a'] = float(coast.sum() * .1)
@@ -167,6 +172,41 @@ def summarize(d, start=0., end=None, target=None):
     return result
 
 
+def collapse_summary(d, begin, finish):
+    """EZ estimator collapses with the STM_A detector rules, one count per episode.
+
+    Works on any MCAP: square-wave logs predate the firmware counter, and the
+    same rules then compare square and sine (FOC) runs on equal terms.
+    """
+    window = (d['t'] >= begin) & (d['t'] <= finish)
+    if 'tractive_commanded' not in d or not window.any():
+        return None
+    age = d['part1_age_ms']
+    # /drive/status repeats each 50 ms Part I frame; keep one sample per frame.
+    fresh = np.r_[True, np.diff(age) < 0] & window & d['part1_valid'].astype(bool)
+    index = np.flatnonzero(fresh)
+    events, frames, quiet, rolling, first_flags = 0, 0, COLLAPSE_RULES['rearm_frames'], 0, []
+    for previous, current in zip(index[:-1], index[1:]):
+        rpm, before = float(d['motor_rpm'][current]), float(d['motor_rpm'][previous])
+        running = bool(d['tractive_commanded'][current])
+        rolling += running and abs(before) >= COLLAPSE_RULES['rpm_min']
+        flags = collapse_flags(float(d['commanded_phase_current_a'][current]),
+                               float(d['phase_current_a'][current]), float(d['bus_current_a'][current]),
+                               rpm, before, running, running and d['controller_control_mode'][current] == 0)
+        if not flags:
+            quiet += 1
+            continue
+        frames += 1
+        if quiet >= COLLAPSE_RULES['rearm_frames']:
+            events += 1
+            first_flags.append(int(flags))
+        quiet = 0
+    minutes = rolling * .05 / 60
+    return dict(events=events, anomalous_frames=frames, rolling_minutes=round(minutes, 3),
+                events_per_rolling_minute=round(events / minutes, 3) if minutes else None,
+                first_frame_flags=first_flags, rules=COLLAPSE_RULES)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('bag')
@@ -178,6 +218,9 @@ def main():
     data, provenance = read_bag(args.bag)
     samples = provenance.pop('pi_samples')
     provenance['pi_sample_count'] = len(samples)
+    counters = [row['collapse_events'] for row in samples if 'collapse_events' in row]
+    if counters:
+        provenance['firmware_collapse_events_in_bag'] = int(counters[-1] - counters[0])
     if args.pi_csv:
         if not samples:
             raise ValueError('No longitudinal PI samples to export')

@@ -296,5 +296,7 @@ PR 본문은 다음 형식을 사용합니다.
 ```
 
 AUTO 종방향 Speed/Torque PI 및 first-test calibration은 [구현·실측 보고서](docs/reports/2026-09-21_longitudinal_torque_pi.md)를 따릅니다.
-식별 플랜트 feedforward, MANUAL 페달 envelope 공유와 Kp380/Ki190 후보는
-[feedforward 기록](docs/reports/2026-09-29_longitudinal_feedforward.md)을 따릅니다.
+식별 플랜트 feedforward 구조와 MANUAL 페달 envelope 공유는
+[feedforward 기록](docs/reports/2026-09-29_longitudinal_feedforward.md)에서 시작했고,
+EZkontrol 사인파(FOC) 기준 재구성(ABI v4: 회전 중 최소 전류의 방형파/사인파 값, 역회전 디바운스,
+붕괴 감지)과 사인파 시험 계획은 [재구성 보고서](docs/reports/2026-10-01_ezkontrol_sine_rework.md)를 따릅니다.

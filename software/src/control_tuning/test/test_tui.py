@@ -14,11 +14,19 @@ def test_drive_mode_filters_editable_fields_and_preserves_hidden_values(editor):
     editor.key('3')
     editor.commit('speed')
     assert [f.key for f in editor.fields] == [
-        'drive_control_mode', 'governor_deceleration_slew_mps2', 'governor_acceleration_slew_mps2']
+        'drive_control_mode', 'drive_motor_waveform', 'governor_deceleration_slew_mps2',
+        'governor_acceleration_slew_mps2']
+    editor.key('down')
     editor.key('down')
     editor.commit(.3)
     editor.key('down')
     editor.commit(1.2)
+    # MANUAL uses the rolling floor in every calibration; only the active
+    # waveform's minimum current is editable.
+    editor.key('5')
+    assert [f.key for f in editor.fields] == [
+        'drive_min_current_sine_a', 'drive_start_step', 'drive_hold_on_speed_mps',
+        'drive_hold_off_speed_mps']
     editor.key('4')
     assert {f.key for f in editor.fields} == {'drive_current_limit_a', 'drive_motor_speed_limit_rpm'}
     original_pi = editor.draft['drive_speed_kp_a_per_mps']
@@ -34,8 +42,37 @@ def test_drive_mode_filters_editable_fields_and_preserves_hidden_values(editor):
     assert 'drive_speed_kp_a_per_mps' in {f.key for f in editor.fields}
     assert 'drive_coast_release_error_mps' not in {f.key for f in editor.fields}
     assert 'governor_acceleration_slew_mps2' not in {f.key for f in editor.fields}
+    assert 'drive_ff_current_gain_sine_mps2_per_a' in {f.key for f in editor.fields}
+    assert 'drive_ff_current_gain_square_mps2_per_a' not in {f.key for f in editor.fields}
     editor.commit('external_current')
-    assert [f.key for f in editor.fields] == ['drive_control_mode']
+    assert [f.key for f in editor.fields] == ['drive_control_mode', 'drive_motor_waveform']
+    editor.key('5')
+    assert {'drive_reverse_speed_mps', 'drive_reverse_debounce_frames',
+            'drive_collapse_hold_frames'} <= {f.key for f in editor.fields}
+
+
+def test_waveform_switch_shows_its_own_values_and_keeps_the_other(editor):
+    editor.key('3')
+    editor.commit('torque')
+    editor.key('down')
+    assert editor.field.key == 'drive_motor_waveform'
+    editor.key('enter')  # sine -> square
+    assert editor.draft['drive_motor_waveform'] == 'square'
+    assert 'drive_ff_current_gain_square_mps2_per_a' in {f.key for f in editor.fields}
+    editor.key('5')
+    assert editor.field.key == 'drive_min_current_square_a'
+    assert editor.draft['drive_min_current_square_a'] == 12.
+    editor.commit(10)
+    editor.key('s')
+    assert not editor.error
+    saved = editor.presets.load('airborne')
+    assert saved['drive_motor_waveform'] == 'square'
+    assert saved['drive_min_current_square_a'] == 10. and saved['drive_min_current_sine_a'] == 0.
+    # 0 frames is a valid "observe only" collapse reaction.
+    editor.selected = [f.key for f in editor.fields].index('drive_collapse_hold_frames')
+    editor.commit(0)
+    editor.key('s')
+    assert not editor.error
 
 
 @pytest.mark.parametrize('width,height', [(80, 24), (110, 32), (140, 42)])

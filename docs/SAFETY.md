@@ -124,6 +124,8 @@ STM_A Control task는 이 값에 더해 AUTO Host command freshness를 검사합
 | MANUAL 정상 | 페달 기반 torque command |
 | AUTO Speed 정상 | Host 속도→RPM에 active current/RPM envelope 적용, EZ Speed command |
 | AUTO Torque 정상 | Host 속도→STM_A 20 Hz PI, active current/RPM envelope 안에서 Torque command |
+| AUTO Torque/외부 전류, 음수 목표 | 즉시 PI reset·0 A/HALTED |
+| AUTO Torque/외부 전류, 측정 속도 < −`reverse_speed`(기본 0.30 m/s) | `reverse_debounce_frames`(기본 3 = 150 ms) 연속이면 PI reset·0 A/HALTED. 그 전에는 RUN 유지·0 A·PI 이력 유지 |
 
 EZkontrol Part I은 500 ms부터, Part II는 1 s부터 invalid입니다.
 Part I 미수신 500 ms 전에는 마지막 측정 속도가 유지되고 AUTO Torque PI가 이를 사용합니다.
@@ -137,6 +139,13 @@ AUTO Torque는 STM_A가 속도루프를 담당하므로 Part I 속도 피드백�
 inhibit·history reset 후 0 A/HALTED를 명령합니다.
 feedback 복구를 Control task가 확인한 뒤 pre-recovery command를 폐기하고 새 Host command를 요구합니다.
 Host timeout/물리 E-stop/STM_B safety gate는 각 mode의 기존 계약대로 별도 적용됩니다.
+
+STM_A longitudinal v4의 방형파 회피 동작은 위 정지 조건보다 뒤에 적용됩니다. 회전 중 최소 구동 전류는
+MANUAL 전진·AUTO Torque·외부 전류처럼 전진 구동 명령을 보낼 때만 걸고, HALTED·회생·후진·
+역회전 확인 중에는 걸지 않습니다. 붕괴 감지 반응(기본 꺼짐)도 AUTO 전류 경로에서만 동작하며
+목표 0·브레이크·E-stop·피드백 단절이 항상 우선합니다. 사인파 기본값(최소 전류 0)에서는 둘 다
+명령을 바꾸지 않습니다. 역회전 판정이 한 샘플(−0.05 m/s)에서 3프레임(−0.30 m/s)으로 바뀐 이유는
+[재구성 보고서](reports/2026-10-01_ezkontrol_sine_rework.md)의 순간 음수 속도 분석입니다.
 
 ## 6. E-stop 동작
 

@@ -10,33 +10,75 @@ from rclpy.executors import SingleThreadedExecutor
 from std_msgs.msg import Float32MultiArray
 
 from control_tuning.longitudinal import (
-    DEFAULT, AIRBORNE, CONFIG_KEYS, CONFIG_TOPIC, STATUS_TOPIC,
-    config_wire, decode_status, request_data, validate_config, wire_equal,
+    DEFAULT, AIRBORNE, CONFIG_KEYS, CONFIG_TOPIC, STATUS_TOPIC, VERSION, WIRE_KEYS,
+    config_wire, decode_status, request_data, resolve, status_data as v4_status,
+    validate_config, wire_equal,
 )
 from control_tuning.longitudinal_runtime import LongitudinalClient
 
 
-def status_data(config, revision=0, request_id=0, result=0, source=0, version=3):
-    return [float(version), float(revision), float(request_id), float(result), float(source),
-            *config_wire(config, version), *([0.] * 8), 1., 1.]
+def status_data(config, revision=0, request_id=0, result=0, source=0):
+    return v4_status(config, revision=revision, request_id=request_id, result=result, source=source)
 
 
 def test_candidate_roundtrip_and_wire_precision():
+    count = 5 + len(WIRE_KEYS) + 28
     for config in (DEFAULT, AIRBORNE):
         data = status_data(config)
-        data = struct.unpack('<28f', struct.pack('<28f', *data))
+        assert len(data) == count and data[0] == VERSION == 4
+        data = struct.unpack(f'<{count}f', struct.pack(f'<{count}f', *data))
         actual = decode_status(data)
         assert wire_equal(config, actual['config'])
         assert actual['display_values']['drive_current_limit_a'] == config['max_drive_current_a']
         assert actual['display_values']['drive_speed_kp_a_per_mps'] == config['speed_kp_a_per_mps']
+        assert actual['display_values']['drive_motor_waveform'] == 'sine'
         assert actual['source'] == 'DEFAULT'
-        assert actual['feedback_valid'] == 1
+        assert actual['feedback_valid'] == 1 and actual['collapse_age_s'] == -1
     assert DEFAULT['max_drive_current_a'] == 480
     assert AIRBORNE['max_drive_current_a'] < DEFAULT['max_drive_current_a']
-    assert decode_status(status_data(DEFAULT, version=2))['config']['coast_current_floor_a'] == 0
-    assert len(request_data(DEFAULT, 1, 0, version=2)) == 15
+    assert len(request_data(DEFAULT, 1, 0)) == 3 + 24
+    # Older firmware cannot take the rolling floor: refuse rather than reinterpret.
+    for version in (1, 2, 3):
+        with pytest.raises(ValueError, match='v4'):
+            request_data(DEFAULT, 1, 0, version=version)
+
+
+def test_legacy_readback_still_decodes():
+    """MCAP analysis reads v1~v3 readbacks; their slot 12 is the coast-only floor."""
+    head = [3., 2., 7., 1., 1., 1., 25., 2., 40., 6., 120., 50., .05, .12, 5., 20., 4500., 12.]
+    v3 = decode_status(head + [.1, 1., 2., 3., 3., 0., 0., 0., 1., 0.])
+    assert v3['version'] == 3 and v3['config']['coast_current_floor_a'] == 12.
+    assert v3['display_values']['drive_coast_current_floor_a'] == 12.
+    assert v3['current_command_a'] == 3. and 'rolling_hold' not in v3
+    v2 = decode_status([2.] + head[1:-1] + [.1, 1., 2., 3., 3., 0., 0., 0., 1., 0.])
+    assert v2['config']['coast_current_floor_a'] == 0
     with pytest.raises(ValueError):
-        request_data(AIRBORNE, 1, 0, version=2)
+        decode_status([4.] + head[1:] + [0.] * 10)
+
+
+def test_waveform_specific_values_are_resolved_for_the_wire():
+    square = {**AIRBORNE, 'motor_waveform': 'square', 'ff_current_gain_square_mps2_per_a': .064}
+    wire = request_data(square, 1, 0)[3:]
+    assert wire[WIRE_KEYS.index('min_drive_current_a')] == 12.
+    assert wire[WIRE_KEYS.index('motor_waveform')] == 0.
+    assert wire[WIRE_KEYS.index('ff_current_gain_mps2_per_a')] == pytest.approx(.064)
+    sine = {**square, 'motor_waveform': 'sine'}
+    wire = request_data(sine, 1, 0)[3:]
+    assert wire[WIRE_KEYS.index('min_drive_current_a')] == 0.
+    assert wire[WIRE_KEYS.index('motor_waveform')] == 1.
+    assert wire[WIRE_KEYS.index('ff_current_gain_mps2_per_a')] == 0.
+    # Readback names the active slot only; the other waveform's value is not on the wire.
+    readback = decode_status(v4_status(square))['config']
+    assert readback['min_drive_current_square_a'] == 12. and 'min_drive_current_sine_a' not in readback
+    assert wire_equal(square, readback) and not wire_equal(sine, readback)
+    assert wire_equal(square, {**square, 'min_drive_current_sine_a': 3.})
+    assert not wire_equal(square, {**square, 'min_drive_current_square_a': 10.})
+    assert resolve(readback)['min_drive_current_a'] == 12.
+    # Integers and switches are carried exactly.
+    custom = {**sine, 'start_step': 'disabled', 'reverse_debounce_frames': 5, 'collapse_hold_frames': 6}
+    back = decode_status(v4_status(custom))['config']
+    assert back['start_step'] == 'disabled' and back['reverse_debounce_frames'] == 5
+    assert back['collapse_hold_frames'] == 6 and wire_equal(custom, back)
 
 
 @pytest.mark.parametrize('key,value', [
@@ -45,8 +87,14 @@ def test_candidate_roundtrip_and_wire_precision():
     ('current_slew_up_a_s', 0.), ('current_slew_down_a_s', math.inf),
     ('speed_deadband_mps', .3), ('speed_hysteresis_mps', .01),
     ('reapply_current_a', -1.), ('reapply_slew_a_s', 3000.), ('motor_rpm_limit', 5000.),
-    ('coast_current_floor_a', -1.), ('coast_current_floor_a', 481.),
-    ('control_mode', 'regen'),
+    ('control_mode', 'regen'), ('motor_waveform', 'trapezoid'), ('start_step', True),
+    ('min_drive_current_square_a', -1.), ('min_drive_current_square_a', 31.),
+    ('min_drive_current_sine_a', 30.5), ('hold_on_speed_mps', .05), ('hold_on_speed_mps', 2.5),
+    ('hold_off_speed_mps', -.1), ('hold_off_speed_mps', .35), ('reverse_speed_mps', .01),
+    ('reverse_speed_mps', 1.5), ('reverse_debounce_frames', 0), ('reverse_debounce_frames', 11),
+    ('reverse_debounce_frames', 2.5), ('collapse_hold_frames', -1), ('collapse_hold_frames', 41),
+    ('ff_current_gain_square_mps2_per_a', .0001), ('ff_current_gain_sine_mps2_per_a', .3),
+    ('ff_rolling_resistance_mps2', 2.5), ('ff_speed_damping_per_s', -.1), ('ff_accel_limit_mps2', 6.),
 ])
 def test_invalid_request_rejected_at_host_boundary(key, value):
     with pytest.raises(ValueError):
@@ -58,6 +106,9 @@ def test_speed_current_limit_does_not_depend_on_inactive_pi_settings():
     assert request_data(config, 1, 0)[6] == 10.
     with pytest.raises(ValueError):
         request_data({**config, 'control_mode':'torque'}, 1, 0)
+    # The square floor (12 A) is above a 10 A limit; it only matters when square is active.
+    with pytest.raises(ValueError, match='최소 구동 전류'):
+        request_data({**config, 'motor_waveform':'square'}, 1, 0)
 
 
 def test_ros_apply_waits_for_matching_mcu_readback(monkeypatch):
@@ -143,20 +194,24 @@ def test_checked_in_drive_envelopes_and_launch_mapping():
     from control_tuning.longitudinal import LONGITUDINAL
     settings = SettingsStore()
     presets = PresetStore(settings)
+    for condition in ('airborne', 'driving'):
+        assert presets.is_current(condition)
+        values = presets.load(condition)
+        # Sine (FOC) basis: no floor, no feedforward; square keeps the logged 12 A.
+        assert values['drive_motor_waveform'] == 'sine'
+        assert values['drive_min_current_sine_a'] == 0. and values['drive_min_current_square_a'] == 12.
+        assert values['drive_ff_current_gain_sine_mps2_per_a'] == 0.
+        assert values['drive_ff_current_gain_square_mps2_per_a'] == 0.
+        assert (values['drive_hold_on_speed_mps'], values['drive_hold_off_speed_mps']) == (.35, .2)
+        assert (values['drive_reverse_speed_mps'], values['drive_reverse_debounce_frames']) == (.3, 3)
+        assert values['drive_collapse_hold_frames'] == 0 and values['drive_start_step'] == 'enabled'
+        native = load_launch_overrides(settings.path, LONGITUDINAL, condition)
+        validate_config(native)
+        wire = request_data(native, 1, 0)[3:]
+        assert wire[WIRE_KEYS.index('min_drive_current_a')] == 0.
+        assert wire[WIRE_KEYS.index('motor_waveform')] == 1.
+        assert request_data({**native, 'motor_waveform': 'square'}, 1, 0)[3:][12] == 12.
     airborne = presets.load('airborne')
-    expected = {
-        'drive_control_mode':'torque', 'drive_speed_kp_a_per_mps':25.,
-        'drive_speed_ki_a_per_mps_s':2., 'drive_speed_deadband_mps':.05,
-        'drive_coast_release_error_mps':.12, 'drive_coast_current_floor_a':1., 'drive_current_limit_a':40.,
-        'drive_integrator_limit_a':6., 'drive_current_slew_up_a_s':120.,
-        'drive_current_slew_down_a_s':400., 'drive_reapply_current_band_a':5.,
-        'drive_reapply_current_slew_a_s':20., 'drive_motor_speed_limit_rpm':4500.,
-    }
-    assert {k:airborne[k] for k in expected} == expected
-    native = load_launch_overrides(settings.path,LONGITUDINAL,'airborne')
-    assert native == AIRBORNE
-    assert request_data(native,1,0)[6] == 40.
-    assert request_data(native,1,0)[14] == 4500.
-    assert request_data(native,1,0)[15] == 1.
-    driving = load_launch_overrides(settings.path,LONGITUDINAL,'driving')
-    assert driving == {**DEFAULT,'control_mode':'torque'}
+    # Slow 50 A/s cuts crawled through the square dead zone at speed (P0-5).
+    assert airborne['drive_current_slew_down_a_s'] == 400.
+    assert airborne['drive_current_limit_a'] == 80.

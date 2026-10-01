@@ -37,6 +37,22 @@ KEY_ALIASES = {
     'reapply_current_a': 'drive_reapply_current_band_a',
     'reapply_slew_a_s': 'drive_reapply_current_slew_a_s',
     'motor_rpm_limit': 'drive_motor_speed_limit_rpm',
+    # STM_A ABI v4. The v3 coast floor above keeps its name for old MCAPs; the
+    # rolling minimum current is a different rule and is stored per waveform.
+    'motor_waveform': 'drive_motor_waveform',
+    'min_drive_current_square_a': 'drive_min_current_square_a',
+    'min_drive_current_sine_a': 'drive_min_current_sine_a',
+    'start_step': 'drive_start_step',
+    'hold_on_speed_mps': 'drive_hold_on_speed_mps',
+    'hold_off_speed_mps': 'drive_hold_off_speed_mps',
+    'reverse_speed_mps': 'drive_reverse_speed_mps',
+    'reverse_debounce_frames': 'drive_reverse_debounce_frames',
+    'collapse_hold_frames': 'drive_collapse_hold_frames',
+    'ff_current_gain_square_mps2_per_a': 'drive_ff_current_gain_square_mps2_per_a',
+    'ff_current_gain_sine_mps2_per_a': 'drive_ff_current_gain_sine_mps2_per_a',
+    'ff_rolling_resistance_mps2': 'drive_ff_rolling_resistance_mps2',
+    'ff_speed_damping_per_s': 'drive_ff_speed_damping_per_s',
+    'ff_accel_limit_mps2': 'drive_ff_accel_limit_mps2',
 }
 
 

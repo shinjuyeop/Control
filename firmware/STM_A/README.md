@@ -247,9 +247,11 @@ sequenceDiagram
 
 AUTO Speed는 `speed_target_mps`를 타이어 지름 `0.47 m`, 감속비 `4.60`으로 motor RPM에
 변환한 뒤 active preset RPM envelope를 적용하고 active current limit으로 EZ speed-control을 명령합니다.
-AUTO Torque는 STM_A 20 Hz Speed PI의 phase-current 출력을 active current limit으로 제한하며
-EZ RPM ceiling도 active preset을 사용합니다. 최종 전진/후진 물리 RPM clamp는 별도로 유지합니다.
-MANUAL은 기존 pedal percentage→torque current와 물리 gear 부호 경로를 유지합니다.
+AUTO Torque는 STM_A 20 Hz Speed PI(+선택적 feedforward)의 phase-current 출력을 active current limit으로
+제한하며 EZ RPM ceiling도 active preset을 사용합니다. 최종 전진/후진 물리 RPM clamp는 별도로 유지합니다.
+MANUAL은 pedal percentage→torque current와 물리 gear 부호 경로를 유지하되, Torque·외부 전류 calibration에서는
+active current limit·RPM ceiling·전류 상승/하강률을 페달에도 적용합니다. 회전 중 최소 전류(방형파 EZ)가
+켜져 있으면 전진 hold 중 페달 0~100%가 [최소 전류, 한도]에 대응합니다.
 
 ### 8.5 안전 동작
 
@@ -392,11 +394,20 @@ RuntimeStats 적용 firmware의 LPUART1과 Agent는 모두 **460800 baud**를 �
 
 ## AUTO longitudinal mode
 
-Driving Speed의 기존 CAN baseline 및 MANUAL 동작은 보존된다. `Core/Src/longitudinal_controller.c`는
-기존 20 Hz Control task에서 호출하는 positive-current PI다. 새 task는 없다.
-부팅 기본은 speed/DEFAULT, driving gain은 MCAP first-test candidate다.
-PC→RAM calibration과 5 Hz readback은 [wire 계약](../../docs/INTERFACES.md#longitudinal-calibration-v1),
-reset/feedback/전류 정책과 시험 절차는 [실측 보고서](../../docs/reports/2026-09-21_longitudinal_torque_pi.md)를 따른다.
+Driving Speed의 기존 CAN baseline은 보존된다. `Core/Src/longitudinal_controller.c`는
+기존 20 Hz Control task에서 호출하는 positive-current PI + 선택적 feedforward다. 새 task는 없다.
+부팅 기본은 Torque/DEFAULT이고 EZ 사인파(FOC) 기준이다: 회전 중 최소 전류 0, feedforward 0.
+PC→RAM calibration과 5 Hz readback은 [wire 계약](../../docs/INTERFACES.md#longitudinal-calibration-v4),
+reset/feedback/전류 정책과 시험 절차는 [실측 보고서](../../docs/reports/2026-09-21_longitudinal_torque_pi.md),
+v4 구동 보호와 방형파/사인파 값은 [재구성 보고서](../../docs/reports/2026-10-01_ezkontrol_sine_rework.md)를 따른다.
+
+ABI v4(2026-10-01)에서 `StartControl()`은 분기마다 `motor_request_t`만 만들고 송신 직전 한 곳에서
+`Long_DriveFloor()`로 회전 중 최소 전류·출발 스텝을 적용한다. 최소 전류가 0보다 크면(방형파 EZ)
+전진·유효 피드백·0.35 m/s 이상에서 hold가 켜지고 MANUAL 전진·AUTO Torque·외부 전류 명령이
+그 아래로 내려가지 않는다. AUTO Torque는 하한을 PI(`Long_Update(..., floor)`)에 넘겨 slew 상태를
+하한에서 시작한다. 역회전은 −0.30 m/s가 3프레임 이어질 때만 HALTED이고 그 전에는 RUN·0 A다.
+Part I마다 `Long_CollapseUpdate()`가 EZ 속도 추정 붕괴를 세고 status에 스냅샷을 낸다(관측 전용,
+`collapse_hold_frames`로 AUTO 반응 선택). 안전 정지 경로의 우선순위는 그대로다.
 
 Host 알고리즘/상태 전이 테스트 (HAL/ROS/보드 불필요):
 
@@ -408,4 +419,6 @@ gcc -std=c11 -Wall -Wextra -Werror -ICore/Inc tests/longitudinal_controller_test
 Torque는 forward만 지원한다. Part I age<500 ms 또는 Part II age<1 s가 아니면
 HALTED, 복구 뒤 새 명령이 필요하다.
 Speed reverse에는 signed preset RPM envelope와 기존 reverse 1500 rpm physical clamp가 함께 적용된다.
-Airborne 40 A/4500 rpm은 두 AUTO mode의 공통 envelope이고 MANUAL pedal은 이 envelope를 사용하지 않는다.
+AUTO Speed/Torque는 active preset의 current/RPM envelope를 공유한다. MANUAL pedal은 Torque·외부 전류
+calibration에서 같은 전류 한도·RPM 상한·전류 상승/하강률을 쓰고 Speed calibration에서는 0~480 A
+직접 매핑을 쓴다.

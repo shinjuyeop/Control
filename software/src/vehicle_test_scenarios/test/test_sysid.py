@@ -698,12 +698,12 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path, record_mcap):
     rclpy.init()
     node = SysidNode()
     from std_msgs.msg import Float32MultiArray
-    from control_tuning.longitudinal import AIRBORNE, config_wire
+    from control_tuning.longitudinal import AIRBORNE, status_data
     source = Node('steering_actuator_node')
     lon_pub = source.create_publisher(Float32MultiArray, '/drive/longitudinal_status', 10)
-    source.create_timer(.1, lambda: lon_pub.publish(Float32MultiArray(data=[
-        3., 1., 1., 1., 1., *config_wire(AIRBORNE),
-        .1, 1., 2., 3., 3., 0., 0., 0., 1., 0.])))
+    source.create_timer(.1, lambda: lon_pub.publish(Float32MultiArray(data=status_data(AIRBORNE, dict(
+        speed_error_mps=.1, p_current_a=1., i_current_a=2., unsaturated_current_a=3.,
+        current_command_a=3.)))))
     source.declare_parameter('steering_enabled', True)
     source.declare_parameter('tuning_preset', 'driving')
     lateral_config = Path(get_package_share_directory('lateral_ctrl')) / 'config'
@@ -811,8 +811,9 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path, record_mcap):
             assert capture['nodes']['/steering_actuator_node']['ros__parameters']['steering_enabled'] is False
             assert capture['nodes']['/command_governor']['ros__parameters']['input_timeout_ms'] == 200.0
             assert capture['longitudinal']['status'] == 'complete'
-            assert capture['longitudinal']['readback']['version'] == 3
-            assert capture['longitudinal']['readback']['config']['coast_current_floor_a'] == 1.0
+            assert capture['longitudinal']['readback']['version'] == 4
+            assert capture['longitudinal']['readback']['config']['motor_waveform'] == 'sine'
+            assert capture['longitudinal']['readback']['config']['min_drive_current_sine_a'] == 0.0
             assert counts['/drive/longitudinal_status'] > 0
             assert counts['/sysid/control_parameters'] == 1
             assert counts['/parameter_events'] > 0

@@ -11,7 +11,7 @@ from std_msgs.msg import Float32MultiArray
 
 from control_tuning.runtime import TuningNode
 from control_tuning.schema import STEERING, GOVERNOR, READ_NAMES
-from control_tuning.longitudinal import LONGITUDINAL, STATUS_TOPIC, CONFIG_TOPIC, DEFAULT, config_wire
+from control_tuning.longitudinal import LONGITUDINAL, STATUS_TOPIC, CONFIG_TOPIC, DEFAULT, status_data
 
 
 @pytest.fixture
@@ -29,7 +29,7 @@ def ros_pair(store, monkeypatch):
     for node in (client, server, governor):
         executor.add_node(node)
     status_pub = server.create_publisher(Float32MultiArray, STATUS_TOPIC, 10)
-    status = Float32MultiArray(data=[1., 0., 0., 0., 0., *config_wire(DEFAULT), *([0.] * 10)])
+    status = Float32MultiArray(data=status_data(DEFAULT, revision=0, request_id=0, result=0, source=0))
     writes = []
 
     def record(parameters):

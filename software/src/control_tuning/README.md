@@ -104,8 +104,26 @@ config/
 fsync/atomic replace, `.yaml.bak`과 외부 변경 검사를 사용한다. TUI는 Git push를 하지 않는다.
 
 **v2 프리셋은 그대로 읽을 수 있고 S 저장 시 v3 이름으로 전환한다.** 읽기만으로 원본 파일을 바꾸지 않는다.
-새·옛 이름의 값이 충돌하거나 관리 대상 항목이 누락되면 오류로 표시하며 default를 채우지 않는다.
-v1 flat preset은 종방향 값까지 명시해 이관해야 한다. 공통 `control_tuning.yaml`의 native ROS override 형식은 유지한다.
+새·옛 이름의 값이 충돌하면 오류로 표시한다. 나중에 추가된 Governor slew와 STM_A v4 구동 보호·feedforward
+항목만 기본값으로 채운다. STM_A v4 이전 프리셋은 방형파 EZ로 튜닝됐으므로 파형을 `square`로 읽고,
+옛 `drive_coast_current_floor_a`를 방형파 회전 중 최소 전류로 옮긴다. 채운 항목이 있으면 TUI가 알리며
+S로 저장해야 파일에 남는다. v1 flat preset은 종방향 값까지 명시해 이관해야 한다.
+공통 `control_tuning.yaml`의 native ROS override 형식은 유지한다.
+
+## 모터 파형: 방형파·사인파
+
+EZkontrol 정류 방식(PC 설정의 Square-wave/Sine-wave)은 STM_A가 CAN으로 알 수 없으므로
+`구동응답 → 구동 모터 파형`에 운전자가 같은 값을 선언한다. 기준은 사인파(FOC)다.
+
+| 구분 | 항목 | 비고 |
+|---|---|---|
+| 파형별 | 회전 중 최소 구동 전류 (`drive_min_current_square_a` / `drive_min_current_sine_a`) | 방형파 12 A, 사인파 0 A(꺼짐) |
+| 파형별 | FF 전류 이득 (`drive_ff_current_gain_square_mps2_per_a` / `..._sine_...`) | 같은 상전류의 토크가 파형마다 다름. 둘 다 0(꺼짐) |
+| 공통 | 출발 스텝, hold 0.35/0.20 m/s, 역회전 0.30 m/s·3프레임, 붕괴 반응 프레임, FF 구름저항·감쇠·가속 한도, PI·slew·한도 | |
+
+TUI는 선택한 파형의 값만 보여 주고 다른 파형 값은 그대로 저장해 둔다. STM_A에는 선택한
+파형의 값 하나와 파형 선언이 가며, readback과 MCAP 캡처에 파형이 함께 남는다.
+EZ PC 설정을 바꾸면 이 항목도 같이 바꾸고 S로 저장한 뒤 구동 스택을 재시작한다.
 
 [전체 새 이름·단위·ROS/MCU 연결·MCAP 호환표](../../../docs/CONTROL_TUNING_PARAMETERS.md)를 따른다.
 TUI 상세의 **설정키**는 새 이름이고 **ROS/STM_A 연결**은 기존 통신 계약이다.
@@ -127,7 +145,8 @@ STM_A calibration은 launch의 one-shot helper가 별도로 적용한다.
 STM_A가 MANUAL, fresh Part I <500 ms·Part II <1 s, |speed|≤0.05 m/s, pedal=0,
 |commanded current|<0.1 A, |actual phase current|≤1 A를 검사하고 revision과 함께 atomic commit한다.
 helper가 request/revision/full config readback을 확인하며 unsafe는 거절한다.
-[Wire 계약](../../../docs/INTERFACES.md#longitudinal-calibration-v1)은 그대로다.
+[Wire 계약](../../../docs/INTERFACES.md#longitudinal-calibration-v4)은 STM_A longitudinal ABI v4다.
+helper는 v4만 보내므로 v3 이하 STM_A에는 적용을 거부한다. STM_A와 host를 함께 갱신한다.
 
 helper는 15 s 안에 safe stop/readback을 기다려 한 번 적용한다. 실패하면 오류를 표시하고
 종료하므로 실제 source/mode와 정지 상태를 확인하고 선택한 프리셋으로 구동 스택을 재시작한다.

@@ -151,7 +151,8 @@ def layout(editor, runtime, width, height):
                        style='bold cyan' if active else 'dim')
     state = '' if choosing else ('수정됨 *' if editor.preset_dirty else
                                  '새 프리셋' if editor.presets.entry(editor.preset_condition) is None else '')
-    state = ' · '.join(part for part in (state, '구동: ' + editor.draft['drive_control_mode']) if part)
+    drive = f"구동: {editor.draft['drive_control_mode']} · {editor.draft['drive_motor_waveform']}"
+    state = ' · '.join(part for part in (state, drive) if part)
     preset_row.add_row(presets, Text(state, style='dim', no_wrap=True))
     view['preset'].update(Padding(preset_row, (0, 1)))
     tabs = Table.grid(expand=True, padding=0)

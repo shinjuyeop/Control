@@ -1,5 +1,12 @@
 # 종방향 Torque Control 시험 시나리오와 파라미터 튜닝 가이드 — 2026-09-29
 
+> **2026-10-01 갱신.** 여기의 ABI v2(config 16개)는 배포되지 않았고 main의 v3와 합쳐
+> [STM_A longitudinal ABI v4](INTERFACES.md#longitudinal-calibration-v4)로 바뀌었다. feedforward 4개 값은 v4 끝에 남았지만
+> 기본값은 0(꺼짐)이고 전류 이득은 파형별(방형파/사인파)이다. 과속 시 feedforward를 0으로 지우던
+> coast latch는 연속 PI로 바뀌어 P항이 출력을 낮춘다. 부팅 기본은 Torque·사인파이며 Kp 380/Ki 190은
+> 기본값이 아니다. MANUAL 페달 envelope는 유지된다. 현재 계약과 시험 순서는
+> [재구성 보고서](reports/2026-10-01_ezkontrol_sine_rework.md)를 따른다.
+
 대상 코드: STM_A 20 Hz 종방향 PI + 식별 플랜트 feedforward, MANUAL 페달 envelope 공유,
 구동 속도 게인 Kp 380 / Ki 190 후보, calibration wire ABI v2.
 근거와 구현 범위는 [feedforward 보고서](reports/2026-09-29_longitudinal_feedforward.md),

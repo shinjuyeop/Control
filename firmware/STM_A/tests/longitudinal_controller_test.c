@@ -7,6 +7,16 @@
 
 static void near(float a, float b) { assert(fabsf(a-b) < .001f); }
 
+/* Airborne square-wave preset shape from 2026-09-30 (floor 12 A, max 80 A). */
+static LongConfig square_airborne(void)
+{
+  LongConfig c = Long_DefaultConfig();
+  c.kp = 15; c.ki = 10; c.max_current = 80; c.integrator_limit = 6;
+  c.slew_up = 120; c.slew_down = 400; c.reapply_current = 5; c.reapply_slew = 20;
+  c.waveform = LONG_SQUARE; c.min_current = 12;
+  return c;
+}
+
 static void test_speed_envelope(void)
 {
   const LongConfig driving = Long_DefaultConfig();
@@ -40,9 +50,8 @@ static void test_speed_envelope(void)
   assert(manual[4] == 1 && ((unsigned)manual[1]*256+manual[0]) == 36800);
 }
 
-int main(void)
+static void test_external_inputs(void)
 {
-  test_speed_envelope();
   LongExternalInput external = {0};
   assert(!Long_ReceiveExternal(&external, -1, 1, 10));
   assert(!Long_ReceiveExternal(&external, NAN, 1, 10));
@@ -63,7 +72,7 @@ int main(void)
   assert(Long_ExternalFresh(&regen, 509, 500) && regen.current == -10);
   assert(!Long_ReceiveRegen(&regen, -20, 100, 20));
   assert(Long_ReceiveRegen(&regen, 0, 101, 20));
-  float external_wire[LONG_REQUEST_COUNT] = {3, 1, 0};
+  float external_wire[LONG_REQUEST_COUNT] = {LONG_VERSION, 1, 0};
   LongConfig external_config=Long_DefaultConfig();
   external_config.mode=LONG_EXTERNAL_CURRENT;
   Long_EncodeConfig(&external_config, external_wire+3);
@@ -71,75 +80,381 @@ int main(void)
   assert(Long_DecodeRequest(external_wire, LONG_REQUEST_COUNT, &external_request));
   external_wire[0]=1;
   assert(!Long_DecodeRequest(external_wire, LONG_REQUEST_COUNT, &external_request));
+}
+
+/* The v3 continuous PI is unchanged when no floor is configured (Sine default). */
+static void test_pi(void)
+{
   LongConfig c = Long_DefaultConfig();
   LongController s = {0};
   assert(c.mode == LONG_TORQUE && c.max_current == 480);
-  near(Long_Update(&s, &c, 2, 2, .05f), 0);
-  near(Long_Update(&s, &c, 6, 0, .05f), 120);
+  assert(c.waveform == LONG_SINE && c.min_current == 0 && c.ff_gain == 0);
+  near(Long_Update(&s, &c, 2, 2, .05f, 0), 0);
+  near(Long_Update(&s, &c, 6, 0, .05f, 0), 120);
   assert(s.anti_windup && s.saturated); near(s.i, 0);
-  for (int n=0;n<200;n++) Long_Update(&s,&c,6,0,.05f);
+  for (int n=0;n<200;n++) Long_Update(&s,&c,6,0,.05f,0);
   near(s.current,480); near(s.i,0);
-  Long_Update(&s,&c,6,7,.05f); near(s.current,240);
-  Long_Update(&s,&c,6,7,.05f); near(s.current,0);
-  for (int n=0;n<200;n++) Long_Update(&s,&c,6,7,.05f);
+  Long_Update(&s,&c,6,7,.05f,0); near(s.current,240);
+  Long_Update(&s,&c,6,7,.05f,0); near(s.current,0);
+  for (int n=0;n<200;n++) Long_Update(&s,&c,6,7,.05f,0);
   near(s.i,0); assert(s.coasting && s.anti_windup);
-  Long_Update(&s,&c,6,5.95f,.05f); assert(s.current>0 && s.current<=10 && !s.coasting);
+  Long_Update(&s,&c,6,5.95f,.05f,0); assert(s.current>0 && s.current<=10 && !s.coasting);
   float reapply_before=s.current;
-  Long_Update(&s,&c,6,5.8f,.05f); near(s.current,reapply_before+10);
-  Long_Update(&s,&c,6,5.8f,.05f); assert(s.current>20);
+  Long_Update(&s,&c,6,5.8f,.05f,0); near(s.current,reapply_before+10);
+  Long_Update(&s,&c,6,5.8f,.05f,0); assert(s.current>20);
   // Integral builds after output catches up and survives ordinary target steps.
   Long_Reset(&s);
-  for (int n=0;n<100;n++) Long_Update(&s,&c,6,5.9f,.05f);
+  for (int n=0;n<100;n++) Long_Update(&s,&c,6,5.9f,.05f,0);
   assert(s.i>0); float before=s.i;
-  Long_Update(&s,&c,6.02f,6,.05f); near(s.i,before);
-  Long_Update(&s,&c,5,6,.05f); near(s.i,before); // zero-output saturation preserves load current
-  Long_Update(&s,&c,0,4,.05f); near(s.current,0); near(s.i,0); assert(!s.coasting);
+  Long_Update(&s,&c,6.02f,6,.05f,0); near(s.i,before);
+  Long_Update(&s,&c,5,6,.05f,0); near(s.i,before); // zero-output saturation preserves load current
+  Long_Update(&s,&c,0,4,.05f,0); near(s.current,0); near(s.i,0); assert(!s.coasting);
   // Stop/reset does not slew: all command/controller history clears immediately.
-  Long_Update(&s,&c,8,0,.05f); Long_Reset(&s);
+  Long_Update(&s,&c,8,0,.05f,0); Long_Reset(&s);
   near(s.current,0); near(s.p,0); near(s.i,0);
 
-  // Airborne downward step: no regeneration, no I erasure, positive torque
-  // resumes above target and obeys the existing reapply current slew.
+  // Airborne downward step held at a floor: no regeneration, no I erasure,
+  // positive torque resumes above target and obeys the reapply current slew.
   LongConfig air=c;
   air.kp=25; air.ki=2; air.max_current=40; air.integrator_limit=6;
   air.slew_up=120; air.slew_down=400; air.reapply_current=5; air.reapply_slew=20;
+  air.min_current=1;
   s.i=6; s.current=6;
-  air.coast_current_floor=1;
   for (int n=0;n<40;n++) {
-    near(Long_Update(&s,&air,10.0f/3.6f,20.0f/3.6f,.05f),1);
+    near(Long_Update(&s,&air,10.0f/3.6f,20.0f/3.6f,.05f,1),1);
     near(s.i,6); assert(s.anti_windup);
   }
-  near(Long_Update(&s,&air,10.0f/3.6f,10.0f/3.6f+.1f,.05f),2);
+  near(Long_Update(&s,&air,10.0f/3.6f,10.0f/3.6f+.1f,.05f,1),2);
   assert(!s.coasting && s.i>5.9f);
   float integral=s.i;
-  Long_Update(&s,&air,3,3.1f,.05f);
+  Long_Update(&s,&air,3,3.1f,.05f,1);
   assert(s.i<integral && s.current>0); // unsaturated negative error reduces I
-  Long_Update(&s,&air,0,3,.05f); near(s.i,0); near(s.current,0);
+  Long_Update(&s,&air,0,3,.05f,1); near(s.i,0); near(s.current,0);
+}
 
+/* P0-2: a held output restarts from the floor, so re-acceleration leaves the
+ * floor at slew_up in the first frame instead of re-ramping from 0. */
+static void test_seeding(void)
+{
+  const LongConfig c = square_airborne();
+  LongController s = {0};
+  near(Long_Update(&s,&c,5.56f,5.56f,.05f,12),12); // fresh controller starts at the floor
+  for (int n=0;n<40;n++) {
+    near(Long_Update(&s,&c,5.56f,7.0f,.05f,12),12);  // overspeed holds the floor
+    assert(s.coasting && s.anti_windup);
+  }
+  float integral = s.i;
+  near(Long_Update(&s,&c,5.56f,4.0f,.05f,12),18);   // 12 + 120 A/s * 50 ms
+  assert(s.i >= integral);
+  // Without the floor the same overspeed coasts at 0 A and climbs back through
+  // the 20 A/s reapply band: the 0.3~0.5 s flat start seen before the rework.
+  LongController cold = {0};
+  for (int n=0;n<5;n++) Long_Update(&cold,&c,5.56f,7.0f,.05f,0);
+  near(cold.current,0);
+  near(Long_Update(&cold,&c,5.56f,4.0f,.05f,0),1);
+  // A floor below the reapply band still ramps slowly only above the floor.
+  LongConfig low = c; low.min_current = 2;
+  LongController t = {0};
+  for (int n=0;n<5;n++) Long_Update(&t,&low,5.56f,7.0f,.05f,2);
+  near(t.current,2);
+  near(Long_Update(&t,&low,5.56f,4.0f,.05f,2),3);
+}
+
+/* P0-5: inside the hold the output slews down to the floor; once the hold is
+ * released it never crawls through (0, min_current). Sine keeps the plain slew. */
+static void test_release(void)
+{
+  LongConfig c = square_airborne();
+  c.slew_down = 50; // the value that crawled through the dead zone on 2026-09-30
+  LongController s = {0};
+  for (int n=0;n<20;n++) Long_Update(&s,&c,5.56f,3.0f,.05f,12);
+  assert(s.current > 20);
+  float previous = s.current;
+  near(Long_Update(&s,&c,5.56f,9.0f,.05f,12), previous - 2.5f); // above the floor: slew
+  for (int n=0;n<40;n++) assert(Long_Update(&s,&c,5.56f,9.0f,.05f,12) >= 12);
+  near(s.current,12);
+  near(Long_Update(&s,&c,5.56f,9.0f,.05f,0),0); // hold released: one frame to 0
+  // Released while still high: slew down to the floor band, then cut.
+  LongController h = {0};
+  for (int n=0;n<20;n++) Long_Update(&h,&c,5.56f,3.0f,.05f,12);
+  assert(h.current > 20);
+  float out = h.current;
+  while (out > 12.5f) {
+    const float next = Long_Update(&h,&c,5.56f,9.0f,.05f,0);
+    assert(next == 0 || next >= 12);
+    assert(next >= out - 2.5f - .001f || next == 0);
+    out = next;
+    if (out == 0) break;
+  }
+  near(Long_Update(&h,&c,5.56f,9.0f,.05f,0),0);
+  // Sine (min_current 0): the ordinary downward slew is untouched.
+  LongConfig sine = c; sine.min_current = 0; sine.waveform = LONG_SINE;
+  LongController f = {0};
+  f.current = 12;
+  near(Long_Update(&f,&sine,5.56f,9.0f,.05f,0),9.5f);
+}
+
+static void test_hold_and_floor(void)
+{
+  LongConfig c = square_airborne();
+  LongDrive d = {0};
+  // Hysteresis 0.35 on / 0.20 off; only eligible paths hold.
+  assert(!Long_UpdateHold(&d,&c,true,.30f));
+  assert(Long_UpdateHold(&d,&c,true,.35f));
+  assert(Long_UpdateHold(&d,&c,true,.25f));
+  assert(!Long_UpdateHold(&d,&c,true,.20f));
+  assert(!Long_UpdateHold(&d,&c,true,.30f));
+  assert(Long_UpdateHold(&d,&c,true,5));
+  assert(!Long_UpdateHold(&d,&c,false,5)); // HALTED/regen/reverse/stale feedback
+  assert(Long_UpdateHold(&d,&c,true,5));
+  assert(!Long_UpdateHold(&d,&c,true,NAN));
+  near(Long_HoldFloor(&d,&c),0);
+  assert(Long_UpdateHold(&d,&c,true,5));
+  near(Long_HoldFloor(&d,&c),12);
+  // Final output stage: held paths never send less than the floor.
+  near(Long_DriveFloor(&d,&c,0),12); assert(d.floor_applied && !d.start_stepped);
+  near(Long_DriveFloor(&d,&c,11.9f),12); assert(d.floor_applied);
+  near(Long_DriveFloor(&d,&c,12),12); assert(d.floor_applied); // PI already at the floor
+  near(Long_DriveFloor(&d,&c,12.1f),12.1f); assert(!d.floor_applied);
+  near(Long_DriveFloor(&d,&c,30),30); assert(!d.floor_applied);
+  // Standing start steps over the dead zone; zero stays zero.
+  assert(!Long_UpdateHold(&d,&c,true,0));
+  near(Long_DriveFloor(&d,&c,0),0); assert(!d.floor_applied && !d.start_stepped);
+  near(Long_DriveFloor(&d,&c,.1f),12); assert(d.start_stepped);
+  near(Long_DriveFloor(&d,&c,11.9f),12); assert(d.start_stepped);
+  near(Long_DriveFloor(&d,&c,12.5f),12.5f); assert(!d.start_stepped);
+  c.start_step = false;
+  near(Long_DriveFloor(&d,&c,5),5); assert(!d.start_stepped);
+  // Sine/FOC: min_current 0 disables the hold, the step and the floor.
+  LongConfig sine = Long_DefaultConfig();
+  assert(!Long_UpdateHold(&d,&sine,true,5));
+  near(Long_DriveFloor(&d,&sine,0),0); near(Long_DriveFloor(&d,&sine,3),3);
+  assert(!d.floor_applied && !d.start_stepped);
+}
+
+/* P0-1 property: through coasting, reapply and target steps on an airborne
+ * plant, a held output is never below the floor, and with the start step no
+ * forward command ever sits inside (0, min_current). */
+static void test_floor_all_paths(void)
+{
+  const LongConfig c = square_airborne();
+  LongController s = {0};
+  LongDrive d = {0};
+  float v = 0;
+  const float targets[] = {20/3.6f, 40/3.6f, 20/3.6f, 10/3.6f, 40/3.6f, 0, 20/3.6f};
+  int held = 0;
+  for (size_t k=0; k<sizeof(targets)/sizeof(targets[0]); ++k) {
+    for (int n=0;n<200;n++) {
+      const float target = targets[k];
+      const bool eligible = target > 0;
+      Long_UpdateHold(&d,&c,eligible,v);
+      float current = eligible ? Long_Update(&s,&c,target,v,.05f,Long_HoldFloor(&d,&c)) : 0;
+      if (!eligible) Long_Reset(&s);
+      current = Long_DriveFloor(&d,&c,current);
+      if (d.hold) { assert(current >= 12 && d.floor_applied == (current == 12)); held++; }
+      assert(current == 0 || current >= 12);
+      // 2026-09-29/30 airborne fit: a = 0.07 I - 0.8 - 0.09 v (coast: no current).
+      const float a = current > 0 ? .07f*current - .8f - .09f*v : -.8f - .09f*v;
+      v = fmaxf(0, v + a*.05f);
+    }
+  }
+  assert(held > 500);
+  // External current path: the host value passes through the same stage.
+  Long_UpdateHold(&d,&c,true,3);
+  const float external[] = {0, 1, 4, 11.9f, 12, 30};
+  for (size_t i=0;i<sizeof(external)/sizeof(external[0]);++i)
+    assert(Long_DriveFloor(&d,&c,external[i]) >= 12);
+}
+
+/* P0-3 and the MANUAL envelope (pedal is torque demand, no PI history). */
+static void test_pedal(void)
+{
+  LongConfig c = Long_DefaultConfig();
+  near(Long_PedalCommand(&c,0,true,false,0,.05f),0);
+  near(Long_PedalCommand(&c,100,true,false,0,.05f),120);   // slew_up 2400 A/s
+  near(Long_PedalCommand(&c,100,true,false,400,.05f),480); // stops at the configured limit
+  near(Long_PedalCommand(&c,0,true,false,480,.05f),240);   // slew_down 4800 A/s
+  near(Long_PedalCommand(&c,50,true,false,240,.05f),240);
+  LongConfig airborne = c;
+  airborne.max_current = 20; airborne.slew_up = 120; airborne.slew_down = 400;
+  near(Long_PedalCommand(&airborne,100,true,false,0,.05f),6);
+  near(Long_PedalCommand(&airborne,100,true,false,20,.05f),20);
+  near(Long_PedalCommand(&airborne,50,true,false,0,1),10);
+  // Out-of-range pedal or stale history cannot exceed the limit or go negative.
+  near(Long_PedalCommand(&airborne,150,true,false,0,1),20);
+  near(Long_PedalCommand(&airborne,-10,true,false,10,1),0);
+  near(Long_PedalCommand(&airborne,100,true,false,480,.05f),20);
+  near(Long_PedalCommand(&airborne,NAN,true,false,NAN,1),0);
+  // Speed calibration keeps the direct 0..480 A map without slew.
+  near(Long_PedalCommand(&airborne,50,false,false,0,.05f),240);
+  near(Long_PedalCommand(&airborne,0,false,false,480,.05f),0);
+  // Rolling hold: 0 % keeps the floor, 1 % already adds torque above it.
+  LongConfig sq = square_airborne();
+  sq.slew_up = sq.slew_down = 9600;
+  near(Long_PedalCommand(&sq,0,true,true,0,.05f),12);
+  near(Long_PedalCommand(&sq,1,true,true,12,.05f),12 + .01f*(80-12));
+  near(Long_PedalCommand(&sq,100,true,true,12,.05f),80);
+  near(Long_PedalCommand(&sq,0,false,true,0,.05f),12);
+  near(Long_PedalCommand(&sq,1,false,true,0,.05f),12 + .01f*(480-12));
+  near(Long_PedalCommand(&sq,100,false,true,0,.05f),480);
+  near(Long_PedalCommand(&sq,50,true,false,0,.05f),40); // stopped: existing map
+  // Release inside the hold slews only down to the floor; after the hold it cuts.
+  sq = square_airborne(); sq.slew_down = 50;
+  near(Long_PedalCommand(&sq,0,true,true,40,.05f),37.5f);
+  near(Long_PedalCommand(&sq,0,true,true,13,.05f),12);
+  near(Long_PedalCommand(&sq,0,true,false,12,.05f),0);
+  near(Long_PedalCommand(&sq,0,true,false,40,.05f),37.5f);
+}
+
+/* P0-4: one or two negative-speed frames keep RUN; the third halts. */
+static void test_reverse_debounce(void)
+{
+  const LongConfig c = Long_DefaultConfig();
+  LongController s = {0};
   LongGate gate = {0}; bool discard = false;
-  Long_Update(&s,&c,8,0,.05f);
-  assert(Long_CheckInhibit(&s,&gate,true,false,true,false,8,0,&discard)==LONG_FEEDBACK);
+  Long_Update(&s,&c,8,0,.05f,0);
+  assert(Long_CheckInhibit(&s,&gate,&c,true,false,true,false,8,0,&discard)==LONG_FEEDBACK);
   near(s.current,0); near(s.i,0);
-  assert(Long_CheckInhibit(&s,&gate,true,true,true,false,8,0,&discard)==LONG_WAIT_COMMAND);
+  assert(Long_CheckInhibit(&s,&gate,&c,true,true,true,false,8,0,&discard)==LONG_WAIT_COMMAND);
   assert(discard); // even a recent pre-recovery command must be discarded
-  assert(Long_CheckInhibit(&s,&gate,true,true,false,false,8,0,&discard)==LONG_WAIT_COMMAND);
-  assert(Long_CheckInhibit(&s,&gate,true,true,true,false,8,0,&discard)==LONG_OK);
-  assert(Long_CheckInhibit(&s,&gate,true,true,true,true,8,0,&discard)==LONG_STOP);
-  assert(Long_CheckInhibit(&s,&gate,false,true,true,false,8,0,&discard)==LONG_DISABLED);
-  assert(Long_CheckInhibit(&s,&gate,true,true,false,false,8,0,&discard)==LONG_WAIT_COMMAND);
-  assert(Long_CheckInhibit(&s,&gate,true,true,true,false,-1,0,&discard)==LONG_REVERSE);
-  assert(Long_CheckInhibit(&s,&gate,true,true,true,false,1,-1,&discard)==LONG_REVERSE);
+  assert(Long_CheckInhibit(&s,&gate,&c,true,true,false,false,8,0,&discard)==LONG_WAIT_COMMAND);
+  assert(Long_CheckInhibit(&s,&gate,&c,true,true,true,false,8,0,&discard)==LONG_OK);
+  assert(Long_CheckInhibit(&s,&gate,&c,true,true,true,true,8,0,&discard)==LONG_STOP);
+  assert(Long_CheckInhibit(&s,&gate,&c,false,true,true,false,8,0,&discard)==LONG_DISABLED);
+  assert(Long_CheckInhibit(&s,&gate,&c,true,true,false,false,8,0,&discard)==LONG_WAIT_COMMAND);
+  // A negative target is still refused at once.
+  assert(Long_CheckInhibit(&s,&gate,&c,true,true,true,false,-1,0,&discard)==LONG_REVERSE);
+  // -0.05 m/s used to halt; inside the 0.30 m/s band it is now ordinary noise.
+  assert(Long_CheckInhibit(&s,&gate,&c,true,true,true,false,1,-.13f,&discard)==LONG_OK);
+  assert(Long_CheckInhibit(&s,&gate,&c,true,true,true,false,1,-.3f,&discard)==LONG_OK);
+  // The logged one-frame -0.39 m/s glitch keeps RUN and the PI history.
+  for (int n=0;n<20;n++) Long_Update(&s,&c,1,.8f,.05f,0);
+  const float integral = s.i;
+  assert(integral > 0);
+  assert(Long_CheckInhibit(&s,&gate,&c,true,true,true,false,1,-.39f,&discard)==LONG_REVERSE_PENDING);
+  assert(gate.reverse_frames==1); near(s.i,integral);
+  assert(Long_CheckInhibit(&s,&gate,&c,true,true,true,false,1,.4f,&discard)==LONG_OK);
+  assert(gate.reverse_frames==0); near(s.i,integral);
+  // Two frames still pending, the third is a real reverse roll: HALTED path.
+  assert(Long_CheckInhibit(&s,&gate,&c,true,true,true,false,1,-.5f,&discard)==LONG_REVERSE_PENDING);
+  assert(Long_CheckInhibit(&s,&gate,&c,true,true,true,false,1,-.5f,&discard)==LONG_REVERSE_PENDING);
+  assert(Long_CheckInhibit(&s,&gate,&c,true,true,true,false,1,-.5f,&discard)==LONG_REVERSE);
+  near(s.i,0); near(s.current,0);
+  assert(Long_CheckInhibit(&s,&gate,&c,true,true,true,false,1,-.5f,&discard)==LONG_REVERSE);
+  // Any other inhibit clears the count; recovery needs three new frames again.
+  assert(Long_CheckInhibit(&s,&gate,&c,true,false,true,false,1,-.5f,&discard)==LONG_FEEDBACK);
+  assert(gate.reverse_frames==0);
+  assert(Long_CheckInhibit(&s,&gate,&c,true,true,true,false,1,-.5f,&discard)==LONG_WAIT_COMMAND);
+  assert(Long_CheckInhibit(&s,&gate,&c,true,true,true,false,1,-.5f,&discard)==LONG_REVERSE_PENDING);
+  LongConfig one = c; one.reverse_frames = 1;
+  LongGate g1 = {0};
+  assert(Long_CheckInhibit(&s,&g1,&one,true,true,true,false,1,-.5f,&discard)==LONG_REVERSE);
+}
 
-  float wire[LONG_REQUEST_COUNT]={3,123,0};
+/* P0-6: logged collapses are flagged, normal airborne launches are not. */
+static void test_collapse(void)
+{
+  LongCollapseInput in = {12, 15.4f, 6.1f, 1094, 1113, true, true};
+  assert(Long_CollapseFlags(&in) == 0);
+  // 2026-09-30 00:11 t=7.95: +257.6 A phase, +171.7 A bus at a 12 A command.
+  in = (LongCollapseInput){12, 257.6f, 171.7f, 802, 948, true, true};
+  assert(Long_CollapseFlags(&in) == (LONG_COLLAPSE_PHASE_HIGH | LONG_COLLAPSE_BUS));
+  // t=9.75: -230.4 A phase while slewing down through 11.1 A.
+  in = (LongCollapseInput){11.1f, -230.4f, 176.2f, 842, 1003, true, true};
+  assert(Long_CollapseFlags(&in) == (LONG_COLLAPSE_PHASE_LOW | LONG_COLLAPSE_BUS));
+  // 00:07 t=21.1: speed estimate jumps at a constant 12 A command.
+  in = (LongCollapseInput){12, 6.5f, -16.9f, 1633, 2515, true, true};
+  assert(Long_CollapseFlags(&in) == LONG_COLLAPSE_RPM);
+  in = (LongCollapseInput){1, 6, -.9f, -380, 483, true, true};
+  assert(Long_CollapseFlags(&in) == LONG_COLLAPSE_RPM);
+  // Normal 80 A airborne launch (+98 rpm/frame) and benign low-speed dropout.
+  in = (LongCollapseInput){80, 92.2f, 40, 574, 476, true, true};
+  assert(Long_CollapseFlags(&in) == 0);
+  in = (LongCollapseInput){3.5f, 6.2f, 8.1f, 0, 216, true, true};
+  assert(Long_CollapseFlags(&in) == 0);
+  // Native Speed: EZ commands its own negative current; only the RPM rule counts.
+  in = (LongCollapseInput){80, -78, -26, 465, 472, true, false};
+  assert(Long_CollapseFlags(&in) == 0);
+  in.rpm = 0; assert(Long_CollapseFlags(&in) == LONG_COLLAPSE_RPM);
+  // Regen/reverse commands: current sign conventions unverified, RPM rule only.
+  in = (LongCollapseInput){-10, -60, -40, 900, 905, true, true};
+  assert(Long_CollapseFlags(&in) == 0);
+  // HALTED: nothing is commanded, nothing is attributed.
+  in = (LongCollapseInput){0, -100, 200, 0, 2000, false, false};
+  assert(Long_CollapseFlags(&in) == 0);
+
+  // One event per episode; a new event needs 20 clean frames (1 s).
+  LongCollapse s = {0};
+  LongCollapseInput clean = {12, 15, 6, 1100, 1100, true, true};
+  LongCollapseInput spike = {12, 257.6f, 171.7f, 802, 948, true, true};
+  LongCollapseInput drop = {12, 3, 2, 0, 802, true, true};
+  assert(!Long_CollapseUpdate(&s,&clean,LONG_PATH_TORQUE,true) && s.events == 0);
+  assert(Long_CollapseUpdate(&s,&spike,LONG_PATH_TORQUE,true) && s.events == 1);
+  assert(!Long_CollapseUpdate(&s,&drop,LONG_PATH_TORQUE,false) && s.events == 1);
+  assert(s.flags == (LONG_COLLAPSE_PHASE_HIGH | LONG_COLLAPSE_BUS | LONG_COLLAPSE_RPM));
+  near(s.snapshot.phase,257.6f); assert(s.snapshot.rpm == 802 && s.snapshot.previous_rpm == 948);
+  assert(s.path == LONG_PATH_TORQUE && s.hold);
+  for (int n=0;n<19;n++) assert(!Long_CollapseUpdate(&s,&clean,LONG_PATH_TORQUE,true));
+  assert(!Long_CollapseUpdate(&s,&spike,LONG_PATH_TORQUE,true) && s.events == 1);
+  for (int n=0;n<20;n++) assert(!Long_CollapseUpdate(&s,&clean,LONG_PATH_TORQUE,true));
+  assert(Long_CollapseUpdate(&s,&drop,LONG_PATH_MANUAL,false) && s.events == 2);
+  assert(s.flags == LONG_COLLAPSE_RPM && s.path == LONG_PATH_MANUAL && !s.hold);
+}
+
+/* P1-1: identified-plant feedforward on top of the continuous PI (gain 0 = off). */
+static void test_feedforward(void)
+{
+  LongConfig c = Long_DefaultConfig();
+  c.ff_gain = .00512f; c.ff_rolling = .228f; c.ff_damping = .0288f; c.ff_accel_limit = 1;
+  c.slew_up = c.slew_down = 9600;
+  LongController s = {0};
+  // Steady state: the identified resistance current appears without any error.
+  const float resistance = (c.ff_rolling + c.ff_damping * 2) / c.ff_gain;
+  near(Long_Update(&s,&c,2,2,.05f,0), resistance);
+  near(s.ff, resistance); near(s.p, 0); near(s.i, 0);
+  near(s.unsaturated, resistance);
+  // A commanded ramp adds the bounded acceleration term.
+  near(Long_Update(&s,&c,2.025f,2,.05f,0), (.5f + c.ff_rolling + c.ff_damping*2)/c.ff_gain
+       + c.kp * .025f);
+  // A target step is clamped to ff_accel_limit, not amplified by 1/dt.
+  Long_Reset(&s);
+  Long_Update(&s,&c,2,2,.05f,0);
+  Long_Update(&s,&c,3,2,.05f,0);
+  near(s.ff, (c.ff_accel_limit + c.ff_rolling + c.ff_damping*2)/c.ff_gain);
+  // Feedforward never exceeds the configured drive limit and never goes negative.
+  LongConfig small = c; small.max_current = 30; small.integrator_limit = 30;
+  Long_Reset(&s);
+  Long_Update(&s,&small,2,2,.05f,0); near(s.ff,30);
+  Long_Reset(&s);
+  Long_Update(&s,&c,1,-10,.05f,0); near(s.ff,0); // rolling resistance is cancelled
+  // Overspeed: P outweighs FF, the output coasts at the floor and I is frozen.
+  Long_Reset(&s);
+  for (int n=0;n<20;n++) Long_Update(&s,&c,2,1.9f,.05f,0);
+  const float integral = s.i;
+  assert(s.ff > 0 && integral > 0);
+  near(Long_Update(&s,&c,2,3,.05f,0),0);
+  assert(s.coasting && s.anti_windup); near(s.i,integral);
+  // Gain 0 disables feedforward and restores the plain PI command.
+  LongConfig off = c; off.ff_gain = 0;
+  Long_Reset(&s);
+  near(Long_Update(&s,&off,2,2,.05f,0),0); near(s.ff,0);
+  near(Long_Update(&s,&off,2.5f,2,.05f,0), off.kp * .5f + off.ki * .5f * .05f);
+}
+
+static void test_decode(void)
+{
+  LongConfig c = Long_DefaultConfig();
+  float wire[LONG_REQUEST_COUNT]={LONG_VERSION,123,0};
   Long_EncodeConfig(&c,wire+3);
   LongRequest r;
   assert(Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));
+  assert(memcmp(&r.config,&c,sizeof(c)) == 0);
   for (size_t n=0;n<LONG_REQUEST_COUNT;n++) {
     float old=wire[n];wire[n]=NAN;assert(!Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));wire[n]=old;
   }
   wire[6]=481;assert(!Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));wire[6]=480;
-  wire[0]=1;wire[3]=2;assert(!Long_DecodeRequest(wire,LONG_REQUEST_COUNT-1,&r));
-  wire[0]=3;wire[3]=1;
+  wire[0]=1;wire[3]=2;assert(!Long_DecodeRequest(wire,LONG_V3_CONFIG_COUNT+2,&r));
+  wire[0]=LONG_VERSION;wire[3]=1;
   wire[3]=LONG_SPEED;assert(Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));
   LongCalibration speed_cal={.config=Long_DefaultConfig()};
   Long_ApplyConfiguration(&speed_cal,&r,true);
@@ -149,12 +464,41 @@ int main(void)
   near(Long_SpeedCommand(&r.config,2000).current,10);
   wire[3]=LONG_TORQUE;assert(!Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));
   wire[6]=480;
+  // Older layouts stay accepted and take the v4 defaults for appended fields.
+  float v3[3+LONG_V3_CONFIG_COUNT];
+  memcpy(v3,wire,sizeof(v3));
+  v3[0]=3;v3[15]=12;
+  assert(Long_DecodeRequest(v3,3+LONG_V3_CONFIG_COUNT,&r));
+  near(r.config.min_current,12); assert(r.config.waveform==LONG_SINE && r.config.reverse_frames==3);
+  near(r.config.ff_gain,0);
+  v3[0]=LONG_VERSION;assert(!Long_DecodeRequest(v3,3+LONG_V3_CONFIG_COUNT,&r));
+  v3[0]=2;assert(Long_DecodeRequest(v3,2+LONG_V3_CONFIG_COUNT,&r));
+  near(r.config.min_current,0);
+  v3[0]=3;assert(!Long_DecodeRequest(v3,2+LONG_V3_CONFIG_COUNT,&r));
   assert(!Long_DecodeRequest(wire,LONG_REQUEST_COUNT-1,&r));
+  assert(!Long_DecodeRequest(wire,2,&r));
+  // v4 field bounds: integer flags/counts, floor cap, a real hysteresis band.
+  const struct { size_t index; float bad, good; } bounds[] = {
+    {15,-1,0}, {15,30.5f,30}, {16,2,1}, {16,.5f,0}, {17,.5f,1}, {18,.05f,.25f},
+    {18,2.5f,2}, {19,-.1f,0}, {19,.35f,.2f}, {20,.04f,.05f}, {20,1.1f,1},
+    {21,0,1}, {21,11,10}, {21,1.5f,3}, {22,41,40}, {22,-1,0}, {23,.0001f,.0005f},
+    {23,.3f,.2f}, {24,-.1f,2}, {25,1.1f,1}, {26,5.1f,5},
+  };
+  for (size_t i=0;i<sizeof(bounds)/sizeof(bounds[0]);++i) {
+    const float old = wire[bounds[i].index];
+    wire[bounds[i].index] = bounds[i].bad; assert(!Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));
+    wire[bounds[i].index] = bounds[i].good; assert(Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));
+    wire[bounds[i].index] = old;
+  }
+  wire[6]=10;wire[15]=12;assert(!Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r)); // floor > limit
+  wire[6]=480;wire[15]=12;wire[16]=LONG_SQUARE;wire[23]=.064f;
   assert(Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));
-  wire[0]=2;assert(Long_DecodeRequest(wire,LONG_REQUEST_COUNT-1,&r));
-  near(r.config.coast_current_floor,0);
-  wire[0]=3;wire[15]=1;assert(Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));
-  near(r.config.coast_current_floor,1);wire[15]=0;
+  near(r.config.min_current,12); assert(r.config.waveform==LONG_SQUARE); near(r.config.ff_gain,.064f);
+  float round[LONG_CONFIG_COUNT];
+  Long_EncodeConfig(&r.config,round);
+  assert(memcmp(round,wire+3,sizeof(round))==0);
+  wire[15]=0;wire[16]=LONG_SINE;wire[23]=0;
+  assert(Long_DecodeRequest(wire,LONG_REQUEST_COUNT,&r));
   LongCalibration cal={.config=Long_DefaultConfig()};
   Long_ApplyConfiguration(&cal,&r,false);assert(cal.result==LONG_UNSAFE && cal.revision==0);
   assert(cal.config.mode==LONG_TORQUE && cal.source==LONG_DEFAULT);
@@ -173,6 +517,10 @@ int main(void)
   assert(!Long_CanConfigure(true,true,0,0,10,0));
   assert(!Long_CanConfigure(true,true,0,0,0,10));
   assert(!Long_CanConfigure(true,true,NAN,0,0,0));
+}
+
+static void test_can_encoding(void)
+{
   uint8_t frame[8];
   EZkontrol_EncodeCommand(2000,100,1,0,255,frame);
   assert(frame[0]==0xe8 && frame[1]==0x80 && frame[2]==0xd0 && frame[3]==0x84);
@@ -188,5 +536,26 @@ int main(void)
   EZkontrol_EncodeCommand(0,0,0,0,3,frame);assert(frame[4]==0);
   assert(((unsigned)frame[1]*256+frame[0])==32000);
   EZkontrol_EncodeCommand(0,0,0,1,4,frame);assert(frame[4]==2);
-  puts("longitudinal PI, slew, coast, reset, calibration atomic commit/rejection: PASS");
+  // A 12 A floor survives the 0.1 A wire quantisation exactly.
+  EZkontrol_EncodeCommand(4500,12,1,0,5,frame);
+  assert(((unsigned)frame[1]*256+frame[0])==32120);
+}
+
+int main(void)
+{
+  test_speed_envelope();
+  test_external_inputs();
+  test_pi();
+  test_seeding();
+  test_release();
+  test_hold_and_floor();
+  test_floor_all_paths();
+  test_pedal();
+  test_reverse_debounce();
+  test_collapse();
+  test_feedforward();
+  test_decode();
+  test_can_encoding();
+  puts("longitudinal PI, rolling floor/seeding/release, pedal map, reverse debounce, "
+       "collapse detector, feedforward, calibration atomic commit/rejection: PASS");
 }

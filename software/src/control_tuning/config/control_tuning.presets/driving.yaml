@@ -2,7 +2,7 @@
 schema_version: 3
 condition: driving
 label: 주행
-saved_at: '2026-09-29T15:50:29.332522+00:00'
+saved_at: '2026-10-01T12:06:10.369939+00:00'
 steering_current_reference_a: 20.0
 steering:
   steering_control_mode: torque
@@ -19,11 +19,16 @@ steering:
   steering_min_vehicle_speed_kph: 0.5
 drive:
   drive_control_mode: speed
+  drive_motor_waveform: sine
   drive_speed_kp_a_per_mps: 180.0
   drive_speed_ki_a_per_mps_s: 12.0
   drive_speed_deadband_mps: 0.05
   drive_coast_release_error_mps: 0.12
-  drive_coast_current_floor_a: 0.0
+  drive_ff_current_gain_square_mps2_per_a: 0.0
+  drive_ff_current_gain_sine_mps2_per_a: 0.0
+  drive_ff_rolling_resistance_mps2: 0.0
+  drive_ff_speed_damping_per_s: 0.0
+  drive_ff_accel_limit_mps2: 0.0
   drive_current_limit_a: 480.0
   drive_integrator_limit_a: 120.0
   drive_current_slew_up_a_s: 2400.0
@@ -31,9 +36,18 @@ drive:
   drive_reapply_current_band_a: 20.0
   drive_reapply_current_slew_a_s: 200.0
   drive_motor_speed_limit_rpm: 4500.0
+  drive_min_current_square_a: 12.0
+  drive_min_current_sine_a: 0.0
+  drive_start_step: enabled
+  drive_hold_on_speed_mps: 0.35
+  drive_hold_off_speed_mps: 0.2
+  drive_reverse_speed_mps: 0.3
+  drive_reverse_debounce_frames: 3
+  drive_collapse_hold_frames: 0
 governor:
   governor_command_timeout_ms: 200.0
   governor_deceleration_slew_mps2: 0.5
+  governor_acceleration_slew_mps2: 1.0
 timeouts:
   steering_command_timeout_ms: 200
   steering_can_timeout_ms: 500
