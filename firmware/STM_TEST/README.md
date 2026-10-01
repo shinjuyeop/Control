@@ -168,6 +168,7 @@ SET STEER_POS <-1800..1800 motor-deg>
 SET EZ_CAN ON|OFF
 SET KEYA_CAN ON|OFF
 SET PLANT ON|OFF
+SET EZ_SQUARE ON|OFF
 FAULT EZ DROP_TX ON|OFF
 FAULT KEYA DROP_TX ON|OFF
 FAULT EZ ON|OFF
@@ -274,6 +275,15 @@ STM_A만 재시작했을 때 양쪽이 서로를 영원히 기다립니다.
   `HIL_EZ_PLANT_TORQUE_FULL_SCALE_A`(480 A) 대비 비율로 곱합니다. STM_A는 MANUAL
   pedal 0~100%를 0~480 A로 보냅니다
 - RUN bit가 0이거나 handshake가 안 끝났으면 목표는 0입니다
+
+`SET EZ_SQUARE ON`은 방형파 EZ 결함 모델을 켭니다(STM_A longitudinal v4 회귀 시험용).
+Part I 보고값만 바꾸고 plant RPM은 그대로 둡니다. Torque command일 때 상전류는 command를 따르되
+4 A 미만은 0으로 보고합니다. 회전 중(|RPM| ≥ 400)에 0 A 뒤 재인가하거나 12 A 미만을 명령하면
+3프레임 붕괴(상전류 −120 A·버스 +150 A → RPM 0 → RPM 부호 반전)를 주입합니다. 2026-09-29/30
+공중 기록의 모양을 흉내 낸 결정적 자극이며 실제 확률이나 크기를 재현하지 않습니다.
+STATUS 형식(protocol 3)은 바뀌지 않으므로 주입 결과는 STM_A `/drive/longitudinal_status`의
+붕괴 카운터로 확인합니다. 기대 동작은
+[재구성 보고서](../../docs/reports/2026-10-01_ezkontrol_sine_rework.md) 7장 E6을 따릅니다.
 
 `ez_target_rpm`은 이렇게 계산한 목표값이며 STATUS로 관찰할 수 있습니다.
 원본 command의 `ez_running`, `ez_speed_control`, `ez_command_rpm`,

@@ -223,7 +223,7 @@ bool HilLogic_ProcessCommand(HilState_t *state, char *line,
   if ((count == 1u) && token_is(tokens[0], "HELP")) {
     (void)snprintf(reply, reply_size,
       "HELP SET MODE|GEAR|ESTOP|PEDAL|SPEED|RPM|VOLTAGE|CURRENT|MOTOR_TEMP|"
-      "STEER_POS|EZ_CAN|KEYA_CAN|PLANT ...; FAULT EZ|KEYA [DROP_TX] ON|OFF; "
+      "STEER_POS|EZ_CAN|KEYA_CAN|PLANT|EZ_SQUARE ...; FAULT EZ|KEYA [DROP_TX] ON|OFF; "
       "STATUS");
     return true;
   }
@@ -248,6 +248,11 @@ bool HilLogic_ProcessCommand(HilState_t *state, char *line,
     bool enabled = token_is(tokens[2], "ON");
     if (token_is(tokens[1], "EZ_CAN")) state->ez_can_enabled = enabled;
     else state->keya_can_enabled = enabled;
+    success = true;
+  } else if ((count == 3u) && token_is(tokens[0], "SET") &&
+             token_is(tokens[1], "EZ_SQUARE") &&
+             (token_is(tokens[2], "ON") || token_is(tokens[2], "OFF"))) {
+    state->ez_square_fault = token_is(tokens[2], "ON");
     success = true;
   } else if ((count == 3u) && token_is(tokens[0], "SET") &&
              token_is(tokens[1], "PLANT") &&
@@ -301,18 +306,66 @@ bool HilLogic_ProcessCommand(HilState_t *state, char *line,
   return true;
 }
 
-void HilLogic_EZEncodePart1(const HilState_t *state, uint8_t data[8])
+void HilLogic_EZEncodePart1Feedback(const HilState_t *state,
+                                    const HilEZFeedback_t *feedback,
+                                    uint8_t data[8])
 {
   uint16_t voltage = encode_u01(state->motor_voltage_v);
-  uint16_t current = encode_offset_01(state->motor_current_a);
-  float rpm = state->motor_rpm;
+  uint16_t bus = encode_offset_01(feedback->bus_current_a);
+  uint16_t phase = encode_offset_01(feedback->phase_current_a);
+  float rpm = feedback->rpm;
+  if (!isfinite(rpm)) rpm = 0.0f;
   if (rpm < -32000.0f) rpm = -32000.0f;
   if (rpm > 32000.0f) rpm = 32000.0f;
   uint16_t encoded_rpm = (uint16_t)lroundf(rpm + 32000.0f);
   data[0] = (uint8_t)voltage; data[1] = (uint8_t)(voltage >> 8);
-  data[2] = (uint8_t)current; data[3] = (uint8_t)(current >> 8);
-  data[4] = (uint8_t)current; data[5] = (uint8_t)(current >> 8);
+  data[2] = (uint8_t)bus; data[3] = (uint8_t)(bus >> 8);
+  data[4] = (uint8_t)phase; data[5] = (uint8_t)(phase >> 8);
   data[6] = (uint8_t)encoded_rpm; data[7] = (uint8_t)(encoded_rpm >> 8);
+}
+
+void HilLogic_EZEncodePart1(const HilState_t *state, uint8_t data[8])
+{
+  const HilEZFeedback_t feedback = {state->motor_current_a, state->motor_current_a,
+                                    state->motor_rpm};
+  HilLogic_EZEncodePart1Feedback(state, &feedback, data);
+}
+
+HilEZFeedback_t HilLogic_EZSquareFeedback(HilEZSquareFault_t *fault,
+                                          const HilEZCommand_t *command,
+                                          float plant_rpm, float measured_current_a)
+{
+  HilEZFeedback_t out = {measured_current_a, measured_current_a, plant_rpm};
+  if (fault == NULL) return out;
+  const bool torque = (command != NULL) && !command->handshake_ack &&
+                      command->running && !command->speed_control;
+  const float demand = torque ? command->phase_current_a : 0.0f;
+  const bool drive = demand > 0.05f;
+  const bool rolling = fabsf(plant_rpm) >= HIL_EZ_SQUARE_ROLLING_RPM;
+  /* Trigger: reapply after 0 A, or a small held current, while rolling. */
+  if ((fault->collapse_frame == 0u) && torque && rolling &&
+      ((drive && !fault->previous_drive) || (drive && demand < HIL_EZ_SQUARE_STABLE_A))) {
+    fault->collapse_frame = 1u;
+    fault->collapses++;
+  }
+  fault->previous_drive = drive;
+  if (torque) {
+    /* Below the dead zone the bridge is off: exactly zero is reported. */
+    const float reported = (fabsf(demand) < HIL_EZ_SQUARE_DEADZONE_A) ? 0.0f : demand;
+    out.bus_current_a = out.phase_current_a = reported;
+  }
+  /* Logged shape: current/bus spike, RPM 0, sign flip, then recovery. */
+  switch (fault->collapse_frame) {
+    case 1u: out.phase_current_a = -120.0f; out.bus_current_a = 150.0f; break;
+    case 2u: out.phase_current_a = 90.0f; out.rpm = 0.0f; break;
+    case 3u: out.rpm = -0.25f * plant_rpm; break;
+    default: break;
+  }
+  if (fault->collapse_frame != 0u) {
+    fault->collapse_frame = (fault->collapse_frame >= HIL_EZ_SQUARE_COLLAPSE_FRAMES) ?
+        0u : (uint8_t)(fault->collapse_frame + 1u);
+  }
+  return out;
 }
 
 void HilLogic_EZEncodePart2(const HilState_t *state, uint8_t life,
