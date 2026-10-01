@@ -29,6 +29,7 @@ KEY_ALIASES = {
     'speed_ki_a_per_mps_s': 'drive_speed_ki_a_per_mps_s',
     'speed_deadband_mps': 'drive_speed_deadband_mps',
     'speed_hysteresis_mps': 'drive_coast_release_error_mps',
+    'coast_current_floor_a': 'drive_coast_current_floor_a',
     'max_drive_current_a': 'drive_current_limit_a',
     'integrator_limit_a': 'drive_integrator_limit_a',
     'current_slew_up_a_s': 'drive_current_slew_up_a_s',
@@ -36,10 +37,6 @@ KEY_ALIASES = {
     'reapply_current_a': 'drive_reapply_current_band_a',
     'reapply_slew_a_s': 'drive_reapply_current_slew_a_s',
     'motor_rpm_limit': 'drive_motor_speed_limit_rpm',
-    'ff_current_gain_mps2_per_a': 'drive_ff_current_gain_mps2_per_a',
-    'ff_rolling_resistance_mps2': 'drive_ff_rolling_resistance_mps2',
-    'ff_speed_damping_per_s': 'drive_ff_speed_damping_per_s',
-    'ff_accel_limit_mps2': 'drive_ff_accel_limit_mps2',
 }
 
 

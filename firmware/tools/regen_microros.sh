@@ -43,11 +43,14 @@ rm -rf "$WORK/project/micro_ros_stm32cubemx_utils/.git"
 
 EP="$WORK/project/micro_ros_stm32cubemx_utils/microros_static_library/library_generation/extra_packages"
 if [ -d "$MSGS_DIR/msg" ] && git -C "$MSGS_DIR" rev-parse --git-dir >/dev/null 2>&1; then
-  # 상위 저장소의 서브모듈을 그대로 쓴다. 커밋을 여기서 확정해 manifest에 남긴다.
+  # 미커밋 메시지는 개발자가 명시적으로 선택한 빌드에서만 허용한다.
+  MSGS_WORKTREE=clean
   if [ -n "$(git -C "$MSGS_DIR" status --porcelain)" ]; then
-    echo "오류: $MSGS_DIR 에 커밋되지 않은 변경이 있다." >&2
-    echo "      어느 커밋으로 빌드했는지 기록할 수 없으므로 중단한다." >&2
-    exit 1
+    if [ "${KAIEV26_MSGS_ALLOW_DIRTY:-0}" != 1 ]; then
+      echo "kaiev26_msgs 작업 트리가 수정되어 있습니다. 커밋하거나 개발 빌드에 KAIEV26_MSGS_ALLOW_DIRTY=1을 명시하십시오." >&2
+      exit 1
+    fi
+    MSGS_WORKTREE=modified
   fi
   MSGS_COMMIT=$(git -C "$MSGS_DIR" rev-parse HEAD)
   MSGS_SOURCE=$(
@@ -58,6 +61,7 @@ elif [ -n "$KAIEV26_MSGS_COMMIT" ]; then
   git clone -q "$MSGS_REPO" "$EP/kaiev26_msgs"
   git -C "$EP/kaiev26_msgs" checkout -q "$KAIEV26_MSGS_COMMIT"
   MSGS_COMMIT=$(git -C "$EP/kaiev26_msgs" rev-parse HEAD)
+  MSGS_WORKTREE=clean
   MSGS_SOURCE=$MSGS_REPO
   rm -rf "$EP/kaiev26_msgs/.git"
 else
@@ -109,6 +113,7 @@ ros_distro=humble
 docker_image=$IMAGE_DIGEST
 micro_ros_stm32cubemx_utils=$UTILS_COMMIT
 kaiev26_msgs=$MSGS_COMMIT
+kaiev26_msgs_worktree=$MSGS_WORKTREE
 kaiev26_msgs_source=$MSGS_SOURCE
 mcu_cflags=$MCU_CFLAGS
 custom_transport_mtu=1024

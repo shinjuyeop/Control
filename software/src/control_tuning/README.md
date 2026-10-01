@@ -21,7 +21,7 @@ Python 의존성은 rich/PyYAML이다. MCAP 분석은 [control_tools](../control
 |---|---|---|
 | 1 조향응답 | 조향 제어 방식, P/D, 목표 도달 판정, 조향속도 필터 | S 저장 후 재시작 |
 | 2 조향출력 | 최대·지속 전류, 고출력 시간·회복, 한계각 여유, 조향 허용 최소 차속 | S 저장 후 재시작 |
-| 3 구동응답 | speed/torque, 속도 Kp/Ki, deadband/hysteresis, feedforward 4개 항목 | S 저장 후 재시작 |
+| 3 구동응답 | speed/torque, 속도 Kp/Ki, deadband/hysteresis | S 저장 후 재시작 |
 | 4 구동출력 | 최대 전류, 적분 상한, 전류 상승·하강·재인가, RPM 상한 | S 저장 후 재시작 |
 | 5 수신제한 | 상위 명령 유효시간과 조향 명령·CAN·피드백·모드·차속 수신 제한 | S 저장 후 재시작 |
 
@@ -64,24 +64,22 @@ v3는 `steering`, `drive`, `governor`, `timeouts`로 구분한다. 설정키는 
 | 값 | airborne | driving |
 |---|---:|---:|
 | mode | torque | torque |
-| Kp / Ki | 15 / 2 | 380 / 190 |
-| max / integrator A | 20 / 6 | 480 / 120 |
+| Kp / Ki | 15 / 2 | 180 / 12 |
+| max / integrator A | 40 / 6 | 480 / 120 |
 | slew up / down A/s | 120 / 400 | 2400 / 4800 |
 | deadband / hysteresis m/s | 0.05 / 0.12 | 0.05 / 0.12 |
 | reapply band A / slew A/s | 5 / 40 | 20 / 200 |
-| RPM ceiling | 600 | 4500 |
-| feedforward 전류당 가속도 m/s^2/A | 0 (사용 안 함) | 0.00512 |
-| feedforward 주행저항 m/s^2 / 속도저항 1/s | 0 / 0 | 0.228 / 0.0288 |
-| feedforward 가속 한도 m/s^2 | 0 | 1.0 |
+| RPM ceiling | 4500 | 4500 |
 
-[실측 근거·단위·airborne/A-B 절차](../../../docs/reports/2026-09-21_longitudinal_torque_pi.md)와
-[feedforward·MANUAL envelope 기록](../../../docs/reports/2026-09-29_longitudinal_feedforward.md)을 따른다.
-기존 사용자 프리셋에는 feedforward 4개 값이 없으므로 명시해서 다시 저장해야 불러올 수 있다.
+[실측 근거·단위·airborne/A-B 절차](../../../docs/reports/2026-09-21_longitudinal_torque_pi.md)를 따른다.
 STM_A boot는 **speed/DEFAULT**다. `drive_current_limit_a`/`drive_motor_speed_limit_rpm`은
-Speed/Torque 공통 envelope다. airborne는 두 AUTO mode 모두 20 A/600 rpm,
+Speed/Torque 공통 envelope다. airborne는 두 AUTO mode 모두 40 A/4500 rpm,
 driving은 480 A/4500 rpm이다. Speed에서는 current-limit field와 signed target RPM 범위,
 Torque에서는 PI 전류 상한과 EZ RPM ceiling으로 쓰며 최종 물리 forward/reverse clamp는 별도다.
-PI gain·적분·deadband/coast·slew/reapply는 Torque 전용이다. MANUAL pedal은 기존 경로를 쓴다.
+PI gain·적분·deadband/coast·slew/reapply는 Torque 전용이다. 40 A는 공중 40 km/h
+시험용 초기 전류 한도다. 현재 타이어 지름·감속비 환산에서 40 km/h는 약 2077 motor rpm으로,
+4500 rpm 상한보다 낮다. 도달 시간과 실제 전류는 아직 검증되지 않았다.
+MANUAL pedal은 기존 경로를 쓴다.
 이 공통 envelope 동작에는 수정된 STM_A firmware가 필요하다. 그 이후 값 조정은 저장·구동 스택 재시작으로 반영한다.
 
 ```bash
@@ -126,10 +124,10 @@ STM_A 설정 송신 publisher나 조향 parameter 변경 client를 만들지 않
 
 구동 스택을 재시작하면 조향/Governor는 저장한 프리셋을 읽는다.
 STM_A calibration은 launch의 one-shot helper가 별도로 적용한다.
-STM_A가 MANUAL, fresh Part I/II <200 ms, |speed|≤0.05 m/s, pedal=0,
+STM_A가 MANUAL, fresh Part I <500 ms·Part II <1 s, |speed|≤0.05 m/s, pedal=0,
 |commanded current|<0.1 A, |actual phase current|≤1 A를 검사하고 revision과 함께 atomic commit한다.
 helper가 request/revision/full config readback을 확인하며 unsafe는 거절한다.
-[Wire 계약](../../../docs/INTERFACES.md#longitudinal-calibration-v2)은 그대로다.
+[Wire 계약](../../../docs/INTERFACES.md#longitudinal-calibration-v1)은 그대로다.
 
 helper는 15 s 안에 safe stop/readback을 기다려 한 번 적용한다. 실패하면 오류를 표시하고
 종료하므로 실제 source/mode와 정지 상태를 확인하고 선택한 프리셋으로 구동 스택을 재시작한다.

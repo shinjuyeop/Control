@@ -75,6 +75,7 @@ typedef struct kaiev26_msgs__msg__SceneSummary
   float lane_width_estimate_m;
   float stopline_distance;
   uint8_t traffic_light_state;
+  bool traffic_light_arrow_active;
   float traffic_light_confidence;
   bool obstacle_on_path;
   float front_obstacle_distance;

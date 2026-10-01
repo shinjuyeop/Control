@@ -108,6 +108,7 @@ static const uint8_t DINO_CACTUS[8] = {
     0x2U, 0x2U, 0x3U, 0x6U, 0x2U, 0x2U, 0x2U, 0x7U};
 
 static uint16_t row_pixels[St7796Lcd::WIDTH];
+static AssetCodec::StaticRowDecoder static_decoder(manual_static);
 static ManualFrameData desired_frame = {};
 static ManualFrameData previous_queued_frame = {};
 static ManualFrameData active_frame = {};
@@ -163,20 +164,7 @@ uint16_t blend(uint16_t background, Rgb foreground, uint8_t alpha)
 
 void decodeStaticRow(uint16_t y)
 {
-  const uint32_t begin = manual_static_row_offsets[y];
-  const uint32_t end = manual_static_row_offsets[y + 1U];
-  uint16_t x = 0U;
-  for (uint32_t offset = begin; offset + 2U < end; offset += 3U)
-  {
-    const uint8_t count = manual_static_row_rle[offset];
-    const uint16_t color =
-        ((uint16_t)manual_static_row_rle[offset + 1U] << 8) |
-        manual_static_row_rle[offset + 2U];
-    for (uint8_t index = 0U; index < count; ++index)
-    {
-      row_pixels[x++] = color;
-    }
-  }
+  static_decoder.decode(y, row_pixels);
 
   // Shift the stored four-column raster one column left without regenerating
   // its original font. The fifth LV column occupies the old CTRL position.
@@ -380,6 +368,46 @@ bool trackMembership(uint8_t progress,
                      uint8_t end,
                      bool valid);
 
+// Calls visit(x, alpha, progress) for each track pixel with non-zero alpha.
+// The row layout is documented next to ManualTftTrackRow.
+template <typename Visit>
+void forEachTrackPixel(const ManualTftTrackRow &row,
+                       const uint8_t *data,
+                       Visit visit)
+{
+  if (row.length == 0U) return;
+  const uint8_t *cursor = data + row.offset;
+  uint8_t progress = *cursor++;
+  AssetCodec::AlphaSpanReader alpha_reader(cursor);
+  cursor = AssetCodec::AlphaSpanReader::skip(cursor, row.length);
+  const uint8_t exception_count = *cursor++;
+  const uint8_t *exceptions = cursor;
+  const uint8_t *steps = exceptions + exception_count * 3U;
+  uint8_t exception_index = 0U;
+  uint16_t visible = 0U;
+  for (uint16_t index = 0U; index < row.length; ++index)
+  {
+    const uint8_t alpha = alpha_reader.next();
+    if (alpha == 0U) continue;
+    if (visible != 0U)
+    {
+      const uint8_t *exception = exceptions + exception_index * 3U;
+      if (exception_index < exception_count &&
+          (uint16_t)(exception[0] | (exception[1] << 8)) == visible)
+      {
+        progress = exception[2];
+        exception_index++;
+      }
+      else if ((steps[(visible - 1U) >> 3] >> ((visible - 1U) & 7U)) & 1U)
+      {
+        progress++;
+      }
+    }
+    visit((uint16_t)(row.x + index), alpha, progress);
+    visible++;
+  }
+}
+
 void applyTrack(uint16_t y,
                 const ManualTftTrackRow *rows,
                 const uint8_t *data,
@@ -388,18 +416,11 @@ void applyTrack(uint16_t y,
                 Rgb color,
                 bool valid)
 {
-  const ManualTftTrackRow row = rows[y];
-  if (row.length == 0U) return;
-  for (uint16_t index = 0U; index < row.length; ++index)
-  {
-    const uint8_t alpha = data[row.offset + index * 2U];
-    const uint8_t progress = data[row.offset + index * 2U + 1U];
-    if (alpha != 0U && trackMembership(progress, start, end, valid))
-    {
-      const uint16_t x = (uint16_t)(row.x + index);
-      row_pixels[x] = blend(row_pixels[x], color, alpha);
-    }
-  }
+  forEachTrackPixel(
+      rows[y], data, [&](uint16_t x, uint8_t alpha, uint8_t progress) {
+        if (trackMembership(progress, start, end, valid))
+          row_pixels[x] = blend(row_pixels[x], color, alpha);
+      });
 }
 
 uint8_t gaugeLevel(int32_t value, int32_t minimum, int32_t maximum)
@@ -928,30 +949,27 @@ bool trackChangedSpan(uint16_t y,
   const uint8_t *data[2] = {manual_track_bus_data, manual_track_phase_data};
   for (uint8_t track = 0U; track < 2U; ++track)
   {
-    const ManualTftTrackRow &row = rows[track];
-    for (uint16_t index = 0U; index < row.length; ++index)
-    {
-      const uint8_t alpha = data[track][row.offset + index * 2U];
-      const uint8_t progress = data[track][row.offset + index * 2U + 1U];
-      const bool changed = active_track_full ||
-          trackMembership(progress, start[track], previous[track],
-                          rendered_part1_valid) !=
-          trackMembership(progress, start[track], current[track],
-                          frame.part1_valid);
-      if (alpha == 0U || !changed) continue;
-      const uint16_t x = (uint16_t)(row.x + index);
-      if (!found)
-      {
-        *x0 = x;
-        *x1 = x;
-        found = true;
-      }
-      else
-      {
-        if (x < *x0) *x0 = x;
-        if (x > *x1) *x1 = x;
-      }
-    }
+    forEachTrackPixel(
+        rows[track], data[track],
+        [&](uint16_t x, uint8_t, uint8_t progress) {
+          const bool changed = active_track_full ||
+              trackMembership(progress, start[track], previous[track],
+                              rendered_part1_valid) !=
+              trackMembership(progress, start[track], current[track],
+                              frame.part1_valid);
+          if (!changed) return;
+          if (!found)
+          {
+            *x0 = x;
+            *x1 = x;
+            found = true;
+          }
+          else
+          {
+            if (x < *x0) *x0 = x;
+            if (x > *x1) *x1 = x;
+          }
+        });
   }
   return found;
 }
@@ -963,10 +981,23 @@ float smoothstep(float value)
   return value * value * (3.0f - 2.0f * value);
 }
 
+// Haze row: one byte per run, level in the high nibble, run length - 1 below.
+struct HazeRunReader
+{
+  const uint8_t *data;
+
+  void nextRun(uint8_t *count, uint8_t *value)
+  {
+    const uint8_t encoded = *data++;
+    *value = (uint8_t)(encoded >> 4);
+    *count = (uint8_t)((encoded & 0x0FU) + 1U);
+  }
+};
+
+template <typename RunReader>
 void blendStartupRuns(uint16_t *pixels,
                       uint16_t length,
-                      const uint8_t *data,
-                      uint16_t data_length,
+                      RunReader reader,
                       Rgb color,
                       float alpha_scale,
                       int16_t row_x,
@@ -974,13 +1005,20 @@ void blendStartupRuns(uint16_t *pixels,
                       bool draw_frontier)
 {
   uint16_t position = 0U;
-  for (uint16_t offset = 0U; offset + 1U < data_length; offset += 2U)
+  uint8_t scaled_value = 0U;
+  uint8_t alpha = 0U;
+  while (position < length)
   {
-    const uint8_t count = data[offset];
-    const uint8_t value = data[offset + 1U];
+    uint8_t count = 0U;
+    uint8_t value = 0U;
+    reader.nextRun(&count, &value);
     if (value != 0U)
     {
-      uint8_t alpha = (uint8_t)lroundf(value * alpha_scale);
+      if (value != scaled_value)
+      {
+        scaled_value = value;
+        alpha = (uint8_t)lroundf(value * alpha_scale);
+      }
       for (uint16_t index = 0U; index < count && position + index < length; ++index)
       {
         const int16_t x = (int16_t)(row_x + position + index);
@@ -1040,7 +1078,6 @@ bool renderStartupFrame(uint16_t elapsed_ms,
     const StartupTftMaskRow &row = startup_mask_rows[row_index];
     if (row.length == 0U) continue;
     const uint32_t row_started_us = DashboardTiming::beginMeasure();
-    const StartupTftMaskRow &next = startup_mask_rows[row_index + 1U];
     for (uint16_t index = 0U; index < row.length; ++index)
       row_pixels[index] = St7796Lcd::COLOR_BLACK;
 
@@ -1060,14 +1097,12 @@ bool renderStartupFrame(uint16_t elapsed_ms,
           (STARTUP_HAZE_MAXIMUM / 15.0f) * haze_strength;
       blendStartupRuns(
           row_pixels, visible_length,
-          startup_haze_data + row.haze_offset,
-          (uint16_t)(next.haze_offset - row.haze_offset),
+          HazeRunReader{startup_haze_data + row.haze_offset},
           {214U, 214U, 214U}, haze_scale,
           (int16_t)row.x, frontier_x, false);
       blendStartupRuns(
           row_pixels, visible_length,
-          startup_outline_data + row.outline_offset,
-          (uint16_t)(next.outline_offset - row.outline_offset),
+          AssetCodec::AlphaSpanReader(startup_outline_data + row.outline_offset),
           {242U, 242U, 242U}, outline_scale,
           (int16_t)row.x, frontier_x, reveal_active);
     }

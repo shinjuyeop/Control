@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""Fit a delayed steering grey-box model; keep complete runs out of training."""
+import argparse
+import json
+from pathlib import Path
+import numpy as np
+import yaml
+from scipy.linalg import expm
+from scipy.optimize import least_squares
+from scipy.signal import savgol_filter
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from lateral_data import read_run, intervals
+
+
+def discrete(p, dt):
+    damping, stiffness, gain, bias = p
+    z=np.zeros((4,4)); z[:2,:2]=[[0,1],[-stiffness,-damping]]
+    z[1,2:]=[gain,bias]
+    e=expm(z*dt)
+    return e[:2,:2],e[:2,2],e[:2,3]
+
+
+def windows(runs, delay, horizon=30):
+    xs=[]; us=[]; ys=[]
+    for run in runs:
+        for begin,end in intervals(run['valid']):
+            if end-begin < horizon+delay+11: continue
+            y=run['angle'][begin:end]
+            rate=savgol_filter(y,11,2,deriv=1,delta=run['dt'])
+            for k in range(max(delay,5),len(y)-horizon-5,5):
+                xs.append([y[k],rate[k]])
+                us.append(run['u'][begin+k-delay:begin+k-delay+horizon])
+                ys.append(y[k+1:k+1+horizon])
+    if not xs: raise ValueError('No continuous ACTIVE torque windows for fitting')
+    return np.asarray(xs),np.asarray(us),np.asarray(ys)
+
+
+def predict(p, data, dt):
+    x,u,y=data; x=x.copy(); A,B,c=discrete(p,dt); pred=np.empty_like(y)
+    for k in range(y.shape[1]):
+        x=x@A.T+u[:,k,None]*B+c
+        pred[:,k]=x[:,0]
+    return pred
+
+
+def main():
+    ap=argparse.ArgumentParser(description=__doc__)
+    ap.add_argument('--bags',required=True); ap.add_argument('--calibration',required=True)
+    ap.add_argument('--output',required=True); ap.add_argument('--dt',type=float,default=.02)
+    a=ap.parse_args(); out=Path(a.output); out.mkdir(parents=True,exist_ok=True)
+    paths=sorted(p.parent for p in Path(a.bags).rglob('metadata.yaml'))
+    runs=[read_run(p,a.calibration,a.dt) for p in paths]
+    runs=[r for r in runs if 'u' in r and r['valid'].sum()*a.dt > 3]
+    if len(runs)<3: raise ValueError('Need independent training and validation runs')
+    val=runs[2::3]; train=[r for i,r in enumerate(runs) if i%3!=2]
+    best=None
+    for delay in range(11):
+        data=windows(train,delay)
+        # Multi-step output error with measured initial state. Closed-loop data are
+        # retained; no claim of unbiased open-loop physical parameter recovery.
+        fit=least_squares(lambda p:(predict(p,data,a.dt)-data[2]).ravel(),
+            [30.,100.,100.,0.],bounds=([.1,0,.01,-200],[500,10000,10000,200]),
+            loss='linear',max_nfev=100)
+        score=float(np.mean((predict(fit.x,data,a.dt)-data[2])**2))
+        if best is None or score<best[0]: best=(score,delay,fit.x)
+    score,delay,p=best; A,B,c=discrete(p,a.dt)
+    speeds=np.concatenate([r['speed'][r['valid']] for r in train if 'speed' in r])
+    model=dict(dt=a.dt,states=['steering_rad','steering_rate_rad_s'],
+        input='/steering/torque_command_raw',input_scale=10000.,delay_steps=delay,
+        A=A.tolist(),B=B.tolist(),c=c.tolist(),damping=float(p[0]),stiffness=float(p[1]),
+        gain=float(p[2]),bias=float(p[3]),calibration=str(Path(a.calibration).resolve()),
+        speed_range_mps=np.nanquantile(speeds,[0,1]).tolist(),
+        training=[r['name'] for r in train],validation=[r['name'] for r in val],
+        method='bounded multi-step output-error; closed-loop empirical model')
+    (out/'model.yaml').write_text(yaml.safe_dump(model,sort_keys=False))
+    report={'delay_s':delay*a.dt,'training_rmse_deg':float(np.rad2deg(np.sqrt(score))),
+            'parameters':p.tolist(),'validation':[]}
+    fig,axes=plt.subplots(len(val),1,figsize=(10,2.7*len(val)),squeeze=False)
+    for r,ax in zip(val,axes[:,0]):
+        d=windows([r],delay); predicted=predict(p,d,a.dt)
+        rmse=float(np.rad2deg(np.sqrt(np.mean((predicted-d[2])**2))))
+        persistence=float(np.rad2deg(np.sqrt(np.mean((d[0][:,0,None]-d[2])**2))))
+        report['validation'].append(dict(run=r['name'],rmse_deg=rmse,persistence_rmse_deg=persistence))
+        # Plot separate prediction windows, never stitch them into an open-loop run.
+        ax.plot(np.rad2deg(d[2][:,-1]),label='Measured, 0.6 s ahead',color='#1f77b4')
+        ax.plot(np.rad2deg(predicted[:,-1]),label='Model prediction',color='#d95f02')
+        ax.set_title(Path(r['name']).parent.name+f' | RMSE {rmse:.2f} deg',fontsize=9)
+        ax.set_ylabel('Steering [deg]'); ax.grid(alpha=.25); ax.legend(fontsize=8)
+    axes[-1,0].set_xlabel('Independent prediction window index (0.1 s stride)')
+    fig.tight_layout(); fig.savefig(out/'heldout_prediction.png',dpi=160); fig.savefig(out/'heldout_prediction.svg')
+    (out/'metrics.json').write_text(json.dumps(report,indent=2))
+    for r in runs: np.savez_compressed(out/(Path(r['name']).parent.name+'.npz'),**r)
+    print(json.dumps(report,indent=2))
+
+if __name__=='__main__': main()

@@ -78,7 +78,8 @@ def _launch_actions(context):
             Node(
                 package="command_governor", executable="command_governor_node", name="command_governor",
                 output="screen", parameters=[os.path.join(
-                    get_package_share_directory("command_governor"), "config", "command_governor.yaml")],
+                    get_package_share_directory("command_governor"), "config", "command_governor.yaml"),
+                    {"acceleration_slew_mps2": 0.0}],  # No Speed preset selection in this bench launch.
             ),
         ])
         if scenario_file:

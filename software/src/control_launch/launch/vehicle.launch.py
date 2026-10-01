@@ -41,7 +41,9 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction, RegisterEventHandler, EmitEvent
+from launch.event_handlers import OnProcessExit
+from launch.events import Shutdown
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, FindExecutable, LaunchConfiguration
@@ -53,22 +55,49 @@ from control_tuning.conditions import CONDITION_KEYS
 
 
 def _governor(context, config):
+    parameters = load_launch_overrides(
+        LaunchConfiguration("control_tuning_file").perform(context), "command_governor",
+        LaunchConfiguration("tuning_preset").perform(context), governor_config=config)
+    if LaunchConfiguration('longitudinal_controller', default='firmware').perform(context) != 'firmware':
+        parameters['acceleration_slew_mps2'] = 0.0
     return [Node(
         package="command_governor", executable="command_governor_node",
         name="command_governor", output="screen",
-        parameters=[config, load_launch_overrides(
-            LaunchConfiguration("control_tuning_file").perform(context), "command_governor",
-            LaunchConfiguration("tuning_preset").perform(context), governor_config=config)],
+        parameters=[config, parameters],
         respawn=True, respawn_delay=2.0,
     )]
 
 
-def _longitudinal(context):
-    return [Node(package='control_tuning', executable='longitudinal_calibration',
-                 name='longitudinal_calibration', output='screen',
-                 parameters=[load_launch_overrides(
-                     LaunchConfiguration('control_tuning_file').perform(context),
-                     'stm_a_longitudinal', LaunchConfiguration('tuning_preset').perform(context))])]
+def _longitudinal(context, governor_config=None):
+    config = load_launch_overrides(
+        LaunchConfiguration('control_tuning_file').perform(context),
+        'stm_a_longitudinal', LaunchConfiguration('tuning_preset').perform(context))
+    controller = LaunchConfiguration('longitudinal_controller', default='firmware').perform(context)
+    if controller != 'firmware':
+        config = {**config, 'control_mode': 'external_current'}
+    nodes = [Node(package='control_tuning', executable='longitudinal_calibration',
+                  name='longitudinal_calibration', output='screen', parameters=[config])]
+    if controller in ('mpc', 'pi'):
+        nodes.append(Node(package='longitudinal_mpc', executable='longitudinal_controller',
+            name='longitudinal_controller', output='screen', parameters=[
+                os.path.join(get_package_share_directory('longitudinal_mpc'), 'config/controller.yaml'),
+                {**({key: config[key] for key in ('speed_kp_a_per_mps','speed_ki_a_per_mps_s','integrator_limit_a','speed_deadband_mps','speed_hysteresis_mps','reapply_current_a','reapply_slew_a_s')} if controller == 'pi' else {}),
+                 'controller': controller,
+                 'model_file': LaunchConfiguration('longitudinal_model_file').perform(context),
+                 'current_max_a': config['max_drive_current_a'],
+                 'current_slew_up_a_s': config['current_slew_up_a_s'],
+                 'current_slew_down_a_s': config['current_slew_down_a_s']}]))
+    governor_config = governor_config or os.path.join(
+        get_package_share_directory('command_governor'), 'config/command_governor.yaml')
+    governor = _governor(context, governor_config)
+    if controller == 'firmware':
+        return nodes + governor
+    calibration, *controllers = nodes
+    def calibrated(event, _context):
+        if event.returncode != 0:
+            return [EmitEvent(event=Shutdown(reason='Longitudinal calibration failed'))]
+        return governor + controllers
+    return [RegisterEventHandler(OnProcessExit(target_action=calibration, on_exit=calibrated)), calibration]
 
 
 def _agent(name, port, baud):
@@ -118,6 +147,9 @@ def generate_launch_description():
     )
     baud = LaunchConfiguration("agent_baud")
     return LaunchDescription([
+        DeclareLaunchArgument('longitudinal_controller', default_value='firmware',
+                              choices=['firmware', 'pi', 'mpc', 'sysid']),
+        DeclareLaunchArgument('longitudinal_model_file', default_value=''),
         DeclareLaunchArgument("stm_a_port", default_value="/dev/stm_a"),
         DeclareLaunchArgument("stm_b_port", default_value="/dev/stm_b"),
         DeclareLaunchArgument("agent_baud", default_value="460800"),
@@ -134,6 +166,8 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument("actuation_mode", default_value="", choices=["", "position", "torque"]),
         DeclareLaunchArgument("steering_enabled", default_value=""),
+        DeclareLaunchArgument("torque_controller", default_value="pd", choices=["pd","mpc"]),
+        DeclareLaunchArgument("steering_model_file", default_value=""),
         DeclareLaunchArgument(
             "can_interface", default_value="can0",
             description="KEYA SocketCAN 인터페이스.",
@@ -142,9 +176,7 @@ def generate_launch_description():
         _robot_state_publisher(),
         _agent("stm_a_agent", LaunchConfiguration("stm_a_port"), baud),
         _agent("stm_b_agent", LaunchConfiguration("stm_b_port"), baud),
-        OpaqueFunction(function=_longitudinal),
-        # /vehicle/command의 유일한 발행자. stateless라 respawn으로 복구한다.
-        OpaqueFunction(function=_governor, kwargs={"config": governor_config}),
+        OpaqueFunction(function=_longitudinal, kwargs={"governor_config": governor_config}),
         # 조향 armed 기본값을 launch 인자로 명시해, lateral_ctrl 쪽 기본값이
         # 바뀌어도 실차 launch는 즉시 구동 가능 상태를 유지한다.
         IncludeLaunchDescription(
@@ -155,6 +187,8 @@ def generate_launch_description():
                 "tuning_preset": LaunchConfiguration("tuning_preset"),
                 "actuation_mode": LaunchConfiguration("actuation_mode"),
                 "steering_enabled": LaunchConfiguration("steering_enabled"),
+                "torque_controller": LaunchConfiguration("torque_controller"),
+                "steering_model_file": LaunchConfiguration("steering_model_file"),
                 "hardware_can_enabled": "true",
                 "actuator_output_enabled": "true",
             }.items(),

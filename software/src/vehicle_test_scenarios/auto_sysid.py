@@ -20,11 +20,13 @@ def overlay_environment():
 
 def main():
     here = Path(__file__).resolve()
-    if len(sys.argv) > 1:
-        print('Usage: python3 auto_sysid.py\n'
+    if sys.argv[1:] not in ([], ['--sim-time']):
+        print('Usage: python3 auto_sysid.py [--sim-time]\n'
               'Rich TUI: arrow keys + Enter to select/edit, '
-              'R Run, S Stop, Q Quit')
+              'R Run, S Stop, Q Quit\n'
+              '--sim-time: follow the Gazebo /clock (use_sim_time=true)')
         return 0 if sys.argv[1:] in (['--help'], ['-h']) else 2
+    sim_time = sys.argv[1:] == ['--sim-time']
     if os.environ.get('AUTO_SYSID_ROS_ENV') != '1':
         setups = []
         humble = Path('/opt/ros/humble/setup.bash')
@@ -47,10 +49,12 @@ def main():
         env['AUTO_SYSID_ROS_ENV'] = '1'
         command = '\n'.join('source ' + shlex.quote(str(path)) for path in dict.fromkeys(setups))
         command += '\nexec /usr/bin/python3 ' + shlex.quote(str(here))
+        if sim_time:
+            command += ' --sim-time'
         os.execvpe('/bin/bash', ['bash', '-c', command], env)
     sys.path.insert(0, str(here.parent))
     from vehicle_test_scenarios.sysid_tui import main as run
-    return run()
+    return run(use_sim_time=sim_time)
 
 
 if __name__ == '__main__':

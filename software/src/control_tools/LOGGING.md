@@ -54,6 +54,7 @@ ros2 run vehicle_test_scenarios vehicle_test_scenario_runner
 |---|---|
 | `/planning/command`, `/vehicle/command` | 상위·최종 명령 |
 | `/drive/status` | 속도·RPM·명령/실제 전류·전압·유효성·fault |
+| `/drive/can_rx_diagnostics` | STM_A의 Part I/II 수신 횟수와 FDCAN 수신 오류; Part II 누락 원인 분석 |
 | `/drive/longitudinal_status`, `/drive/longitudinal_config` | 종방향 적용 설정·PI 상태와 설정 요청 |
 | `/steering/status`, 조향 torque 상세 토픽 | 조향 응답·PD·제한·전류·전압 |
 | `/brake/status`, `/vehicle/state`, `/vehicle/wheel_twist` | 제동·차량 상태 |

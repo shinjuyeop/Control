@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""Identify the closed-loop steering and vehicle yaw response for path MPC."""
+import argparse,json
+from pathlib import Path
+import numpy as np
+import yaml
+from scipy.optimize import least_squares
+import sys
+from ament_index_python.packages import get_package_prefix
+sys.path.insert(0, str(Path(get_package_prefix('steering_mpc')) / 'lib' / 'steering_mpc'))
+from lateral_data import read_run,intervals
+
+def fit_response(runs,input_name,output_name,parameters=None):
+    blocks=[]
+    for r in runs:
+        u=r[input_name];y=r[output_name]
+        mask=r['valid'] & np.isfinite(u) & np.isfinite(y)
+        for b,e in intervals(mask):
+            for k in range(b,e-31,5): blocks.append((y[k],u[k:k+30],y[k+1:k+31]))
+    if not blocks: raise ValueError('No continuous response windows')
+    y0=np.array([b[0] for b in blocks]);u=np.array([b[1] for b in blocks]);y=np.array([b[2] for b in blocks])
+    dt=runs[0]['dt']
+    def predict(p):
+        a=np.exp(-dt/p[0]);x=y0.copy();pred=np.empty_like(y)
+        for k in range(30):
+            x=a*x+(1-a)*(p[1]*u[:,k]+p[2]);pred[:,k]=x
+        return pred
+    if parameters is None:
+        parameters=least_squares(lambda p:(predict(p)-y).ravel(),[.15,1.,0.],bounds=([.005,.05,-.2],[3.,3.,.2])).x
+    return parameters,float(np.sqrt(np.mean((predict(parameters)-y)**2)))
+
+def main():
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--actuator-bag',required=True)
+    p.add_argument('--vehicle-bags',required=True);p.add_argument('--calibration',required=True);p.add_argument('--output',required=True)
+    p.add_argument('--validation-bag',action='append',default=[])
+    a=p.parse_args();act=read_run(a.actuator_bag,a.calibration)
+    steer,serr=fit_response([act],'reference','angle')
+    paths=sorted(Path(a.vehicle_bags).rglob('metadata.yaml'))
+    vehicles=[read_run(p.parent,a.calibration) for p in paths]
+    vehicles=[r for r in vehicles if 'yaw_rate' in r and 'speed' in r]
+    for r in vehicles:r['yaw_input']=r['speed']*np.tan(r['angle'])/1.2991017929
+    yaw,yerr=fit_response(vehicles,'yaw_input','yaw_rate')
+    reference=act['reference'];valid=act['valid']
+    changes=np.flatnonzero(valid[1:] & valid[:-1] & (np.abs(np.diff(reference))>1e-8))+1
+    rates=np.abs(np.diff(reference[changes])/np.diff(act['t'][changes]))
+    reference_limit=float(min(np.max(reference[valid]),-np.min(reference[valid])))
+    reference_rate=float(np.max(rates))
+    result=dict(steering_reference_limit_rad=reference_limit,steering_reference_rate_rad_s=reference_rate,
+        wheelbase_m=1.2991017929,steering_time_constant_s=float(steer[0]),
+        steering_gain=float(steer[1]),steering_bias_rad=float(steer[2]),steering_prediction_rmse_rad=serr,
+        yaw_time_constant_s=float(yaw[0]),yaw_gain=float(yaw[1]),yaw_bias_rad_s=float(yaw[2]),yaw_prediction_rmse_rad_s=yerr,
+        actuator_source=str(Path(a.actuator_bag).resolve()),vehicle_sources=[r['name'] for r in vehicles],
+        scope='Empirical planar response; wheelbase is design geometry, not identified tire parameters')
+    result['validation_yaw'] = []
+    for path in a.validation_bag:
+        run=read_run(path,a.calibration)
+        if run['name'] in result['vehicle_sources']:
+            raise ValueError('Yaw validation must use a separate recording')
+        run['yaw_input']=run['speed']*np.tan(run['angle'])/result['wheelbase_m']
+        _,error=fit_response([run],'yaw_input','yaw_rate',yaw)
+        result['validation_yaw'].append(dict(bag=run['name'],prediction_rmse_rad_s=error))
+    result['sample_period_s'] = act['dt']
+    result['yaw_lag_below_sample_resolution'] = float(yaw[0]) < act['dt']
+    out=Path(a.output);out.parent.mkdir(parents=True,exist_ok=True);out.write_text(yaml.safe_dump(result,sort_keys=False))
+    print(json.dumps(result,indent=2))
+if __name__=='__main__':main()

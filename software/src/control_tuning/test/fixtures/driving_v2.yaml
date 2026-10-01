@@ -30,10 +30,6 @@ longitudinal:
   reapply_current_a: 20.0
   reapply_slew_a_s: 200.0
   motor_rpm_limit: 4500.0
-  ff_current_gain_mps2_per_a: 0.00512
-  ff_rolling_resistance_mps2: 0.228
-  ff_speed_damping_per_s: 0.0288
-  ff_accel_limit_mps2: 1.0
 governor:
   governor_input_timeout_ms: 200.0
 timeouts:

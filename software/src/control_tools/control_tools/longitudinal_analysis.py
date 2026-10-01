@@ -49,8 +49,7 @@ def read_bag(path):
         elif topic == STATUS_TOPIC:
             status = decode_status(msg.data)
             rows[topic].append({'t': row['t'], **{key: status[key] for key in
-                ('speed_error_mps', 'p_current_a', 'i_current_a', 'ff_current_a',
-                 'unsaturated_current_a',
+                ('speed_error_mps', 'p_current_a', 'i_current_a', 'unsaturated_current_a',
                  'current_command_a', 'saturated', 'anti_windup', 'coasting', 'feedback_valid', 'inhibit')},
                 'revision': status['revision']})
             if not snapshots or status['revision'] != snapshots[-1]['revision']:

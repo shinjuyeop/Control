@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+"""Compare actual PI/MPC driving records on matching target scenarios."""
+import argparse
+import json
+from pathlib import Path
+import numpy as np
+from scipy.signal import savgol_filter
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+plt.rcParams.update({"font.size": 12, "axes.labelsize": 12, "axes.titlesize": 13, "legend.fontsize": 10})
+from bag_io import read_run, intervals
+
+
+def metrics(run):
+    if 'body_speed' not in run:
+        raise ValueError('Ride-comfort metrics require /gnss/fix_velocity body speed')
+    mask = run['valid'] & (run['reference'] > 0) & np.isfinite(run['body_speed'])
+    if not mask.any():
+        raise ValueError('No valid positive-target torque-control samples')
+    error = run['body_speed'][mask]-run['reference'][mask]
+    a = np.full(len(mask), np.nan); jerk = a.copy()
+    # Same local polynomial differentiation for both controllers; no gap bridging.
+    for lo, hi in intervals(mask):
+        if hi-lo >= 11:
+            a[lo:hi] = savgol_filter(run['body_speed'][lo:hi], 11, 3, deriv=1, delta=.05)
+            jerk[lo:hi] = savgol_filter(run['body_speed'][lo:hi], 11, 3, deriv=2, delta=.05)
+    run['a'], run['jerk'] = a, jerk
+    solve = [x['solve_ms'] for x in run['diagnostics'] if x.get('status') == 'solved']
+    cycles = [x['cycle_ms'] for x in run['diagnostics'] if 'cycle_ms' in x]
+    du = np.diff(run['u'])/.05
+    pairs = mask[1:] & mask[:-1]
+    events = []
+    changes = np.flatnonzero(np.abs(np.diff(run['reference'])) > .05)+1
+    for index, lo in enumerate(changes):
+        hi = changes[index+1] if index+1<len(changes) else len(mask)
+        target = run['reference'][lo]
+        if target<=0 or hi-lo<2 or not run['valid'][lo:hi].all():
+            continue
+        e = run['body_speed'][lo:hi]-target
+        direction = 'up' if target>run['reference'][lo-1] else 'down'
+        settling = None
+        for k in range(len(e)-39):
+            if np.all(np.abs(e[k:k+40]) <= .2):
+                settling = float(run['t'][lo+k]-run['t'][lo]); break
+        crossing = np.flatnonzero(e >= 0 if direction=='up' else e <= 0)
+        events.append(dict(direction=direction, target_kph=float(target*3.6),
+            observed_duration_s=float(run['t'][hi-1]-run['t'][lo]),
+            settling_s=settling, first_target_crossing_s=float(crossing[0]*.05) if len(crossing) else None,
+            overshoot_mps=float(max(0,np.max(e))) if direction=='up' else None,
+            undershoot_mps=float(max(0,-np.min(e))) if direction=='down' else None))
+    return dict(events=events,
+        command_interval_ros_p95_ms=float(np.percentile(run['request_intervals_ros_ms'],95)),
+        command_interval_ros_max_ms=float(np.max(run['request_intervals_ros_ms'])),
+        speed_observation='GNSS body speed',
+        wheel_body_difference_p95_mps=float(np.percentile(np.abs(run['v'][mask]-run['body_speed'][mask]),95)),
+        deadline_misses=max((x.get('deadline_misses',0) for x in run['diagnostics']),default=0),
+        interval_p95_ms=float(np.percentile([x.get('interval_ms',0) for x in run['diagnostics']],95)) if run['diagnostics'] else None,
+        interval_max_ms=max((x.get('interval_ms',0) for x in run['diagnostics']),default=0),
+        speed_rmse_mps=float(np.sqrt(np.mean(error**2))),
+        overspeed_peak_mps=float(max(0., np.max(error))),
+        current_min_a=float(np.min(run['u'][mask])), current_max_a=float(np.max(run['u'][mask])),
+        current_slew_p95_a_s=float(np.percentile(np.abs(du[pairs]), 95)),
+        acceleration_peak_mps2=float(np.nanmax(np.abs(a[mask]))),
+        jerk_rms_mps3=float(np.sqrt(np.nanmean(jerk[mask]**2))),
+        jerk_p95_mps3=float(np.nanpercentile(np.abs(jerk[mask]), 95)),
+        solve_p95_ms=float(np.percentile(solve,95)) if solve else None,
+        solve_max_ms=float(max(solve)) if solve else None,
+        cycle_p95_ms=float(np.percentile(cycles,95)) if cycles else None,
+        cycle_max_ms=float(max(cycles)) if cycles else None,
+        solver_failure_samples=sum(x.get('status')=='solver failed' for x in run['diagnostics']))
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--pi'); p.add_argument('--mpc', required=True)
+    p.add_argument('--output', type=Path, required=True); args = p.parse_args()
+    args.output.mkdir(parents=True, exist_ok=True)
+    runs = ({'PI': read_run(args.pi)} if args.pi else {}) | {'MPC': read_run(args.mpc)}
+    report = {k: metrics(v) for k,v in runs.items()}
+    fig, axes = plt.subplots(4,1,figsize=(10,8),sharex=True,constrained_layout=True)
+    for index,(name,r) in enumerate(runs.items()):
+        active = np.flatnonzero(r['reference']>0)
+        t = r['t']-r['t'][active[0]]
+        window = slice(max(0,active[0]-20), active[-1]+1)
+        color = {'PI':'#2878b5','MPC':'#dc7b16'}[name]
+        axes[0].plot(t[window],r['body_speed'][window]*3.6,label=name,color=color)
+        if index==0:
+            axes[0].plot(t[window],r['reference'][window]*3.6,'--',color='#666666',label='Target')
+        axes[1].plot(t[window],r['u'][window],label=name,color=color)
+        axes[2].plot(t[window],r['a'][window],label=name,color=color)
+        axes[3].plot(t[window],r['jerk'][window],label=name,color=color)
+    for ax,label in zip(axes,['Body speed [km/h]','Applied current [A]','Acceleration [m/s²]','Jerk [m/s³]']):
+        ax.set_ylabel(label); ax.grid(alpha=.2); ax.legend(loc='upper right')
+    axes[-1].set_xlabel('Time from first positive target [s]')
+    axes[0].set_title('Gazebo longitudinal tracking — identical actuator envelope')
+    fig.savefig(args.output/'tracking_comparison.png',dpi=180)
+    fig.savefig(args.output/'tracking_comparison.svg'); plt.close(fig)
+    (args.output/'metrics.json').write_text(json.dumps(report,indent=2))
+    print(json.dumps(report,indent=2))
+
+
+if __name__ == "__main__":
+    main()

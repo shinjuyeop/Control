@@ -1,0 +1,36 @@
+dt: 0.02
+states:
+- steering_rad
+- steering_rate_rad_s
+input: /steering/torque_command_raw
+input_scale: 10000.0
+delay_steps: 0
+A:
+- - 0.9993487894470372
+  - 0.019274331247620912
+- - -0.06432133937270125
+  - 0.9281045248251346
+B:
+- 0.00048227630837630845
+- 0.047635373784027844
+c:
+- 2.1601211491585613e-05
+- 0.0021335938873999778
+damping: 3.696328744515922
+stiffness: 3.3371502516145983
+gain: 2.471441066984236
+bias: 0.11069613051624466
+calibration: /home/user1/ROS2_Workspace/gazebo_sitl/src/Control/software/src/lateral_ctrl/config/steering_motor_calibration.yaml
+wheelbase_m: 1.3
+training:
+- 20260919_150730_991775_steering_step_v5
+- 20260919_150906_310553_steering_step_v5
+- 20260919_151306_873949_steering_step_v7
+- 20260919_152237_618508_steering_sine_v5
+- 20260919_152705_444451_steering_sine_v7
+validation:
+- 20260919_151054_047669_steering_step_v5
+- 20260919_151729_090170_steering_step_v6
+- 20260919_152450_164836_steering_sine_v5
+method: 0.6 s output-error fit in AUTO ACTIVE driving; MCAP reception clock; provisional
+  closed-loop empirical model

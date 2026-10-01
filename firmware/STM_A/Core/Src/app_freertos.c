@@ -33,11 +33,13 @@
 #include "gpio.h"
 
 #include <std_msgs/msg/float32_multi_array.h>
+#include <std_msgs/msg/u_int32_multi_array.h>
 #include <rcl/rcl.h>
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
 #include <kaiev26_msgs/msg/actuator_command.h>
 #include <kaiev26_msgs/msg/drive_actuator_status.h>
+#include <kaiev26_msgs/msg/drive_current_command.h>
 #include "rmw_microros/rmw_microros.h"
 
 bool cubemx_transport_open(struct uxrCustomTransport *transport);
@@ -79,6 +81,9 @@ enum {
 #define AUTO_SPEED_MAX_MPS \
   ((float)RPM_FWD_MAX * 3.14159f * TIRE_DIAM_M / (60.0f * GEAR_RATIO))
 #define MANUAL_TORQUE_LIMIT_A 480.0f
+/* AUTO Torque 회생 시험: 조이스틱 LT 요청의 음수 상한과 전류 변화율. */
+#define AUTO_REGEN_MAX_A 20.0f
+#define AUTO_REGEN_SLEW_A_PER_S 100.0f
 #define PEDAL_ADC_MIN 560
 #define PEDAL_ADC_MAX 3000
 #define UART_RX_DMA_SIZE 64u
@@ -87,8 +92,13 @@ enum {
 #define VEHICLE_TX_PERIOD_MS 20u
 #define DRIVE_DETAIL_TX_PERIOD_MS 100u
 #define HOST_COMMAND_TIMEOUT_MS 500u
-#define MOTOR_FEEDBACK_TIMEOUT_MS 200u
-#define MOTOR_RPM_ZERO_HOLD_SAMPLES 2u
+#define MOTOR_FEEDBACK_TIMEOUT_MS 500u
+#define MOTOR_RPM_STREAM_RESET_MS 200u
+#define MOTOR_PART2_TIMEOUT_MS 1000u
+/* Part I RPM despike. 차량이 낼 수 있는 가감속으로 한 프레임에 바뀔 수 있는 폭을 넘으면
+ * 튄 값으로 본다. 기본 폭은 저속 양자화와 센서 잡음 여유다. */
+#define MOTOR_RPM_GATE_BASE_RPM 40.0f
+#define MOTOR_RPM_GATE_ACCEL_MPS2 4.0f
 #define AGENT_PING_PERIOD_MS 500u
 #define AGENT_PING_TIMEOUT_MS 100u
 /* 20ms(50Hz). 벤치에서 페달 밟는 속도와 EZkontrol 응답을 놓치지 않을 만큼 촘촘하다.
@@ -150,9 +160,9 @@ static uint8_t s_life = 0;
  * 캘리브레이션(PEDAL_ADC_MIN/MAX)이 바뀌어도 과거 로그를 다시 계산할 수 있게 남긴다. */
 static volatile int32_t s_pedal_adc_raw = 0;
 static volatile float s_motor_rpm_raw = 0.0f;
-static int32_t s_last_nonzero_motor_rpm = 0;
-static uint8_t s_motor_rpm_zero_streak = 0u;
-static uint8_t s_motor_rpm_hold_armed = 0u;
+static float s_motor_rpm_estimate = 0.0f;
+static int32_t s_motor_rpm_history[3] = {0, 0, 0};
+static uint8_t s_motor_rpm_despiker_armed = 0u;
 static volatile uint8_t s_command_received = 0u;
 static volatile uint8_t s_command_timeout = 1u;
 static volatile uint8_t s_command_brake_engage = 1u;
@@ -180,6 +190,10 @@ static volatile uint8_t s_controller_control_mode = CONTROLLER_CONTROL_MODE_TORQ
 static volatile uint32_t s_motor_fault_bits = 0u;
 static volatile uint32_t s_last_part2_rx_ms = 0u;
 static volatile uint8_t s_part2_received = 0u;
+static volatile uint32_t s_part1_rx_count = 0u;
+static volatile uint32_t s_part2_rx_count = 0u;
+static volatile uint32_t s_can_rx_fifo_lost_count = 0u;
+static volatile uint32_t s_can_rx_read_error_count = 0u;
 
 /* micro-ROS entities are retained across reconnect attempts. */
 static RuntimeStatsRos s_runtime_ros;
@@ -188,15 +202,19 @@ static rclc_support_t s_ros_support;
 static rcl_node_t s_ros_node;
 static rcl_subscription_t s_ros_sub_cmd;
 static rcl_publisher_t s_ros_pub_drive_status;
+static rcl_publisher_t s_can_rx_diagnostics_publisher;
 static rclc_executor_t s_ros_executor;
 static uint8_t s_ros_support_initialized = 0u;
 static uint8_t s_ros_node_initialized = 0u;
 static uint8_t s_ros_sub_cmd_initialized = 0u;
 static uint8_t s_ros_publisher_initialized = 0u;
+static uint8_t s_can_rx_diagnostics_initialized = 0u;
 static uint8_t s_ros_executor_initialized = 0u;
 
 static kaiev26_msgs__msg__ActuatorCommand s_cmd_msg;
 static kaiev26_msgs__msg__DriveActuatorStatus s_status_msg;
+static std_msgs__msg__UInt32MultiArray s_can_rx_diagnostics_msg;
+static uint32_t s_can_rx_diagnostics_data[7];
 static char s_cmd_frame_id[16];
 static char s_status_frame_id[4];
 
@@ -206,9 +224,16 @@ static LongRequest s_long_pending;
 static uint8_t s_long_pending_valid;
 
 static uint8_t s_long_feedback_valid, s_long_inhibit = LONG_DISABLED;
-/* MANUAL pedal command after the configured slew; Control task only. */
-static float s_manual_current_a;
 static LongGate s_long_gate;
+static LongExternalInput s_external_current;
+static LongExternalInput s_regen_request;
+static float s_regen_current;
+static int64_t s_command_stamp_ns;
+static uint8_t s_external_previous_mode = 0xffu;
+static kaiev26_msgs__msg__DriveCurrentCommand s_current_msg;
+static char s_current_frame_id[16];
+static rcl_subscription_t s_current_subscription;
+static uint8_t s_current_subscription_initialized;
 static float s_long_status_data[LONG_STATUS_COUNT];
 static float s_long_request_data[LONG_REQUEST_COUNT];
 static std_msgs__msg__Float32MultiArray s_long_status_msg, s_long_request_msg;
@@ -266,6 +291,7 @@ static void send_motor_can(int32_t rpm, float curr_a, uint8_t run_command,
                            uint8_t speed_control);
 static HAL_StatusTypeDef send_motor_handshake_ack(void);
 static void cb_cmd(const void *message);
+static void cb_current(const void *message);
 static void cb_long_config(const void *message);
 static void prepare_longitudinal(uint32_t now);
 static void publish_longitudinal(void);
@@ -275,10 +301,11 @@ static uint8_t create_ros_entities(void);
 static void destroy_ros_entities(void);
 static uint32_t age_since(uint32_t now, uint32_t stamp);
 static void reset_motor_rpm_despiker(void);
-static int32_t despike_motor_rpm(int32_t motor_rpm_raw);
+static float despike_motor_rpm(int32_t motor_rpm_raw, float dt_s);
 static void capture_drive_detail(uint32_t now,
                                  BoardUartDriveDetail_t *detail);
 static void publish_drive_status(uint32_t now);
+static void publish_can_rx_diagnostics(void);
 static void parse_motor_status_part1(const uint8_t data[8], uint32_t now);
 static void parse_motor_status_part2(const uint8_t data[8], uint32_t now);
 static void usart1_rx_ring_push(uint8_t byte);
@@ -391,7 +418,8 @@ void StartControl(void *argument)
   (void)HAL_FDCAN_Start(&hfdcan1);
   // 수신 인터럽트 ON
   (void)HAL_FDCAN_ActivateNotification(
-      &hfdcan1, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0);
+      &hfdcan1,
+      FDCAN_IT_RX_FIFO0_NEW_MESSAGE | FDCAN_IT_RX_FIFO0_MESSAGE_LOST, 0);
 
   RuntimePeriodic periodic = RuntimePeriodic_Init(pdMS_TO_TICKS(50u));
 
@@ -402,7 +430,9 @@ void StartControl(void *argument)
     if (s_motor_handshake_done == 0u)
     {
       Long_Reset(&s_long_controller);
-      s_manual_current_a = 0.0f;
+      taskENTER_CRITICAL();
+      Long_ClearExternal(&s_external_current, s_command_stamp_ns);
+      taskEXIT_CRITICAL();
       s_tractive_commanded = 0u;
       RuntimeMetrics_End(RM_CONTROL, activation);
       osDelay(10);
@@ -440,15 +470,44 @@ void StartControl(void *argument)
     {
       if (MODE == 1u)
       {
-        s_manual_current_a = 0.0f;
-        if (s_long_calibration.config.mode == LONG_SPEED) {
-          /* Native speed loop with the active preset envelope; driving stays 480 A/4500 RPM. */
+        /* 회생 요청은 명령 전류를 0에서 목표까지 천천히 옮긴다. 요청이 끊기면
+         * 같은 기울기로 0에 돌아와 토크 부호가 한 번에 바뀌지 않게 한다. */
+        float regen_target = 0.0f;
+        taskENTER_CRITICAL();
+        if (s_long_calibration.config.mode == LONG_TORQUE && s_long_inhibit == LONG_OK &&
+            Long_ExternalFresh(&s_regen_request, HAL_GetTick(), HOST_COMMAND_TIMEOUT_MS))
+          regen_target = fmaxf(s_regen_request.current, -AUTO_REGEN_MAX_A);
+        taskEXIT_CRITICAL();
+        const float regen_step = AUTO_REGEN_SLEW_A_PER_S * 0.05f;
+        s_regen_current = fminf(fmaxf(regen_target, s_regen_current - regen_step),
+                                s_regen_current + regen_step);
+
+        if (COMMAND_SPEED == 0.0f ||
+            (s_long_calibration.config.mode != LONG_SPEED && COMMAND_SPEED < 0.0f)) {
+          /* Ordinary zero target coasts: cut torque immediately, no RPM hold or regen ramp. */
           Long_Reset(&s_long_controller);
-          float wrpm = COMMAND_SPEED * 60.0f / (3.14159f * TIRE_DIAM_M);
-          int32_t mrpm = (int32_t)(wrpm * GEAR_RATIO);
-          const LongMotorCommand command = Long_SpeedCommand(&s_long_calibration.config, mrpm);
+          s_regen_current = 0.0f;
+          send_motor_can(0, 0.0f, 0u, 0u);
+        } else if (s_long_calibration.config.mode == LONG_SPEED) {
+          Long_Reset(&s_long_controller);
+          s_regen_current = 0.0f;
+          const int32_t target_rpm = (int32_t)(COMMAND_SPEED * 60.0f * GEAR_RATIO /
+                                              (3.14159f * TIRE_DIAM_M));
+          const LongMotorCommand command = Long_SpeedCommand(&s_long_calibration.config, target_rpm);
           send_motor_can(command.rpm, command.current, 1u, 1u);
-        } else if (s_long_inhibit == LONG_OK && COMMAND_SPEED > 0.0f) {
+        } else if (s_regen_current < 0.0f) {
+          /* 전진 회생: 음수 상전류 + 목표 RPM 0 + RUNNING. */
+          Long_Reset(&s_long_controller);
+          send_motor_can(0, s_regen_current, 1u, 0u);
+        } else if (s_long_calibration.config.mode == LONG_EXTERNAL_CURRENT &&
+                   s_long_inhibit == LONG_OK && COMMAND_SPEED > 0.0f) {
+          taskENTER_CRITICAL();
+          const float current = fminf(s_external_current.current,
+                                      s_long_calibration.config.max_current);
+          taskEXIT_CRITICAL();
+          send_motor_can((int32_t)s_long_calibration.config.rpm_limit, current, 1u, 0u);
+        } else if (s_long_calibration.config.mode == LONG_TORQUE &&
+                   s_long_inhibit == LONG_OK && COMMAND_SPEED > 0.0f) {
           const float ceiling = s_long_calibration.config.rpm_limit * 3.14159f * TIRE_DIAM_M / (60.0f * GEAR_RATIO);
           float current = Long_Update(&s_long_controller, &s_long_calibration.config,
               fminf(COMMAND_SPEED, ceiling), CURRENT_SPEED, 0.05f);
@@ -460,30 +519,15 @@ void StartControl(void *argument)
       }
       else
       {
-        /* 수동주행: 페달 0~100%를 상전류로 매핑한다. Torque calibration에서는 적용된
-         * 전류 한도·회전수 상한·전류 상승/하강률을 AUTO Torque와 공유하고, Speed
-         * calibration에서는 기존 0~480 A 매핑을 그대로 쓴다. 두 경우 모두 페달이
-         * 토크 요구이며 속도 PI는 MANUAL에서 동작하지 않는다. */
         Long_Reset(&s_long_controller);
-        float torque_current;
-        int32_t rpm_limit;
-        if (s_long_calibration.config.mode == LONG_TORQUE)
-        {
-          s_manual_current_a = Long_PedalCommand(&s_long_calibration.config,
-              (float)PEDAL, s_manual_current_a, 0.05f);
-          torque_current = s_manual_current_a;
-          rpm_limit = (int32_t)s_long_calibration.config.rpm_limit;
-        }
-        else
-        {
-          s_manual_current_a = 0.0f;
-          torque_current = ((float)PEDAL / 100.0f) * MANUAL_TORQUE_LIMIT_A;
-          rpm_limit = RPM_FWD_MAX;
-        }
+        s_regen_current = 0.0f;
+        /* 수동주행: 페달 0~100%를 상전류 0~480 A로 선형 매핑한다. */
+        float torque_current = ((float)PEDAL / 100.0f) * MANUAL_TORQUE_LIMIT_A;
+        int16_t rpm_limit = RPM_FWD_MAX;
         if (GEAR == 1u)
         {
           torque_current = -torque_current;
-          rpm_limit = -rpm_limit;
+          rpm_limit = -RPM_REV_MAX;
         }
         send_motor_can(rpm_limit, torque_current, 1u, 0u);
       }
@@ -491,13 +535,12 @@ void StartControl(void *argument)
     // ESTOP 활성시
     else
     {
-      /* 정지 시 RPM/전류뿐 아니라 RUNNING bit도 내려 HALTED를 명령한다.
-       * 안전 정지는 페달 slew도 거치지 않는다. */
+      /* 정지 시 RPM/전류뿐 아니라 RUNNING bit도 내려 HALTED를 명령한다. */
       Long_Reset(&s_long_controller);
-      s_manual_current_a = 0.0f;
+      s_regen_current = 0.0f;
       if (s_long_inhibit == LONG_OK) s_long_inhibit = LONG_STOP;
-      send_motor_can(0, 0.0f, 0u,
-          (MODE == 1u && s_long_calibration.config.mode == LONG_SPEED) ? 1u : 0u);
+      /* No active zero-RPM hold: the independent brake path owns braking. */
+      send_motor_can(0, 0.0f, 0u, 0u);
     }
     // 20Hz / 50ms 주기
     RuntimePeriodic_Wait(RM_CONTROL, &periodic, activation);
@@ -575,6 +618,7 @@ void StartuROS(void *argument)
   ros_connection_state_t state = ROS_STATE_WAIT_AGENT;
   uint32_t last_status = HAL_GetTick();
   uint32_t last_long_status = HAL_GetTick();
+  uint32_t last_can_rx_diagnostics = HAL_GetTick();
   uint32_t last_agent_ping = HAL_GetTick() - AGENT_PING_PERIOD_MS;
 
   for (;;)
@@ -636,6 +680,10 @@ void StartuROS(void *argument)
         if ((uint32_t)(now - last_long_status) >= 200u) {
           publish_longitudinal();
           last_long_status = now;
+        }
+        if ((uint32_t)(now - last_can_rx_diagnostics) >= 1000u) {
+          publish_can_rx_diagnostics();
+          last_can_rx_diagnostics = now;
         }
         RuntimeStatsRos_PublishIfDue(&s_runtime_ros);
         delay_ticks = 5u;
@@ -934,17 +982,25 @@ static void reset_host_command_state(void)
   s_command_timeout = 1u;
   s_command_brake_engage = 1u;
   s_last_command_tick = 0u;
+  Long_ClearExternal(&s_external_current, s_command_stamp_ns);
   taskEXIT_CRITICAL();
 }
 
 static void init_ros_message_buffers(void)
 {
+  memset(&s_can_rx_diagnostics_msg, 0, sizeof(s_can_rx_diagnostics_msg));
+  s_can_rx_diagnostics_msg.data.data = s_can_rx_diagnostics_data;
+  s_can_rx_diagnostics_msg.data.size =
+      s_can_rx_diagnostics_msg.data.capacity = 7u;
   memset(&s_long_status_msg, 0, sizeof(s_long_status_msg));
   memset(&s_long_request_msg, 0, sizeof(s_long_request_msg));
   s_long_status_msg.data.data = s_long_status_data;
   s_long_status_msg.data.size = s_long_status_msg.data.capacity = LONG_STATUS_COUNT;
   s_long_request_msg.data.data = s_long_request_data;
   s_long_request_msg.data.capacity = LONG_REQUEST_COUNT;
+  memset(&s_current_msg, 0, sizeof(s_current_msg));
+  s_current_msg.header.frame_id.data = s_current_frame_id;
+  s_current_msg.header.frame_id.capacity = sizeof(s_current_frame_id);
   memset(&s_cmd_msg, 0, sizeof(s_cmd_msg));
   memset(&s_status_msg, 0, sizeof(s_status_msg));
 
@@ -962,8 +1018,10 @@ static uint8_t create_ros_entities(void)
   s_ros_node = rcl_get_zero_initialized_node();
   s_ros_sub_cmd = rcl_get_zero_initialized_subscription();
   s_ros_pub_drive_status = rcl_get_zero_initialized_publisher();
+  s_can_rx_diagnostics_publisher = rcl_get_zero_initialized_publisher();
   s_ros_executor = rclc_executor_get_zero_initialized_executor();
   s_long_subscription = rcl_get_zero_initialized_subscription();
+  s_current_subscription = rcl_get_zero_initialized_subscription();
   s_long_publisher = rcl_get_zero_initialized_publisher();
 
   s_cmd_msg.header.frame_id.size = 0u;
@@ -987,6 +1045,13 @@ static uint8_t create_ros_entities(void)
     return 0u;
   }
   s_ros_sub_cmd_initialized = 1u;
+  rmw_qos_profile_t current_qos = rmw_qos_profile_default;
+  current_qos.depth = 1;
+  current_qos.durability = RMW_QOS_POLICY_DURABILITY_VOLATILE;
+  if (rclc_subscription_init(&s_current_subscription, &s_ros_node,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(kaiev26_msgs, msg, DriveCurrentCommand),
+      "/vehicle/drive_current_command", &current_qos) != RCL_RET_OK) return 0u;
+  s_current_subscription_initialized = 1u;
 
   if (rclc_publisher_init_default(
           &s_ros_pub_drive_status, &s_ros_node,
@@ -995,6 +1060,11 @@ static uint8_t create_ros_entities(void)
     return 0u;
   }
   s_ros_publisher_initialized = 1u;
+  s_can_rx_diagnostics_initialized = rclc_publisher_init_best_effort(
+      &s_can_rx_diagnostics_publisher, &s_ros_node,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt32MultiArray),
+      "/drive/can_rx_diagnostics") == RCL_RET_OK;
+  if (!s_can_rx_diagnostics_initialized) rcl_reset_error();
 
   if (rclc_subscription_init_default(&s_long_subscription, &s_ros_node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
@@ -1006,7 +1076,7 @@ static uint8_t create_ros_entities(void)
   s_long_publisher_initialized = 1u;
 
   if (rclc_executor_init(
-          &s_ros_executor, &s_ros_support.context, 2, &s_ros_allocator) != RCL_RET_OK) {
+          &s_ros_executor, &s_ros_support.context, 3, &s_ros_allocator) != RCL_RET_OK) {
     return 0u;
   }
   s_ros_executor_initialized = 1u;
@@ -1018,6 +1088,8 @@ static uint8_t create_ros_entities(void)
   }
   if (rclc_executor_add_subscription(&s_ros_executor, &s_long_subscription,
       &s_long_request_msg, &cb_long_config, ON_NEW_DATA) != RCL_RET_OK) return 0u;
+  if (rclc_executor_add_subscription(&s_ros_executor, &s_current_subscription,
+      &s_current_msg, &cb_current, ON_NEW_DATA) != RCL_RET_OK) return 0u;
   RuntimeStatsRos_Init(&s_runtime_ros, &s_ros_node,
       kaiev26_msgs__msg__RuntimeStats__BOARD_STM_A);
   return 1u;
@@ -1040,6 +1112,17 @@ static void destroy_ros_entities(void)
     s_ros_executor_initialized = 0u;
   }
   RuntimeStatsRos_Fini(&s_runtime_ros, &s_ros_node);
+  if (s_current_subscription_initialized) {
+    const rcl_ret_t result = rcl_subscription_fini(&s_current_subscription, &s_ros_node);
+    (void)result;
+    s_current_subscription_initialized = 0u;
+  }
+  if (s_can_rx_diagnostics_initialized != 0u) {
+    const rcl_ret_t result =
+        rcl_publisher_fini(&s_can_rx_diagnostics_publisher, &s_ros_node);
+    (void)result;
+    s_can_rx_diagnostics_initialized = 0u;
+  }
   if (s_long_subscription_initialized) {
     const rcl_ret_t result = rcl_subscription_fini(&s_long_subscription, &s_ros_node);
     (void)result;
@@ -1089,28 +1172,51 @@ static uint32_t age_since(uint32_t now, uint32_t stamp)
 
 static void reset_motor_rpm_despiker(void)
 {
-  s_last_nonzero_motor_rpm = 0;
-  s_motor_rpm_zero_streak = 0u;
-  s_motor_rpm_hold_armed = 0u;
+  s_motor_rpm_estimate = 0.0f;
+  s_motor_rpm_history[0] = 0;
+  s_motor_rpm_history[1] = 0;
+  s_motor_rpm_history[2] = 0;
+  s_motor_rpm_despiker_armed = 0u;
 }
 
-static int32_t despike_motor_rpm(int32_t motor_rpm_raw)
+static int32_t median3_i32(int32_t a, int32_t b, int32_t c)
 {
-  if (motor_rpm_raw != 0) {
-    s_last_nonzero_motor_rpm = motor_rpm_raw;
-    s_motor_rpm_zero_streak = 0u;
-    s_motor_rpm_hold_armed = 1u;
-    return motor_rpm_raw;
+  if (a > b) { const int32_t t = a; a = b; b = t; }
+  if (b > c) { b = c; }
+  return (a > b) ? a : b;
+}
+
+/* 한 프레임 폭(gate) 안의 값은 지연 없이 그대로 쓴다. 폭을 넘으면 최근 3개 중앙값 쪽으로
+ * 폭만큼만 움직인다. 1프레임 튐과 0-dropout은 중앙값이 무시하고, 실제 변화는 폭 속도로
+ * 따라가므로 기각이 이어져도 값이 멈추지 않는다. */
+static float despike_motor_rpm(int32_t motor_rpm_raw, float dt_s)
+{
+  const float rpm_per_mps = 60.0f * GEAR_RATIO / (3.14159f * TIRE_DIAM_M);
+  const float gate = MOTOR_RPM_GATE_BASE_RPM +
+                     MOTOR_RPM_GATE_ACCEL_MPS2 * rpm_per_mps * dt_s;
+
+  if (s_motor_rpm_despiker_armed == 0u) {
+    s_motor_rpm_history[0] = motor_rpm_raw;
+    s_motor_rpm_history[1] = motor_rpm_raw;
+    s_motor_rpm_history[2] = motor_rpm_raw;
+    s_motor_rpm_estimate = (float)motor_rpm_raw;
+    s_motor_rpm_despiker_armed = 1u;
+    return s_motor_rpm_estimate;
   }
 
-  if ((s_motor_rpm_hold_armed != 0u) &&
-      (s_motor_rpm_zero_streak < MOTOR_RPM_ZERO_HOLD_SAMPLES)) {
-    s_motor_rpm_zero_streak++;
-    return s_last_nonzero_motor_rpm;
-  }
+  s_motor_rpm_history[0] = s_motor_rpm_history[1];
+  s_motor_rpm_history[1] = s_motor_rpm_history[2];
+  s_motor_rpm_history[2] = motor_rpm_raw;
 
-  reset_motor_rpm_despiker();
-  return 0;
+  if (fabsf((float)motor_rpm_raw - s_motor_rpm_estimate) <= gate) {
+    s_motor_rpm_estimate = (float)motor_rpm_raw;
+  } else {
+    const float reference = (float)median3_i32(
+        s_motor_rpm_history[0], s_motor_rpm_history[1], s_motor_rpm_history[2]);
+    s_motor_rpm_estimate +=
+        fmaxf(-gate, fminf(gate, reference - s_motor_rpm_estimate));
+  }
+  return s_motor_rpm_estimate;
 }
 
 static int16_t encode_tenths_i16(float value)
@@ -1172,7 +1278,7 @@ static void capture_drive_detail(uint32_t now,
        (age_since(now, part1_rx_ms) < MOTOR_FEEDBACK_TIMEOUT_MS)) ? 1u : 0u;
   const uint8_t part2_valid =
       ((part2_received != 0u) &&
-       (age_since(now, part2_rx_ms) < MOTOR_FEEDBACK_TIMEOUT_MS)) ? 1u : 0u;
+       (age_since(now, part2_rx_ms) < MOTOR_PART2_TIMEOUT_MS)) ? 1u : 0u;
 
   detail->flags = 0u;
   if (part1_valid != 0u) {
@@ -1264,7 +1370,7 @@ static void publish_drive_status(uint32_t now)
        (part1_age_ms < MOTOR_FEEDBACK_TIMEOUT_MS)) ? 1u : 0u;
   const uint8_t part2_valid =
       ((part2_received != 0u) &&
-       (part2_age_ms < MOTOR_FEEDBACK_TIMEOUT_MS)) ? 1u : 0u;
+       (part2_age_ms < MOTOR_PART2_TIMEOUT_MS)) ? 1u : 0u;
 
   s_status_msg.mode = MODE;
   s_status_msg.gear = GEAR;
@@ -1297,6 +1403,28 @@ static void publish_drive_status(uint32_t now)
   s_status_msg.part2_age_ms = (part2_received != 0u) ?
       (float)part2_age_ms : INFINITY;
   RCL_PUBLISH_BEST_EFFORT(&s_ros_pub_drive_status, &s_status_msg);
+}
+
+static void publish_can_rx_diagnostics(void)
+{
+  if (s_can_rx_diagnostics_initialized == 0u) return;
+  FDCAN_ErrorCountersTypeDef errors = {0};
+  taskENTER_CRITICAL();
+  s_can_rx_diagnostics_data[0] = s_part1_rx_count;
+  s_can_rx_diagnostics_data[1] = s_part2_rx_count;
+  s_can_rx_diagnostics_data[2] = s_can_rx_fifo_lost_count;
+  s_can_rx_diagnostics_data[3] = s_can_rx_read_error_count;
+  taskEXIT_CRITICAL();
+  if (HAL_FDCAN_GetErrorCounters(&hfdcan1, &errors) == HAL_OK) {
+    s_can_rx_diagnostics_data[4] = errors.RxErrorCnt;
+    s_can_rx_diagnostics_data[5] = errors.TxErrorCnt;
+    s_can_rx_diagnostics_data[6] = errors.ErrorLogging;
+  } else {
+    s_can_rx_diagnostics_data[4] = UINT32_MAX;
+    s_can_rx_diagnostics_data[5] = UINT32_MAX;
+    s_can_rx_diagnostics_data[6] = UINT32_MAX;
+  }
+  RCL_PUBLISH_BEST_EFFORT(&s_can_rx_diagnostics_publisher, &s_can_rx_diagnostics_msg);
 }
 
 static void send_motor_can(int32_t rpm, float curr_a, uint8_t run_command,
@@ -1380,23 +1508,45 @@ static void cb_long_config(const void *message)
 static void prepare_longitudinal(uint32_t now)
 {
   taskENTER_CRITICAL();
-  s_long_feedback_valid = s_part1_received && s_part2_received &&
-      age_since(now, s_last_part1_rx_ms) < MOTOR_FEEDBACK_TIMEOUT_MS &&
-      age_since(now, s_last_part2_rx_ms) < MOTOR_FEEDBACK_TIMEOUT_MS;
+  const uint8_t part1_fresh = s_part1_received &&
+      age_since(now, s_last_part1_rx_ms) < MOTOR_FEEDBACK_TIMEOUT_MS;
+  const uint8_t part2_status_fresh = s_part2_received &&
+      age_since(now, s_last_part2_rx_ms) < MOTOR_PART2_TIMEOUT_MS;
+  s_long_feedback_valid = part1_fresh && part2_status_fresh;
   if (s_long_pending_valid) {
     s_long_pending_valid = 0u;
     Long_ApplyConfiguration(&s_long_calibration, &s_long_pending,
-        Long_CanConfigure(MODE == 0u, s_long_feedback_valid,
+        Long_CanConfigure(MODE == 0u, part1_fresh && part2_status_fresh,
           CURRENT_SPEED, PEDAL, s_commanded_phase_current_a, s_phase_current_a));
-    if (s_long_calibration.result == LONG_APPLIED) Long_Reset(&s_long_controller);
+    if (s_long_calibration.result == LONG_APPLIED) {
+      Long_Reset(&s_long_controller);
+      Long_ClearExternal(&s_external_current, s_command_stamp_ns);
+    }
   }
   bool discard_command = false;
   s_long_inhibit = Long_CheckInhibit(&s_long_controller, &s_long_gate,
-      MODE == 1u && s_long_calibration.config.mode == LONG_TORQUE,
+      MODE == 1u && s_long_calibration.config.mode != LONG_SPEED,
       s_long_feedback_valid,
       s_command_received && age_since(now, s_last_command_tick) < HOST_COMMAND_TIMEOUT_MS,
       DRIVE_STOP_REQUEST != 0u || s_command_brake_engage != 0u,
       COMMAND_SPEED, CURRENT_SPEED, &discard_command);
+  if (MODE != s_external_previous_mode) {
+    Long_ClearExternal(&s_external_current, s_command_stamp_ns);
+    s_external_previous_mode = MODE;
+  }
+  if (MODE != 1u || s_long_calibration.config.mode != LONG_EXTERNAL_CURRENT ||
+      s_long_inhibit != LONG_OK || COMMAND_SPEED <= 0 || s_motor_fault_bits != 0u ||
+      s_controller_control_mode != CONTROLLER_CONTROL_MODE_TORQUE ||
+      s_motor_handshake_done == 0u) {
+    Long_ClearExternal(&s_external_current, s_command_stamp_ns);
+  }
+  if (MODE == 1u && s_long_calibration.config.mode == LONG_EXTERNAL_CURRENT) {
+    if (s_motor_fault_bits != 0u ||
+        s_controller_control_mode != CONTROLLER_CONTROL_MODE_TORQUE) s_long_inhibit = LONG_STOP;
+    else if (s_long_inhibit == LONG_OK &&
+             !Long_ExternalFresh(&s_external_current, now, HOST_COMMAND_TIMEOUT_MS))
+      s_long_inhibit = LONG_WAIT_COMMAND;
+  }
   if (discard_command) {
     s_command_received = 0u;
     COMMAND_SPEED = 0.0f;
@@ -1411,14 +1561,36 @@ static void publish_longitudinal(void)
   d[0] = LONG_VERSION; d[1] = s_long_calibration.revision; d[2] = s_long_calibration.request_id;
   d[3] = s_long_calibration.result; d[4] = s_long_calibration.source;
   Long_EncodeConfig(&s_long_calibration.config, d + 5);
-  d[21] = s_long_controller.error; d[22] = s_long_controller.p;
-  d[23] = s_long_controller.i; d[24] = s_long_controller.ff;
-  d[25] = s_long_controller.unsaturated; d[26] = s_long_controller.current;
-  d[27] = s_long_controller.saturated; d[28] = s_long_controller.anti_windup;
-  d[29] = s_long_controller.coasting; d[30] = s_long_feedback_valid;
-  d[31] = s_long_inhibit;
+  float *state = d + 5u + LONG_CONFIG_COUNT;
+  state[0] = s_long_controller.error; state[1] = s_long_controller.p;
+  state[2] = s_long_controller.i; state[3] = s_long_controller.unsaturated;
+  state[4] = s_long_controller.current; state[5] = s_long_controller.saturated;
+  state[6] = s_long_controller.anti_windup; state[7] = s_long_controller.coasting;
+  state[8] = s_long_feedback_valid; state[9] = s_long_inhibit;
   taskEXIT_CRITICAL();
   RCL_PUBLISH_BEST_EFFORT(&s_long_publisher, &s_long_status_msg);
+}
+
+static void cb_current(const void *message)
+{
+  const kaiev26_msgs__msg__DriveCurrentCommand *msg = message;
+  if (msg->header.stamp.sec < 0 || msg->header.stamp.nanosec >= 1000000000u) return;
+  const int64_t stamp = (int64_t)msg->header.stamp.sec * 1000000000LL + msg->header.stamp.nanosec;
+  taskENTER_CRITICAL();
+  /* TORQUE 모드의 0 이하 값은 회생 요청이다. governor가 명령을 다시 찍으므로
+   * 명령 stamp 창 대신 수신 시각으로 신선도를 본다. */
+  if (MODE == 1u && s_long_calibration.config.mode == LONG_TORQUE &&
+      msg->phase_current_a <= 0.0f && !s_command_brake_engage) {
+    (void)Long_ReceiveRegen(&s_regen_request, msg->phase_current_a, stamp, HAL_GetTick());
+  }
+  if (MODE == 1u && s_long_calibration.config.mode == LONG_EXTERNAL_CURRENT &&
+      s_motor_handshake_done && s_long_feedback_valid && !DRIVE_STOP_REQUEST &&
+      s_controller_control_mode == CONTROLLER_CONTROL_MODE_TORQUE &&
+      !s_command_brake_engage && !s_motor_fault_bits && stamp >= s_command_stamp_ns &&
+      stamp - s_command_stamp_ns < (int64_t)HOST_COMMAND_TIMEOUT_MS * 1000000LL) {
+    (void)Long_ReceiveExternal(&s_external_current, msg->phase_current_a, stamp, HAL_GetTick());
+  }
+  taskEXIT_CRITICAL();
 }
 
 static void cb_cmd(const void *message)
@@ -1443,6 +1615,11 @@ static void cb_cmd(const void *message)
   s_command_received = 1u;
   s_command_timeout = 0u;
   s_last_command_tick = now;
+  s_command_stamp_ns = (int64_t)cmd->header.stamp.sec * 1000000000LL + cmd->header.stamp.nanosec;
+  if (brake_requested || COMMAND_SPEED <= 0) {
+    Long_ClearExternal(&s_external_current, s_command_stamp_ns);
+    Long_ClearExternal(&s_regen_request, s_command_stamp_ns);
+  }
   taskEXIT_CRITICAL();
 }
 
@@ -1462,12 +1639,14 @@ static void parse_motor_status_part1(const uint8_t data[8], uint32_t now)
   const int32_t motor_rpm_raw = (int32_t)raw_rpm - 32000;
 
   /* 새 CAN stream에서는 이전 stream의 RPM을 hold하지 않는다. */
-  if ((s_part1_received == 0u) ||
-      (age_since(now, s_last_part1_rx_ms) >= MOTOR_FEEDBACK_TIMEOUT_MS)) {
+  const uint32_t part1_gap_ms = age_since(now, s_last_part1_rx_ms);
+  if ((s_part1_received == 0u) || (part1_gap_ms >= MOTOR_RPM_STREAM_RESET_MS)) {
     reset_motor_rpm_despiker();
   }
-  const int32_t motor_rpm_despiked = despike_motor_rpm(motor_rpm_raw);
-  const float wheel_rpm = (float)motor_rpm_despiked / GEAR_RATIO;
+  /* 프레임이 몰려 들어와도 폭이 20 Hz 한 주기보다 좁아지지 않게 한다. */
+  const float part1_dt_s = (float)((part1_gap_ms < 50u) ? 50u : part1_gap_ms) * 1.0e-3f;
+  const float motor_rpm_despiked = despike_motor_rpm(motor_rpm_raw, part1_dt_s);
+  const float wheel_rpm = motor_rpm_despiked / GEAR_RATIO;
 
   s_bus_voltage_v = (float)raw_voltage * 0.1f;
   s_bus_current_a = (float)raw_bus_current * 0.1f - 3200.0f;
@@ -1476,6 +1655,7 @@ static void parse_motor_status_part1(const uint8_t data[8], uint32_t now)
   CURRENT_SPEED = wheel_rpm * (3.14159f * TIRE_DIAM_M) / 60.0f;
   s_last_part1_rx_ms = now;
   s_part1_received = 1u;
+  s_part1_rx_count++;
 }
 
 static void parse_motor_status_part2(const uint8_t data[8], uint32_t now)
@@ -1499,18 +1679,22 @@ static void parse_motor_status_part2(const uint8_t data[8], uint32_t now)
       ((uint32_t)data[5] << 16);
   s_last_part2_rx_ms = now;
   s_part2_received = 1u;
+  s_part2_rx_count++;
 }
 void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan,
                                uint32_t RxFifo0ITs)
 {
   FDCAN_RxHeaderTypeDef rx_header;
   uint8_t rx_data[8];
-  (void)RxFifo0ITs;
+  if ((RxFifo0ITs & FDCAN_IT_RX_FIFO0_MESSAGE_LOST) != 0u) {
+    s_can_rx_fifo_lost_count++;
+  }
 
   /* 한 IRQ에서 FIFO0에 쌓인 status frame을 모두 비운다. */
   while (HAL_FDCAN_GetRxFifoFillLevel(hfdcan, FDCAN_RX_FIFO0) > 0u) {
     if (HAL_FDCAN_GetRxMessage(
             hfdcan, FDCAN_RX_FIFO0, &rx_header, rx_data) != HAL_OK) {
+      s_can_rx_read_error_count++;
       break;
     }
     if ((rx_header.IdType != FDCAN_EXTENDED_ID) ||
@@ -1571,4 +1755,3 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
   }
 }
 /* USER CODE END Application */
-

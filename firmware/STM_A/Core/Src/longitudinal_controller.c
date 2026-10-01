@@ -6,20 +6,9 @@ static float clamp(float x, float lo, float hi) { return fminf(hi, fmaxf(lo, x))
 
 LongConfig Long_DefaultConfig(void)
 {
-  /* Kp/Ki are the omega_n=1 rad/s, zeta=1 pair for the identified gain; the
-   * feedforward constants are the 2026-09-20 fit. Mode still boots as speed. */
-  return (LongConfig){LONG_SPEED, 380.0f, 190.0f, 480.0f, 120.0f,
-                     2400.0f, 4800.0f, 0.05f, 0.12f, 20.0f, 200.0f, 4500.0f,
-                     0.00512f, 0.228f, 0.0288f, 1.0f};
-}
-
-float Long_PedalCommand(const LongConfig *c, float pedal_percent,
-                        float previous_current, float dt)
-{
-  const float demand = clamp(pedal_percent, 0, 100) / 100.0f * c->max_current;
-  const float previous = clamp(previous_current, 0, c->max_current);
-  return clamp(demand, fmaxf(0, previous - c->slew_down * dt),
-               previous + c->slew_up * dt);
+  /* Boot in Torque; a stopped MANUAL calibration can select native Speed. */
+  return (LongConfig){LONG_TORQUE, 180.0f, 12.0f, 480.0f, 120.0f,
+                     2400.0f, 4800.0f, 0.05f, 0.12f, 20.0f, 200.0f, 4500.0f, 0.0f};
 }
 
 LongMotorCommand Long_SpeedCommand(const LongConfig *c, int32_t target_rpm)
@@ -30,27 +19,28 @@ LongMotorCommand Long_SpeedCommand(const LongConfig *c, int32_t target_rpm)
 
 bool Long_DecodeRequest(const float *d, size_t count, LongRequest *r)
 {
-  if (count != LONG_REQUEST_COUNT) return false;
+  if (count != LONG_REQUEST_COUNT && count != LONG_REQUEST_COUNT - 1u) return false;
   for (size_t n = 0; n < count; ++n) if (!isfinite(d[n])) return false;
-  if (d[0] != LONG_VERSION || d[1] < 1 || d[1] > LONG_ID_MAX ||
+  if ((count == LONG_REQUEST_COUNT ? d[0] != LONG_VERSION :
+       (d[0] != 1 && d[0] != 2)) || d[1] < 1 || d[1] > LONG_ID_MAX ||
       floorf(d[1]) != d[1] || d[2] < 0 || d[2] > LONG_ID_MAX ||
-      floorf(d[2]) != d[2] || (d[3] != LONG_SPEED && d[3] != LONG_TORQUE)) return false;
+      floorf(d[2]) != d[2] || (d[3] != LONG_SPEED && d[3] != LONG_TORQUE &&
+      !(d[0] >= 2 && d[3] == LONG_EXTERNAL_CURRENT))) return false;
   LongConfig c = {(uint8_t)d[3], d[4], d[5], d[6], d[7], d[8], d[9],
-                  d[10], d[11], d[12], d[13], d[14], d[15], d[16], d[17], d[18]};
+                  d[10], d[11], d[12], d[13], d[14],
+                  count == LONG_REQUEST_COUNT ? d[15] : 0.0f};
   /* Bounds protect current/RPM capability and 20 Hz numerical authority, not a
    * claim of vehicle-validated tuning. Integral/slew must fit the output range. */
-  if (c.kp <= 0 || c.kp > 1000 || c.ki < 0 || c.ki > 200 ||
-      c.max_current <= 0 || c.max_current > 480 || c.integrator_limit < 0 ||
+  if (c.max_current <= 0 || c.max_current > 480 ||
+      c.rpm_limit < 100 || c.rpm_limit > 4500) return false;
+  if (c.mode == LONG_TORQUE &&
+      (c.kp <= 0 || c.kp > 1000 || c.ki < 0 || c.ki > 200 || c.integrator_limit < 0 ||
       c.integrator_limit > c.max_current || c.slew_up <= 0 || c.slew_up > 9600 ||
       c.slew_down <= 0 || c.slew_down > 9600 || c.deadband < 0 || c.deadband > .2f ||
       c.hysteresis <= c.deadband || c.hysteresis > .5f || c.reapply_current < 0 ||
       c.reapply_current > c.max_current || c.reapply_slew <= 0 ||
-      c.reapply_slew > c.slew_up || c.rpm_limit < 100 || c.rpm_limit > 4500) return false;
-  /* Feedforward is optional: gain 0 disables it. A nonzero gain stays inside the
-   * identifiable range so a near-zero divisor cannot turn into a huge command. */
-  if (!(c.ff_gain == 0 || (c.ff_gain >= .0005f && c.ff_gain <= .05f)) ||
-      c.ff_rolling < 0 || c.ff_rolling > 2 || c.ff_damping < 0 || c.ff_damping > 1 ||
-      c.ff_accel_limit < 0 || c.ff_accel_limit > 5) return false;
+      c.reapply_slew > c.slew_up ||
+      c.coast_current_floor < 0 || c.coast_current_floor > c.max_current)) return false;
   *r = (LongRequest){(uint32_t)d[1], (uint32_t)d[2], c};
   return true;
 }
@@ -59,8 +49,7 @@ void Long_EncodeConfig(const LongConfig *c, float *d)
 {
   const float values[LONG_CONFIG_COUNT] = {c->mode, c->kp, c->ki, c->max_current,
     c->integrator_limit, c->slew_up, c->slew_down, c->deadband, c->hysteresis,
-    c->reapply_current, c->reapply_slew, c->rpm_limit, c->ff_gain, c->ff_rolling,
-    c->ff_damping, c->ff_accel_limit};
+    c->reapply_current, c->reapply_slew, c->rpm_limit, c->coast_current_floor};
   memcpy(d, values, sizeof(values));
 }
 
@@ -75,23 +64,32 @@ bool Long_CanConfigure(bool manual, bool feedback_valid, float speed,
 
 void Long_Reset(LongController *s) { memset(s, 0, sizeof(*s)); }
 
-/* Invert the identified plant for the steady-state and target-acceleration
- * current, so the integrator only carries load, grade, surface and SOC error.
- * The acceleration term comes from the commanded target rate and is bounded, so
- * an upstream target step cannot become an unbounded current spike. */
-static float feedforward(LongController *s, const LongConfig *c,
-                         float target, float actual, float dt)
+void Long_ClearExternal(LongExternalInput *s, int64_t floor)
 {
-  float accel = 0;
-  if (s->have_target && dt > 0) {
-    accel = clamp((target - s->target_previous) / dt,
-                  -c->ff_accel_limit, c->ff_accel_limit);
-  }
-  s->target_previous = target;
-  s->have_target = true;
-  if (c->ff_gain <= 0) return 0;
-  return clamp((accel + c->ff_rolling + c->ff_damping * actual) / c->ff_gain,
-               0, c->max_current);
+  s->current = 0;
+  s->received = false;
+  if (floor > s->last_stamp_ns) s->last_stamp_ns = floor;
+}
+
+bool Long_ReceiveExternal(LongExternalInput *s, float current, int64_t stamp, uint32_t tick)
+{
+  if (!isfinite(current) || current < 0 || current > 480 ||
+      stamp <= s->last_stamp_ns) return false;
+  *s = (LongExternalInput){current, tick, stamp, true};
+  return true;
+}
+
+bool Long_ReceiveRegen(LongExternalInput *s, float current, int64_t stamp, uint32_t tick)
+{
+  if (!isfinite(current) || current > 0 || current < -480 ||
+      stamp <= s->last_stamp_ns) return false;
+  *s = (LongExternalInput){current, tick, stamp, true};
+  return true;
+}
+
+bool Long_ExternalFresh(const LongExternalInput *s, uint32_t tick, uint32_t timeout)
+{
+  return s->received && (uint32_t)(tick - s->received_tick) < timeout;
 }
 
 float Long_Update(LongController *s, const LongConfig *c, float target, float actual, float dt)
@@ -101,37 +99,27 @@ float Long_Update(LongController *s, const LongConfig *c, float target, float ac
   if (target <= 0) { Long_Reset(s); return 0; }
   s->error = target - actual;
   s->p = c->kp * s->error;
-  s->ff = feedforward(s, c, target, actual, dt);
   s->anti_windup = false;
-  if (s->error < -c->deadband) s->coasting = true;
-  if (s->coasting && s->error > c->hysteresis) {
-    s->coasting = false;
-    s->reapplying = true;
-  }
-  float desired;
-  if (s->coasting) {
-    /* No negative integral debt, no stored drive torque after overspeed, and no
-     * feedforward drive while the vehicle is above the commanded speed. */
-    s->i = 0;
-    s->ff = 0;
-    s->anti_windup = true;
-    s->unsaturated = s->p;
-    desired = 0;
-  } else {
-    float error_i = fabsf(s->error) <= c->deadband ? 0 : s->error;
-    float candidate = clamp(s->i + c->ki * error_i * dt, 0, c->integrator_limit);
-    float proposed = s->ff + s->p + candidate;
-    float up = s->reapplying && s->current < c->reapply_current ? c->reapply_slew : c->slew_up;
-    /* Conditional integration accounts for both output and upward slew saturation.
-     * Negative error may unwind a positive integral; it can never store debt. */
-    if ((error_i > 0 && (proposed > c->max_current || proposed > s->current + up * dt)) ||
-        (error_i < 0 && proposed < 0)) s->anti_windup = true;
-    else s->i = candidate;
-    s->unsaturated = s->ff + s->p + s->i;
-    desired = clamp(s->unsaturated, 0, c->max_current);
-  }
-  s->saturated = s->unsaturated < 0 || s->unsaturated > c->max_current;
+  float error_i = fabsf(s->error) <= c->deadband ? 0 : s->error;
+  float floor_current = s->error < 0 ? c->coast_current_floor : 0;
+  float candidate = clamp(s->i + c->ki * error_i * dt, 0, c->integrator_limit);
+  float proposed = s->p + candidate;
   float up = s->reapplying && s->current < c->reapply_current ? c->reapply_slew : c->slew_up;
+  /* Keep the learned positive load current through a downward speed step.
+   * Integrate negative error only while the output can decrease: at zero or
+   * the downward slew limit, freezing I prevents an artificial current debt.
+   * P + I can then become positive before speed falls below the target. */
+  if ((error_i > 0 && (proposed > c->max_current || proposed > s->current + up * dt)) ||
+      (error_i < 0 && proposed < fmaxf(floor_current, s->current - c->slew_down * dt)))
+    s->anti_windup = true;
+  else s->i = candidate;
+  s->unsaturated = s->p + s->i;
+  float desired = clamp(s->unsaturated, floor_current, c->max_current);
+  /* Coast is now an output state, not a latch that overrides PI. */
+  s->coasting = s->unsaturated <= floor_current && s->error < 0;
+  if (s->coasting) s->reapplying = true;
+  s->saturated = s->unsaturated < floor_current || s->unsaturated > c->max_current;
+  up = s->reapplying && s->current < c->reapply_current ? c->reapply_slew : c->slew_up;
   s->current = clamp(desired, fmaxf(0, s->current - c->slew_down * dt), s->current + up * dt);
   if (s->current >= c->reapply_current) s->reapplying = false;
   return s->current;

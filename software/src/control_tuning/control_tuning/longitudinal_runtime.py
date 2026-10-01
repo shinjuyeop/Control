@@ -45,7 +45,7 @@ class LongitudinalClient:
                 abs(d.commanded_phase_current_a) < .1 and abs(d.phase_current_a) <= 1):
             return '차량 정지·페달 해제·명령/실제 무전류 확인이 필요합니다.'
         endpoints = self.node.get_publishers_info_by_topic(STATUS_TOPIC)
-        if len(endpoints) != 1 or endpoints[0].node_name != 'stm_a_node':
+        if len(endpoints) != 1 or endpoints[0].node_name not in ('stm_a_node', 'stm_a_emulator'):
             return 'STM_A longitudinal status 발행자가 정확히 하나여야 합니다.'
         return ''
 
@@ -58,7 +58,7 @@ class LongitudinalClient:
         request_id = secrets.randbelow(16777215) + 1
         if request_id == self.fresh()['request_id']:
             request_id = request_id % 16777215 + 1
-        data = request_data(config, request_id, expected_revision)
+        data = request_data(config, request_id, expected_revision, self.fresh()['version'])
         self.operation = dict(config=dict(config), id=request_id, revision=expected_revision,
                               started=time.monotonic())
         self.result = None

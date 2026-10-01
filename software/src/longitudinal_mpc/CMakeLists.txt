@@ -1,42 +1,34 @@
-cmake_minimum_required(VERSION 3.8)
-project(longitudinal_mpc)
-
-find_package(ament_cmake REQUIRED)
+cmake_minimum_required(VERSION 3.16)
+project(longitudinal_mpc C CXX)
+find_package(rclcpp REQUIRED)
 find_package(kaiev26_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(osqp_vendor REQUIRED)
 find_package(osqp REQUIRED CONFIG)
-find_package(rclcpp REQUIRED)
-
-add_library(longitudinal_mpc_core STATIC
-  src/osqp_mpc.cpp
-)
-target_compile_features(longitudinal_mpc_core PUBLIC cxx_std_17)
-target_include_directories(longitudinal_mpc_core PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
-)
-target_link_libraries(longitudinal_mpc_core PUBLIC osqp::osqp)
-
-add_executable(longitudinal_mpc_node
-  src/longitudinal_mpc_node.cpp
-)
-target_compile_features(longitudinal_mpc_node PUBLIC cxx_std_17)
-target_link_libraries(longitudinal_mpc_node longitudinal_mpc_core)
-ament_target_dependencies(longitudinal_mpc_node kaiev26_msgs rclcpp)
-
-install(TARGETS longitudinal_mpc_core longitudinal_mpc_node
-  ARCHIVE DESTINATION lib
-  LIBRARY DESTINATION lib
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-install(DIRECTORY include/ DESTINATION include)
+find_package(Eigen3 REQUIRED)
+find_package(yaml-cpp REQUIRED)
+find_package(ament_cmake REQUIRED)
+# The host reference and SITL use the same numerical controller as STM_A.
+set(STM_CORE ${CMAKE_CURRENT_SOURCE_DIR}/../../../firmware/STM_A/Core)
+add_library(longitudinal_reference SHARED ${STM_CORE}/Src/longitudinal_controller.c)
+target_include_directories(longitudinal_reference PUBLIC
+  $<BUILD_INTERFACE:${STM_CORE}/Inc> $<INSTALL_INTERFACE:include>)
+target_link_libraries(longitudinal_reference m)
+install(TARGETS longitudinal_reference EXPORT longitudinal_referenceTargets LIBRARY DESTINATION lib)
+install(FILES ${STM_CORE}/Inc/longitudinal_controller.h DESTINATION include)
+ament_export_targets(longitudinal_referenceTargets HAS_LIBRARY_TARGET)
+add_library(current_mpc src/current_mpc.cpp)
+target_compile_features(current_mpc PUBLIC cxx_std_17)
+target_include_directories(current_mpc PUBLIC include)
+ament_target_dependencies(current_mpc osqp_vendor)
+target_link_libraries(current_mpc Eigen3::Eigen yaml-cpp osqp::osqp)
+add_executable(longitudinal_controller src/controller_node.cpp)
+target_compile_features(longitudinal_controller PRIVATE cxx_std_17)
+ament_target_dependencies(longitudinal_controller rclcpp kaiev26_msgs std_msgs)
+target_link_libraries(longitudinal_controller current_mpc longitudinal_reference)
+install(TARGETS longitudinal_controller DESTINATION lib/${PROJECT_NAME})
+install(PROGRAMS scripts/fit_longitudinal scripts/evaluate_longitudinal DESTINATION lib/${PROJECT_NAME})
+install(FILES scripts/bag_io.py scripts/model.py DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 install(FILES README.md DESTINATION share/${PROJECT_NAME})
-
-if(BUILD_TESTING)
-  find_package(ament_cmake_gtest REQUIRED)
-  ament_add_gtest(longitudinal_mpc_osqp_test test/test_osqp_mpc.cpp)
-  target_link_libraries(longitudinal_mpc_osqp_test longitudinal_mpc_core)
-endif()
-
 ament_package()

@@ -13,7 +13,7 @@ from rich.text import Text
 
 from .longitudinal import LONGITUDINAL
 from .schema import (FIELDS, GROUPS, STEERING, GOVERNOR, decode, decode_node,
-                     equivalent)
+                     equivalent, applies_to_drive_mode)
 from .storage import SettingsStore
 from .conditions import CONDITION_KEYS, condition_label
 from .presets import PresetStore
@@ -41,7 +41,8 @@ class Editor:
 
     @property
     def fields(self):
-        return [f for f in FIELDS if f.group == GROUPS[self.group]]
+        return [f for f in FIELDS if f.group == GROUPS[self.group] and
+                applies_to_drive_mode(f, self.draft['drive_control_mode'])]
 
     @property
     def field(self):
@@ -150,7 +151,9 @@ class Editor:
         condition = self.preset_condition
         self.presets.check_unchanged(condition)
         if (not self.preset_dirty and self.presets.path_for(condition).exists() and
-                self.presets.entry(condition)['schema_version'] == 3):
+                self.presets.entry(condition)['schema_version'] == 3 and
+                all(key in self.presets.entry(condition).get('governor', {}) for key in
+                    ('governor_deceleration_slew_mps2', 'governor_acceleration_slew_mps2'))):
             self.tell('프리셋에 저장할 변경이 없습니다.')
             return
         values = self.presets.save(condition, self.draft)

@@ -663,6 +663,17 @@ Web ROS callback 처리 지연을 수정한 뒤 기존 판정 제한 그대로
 UNO 상태 보고 추가판을 업로드하고 실제 USB 보고로 480×320 가상 LCD 표시까지 확인했습니다.
 세부 결과와 한계는 [Web Console 검증 기록](../software/src/vehicle_console/HIL_WEB.md#검증)을 따릅니다.
 
+### 2026-09-29 HIL 박스 재플래시
+
+액추에이터·고전압과 분리된 벤치에서 `main`의 STM_A/B와 UNO Dashboard를
+업로드했다. STM_TEST는 현재 STM_B의 125°/172° 브레이크 출력에 맞춰 판정값을
+1693/1953 µs로 동기화한 뒤 업로드했다. 세 STM은 각 ST-LINK SN과 3.28–3.30 V,
+Device ID `0x469`를 확인하고 Release ELF를 `-v -rst`로 검증했다.
+UNO R4 Minima는 고유 USB serial `3114101259323437A93033334B57305C`로
+DFU 업로드했다. 새 `HIL_LCD` 보고는 `auto` 17필드와 fresh Dashboard CAN을
+표시했다. 최종 STATUS는 MANUAL/FWD, pedal 0, DASH E-stop ON, 브레이크
+1691 µs=`ENGAGED`, `pwm_lost=0`, EZ RUN=0, KEYA Disable이었다.
+
 ### 남은 작업
 
 - 새 LCD 실제 표시 및 터치 모듈 모델/전압/입력 기능 확인

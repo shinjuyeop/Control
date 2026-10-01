@@ -24,7 +24,6 @@ No bag/recording directories were present in this source subtree when moved.
 The retired `~/KAI_ws/build/pid_gazebo` and `install/pid_gazebo` generated package
 artifacts were removed. Other experiment records and workspaces were not moved.
 
-`software/src/vehicle_test_scenarios/auto_sysid_gazebo.py` is a separate entrypoint
-for an external Gazebo workspace and does not depend on this package. It remains
-in the active source; this archival does not validate or retire that separate path.
+The separate Gazebo SYSID entrypoint is maintained in
+`Simulation/kaiev26_gazebo_bringup` and does not depend on this package.
 The Console's `vehicle_console.hil.vcan_sim` also remains active.

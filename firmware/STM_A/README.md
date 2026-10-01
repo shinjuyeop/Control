@@ -178,7 +178,7 @@ command를 50 ms nominal 주기로 보냅니다.
 - status Part II: `0x1802D0EF`
 - 전진 motor RPM 한계: `4500`
 - 후진 motor RPM 한계: `-1500`
-- AUTO Speed/Torque current/RPM envelope: active `LongConfig` (driving 480 A/4500 rpm, airborne 20 A/600 rpm)
+- AUTO Speed/Torque current/RPM envelope: active `LongConfig` (driving 480 A/4500 rpm, airborne 40 A/4500 rpm)
 - MANUAL torque-current 한계: `480 A`
 
 Part I의 motor RPM 원본은 `/drive/status.motor_rpm`에 그대로 발행합니다. 차량 속도는
@@ -247,13 +247,9 @@ sequenceDiagram
 
 AUTO Speed는 `speed_target_mps`를 타이어 지름 `0.47 m`, 감속비 `4.60`으로 motor RPM에
 변환한 뒤 active preset RPM envelope를 적용하고 active current limit으로 EZ speed-control을 명령합니다.
-AUTO Torque는 STM_A 20 Hz Speed PI에 식별 플랜트 feedforward를 더한 phase-current 출력을
-active current limit으로 제한하며 EZ RPM ceiling도 active preset을 사용합니다.
-최종 전진/후진 물리 RPM clamp는 별도로 유지합니다.
-MANUAL은 pedal percentage→torque current와 물리 gear 부호 경로를 유지하되, Torque
-calibration에서는 active current limit·RPM ceiling·전류 상승/하강률을 페달에도 적용합니다.
-Speed calibration에서는 기존 0~480 A 매핑 그대로입니다. 페달 명령은 PI 이력과 분리돼 있어
-AUTO 안전 reset이 페달 출력을 바꾸지 않으며, MANUAL에서 속도 PI는 동작하지 않습니다.
+AUTO Torque는 STM_A 20 Hz Speed PI의 phase-current 출력을 active current limit으로 제한하며
+EZ RPM ceiling도 active preset을 사용합니다. 최종 전진/후진 물리 RPM clamp는 별도로 유지합니다.
+MANUAL은 기존 pedal percentage→torque current와 물리 gear 부호 경로를 유지합니다.
 
 ### 8.5 안전 동작
 
@@ -264,7 +260,7 @@ command를 보냅니다.
 - STM_B safety frame invalid 또는 100 ms timeout
 - AUTO Host `brake_engage`
 - AUTO Host command 미수신 또는 500 ms timeout
-- AUTO Torque에서 Part I/II 200 ms freshness 상실
+- AUTO Torque에서 Part I 500 ms 또는 Part II 1 s 수신 상실
 
 상세 논리와 복구 조건은
 [`../../docs/SAFETY.md`](../../docs/SAFETY.md)를 기준으로 합니다.
@@ -319,13 +315,18 @@ ros2 topic echo /drive/status
 
 ## 12. 알려진 제한사항
 
-- EZkontrol Part I/II 200 ms timeout은 Speed/MANUAL에서는 기존처럼 진단 valid flag에 반영됩니다.
-  AUTO Torque에서는 PI history reset·0 A/HALTED로 inhibit하고 feedback 복구 확인 뒤 새 Host command를 요구합니다.
+- EZkontrol Part I은 500 ms에 invalid, Part II는 1 s에 invalid입니다.
+  Speed/MANUAL에서는 진단 valid flag에 반영됩니다.
+  AUTO Torque는 둘 중 하나가 invalid면 PI history reset·0 A/HALTED로 inhibit하고
+  feedback 복구 확인 뒤 새 Host command를 요구합니다.
+  Part I 재수신 간격이 200 ms 이상이면 0 RPM 보정 이력은 별도로 초기화합니다.
 - CAN TX 실패를 latch하는 fault 상태 머신은 없습니다. `tractive_commanded`는 매
   주기 덮어써지므로 순간적인 TX 실패는 흔적 없이 사라집니다.
-- STM_A 자신의 FDCAN controller 상태를 알 수 없습니다. `part1_valid=false`는
-  EZkontrol 전원이 나간 경우와 STM_A CAN이 오류 상태로 송신을 못 하는 경우에
-  똑같이 나타납니다.
+- `/drive/can_rx_diagnostics`는 1 Hz `UInt32MultiArray`로 Part I/II 수신 누적 횟수,
+  RX FIFO 손실·읽기 실패 누적 횟수, 현재 RX/TX error counter와 누적 error logging
+  counter를 순서대로 발행합니다. 마지막 세 값이 `UINT32_MAX`이면 counter 조회
+  실패입니다. Part II 수신 횟수만
+  멈춰도 EZkontrol 송신 누락인지 STM_A 수신 손실인지는 원시 CAN 캡처 없이 확정할 수 없습니다.
 - MCU independent watchdog 사용은 현재 코드에서 확인되지 않습니다.
 - pedal calibration 값은 코드 상수이고 별도 calibration metadata가 없습니다.
 - `SW_MODE`·`SW_GEAR`에 software debounce가 없습니다.
@@ -391,13 +392,11 @@ RuntimeStats 적용 firmware의 LPUART1과 Agent는 모두 **460800 baud**를 �
 
 ## AUTO longitudinal mode
 
-Driving Speed의 기존 CAN baseline은 보존된다. `Core/Src/longitudinal_controller.c`는
-기존 20 Hz Control task에서 호출하는 positive-current PI + feedforward다. 새 task는 없다.
-부팅 기본은 speed/DEFAULT이고, gain과 feedforward 상수는 MCAP first-test candidate다.
-MANUAL 페달은 Torque calibration의 전류·RPM·slew envelope를 공유한다.
-PC→RAM calibration과 5 Hz readback은 [wire 계약](../../docs/INTERFACES.md#longitudinal-calibration-v2),
-reset/feedback/전류 정책과 시험 절차는 [실측 보고서](../../docs/reports/2026-09-21_longitudinal_torque_pi.md),
-feedforward와 MANUAL envelope는 [후속 보고서](../../docs/reports/2026-09-29_longitudinal_feedforward.md)를 따른다.
+Driving Speed의 기존 CAN baseline 및 MANUAL 동작은 보존된다. `Core/Src/longitudinal_controller.c`는
+기존 20 Hz Control task에서 호출하는 positive-current PI다. 새 task는 없다.
+부팅 기본은 speed/DEFAULT, driving gain은 MCAP first-test candidate다.
+PC→RAM calibration과 5 Hz readback은 [wire 계약](../../docs/INTERFACES.md#longitudinal-calibration-v1),
+reset/feedback/전류 정책과 시험 절차는 [실측 보고서](../../docs/reports/2026-09-21_longitudinal_torque_pi.md)를 따른다.
 
 Host 알고리즘/상태 전이 테스트 (HAL/ROS/보드 불필요):
 
@@ -406,6 +405,7 @@ gcc -std=c11 -Wall -Wextra -Werror -ICore/Inc tests/longitudinal_controller_test
 /tmp/kai_longitudinal_test
 ```
 
-Torque는 forward만 지원한다. feedback <200 ms가 아니면 HALTED, 복구 뒤 새 명령이 필요하다.
+Torque는 forward만 지원한다. Part I age<500 ms 또는 Part II age<1 s가 아니면
+HALTED, 복구 뒤 새 명령이 필요하다.
 Speed reverse에는 signed preset RPM envelope와 기존 reverse 1500 rpm physical clamp가 함께 적용된다.
-Airborne 20 A/600 rpm은 두 AUTO mode의 공통 envelope이고 MANUAL pedal은 이 envelope를 사용하지 않는다.
+Airborne 40 A/4500 rpm은 두 AUTO mode의 공통 envelope이고 MANUAL pedal은 이 envelope를 사용하지 않는다.

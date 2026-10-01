@@ -6,12 +6,14 @@ from dataclasses import asdict, dataclass
 import math
 import time
 
-from kaiev26_msgs.msg import ActuatorCommand, DriveActuatorStatus
+from kaiev26_msgs.msg import ActuatorCommand, DriveActuatorStatus, DriveCurrentCommand
 import rclpy
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
-from std_msgs.msg import String
+from std_msgs.msg import String, Float32MultiArray
+from rclpy.qos import qos_profile_sensor_data
+from control_tuning.longitudinal import decode_status
 
 from .steering_control import SteeringControl
 
@@ -25,10 +27,13 @@ SCENARIOS = {
     "speed_step",
     "speed_ramp",
     "brake_test",
+    "current_step",
+    "coastdown",
 }
 STEERING_SCENARIOS = (
     "steering_step", "steering_square", "steering_sweep", "steering_chirp",
 )
+CURRENT_SCENARIOS = ("current_step", "coastdown")
 MAX_STEERING_DEG = 28.0
 STARTUP_ONLY_PARAMETERS = {
     "publish_rate_hz",
@@ -44,6 +49,10 @@ STARTUP_ONLY_PARAMETERS = {
 @dataclass(frozen=True)
 class ScenarioConfig:
     scenario: str = "straight"
+    current_low_a: float = 0.0
+    current_high_a: float = 0.0
+    current_hold_sec: float = 5.0
+    coast_duration_sec: float = 15.0
     cruise_speed_kph: float = 0.0
     speed_low_kph: float = 0.0
     speed_high_kph: float = 0.0
@@ -66,6 +75,7 @@ class ScenarioSetpoint:
     speed_kph: float
     steering_deg: float | None  # None requests motor disable, with no angle target.
     brake_engage: bool = False
+    phase_current_a: float | None = None
 
 
 def kph_to_mps(speed_kph: float) -> float:
@@ -76,6 +86,14 @@ def scenario_setpoint(
     config: ScenarioConfig, elapsed_sec: float
 ) -> ScenarioSetpoint:
     elapsed_sec = max(0.0, elapsed_sec)
+    if config.scenario in CURRENT_SCENARIOS:
+        if config.scenario == 'current_step':
+            phase = int(elapsed_sec/config.current_hold_sec) % 2
+            current = config.current_low_a if phase == 0 else config.current_high_a
+        else:
+            phase_time = elapsed_sec % (config.current_hold_sec+config.coast_duration_sec)
+            current = config.current_high_a if phase_time < config.current_hold_sec else 0.
+        return ScenarioSetpoint(config.cruise_speed_kph, None, False, current)
     if config.scenario == "straight":
         return ScenarioSetpoint(
             config.cruise_speed_kph, None
@@ -156,6 +174,10 @@ def scenario_setpoint(
 
 
 def scenario_cycle_duration_sec(config: ScenarioConfig) -> float | None:
+    if config.scenario == 'current_step':
+        return 2*config.current_hold_sec
+    if config.scenario == 'coastdown':
+        return config.current_hold_sec+config.coast_duration_sec
     if config.scenario in ("steering_sweep", "steering_square"):
         return config.steering_period_sec
     if config.scenario == "steering_chirp":
@@ -214,6 +236,12 @@ def validate_config(config: ScenarioConfig, publish_rate_hz: float) -> None:
         value = float(getattr(config, name))
         if value < 0.0:
             raise ValueError(f"{name} must be non-negative")
+    if not 0 <= config.current_low_a <= config.current_high_a <= 480:
+        raise ValueError('Current step must satisfy 0 <= low <= high <= 480 A')
+    if config.current_hold_sec <= 0 or config.coast_duration_sec <= 0:
+        raise ValueError('Current and coast durations must be positive')
+    if config.scenario in CURRENT_SCENARIOS and config.cruise_speed_kph > 30:
+        raise ValueError('Current identification speed ceiling is 30 km/h')
     if config.speed_low_kph > config.speed_high_kph:
         raise ValueError("speed_low_kph must not exceed speed_high_kph")
 
@@ -294,6 +322,12 @@ class VehicleTestScenarioRunner(Node):
         self._publisher = self.create_publisher(
             ActuatorCommand, command_topic, 10
         )
+        self._current_publisher = (self.create_publisher(DriveCurrentCommand, '/vehicle/drive_current_command', 1)
+                                   if self._config.scenario in CURRENT_SCENARIOS else None)
+        self._drive_sample = None
+        self._longitudinal_sample = None
+        self.create_subscription(Float32MultiArray, '/drive/longitudinal_status',
+                                 self._on_longitudinal, qos_profile_sensor_data)
         self._steering_control = SteeringControl(self)
         scenario_status_topic = str(
             self.get_parameter("scenario_status_topic").value
@@ -311,10 +345,10 @@ class VehicleTestScenarioRunner(Node):
             DriveActuatorStatus,
             drive_status_topic,
             self._on_drive_status,
-            10,
+            qos_profile_sensor_data,
         )
         self._started_at = (
-            time.monotonic() + self._auto_start_delay_sec
+            self.get_clock().now().nanoseconds*1e-9 + self._auto_start_delay_sec
             if self._enabled and not self._wait_for_auto_mode
             else None
         )
@@ -330,7 +364,14 @@ class VehicleTestScenarioRunner(Node):
             f"wait_for_auto_mode={self._wait_for_auto_mode}."
         )
 
+    def _on_longitudinal(self, message):
+        try:
+            self._longitudinal_sample = (time.monotonic(), decode_status(message.data))
+        except ValueError:
+            self._longitudinal_sample = None
+
     def _on_drive_status(self, message) -> None:
+        self._drive_sample = (time.monotonic(), message)
         auto_mode = int(message.mode) == int(self._drive_status_type.MODE_AUTO)
         if auto_mode == self._auto_mode:
             return
@@ -341,7 +382,7 @@ class VehicleTestScenarioRunner(Node):
         self._reported_started = False
         self._last_countdown_second = None
         if auto_mode:
-            self._started_at = time.monotonic() + self._auto_start_delay_sec
+            self._started_at = self.get_clock().now().nanoseconds*1e-9 + self._auto_start_delay_sec
             self.get_logger().warning(
                 "AUTO observed: publishing speed_target=0.0 m/s, brake=false; "
                 f"scenario starts after {self._auto_start_delay_sec:.0f} s countdown"
@@ -382,6 +423,8 @@ class VehicleTestScenarioRunner(Node):
         except ValueError as error:
             return SetParametersResult(successful=False, reason=str(error))
 
+        if (proposed_config.scenario in CURRENT_SCENARIOS) != (self._config.scenario in CURRENT_SCENARIOS):
+            return SetParametersResult(successful=False, reason='Restart to change between speed and current input')
         reset_scenario = proposed_config != self._config
         self._config = proposed_config
         self._scenario_label = self._configured_label or self._config.scenario
@@ -389,7 +432,7 @@ class VehicleTestScenarioRunner(Node):
             if parameter.name == "enabled":
                 self._enabled = bool(parameter.value)
                 self._started_at = (
-                    time.monotonic() + self._auto_start_delay_sec
+                    self.get_clock().now().nanoseconds*1e-9 + self._auto_start_delay_sec
                     if self._enabled
                     and (not self._wait_for_auto_mode or self._auto_mode)
                     else None
@@ -401,7 +444,7 @@ class VehicleTestScenarioRunner(Node):
                 self._brake_override = bool(parameter.value)
         if reset_scenario and self._enabled:
             self._started_at = (
-                time.monotonic() + self._auto_start_delay_sec
+                self.get_clock().now().nanoseconds*1e-9 + self._auto_start_delay_sec
                 if not self._wait_for_auto_mode or self._auto_mode
                 else None
             )
@@ -419,7 +462,7 @@ class VehicleTestScenarioRunner(Node):
             self.get_logger().warning(self._steering_control.error, throttle_duration_sec=2.0)
             # Service startup must not consume the countdown or test input.
             if self._started_at is not None:
-                self._started_at = time.monotonic() + self._auto_start_delay_sec
+                self._started_at = self.get_clock().now().nanoseconds*1e-9 + self._auto_start_delay_sec
             if not self._brake_override:
                 return
 
@@ -427,7 +470,7 @@ class VehicleTestScenarioRunner(Node):
         scenario_status.data = self._scenario_label
         self._scenario_status_publisher.publish(scenario_status)
 
-        now = time.monotonic()
+        now = self.get_clock().now().nanoseconds*1e-9
         if self._wait_for_auto_mode and not self._auto_mode:
             setpoint = zero_speed_baseline_setpoint(self._config)
             complete = False
@@ -457,6 +500,8 @@ class VehicleTestScenarioRunner(Node):
                 "brake=false; switch to MANUAL and Ctrl+C when ready"
             )
         brake_engage = self._brake_override or setpoint.brake_engage
+        if self._current_publisher and not external_current_ready(self._drive_sample, self._longitudinal_sample):
+            brake_engage = True
 
         message = ActuatorCommand()
         message.header.stamp = self.get_clock().now().to_msg()
@@ -469,7 +514,42 @@ class VehicleTestScenarioRunner(Node):
             else math.radians(setpoint.steering_deg)
         )
         message.brake_engage = brake_engage
+        if self._current_publisher:
+            current = current_setpoint(self, setpoint, self._drive_sample, self._longitudinal_sample,
+                                       brake_engage)
+            demand = DriveCurrentCommand()
+            demand.header.stamp = message.header.stamp
+            demand.phase_current_a = current
+            self._current_publisher.publish(demand)
         self._publisher.publish(message)
+
+
+def external_current_ready(drive_sample, calibration_sample, now=None):
+    now = time.monotonic() if now is None else now
+    return bool(drive_sample and now-drive_sample[0] < .2 and
+        calibration_sample and now-calibration_sample[0] < .7 and
+        calibration_sample[1]['config']['control_mode'] == 'external_current' and
+        drive_sample[1].controller_control_mode == 0)
+
+
+def current_setpoint(node, setpoint, drive_sample, calibration_sample, brake, now=None):
+    """One external-input gate used by both existing scenario entrypoints."""
+    if brake or setpoint.phase_current_a is None:
+        return 0.
+    now = time.monotonic() if now is None else now
+    if not drive_sample or now-drive_sample[0] >= .2 or not calibration_sample or now-calibration_sample[0] >= .7:
+        return 0.
+    drive = drive_sample[1]
+    config = calibration_sample[1]['config']
+    if (config['control_mode'] != 'external_current' or drive.controller_control_mode != 0 or drive.mode != DriveActuatorStatus.MODE_AUTO
+            or drive.stop_request or not drive.part1_valid or not drive.part2_valid
+            or drive.part1_age_ms >= 200 or drive.part2_age_ms >= 200
+            or (drive.fault_bits_valid and drive.fault_bits != 0)
+            or not math.isfinite(drive.speed_mps) or drive.speed_mps < -.05
+            or drive.speed_mps >= setpoint.speed_kph/3.6
+            or node.count_publishers('/vehicle/drive_current_command') != 1):
+        return 0.
+    return float(min(setpoint.phase_current_a, config['max_drive_current_a']))
 
 
 def main(args=None) -> None:

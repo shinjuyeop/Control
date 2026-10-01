@@ -93,34 +93,88 @@ def build_auto_static(renderer: AssetRenderer) -> Image.Image:
     return image
 
 
-def rle_pixels(image: Image.Image) -> bytes:
-    pixels = [
-        rgb565(color)
-        for color in image.convert("RGB").get_flattened_data()
-    ]
+STATIC_KEYFRAME_ROWS = 8
+STATIC_RUN = 0x80
+STATIC_MAX_OP = 128
+
+
+def _encode_static_row(row: list[int], above: list[int] | None) -> bytes:
+    """Encode one palette-index row with the fewest run/copy-up ops."""
+    width = len(row)
+    cost = [0] * (width + 1)
+    choice: list[tuple[int, int]] = [(0, 0)] * width
+    for start in range(width - 1, -1, -1):
+        best = None
+        run = 1
+        while (start + run < width and run < STATIC_MAX_OP
+               and row[start + run] == row[start]):
+            run += 1
+        for length in range(1, run + 1):
+            candidate = 2 + cost[start + length]
+            if best is None or candidate < best[0]:
+                best = (candidate, STATIC_RUN, length)
+        if above is not None:
+            length = 0
+            while (start + length < width and length < STATIC_MAX_OP
+                   and row[start + length] == above[start + length]):
+                length += 1
+                candidate = 1 + cost[start + length]
+                if candidate < best[0]:
+                    best = (candidate, 0, length)
+        cost[start] = best[0]
+        choice[start] = (best[1], best[2])
     output = bytearray()
-    current = pixels[0]
-    count = 1
-    for value in pixels[1:]:
-        if value == current and count < 255:
-            count += 1
-            continue
-        output.extend((count, current >> 8, current & 0xFF))
-        current = value
-        count = 1
-    output.extend((count, current >> 8, current & 0xFF))
+    position = 0
+    while position < width:
+        kind, length = choice[position]
+        output.append(kind | (length - 1))
+        if kind == STATIC_RUN:
+            output.append(row[position])
+        position += length
     return bytes(output)
 
 
-def rle_rows(image: Image.Image) -> tuple[list[int], bytes]:
+def encode_static(image: Image.Image) -> tuple[list[int], list[int], bytes]:
+    """Palette-index rows; non-keyframe rows may keep spans of the row above."""
     image = image.convert("RGB")
+    pixels = [rgb565(color) for color in image.get_flattened_data()]
+    counts: dict[int, int] = {}
+    for value in pixels:
+        counts[value] = counts.get(value, 0) + 1
+    palette = sorted(counts, key=lambda value: (-counts[value], value))
+    if len(palette) > 256:
+        raise RuntimeError(f"static layer has {len(palette)} colors (max 256)")
+    index = {value: position for position, value in enumerate(palette)}
+    width = image.width
+    rows = [
+        [index[value] for value in pixels[y * width:(y + 1) * width]]
+        for y in range(image.height)
+    ]
     offsets = [0]
     data = bytearray()
-    for y in range(image.height):
-        row = image.crop((0, y, image.width, y + 1))
-        data.extend(rle_pixels(row))
+    for y, row in enumerate(rows):
+        above = rows[y - 1] if y % STATIC_KEYFRAME_ROWS else None
+        data.extend(_encode_static_row(row, above))
         offsets.append(len(data))
-    return offsets, bytes(data)
+    if len(data) > 0xFFFF:
+        raise RuntimeError("static layer exceeds 16-bit offsets")
+    return palette, offsets, bytes(data)
+
+
+def emit_static(prefix: str, image: Image.Image) -> tuple[str, int]:
+    palette, offsets, data = encode_static(image)
+    text = "\n".join((
+        emit_u16(f"{prefix}_static_palette", palette),
+        "",
+        emit_u16(f"{prefix}_static_row_offsets", offsets),
+        "",
+        emit_bytes(f"{prefix}_static_rows", data),
+        "",
+        f"static constexpr AssetCodec::StaticLayer {prefix}_static = {{"
+        f"{prefix}_static_palette, {prefix}_static_row_offsets, "
+        f"{prefix}_static_rows, {STATIC_KEYFRAME_ROWS}U}};",
+    ))
+    return text, len(palette) * 2 + len(offsets) * 2 + len(data)
 
 
 @dataclass(frozen=True)
@@ -196,15 +250,6 @@ def emit_bytes(name: str, data: bytes) -> str:
     return "\n".join(lines)
 
 
-def emit_u32(name: str, values: list[int]) -> str:
-    lines = [f"static const uint32_t {name}[] = {{"]
-    for index in range(0, len(values), 8):
-        chunk = values[index:index + 8]
-        lines.append("    " + ", ".join(f"{value}UL" for value in chunk) + ",")
-    lines.append("};")
-    return "\n".join(lines)
-
-
 def emit_u16(name: str, values: list[int]) -> str:
     lines = [f"static const uint16_t {name}[] = {{"]
     for index in range(0, len(values), 12):
@@ -214,83 +259,226 @@ def emit_u16(name: str, values: list[int]) -> str:
     return "\n".join(lines)
 
 
-def emit_font(book: FontBook, spec: FontSpec) -> str:
-    font = font_for(book, spec)
-    raw_glyphs = []
-    raw_size = 0
-    for character in spec.characters:
-        mask, offset = font.getmask2(character, mode="L", anchor="mm")
-        data = bytes(mask)
-        raw_glyphs.append((character, offset, mask.size, data))
-        raw_size += len(data)
-    compressed_size = sum(
-        sum(len(rle_alpha(item[3][row * item[2][0]:(row + 1) * item[2][0]]))
-            for row in range(item[2][1]))
-        for item in raw_glyphs
-    )
-    use_rle = compressed_size < raw_size
+# One font glyph before encoding: (code, left, top, width, height, advance_q6, alpha).
+RawGlyph = tuple[int, int, int, int, int, int, bytes]
 
-    alpha = bytearray()
-    glyph_rows = []
-    row_offsets: list[int] = []
-    minimum_top = 127
-    maximum_bottom = -128
-    for character, offset, size, raw in raw_glyphs:
-        width, height = size
-        row_index = len(row_offsets)
-        if use_rle:
-            encoded_buffer = bytearray()
-            row_offsets.append(0)
-            for row in range(height):
-                encoded_buffer.extend(rle_alpha(raw[row * width:(row + 1) * width]))
-                row_offsets.append(len(encoded_buffer))
-            encoded = bytes(encoded_buffer)
+FONT_PACKED = 0
+FONT_TOKENS = 1
+FONT_ZERO_TOKEN = 0
+FONT_FULL_TOKEN = 15
+
+
+def font_alpha_levels(values: list[int]) -> list[int]:
+    """Sixteen alpha levels: exact 0 and 255 plus 14 least-squares interior levels."""
+    histogram: dict[int, int] = {}
+    for value in values:
+        if 0 < value < 255:
+            histogram[value] = histogram.get(value, 0) + 1
+    points = sorted(histogram)
+    clusters = 14
+    if len(points) <= clusters:
+        interior = points + [points[-1] if points else 128] * (clusters - len(points))
+        return [0, *interior, 255]
+
+    count = len(points)
+    weight = [0] * (count + 1)
+    first = [0] * (count + 1)
+    second = [0] * (count + 1)
+    for index, value in enumerate(points):
+        frequency = histogram[value]
+        weight[index + 1] = weight[index] + frequency
+        first[index + 1] = first[index] + frequency * value
+        second[index + 1] = second[index] + frequency * value * value
+
+    def error(begin: int, end: int) -> float:
+        total = weight[end] - weight[begin]
+        mean = first[end] - first[begin]
+        return second[end] - second[begin] - mean * mean / total
+
+    infinity = float("inf")
+    cost = [[infinity] * (count + 1) for _ in range(clusters + 1)]
+    split = [[0] * (count + 1) for _ in range(clusters + 1)]
+    cost[0][0] = 0.0
+    for cluster in range(1, clusters + 1):
+        for end in range(cluster, count + 1):
+            for begin in range(cluster - 1, end):
+                candidate = cost[cluster - 1][begin] + error(begin, end)
+                if candidate < cost[cluster][end]:
+                    cost[cluster][end] = candidate
+                    split[cluster][end] = begin
+    levels = []
+    end = count
+    for cluster in range(clusters, 0, -1):
+        begin = split[cluster][end]
+        total = weight[end] - weight[begin]
+        levels.append(round((first[end] - first[begin]) / total))
+        end = begin
+    return [0, *sorted(levels), 255]
+
+
+def _nearest_level(levels: list[int], value: int) -> int:
+    if value == 0:
+        return FONT_ZERO_TOKEN
+    if value == 255:
+        return FONT_FULL_TOKEN
+    return min(range(16), key=lambda index: (abs(levels[index] - value), index))
+
+
+def _pack_nibbles(nibbles: list[int]) -> bytes:
+    if len(nibbles) % 2:
+        nibbles = [*nibbles, 0]
+    return bytes((nibbles[index] << 4) | nibbles[index + 1]
+                 for index in range(0, len(nibbles), 2))
+
+
+def _font_token_row(codes: list[int]) -> bytes:
+    nibbles: list[int] = []
+    position = 0
+    while position < len(codes):
+        code = codes[position]
+        if code in (FONT_ZERO_TOKEN, FONT_FULL_TOKEN):
+            run = 1
+            while (position + run < len(codes) and run < 16
+                   and codes[position + run] == code):
+                run += 1
+            nibbles.extend((code, run - 1))
+            position += run
         else:
-            encoded = raw
-        glyph_rows.append(
-            (glyph_code(character), offset[0], offset[1], width, height,
-             round(font.getlength(character) * 64), len(alpha), len(encoded), row_index)
-        )
-        alpha.extend(encoded)
-        minimum_top = min(minimum_top, offset[1])
-        maximum_bottom = max(maximum_bottom, offset[1] + height)
-    lines = [emit_bytes(f"manual_font_{spec.name}_alpha", bytes(alpha)), ""]
-    if use_rle:
-        lines.extend((emit_u16(f"manual_font_{spec.name}_row_offsets", row_offsets), ""))
-    lines.append(f"static const TftGlyphAsset manual_font_{spec.name}_glyphs[] = {{")
-    for code, left, top, width, height, advance, offset, length, row_index in glyph_rows:
+            nibbles.append(code)
+            position += 1
+    return _pack_nibbles(nibbles)
+
+
+def emit_font_asset(prefix: str, data_name: str, glyphs: list[RawGlyph]) -> str:
+    """Emit 4-bit glyph rows, packed or tokenized, whichever is smaller."""
+    levels = font_alpha_levels([value for glyph in glyphs for value in glyph[6]])
+    coded = [
+        (glyph, [_nearest_level(levels, value) for value in glyph[6]])
+        for glyph in glyphs
+    ]
+    packed = bytearray()
+    packed_rows = []
+    tokens = bytearray()
+    token_rows = []
+    row_offsets: list[int] = []
+    for (code, left, top, width, height, advance, _), codes in coded:
+        rows = [codes[row * width:(row + 1) * width] for row in range(height)]
+        packed_rows.append(
+            (code, left, top, width, height, advance, len(packed), 0))
+        for row in rows:
+            packed.extend(_pack_nibbles(row))
+        token_rows.append(
+            (code, left, top, width, height, advance, len(tokens), len(row_offsets)))
+        glyph_begin = len(tokens)
+        row_offsets.append(0)
+        for row in rows:
+            tokens.extend(_font_token_row(row))
+            row_offsets.append(len(tokens) - glyph_begin)
+    if len(tokens) + len(row_offsets) * 2 < len(packed):
+        encoding, data, glyph_rows = FONT_TOKENS, tokens, token_rows
+    else:
+        encoding, data, glyph_rows, row_offsets = FONT_PACKED, packed, packed_rows, []
+    if len(data) > 0xFFFF:
+        raise RuntimeError(f"{prefix} exceeds 16-bit glyph offsets")
+
+    minimum_top = min(glyph[2] for glyph in glyphs)
+    maximum_bottom = max(glyph[2] + glyph[4] for glyph in glyphs)
+    lines = [
+        emit_bytes(f"{prefix}_levels", bytes(levels)),
+        "",
+        emit_bytes(f"{prefix}_{data_name}", bytes(data)),
+        "",
+    ]
+    if row_offsets:
+        lines.extend((emit_u16(f"{prefix}_row_offsets", row_offsets), ""))
+    lines.append(f"static const TftGlyphAsset {prefix}_glyphs[] = {{")
+    for code, left, top, width, height, advance, offset, row_index in glyph_rows:
         lines.append(
             f"    {{{code}U, {left}, {top}, {width}U, {height}U, "
-            f"{advance}U, {offset}UL, {length}U, {row_index}U}},"
+            f"{advance}U, {offset}U, {row_index}U}},"
         )
     lines.append("};")
     lines.append(
-        f"static const TftFontAsset manual_font_{spec.name} = {{"
-        f"manual_font_{spec.name}_glyphs, "
-        f"sizeof(manual_font_{spec.name}_glyphs) / "
-        f"sizeof(manual_font_{spec.name}_glyphs[0]), "
-        f"manual_font_{spec.name}_alpha, "
-        f"{'manual_font_' + spec.name + '_row_offsets' if use_rle else 'nullptr'}, "
-        f"{1 if use_rle else 0}U, "
-        f"{minimum_top}, {maximum_bottom}}};"
+        f"static const TftFontAsset {prefix} = {{"
+        f"{prefix}_glyphs, sizeof({prefix}_glyphs) / sizeof({prefix}_glyphs[0]), "
+        f"{prefix}_{data_name}, "
+        f"{prefix + '_row_offsets' if row_offsets else 'nullptr'}, "
+        f"{prefix}_levels, {encoding}U, {minimum_top}, {maximum_bottom}}};"
     )
     return "\n".join(lines)
 
 
-def rle_alpha(data: bytes) -> bytes:
-    if not data:
-        return b""
+def render_font(book: FontBook, spec: FontSpec) -> list[RawGlyph]:
+    font = font_for(book, spec)
+    glyphs = []
+    for character in spec.characters:
+        mask, offset = font.getmask2(character, mode="L", anchor="mm")
+        width, height = mask.size
+        glyphs.append((glyph_code(character), offset[0], offset[1], width, height,
+                       round(font.getlength(character) * 64), bytes(mask)))
+    return glyphs
+
+
+SPAN_ZERO = 0x00
+SPAN_FULL = 0x40
+SPAN_LITERAL = 0x80
+SPAN_VALUE = 0xC0
+SPAN_MAX = 64
+
+
+def encode_alpha_spans(values: list[int]) -> bytes:
+    """Fewest bytes of: 00nnnnnn n+1 zeros, 01nnnnnn n+1 x 255,
+    10nnnnnn n+1 literal bytes, 11nnnnnn n+1 x the following byte."""
+    count = len(values)
+    cost = [0] * (count + 1)
+    choice: list[tuple[int, int]] = [(0, 0)] * count
+    for start in range(count - 1, -1, -1):
+        value = values[start]
+        run = 1
+        while (start + run < count and run < SPAN_MAX
+               and values[start + run] == value):
+            run += 1
+        run_cost = 1 if value in (0, 255) else 2
+        run_kind = (SPAN_ZERO if value == 0 else
+                    SPAN_FULL if value == 255 else SPAN_VALUE)
+        best = (run_cost + cost[start + 1], run_kind, 1)
+        for length in range(2, run + 1):
+            candidate = run_cost + cost[start + length]
+            if candidate < best[0]:
+                best = (candidate, run_kind, length)
+        for length in range(1, min(SPAN_MAX, count - start) + 1):
+            candidate = 1 + length + cost[start + length]
+            if candidate < best[0]:
+                best = (candidate, SPAN_LITERAL, length)
+        cost[start] = best[0]
+        choice[start] = (best[1], best[2])
     output = bytearray()
-    value = data[0]
-    count = 1
-    for next_value in data[1:]:
-        if next_value == value and count < 255:
-            count += 1
-        else:
-            output.extend((count, value))
-            value = next_value
-            count = 1
-    output.extend((count, value))
+    position = 0
+    while position < count:
+        kind, length = choice[position]
+        output.append(kind | (length - 1))
+        if kind == SPAN_LITERAL:
+            output.extend(values[position:position + length])
+        elif kind == SPAN_VALUE:
+            output.append(values[position])
+        position += length
+    return bytes(output)
+
+
+def encode_haze_runs(values: list[int]) -> bytes:
+    """One byte per run: 4-bit haze level, 4-bit run length - 1."""
+    output = bytearray()
+    position = 0
+    while position < len(values):
+        value = values[position]
+        if value > 15:
+            raise RuntimeError("haze level exceeds 4 bits")
+        run = 1
+        while (position + run < len(values) and run < 16
+               and values[position + run] == value):
+            run += 1
+        output.append((value << 4) | (run - 1))
+        position += run
     return bytes(output)
 
 
@@ -344,8 +532,12 @@ def _build_startup_outline() -> Image.Image:
     )
 
 
+# A startup row before encoding: (x, outline alpha, 4-bit haze level).
+StartupRow = tuple[int, list[int], list[int]]
+
+
 def build_startup_masks() -> tuple[
-    tuple[int, int, int, int], int, list[tuple[int, int, int, int]], bytes, bytes
+    tuple[int, int, int, int], int, list[StartupRow]
 ]:
     outline = _build_startup_outline()
     haze = outline.filter(ImageFilter.GaussianBlur(4.5))
@@ -358,34 +550,37 @@ def build_startup_masks() -> tuple[
         raise RuntimeError("startup masks are empty")
 
     x0, y0, x1, y1 = bbox
-    rows: list[tuple[int, int, int, int]] = []
-    outline_data = bytearray()
-    haze_data = bytearray()
+    rows: list[StartupRow] = []
     for y in range(y0, y1):
         nonzero = [
             x for x in range(x0, x1)
             if outline.getpixel((x, y)) or haze_quantized.getpixel((x, y))
         ]
         if not nonzero:
-            rows.append((0, 0, len(outline_data), len(haze_data)))
+            rows.append((0, [], []))
             continue
         row_x0 = min(nonzero)
         row_x1 = max(nonzero) + 1
-        outline_row = bytes(
-            outline.crop((row_x0, y, row_x1, y + 1)).get_flattened_data()
-        )
-        haze_row = bytes(
-            haze_quantized.crop((row_x0, y, row_x1, y + 1)).get_flattened_data()
-        )
-        rows.append((row_x0, row_x1 - row_x0, len(outline_data), len(haze_data)))
-        outline_data.extend(rle_alpha(outline_row))
-        haze_data.extend(rle_alpha(haze_row))
-    rows.append((0, 0, len(outline_data), len(haze_data)))
-    return bbox, haze_maximum, rows, bytes(outline_data), bytes(haze_data)
+        rows.append((
+            row_x0,
+            list(outline.crop((row_x0, y, row_x1, y + 1)).get_flattened_data()),
+            list(haze_quantized.crop((row_x0, y, row_x1, y + 1)).get_flattened_data()),
+        ))
+    return bbox, haze_maximum, rows
 
 
-def emit_startup_assets() -> tuple[int, tuple[int, int, int, int]]:
-    bbox, haze_maximum, rows, outline_data, haze_data = build_startup_masks()
+def write_startup_header(bbox: tuple[int, int, int, int], haze_maximum: int,
+                         rows: list[StartupRow]) -> int:
+    directory = []
+    outline_data = bytearray()
+    haze_data = bytearray()
+    for x, outline_row, haze_row in rows:
+        directory.append((x, len(outline_row), len(outline_data), len(haze_data)))
+        outline_data.extend(encode_alpha_spans(outline_row))
+        haze_data.extend(encode_haze_runs(haze_row))
+    directory.append((0, 0, len(outline_data), len(haze_data)))
+    if max(len(outline_data), len(haze_data)) > 0xFFFF:
+        raise RuntimeError("startup masks exceed 16-bit offsets")
     sections = [
         "#ifndef STARTUP_TFT_ASSETS_H",
         "#define STARTUP_TFT_ASSETS_H",
@@ -402,79 +597,21 @@ def emit_startup_assets() -> tuple[int, tuple[int, int, int, int]]:
         f"static constexpr uint16_t STARTUP_BBOX_Y1 = {bbox[3] - 1}U;",
         f"static constexpr uint8_t STARTUP_HAZE_MAXIMUM = {haze_maximum}U;",
         "",
-        emit_bytes("startup_outline_data", outline_data),
+        "// Outline: AssetCodec alpha spans. Haze: one byte per run,",
+        "// high nibble = level 0..15, low nibble = run length - 1.",
+        emit_bytes("startup_outline_data", bytes(outline_data)),
         "",
-        emit_bytes("startup_haze_data", haze_data),
+        emit_bytes("startup_haze_data", bytes(haze_data)),
         "",
         "static const StartupTftMaskRow startup_mask_rows[] = {",
     ]
     sections.extend(
         f"    {{{x}U, {length}U, {outline_offset}U, {haze_offset}U}},"
-        for x, length, outline_offset, haze_offset in rows
+        for x, length, outline_offset, haze_offset in directory
     )
     sections.extend(("};", "", "#endif  // STARTUP_TFT_ASSETS_H", ""))
     STARTUP_OUTPUT.write_text("\n".join(sections), encoding="utf-8")
-    return len(outline_data) + len(haze_data) + len(rows) * 8, bbox
-
-
-def emit_auto_font(book: FontBook, spec: FontSpec) -> str:
-    font = font_for(book, spec)
-    raw_glyphs = []
-    raw_size = 0
-    for character in spec.characters:
-        mask, offset = font.getmask2(character, mode="L", anchor="mm")
-        data = bytes(mask)
-        raw_glyphs.append((character, offset, mask.size, data))
-        raw_size += len(data)
-    compressed_size = sum(
-        sum(len(rle_alpha(item[3][row * item[2][0]:(row + 1) * item[2][0]]))
-            for row in range(item[2][1]))
-        for item in raw_glyphs
-    )
-    use_rle = compressed_size < raw_size
-
-    data = bytearray()
-    glyph_rows = []
-    row_offsets: list[int] = []
-    minimum_top = 127
-    maximum_bottom = -128
-    for character, offset, size, raw in raw_glyphs:
-        width, height = size
-        row_index = len(row_offsets)
-        if use_rle:
-            encoded_buffer = bytearray()
-            row_offsets.append(0)
-            for row in range(height):
-                encoded_buffer.extend(rle_alpha(raw[row * width:(row + 1) * width]))
-                row_offsets.append(len(encoded_buffer))
-            encoded = bytes(encoded_buffer)
-        else:
-            encoded = raw
-        glyph_rows.append((glyph_code(character), offset[0], offset[1], width, height,
-                           round(font.getlength(character) * 64), len(data), len(encoded),
-                           row_index))
-        data.extend(encoded)
-        minimum_top = min(minimum_top, offset[1])
-        maximum_bottom = max(maximum_bottom, offset[1] + height)
-
-    prefix = f"auto_font_{spec.name}"
-    lines = [emit_bytes(f"{prefix}_data", bytes(data)), ""]
-    if use_rle:
-        lines.extend((emit_u16(f"{prefix}_row_offsets", row_offsets), ""))
-    lines.append(f"static const TftGlyphAsset {prefix}_glyphs[] = {{")
-    for code, left, top, width, height, advance, offset, length, row_index in glyph_rows:
-        lines.append(
-            f"    {{{code}U, {left}, {top}, {width}U, {height}U, {advance}U, "
-            f"{offset}UL, {length}U, {row_index}U}},"
-        )
-    lines.append("};")
-    lines.append(
-        f"static const TftFontAsset {prefix} = {{"
-        f"{prefix}_glyphs, sizeof({prefix}_glyphs) / sizeof({prefix}_glyphs[0]), "
-        f"{prefix}_data, {prefix + '_row_offsets' if use_rle else 'nullptr'}, "
-        f"{1 if use_rle else 0}U, {minimum_top}, {maximum_bottom}}};"
-    )
-    return "\n".join(lines)
+    return len(outline_data) + len(haze_data) + len(directory) * 8
 
 
 def dense_path(renderer: AssetRenderer, path) -> list[tuple[float, float]]:
@@ -482,92 +619,127 @@ def dense_path(renderer: AssetRenderer, path) -> list[tuple[float, float]]:
             for index in range(256)]
 
 
-def track_rows(renderer: AssetRenderer, path, width: int, key: str):
+# A track row before encoding: (x, alpha, progress); progress is unused where alpha is 0.
+TrackRow = tuple[int, list[int], list[int]]
+
+
+def track_rows(renderer: AssetRenderer, path, width: int, key: str) -> list[TrackRow]:
     mask = renderer._replica_track_mask(key, path, width)
     samples = dense_path(renderer, path)
-    rows = []
-    data = bytearray()
+    rows: list[TrackRow] = []
     for y in range(320):
         xs = [x for x in range(480) if mask.getpixel((x, y)) != 0]
         if not xs:
-            rows.append((0, 0, len(data)))
+            rows.append((0, [], []))
             continue
         x0, x1 = min(xs), max(xs)
-        offset = len(data)
+        alphas = []
+        progress = []
         for x in range(x0, x1 + 1):
             alpha = mask.getpixel((x, y))
+            alphas.append(alpha)
             if alpha == 0:
-                data.extend((0, 0))
+                progress.append(0)
                 continue
-            progress = min(
+            progress.append(min(
                 range(256),
                 key=lambda index: (
                     (samples[index][0] - x) ** 2
                     + (samples[index][1] - y) ** 2
                 ),
-            )
-            data.extend((alpha, progress))
-        rows.append((x0, x1 - x0 + 1, offset))
-    return rows, bytes(data)
+            ))
+        rows.append((x0, alphas, progress))
+    return rows
 
 
-def emit_track(name: str, rows, data: bytes) -> str:
-    lines = [emit_bytes(f"manual_track_{name}_data", data), ""]
+def encode_track_row(alphas: list[int], progress: list[int]) -> bytes:
+    """First progress, alpha spans, absolute exceptions, then one +0/+1 bit per pixel."""
+    visible = [index for index, alpha in enumerate(alphas) if alpha]
+    output = bytearray((progress[visible[0]],))
+    output.extend(encode_alpha_spans(alphas))
+    exceptions = []
+    bits = bytearray((len(visible) - 1 + 7) // 8)
+    for order in range(1, len(visible)):
+        current = progress[visible[order]]
+        step = current - progress[visible[order - 1]]
+        if step == 1:
+            bits[(order - 1) >> 3] |= 1 << ((order - 1) & 7)
+        elif step != 0:
+            exceptions.append((order, current))
+    if len(exceptions) > 255:
+        raise RuntimeError("too many track progress exceptions")
+    output.append(len(exceptions))
+    for order, current in exceptions:
+        output.extend((order & 0xFF, order >> 8, current))
+    output.extend(bits)
+    return bytes(output)
+
+
+def emit_track(name: str, rows: list[TrackRow]) -> str:
+    data = bytearray()
+    directory = []
+    for x, alphas, progress in rows:
+        if not any(alphas):
+            directory.append((0, 0, len(data)))
+            continue
+        directory.append((x, len(alphas), len(data)))
+        data.extend(encode_track_row(alphas, progress))
+    if len(data) > 0xFFFF:
+        raise RuntimeError("track exceeds 16-bit offsets")
+    lines = [emit_bytes(f"manual_track_{name}_data", bytes(data)), ""]
     lines.append(f"static const ManualTftTrackRow manual_track_{name}_rows[] = {{")
-    for x, length, offset in rows:
-        lines.append(f"    {{{x}U, {length}U, {offset}UL}},")
+    for x, length, offset in directory:
+        lines.append(f"    {{{x}U, {length}U, {offset}U}},")
     lines.append("};")
     return "\n".join(lines)
 
 
-def main() -> None:
-    renderer = AssetRenderer()
-    static = build_manual_static(renderer)
-    row_offsets, row_data = rle_rows(static)
+FontBlock = tuple[str, list[RawGlyph]]
 
-    bus_rows, bus_data = track_rows(
-        renderer, renderer._replica_bus_path(), 10, "firmware-bus-active")
-    phase_rows, phase_data = track_rows(
-        renderer, renderer._replica_phase_path(), 9, "firmware-phase-active")
 
+def write_manual_header(static: Image.Image, fonts: list[FontBlock],
+                        bus: list[TrackRow], phase: list[TrackRow]) -> None:
+    static_text, _ = emit_static("manual", static)
     sections = [
         "#ifndef MANUAL_TFT_ASSETS_H",
         "#define MANUAL_TFT_ASSETS_H",
         "",
         "#include <stddef.h>",
         "#include <stdint.h>",
+        "#include \"../include/asset_codec.h\"",
         "#include \"../include/tft_font_renderer.h\"",
         "",
-        "struct ManualTftTrackRow { uint16_t x; uint16_t length; uint32_t offset; };",
+        "// Row data: first progress, alpha spans, exception count, exceptions",
+        "// (uint16 visible-pixel index, absolute progress), then one bit per",
+        "// visible pixel after the first: 1 = progress + 1, 0 = unchanged.",
+        "struct ManualTftTrackRow { uint16_t x; uint16_t length; uint16_t offset; };",
         "",
-        emit_u32("manual_static_row_offsets", row_offsets),
-        "",
-        emit_bytes("manual_static_row_rle", row_data),
+        static_text,
         "",
     ]
-    book = FontBook()
-    for spec in FONT_SPECS:
-        sections.extend((emit_font(book, spec), ""))
-    sections.extend((emit_track("bus", bus_rows, bus_data), ""))
-    sections.extend((emit_track("phase", phase_rows, phase_data), ""))
+    for name, glyphs in fonts:
+        sections.extend((emit_font_asset(f"manual_font_{name}", "alpha", glyphs), ""))
+    sections.extend((emit_track("bus", bus), ""))
+    sections.extend((emit_track("phase", phase), ""))
     sections.extend(("#endif  // MANUAL_TFT_ASSETS_H", ""))
     OUTPUT.write_text("\n".join(sections), encoding="utf-8")
-    auto_offsets, auto_data = rle_rows(build_auto_static(renderer))
-    auto_sections = [
+
+
+def write_auto_headers(static: Image.Image, fonts: list[FontBlock]) -> None:
+    static_text, _ = emit_static("auto", static)
+    AUTO_OUTPUT.write_text("\n".join((
         "#ifndef AUTO_TFT_ASSETS_H",
         "#define AUTO_TFT_ASSETS_H",
         "",
         "#include <stdint.h>",
+        "#include \"../include/asset_codec.h\"",
         "",
-        emit_u32("auto_static_row_offsets", auto_offsets),
-        "",
-        emit_bytes("auto_static_row_rle", auto_data),
+        static_text,
         "",
         "#endif  // AUTO_TFT_ASSETS_H",
         "",
-    ]
-    AUTO_OUTPUT.write_text("\n".join(auto_sections), encoding="utf-8")
-    auto_dynamic_sections = [
+    )), encoding="utf-8")
+    sections = [
         "#ifndef AUTO_TFT_DYNAMIC_ASSETS_H",
         "#define AUTO_TFT_DYNAMIC_ASSETS_H",
         "",
@@ -576,17 +748,33 @@ def main() -> None:
         "#include \"../include/tft_font_renderer.h\"",
         "",
     ]
-    for spec in AUTO_FONT_SPECS:
-        auto_dynamic_sections.extend((emit_auto_font(book, spec), ""))
-    auto_dynamic_sections.extend(("#endif  // AUTO_TFT_DYNAMIC_ASSETS_H", ""))
-    AUTO_DYNAMIC_OUTPUT.write_text("\n".join(auto_dynamic_sections), encoding="utf-8")
-    startup_size, startup_bbox = emit_startup_assets()
+    for name, glyphs in fonts:
+        sections.extend((emit_font_asset(f"auto_font_{name}", "data", glyphs), ""))
+    sections.extend(("#endif  // AUTO_TFT_DYNAMIC_ASSETS_H", ""))
+    AUTO_DYNAMIC_OUTPUT.write_text("\n".join(sections), encoding="utf-8")
+
+
+def main() -> None:
+    renderer = AssetRenderer()
+    book = FontBook()
+    write_manual_header(
+        build_manual_static(renderer),
+        [(spec.name, render_font(book, spec)) for spec in FONT_SPECS],
+        track_rows(renderer, renderer._replica_bus_path(), 10, "firmware-bus-active"),
+        track_rows(renderer, renderer._replica_phase_path(), 9,
+                   "firmware-phase-active"),
+    )
+    write_auto_headers(
+        build_auto_static(renderer),
+        [(spec.name, render_font(book, spec)) for spec in AUTO_FONT_SPECS],
+    )
+    bbox, haze_maximum, startup_rows = build_startup_masks()
+    startup_size = write_startup_header(bbox, haze_maximum, startup_rows)
     print(
-        f"wrote {OUTPUT} ({OUTPUT.stat().st_size} bytes source; "
-        f"static={len(row_data)}, tracks={len(bus_data) + len(phase_data)}); "
-        f"{AUTO_OUTPUT} ({AUTO_OUTPUT.stat().st_size} bytes source; "
-        f"static={len(auto_data)}); {AUTO_DYNAMIC_OUTPUT}; "
-        f"{STARTUP_OUTPUT} (payload+directory={startup_size}, bbox={startup_bbox})"
+        f"wrote {OUTPUT} ({OUTPUT.stat().st_size} bytes source); "
+        f"{AUTO_OUTPUT} ({AUTO_OUTPUT.stat().st_size} bytes source); "
+        f"{AUTO_DYNAMIC_OUTPUT}; "
+        f"{STARTUP_OUTPUT} (payload+directory={startup_size}, bbox={bbox})"
     )
 
 

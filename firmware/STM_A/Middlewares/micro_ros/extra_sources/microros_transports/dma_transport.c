@@ -20,6 +20,13 @@ static size_t dma_head = 0, dma_tail = 0;
 
 bool cubemx_transport_open(struct uxrCustomTransport * transport){
     UART_HandleTypeDef * uart = (UART_HandleTypeDef*) transport->args;
+    /* 리셋 직후 에이전트가 이전 세션 heartbeat를 보내면 DMA 시작 전에 ORE가 켜진다.
+       ORE가 남아 있으면 수신 DMA가 멈추므로 오류 플래그와 RDR을 비우고 시작한다. */
+    (void)HAL_UART_AbortReceive(uart);
+    __HAL_UART_CLEAR_FLAG(uart, UART_CLEAR_OREF | UART_CLEAR_NEF | UART_CLEAR_FEF | UART_CLEAR_PEF);
+    __HAL_UART_SEND_REQ(uart, UART_RXDATA_FLUSH_REQUEST);
+    dma_head = 0;
+    dma_tail = 0;
     HAL_UART_Receive_DMA(uart, dma_buffer, UART_DMA_BUFFER_SIZE);
     return true;
 }

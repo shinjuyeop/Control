@@ -33,6 +33,7 @@ CAN, Dashboard CAN, RP2350 LV 계측·정비, Arduino LCD/touch와 HIL UNO USB�
 | `command_governor` | STM_B | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 적용 안 함 | brake만 저장 |
 | `command_governor` | 조향 노드 | ROS 2 | `/vehicle/command` | `ActuatorCommand` | 입력 연동 (수신 즉시 재발행) | 200 ms | ACTIVE 조향 freshness |
 | STM_A | Host·조향·상태·진단 | ROS 2 | `/drive/status` | `DriveActuatorStatus` | 20 ms | 조향에서 1500 ms | mode·gear·구동 진단 |
+| STM_A | Host·기록 | ROS 2 | `/drive/can_rx_diagnostics` | `std_msgs/UInt32MultiArray` | 1 s | 없음 | Part I/II RX 횟수·FDCAN RX 오류 관측 전용 |
 | STM_B | Host·조향·상태·진단 | ROS 2 | `/brake/status` | `BrakeActuatorStatus` | 50 ms 및 원인 변경 시 | 조향에서 별도 timeout 없음 | brake·E-stop 원인 |
 | 조향 노드 | Host·상태·진단 | ROS 2 | `/steering/status` | `SteeringActuatorStatus` | 20 ms | 상태 통합에서 별도 timeout 없음 | 조향 상태·진단 |
 | 조향 노드 | AUTO dashboard summary | ROS 2 | `/steering/target_motor_position_count` | `std_msgs/Int32` | 20 ms | summary에서 300 ms | 기존 equivalent-angle→KEYA count 변환 결과 |
@@ -52,7 +53,7 @@ CAN, Dashboard CAN, RP2350 LV 계측·정비, Arduino LCD/touch와 HIL UNO USB�
 | FT6336U | UNO R4 | I2C | address `0x38` | 최대 2점 raw touch | 20 ms polling | read 실패 시 1 s 재시도 | local navigation input |
 | HIL Console | UNO R4 | USB Serial | newline ASCII, 115200 | `HIL_LCD`, `HIL_TOUCH`, `VT D/M/U/C` | 보고 200/100 ms | Virtual Touch 1 s | HIL-only virtual HMI |
 | STM_A | EZkontrol | FDCAN1 | `0x0C01EFD0` | handshake ACK 또는 command | 50 ms command | 명시적 TX timeout 없음 | AUTO Speed/Torque / MANUAL direct torque |
-| EZkontrol | STM_A | FDCAN1 | `0x1801D0EF`, `0x1802D0EF` | Part I/II status | 외부 장치 설정 | 200 ms validity | AUTO Torque: PI reset·0 A/HALTED; Speed/MANUAL: 기존 validity 의미 |
+| EZkontrol | STM_A | FDCAN1 | `0x1801D0EF`, `0x1802D0EF` | Part I/II status | 외부 장치 설정 | Part I invalid 500 ms, Part II invalid 1 s | AUTO Torque는 둘 중 하나가 invalid면 PI reset·0 A/HALTED |
 | 조향 노드 | KEYA | SocketCAN | `0x06000001` | enable/disable/position/torque/query | 기본 20 ms | position 500 ms / torque 위치 100 ms | node ID 기본값 1 |
 | KEYA | 조향 노드 | SocketCAN | `0x05800001`, `0x07000001` | query response, heartbeat | 외부 장치 설정 | CAN·position 각 500 ms | ID는 node ID에 따라 변함 |
 | Host Agent | 각 STM | LPUART1 serial, 460800 8N1 | micro-ROS XRCE-DDS | ROS 2 serialization | event-driven | Agent ping 500/100 ms | 보드별 Agent 1개 |
@@ -113,11 +114,20 @@ UNO USB는 별개 인터페이스이며 115200을 유지합니다.
 
 `/vehicle/command`의 발행자는 `command_governor` 하나입니다. 거버너는
 `/planning/command`를 수신 즉시 정합성 게이트(stamp 0·음수, 나이 ±200 ms,
-finite)를 거쳐 재-stamp 후 재발행하며, 자체 타이머와 keep-alive가 없으므로 발행률은
+finite)를 거쳐 양수 목표의 하강률을 제한하고 재-stamp 후 재발행하며,
+자체 타이머와 keep-alive가 없으므로 발행률은
 입력을 그대로 따릅니다. 따라서 상류(실차 시험은
 `vehicle_test_scenario_runner`, HIL은 `hil_command_generator`, 모두 20 Hz)가
 STM_A의 500 ms와 조향의 200 ms freshness 한계보다 충분히 빠르게 발행해야
 합니다. 5 Hz는 조향 200 ms의 경계라 간헐 timeout이 납니다.
+감속 slew는 `deceleration_slew_mps2` (기본 0.5 m/s², 0이면 해제)입니다.
+Speed 프리셋에서는 `acceleration_slew_mps2` (초기값 1.0 m/s², 0이면 해제)로
+양수 목표 상승률도 제한합니다. Torque/외부 전류에서는 가속 제한을 해제합니다.
+가속 제한이 켜져 있으면 첫 명령과 입력 공백 후 재개는 0부터 시작합니다.
+음수 목표는 그대로 전달하고, 0 목표는 즉시 전달해 STM_A가 0 A/HALTED
+Torque 명령으로 타력감속합니다. Speed의 0 RPM hold나 회생 ramp를 유지하지 않습니다.
+`brake_engage`도 지연하지 않습니다. 유효 입력 공백이 `input_timeout_ms`를 넘으면
+이전 slew 이력을 버립니다. Speed 선택은 정지 상태 설정 적용 후 CAN control-mode bit 1로 반영합니다.
 `/planning/command`의 production Planning publisher는 아직 구현되지 않았습니다.
 실차 시험·HIL·production publisher 중 하나만 실행합니다.
 
@@ -332,7 +342,20 @@ nonzero RPM으로 최대 2회 hold한 뒤, 타이어 지름 `0.47 m`, 감속비 
 | 3..5 | fault bits | 24-bit little-endian 원본 |
 | 6..7 | 현재 코드에서 사용하지 않음 | - |
 
-Part I과 Part II는 마지막 수신 후 200 ms 미만일 때 각각 valid입니다.
+Part I은 마지막 수신 후 500 ms 미만, Part II는 1 s 미만일 때 valid입니다.
+Part I이 끊긴 동안 STM_A의 마지막 속도값은 유지되며 AUTO Torque는 500 ms까지
+그 값으로 PI를 계산합니다. 새 속도 관측으로 해석해서는 안 됩니다.
+Part I 수신 간격이 200 ms 이상 벌어진 뒤 다시 붙으면 RPM의 짧은 0샘플 보정 이력은
+새 stream으로 넘어가지 않도록 초기화합니다. 이는 500 ms 유효성 기준과 별개입니다.
+Part II는 1 s부터 invalid로 표시하고 AUTO Torque를 차단합니다.
+UNO와 Host 진단에는 Part II의 중간 경고가 없습니다.
+STM_A의 `/drive/can_rx_diagnostics`는 1 Hz `UInt32MultiArray`이며 data index
+0~6이 차례로 Part I 수신 누적, Part II 수신 누적, RX FIFO 손실 누적,
+FIFO 읽기 실패 누적, 현재 RX error counter, 현재 TX error counter,
+최대 255에서 포화하는 하드웨어 error logging counter입니다. 마지막 세 값의 `UINT32_MAX`는
+하드웨어 counter 조회 실패를 뜻합니다.
+수신 횟수는 STM_A가 받아 파싱한 프레임만 세므로, 송신 누락과 물리 버스 손실을
+단독으로 구분하지는 못합니다.
 AUTO Speed/MANUAL에서는 이 freshness가 기존 status validity에 반영됩니다.
 AUTO Torque에서는 둘 중 하나라도 stale이면 PI history reset·0 A/HALTED로 inhibit하며,
 두 Part의 fresh 복구를 확인한 뒤 받은 새 Host command가 필요합니다.
@@ -357,6 +380,7 @@ summary가 300 ms stale이면 STM_B가 `HOST_VALID`를 내리지만 native E-sto
 
 세부 byte layout, scale, signed type과 recovery 절차는
 [`STM_B README`](../firmware/STM_B/README.md#85-dashboard-snapshot과-wire-단위)를 따릅니다.
+native `0x321`의 Part II valid bit는 1 s부터 내려갑니다.
 
 Dashboard CAN은 STM_B에서 UNO로 차량 상태를 보내는 단방향 표시 경로입니다.
 Arduino는 LCD 출력과 physical/HIL touch navigation을 처리하는 local HMI이며 차량
@@ -537,7 +561,9 @@ Float32다. 후자는 KEYA Parameter 0003과 매뉴얼의 80% 식으로 계산�
 | Dashboard CAN snapshot | 50 ms | `DASHBOARD_CAN_SLOT_PERIOD_MS × DASHBOARD_CAN_SLOTS_PER_SNAPSHOT` | STM_B `dashboard_can.c` |
 | Arduino Dashboard CAN lost | 300 ms | `CAN_LOST_TIMEOUT_MS` | `UNO_R4_DASHBOARD.ino` |
 | Dashboard CAN recovery backoff | 1000 ms | `DASHBOARD_CAN_RECOVERY_BACKOFF_MS`, `CAN_REINIT_PERIOD_MS` | STM_B `dashboard_can.c`, UNO firmware |
-| EZkontrol status validity | 200 ms | `MOTOR_FEEDBACK_TIMEOUT_MS` | STM_A `app_freertos.c` |
+| EZkontrol Part I validity | 500 ms | `MOTOR_FEEDBACK_TIMEOUT_MS` | STM_A `app_freertos.c` |
+| Part I RPM 보정 이력 초기화 | 200 ms 수신 간격 | `MOTOR_RPM_STREAM_RESET_MS` | STM_A `app_freertos.c`; traction 차단 아님 |
+| EZkontrol Part II validity / AUTO Torque control gate | 1000 ms | `MOTOR_PART2_TIMEOUT_MS` | STM_A `app_freertos.c` |
 | STM Agent ping | 500 ms, call timeout 100 ms | `AGENT_PING_*` | 두 STM `app_freertos.c` |
 | 조향 control/status | 20 ms | `control_period_ms` | `steering_actuator.yaml` |
 | 조향 command timeout | 200 ms | `steer_command_timeout_ms` | `steering_actuator.yaml` |
@@ -554,7 +580,8 @@ Float32다. 후자는 KEYA Parameter 0003과 매뉴얼의 80% 식으로 계산�
 | diagnostics 입력 status stale | 1000 ms | `STATUS_STALE_SEC` | diagnostics publisher |
 
 경계 비교는 구현마다 다릅니다. STM Host와 UART timeout은 `>=`, EZkontrol valid는
-`age < 200 ms`, 조향 timeout은 `age > 설정값`을 사용합니다.
+Part I valid는 `age < 500 ms`, Part II status valid는 `age < 1000 ms`입니다.
+AUTO Torque는 둘 중 하나가 invalid면 차단합니다. 조향 timeout은 `age > 설정값`을 사용합니다.
 
 ### 9.1 Web HIL의 표시·조작 연결
 
@@ -586,44 +613,39 @@ Float32다. 후자는 KEYA Parameter 0003과 매뉴얼의 80% 식으로 계산�
 - Production `/planning/command` publisher (Planning)와 발행률.
   `/vehicle/command` 발행자는 `command_governor`로 확정됨
 - STM_A→STM_B UART timeout을 브레이크 판단에 포함할지 여부
-- EZkontrol Part I/II 손실을 traction stop 조건으로 포함할지 여부
+- EZkontrol Part II 장기 미수신을 traction stop 조건으로 포함할지 여부
 - EZkontrol status 실제 송신 주기
 - KEYA 내부 watchdog 시간과 현재 position command의 keep-alive 보장
 - STM_A·STM_B PCB connector 기준 실제 배선 및 signal ground
 - `BrakeActuatorStatus`와 `/vehicle/state` input freshness 정책
 
 
-## Longitudinal calibration v2
+## Longitudinal calibration v3
 
-STM_A longitudinal config/status uses `std_msgs/msg/Float32MultiArray` with
+STM_A AUTO longitudinal config/status uses `std_msgs/msg/Float32MultiArray` with
 empty `layout.dim` and `layout.data_offset=0`. The bounded MCU buffers accept the exact
-v2 payload length. Unsupported version/length/nonfinite/config ranges are rejected;
-malformed DDS sequences that cannot deserialize have no acknowledgment. No message
-or generated micro-ROS library changes are needed. Existing DriveActuatorStatus is unchanged.
-v2 adds the four feedforward fields and the feedforward current in the status block;
-a v1 payload is rejected on both directions, so board and host are updated together.
+16-float v3 request and 28-float v3 status payload lengths. v1/v2 requests remain supported
+with a 0 A coast floor. Unsupported version/length/nonfinite/config ranges are rejected;
+malformed DDS sequences that cannot deserialize have no acknowledgment. `DriveCurrentCommand` and regenerated micro-ROS libraries are required for external-current control.
+`DriveActuatorStatus` retains its existing layout.
 
-`/drive/longitudinal_config`: reliable, volatile (never transient-local), 19 floats:
+`/drive/longitudinal_config`: reliable, volatile (never transient-local), 16 floats:
 
 | Index | Field |
 |---|---|
-| 0 | version=2 |
+| 0 | version=3 |
 | 1 | request_id: integer 1…16777215 |
 | 2 | expected_revision: integer 0…16777215 |
-| 3 | control_mode: 0=speed, 1=torque (different from EZ feedback bit!) |
+| 3 | control_mode: 0=speed, 1=torque PI, 2=external_current (different from EZ feedback bit!) |
 | 4–14 | Kp, Ki, max_drive_current, integrator_limit, slew_up, slew_down, deadband, hysteresis, reapply_current, reapply_slew, motor_rpm_limit |
-| 15–18 | ff_current_gain, ff_rolling_resistance, ff_speed_damping, ff_accel_limit |
+| 15 | coast_current_floor: minimum positive current while above a positive target; 0…max_drive_current |
 
 Current fields are phase amperes; Kp A/(m/s), Ki A/(m/s*s), slew A/s,
-deadband/hysteresis m/s, RPM motor rpm. Feedforward inverts the identified plant
-`a = ff_current_gain * I - ff_rolling_resistance - ff_speed_damping * v`, so
-ff_current_gain is (m/s^2)/A, ff_rolling_resistance m/s^2, ff_speed_damping 1/s and
-ff_accel_limit m/s^2. ff_current_gain 0 disables feedforward; a nonzero value must be
-0.0005…0.05 so a near-zero divisor cannot become a large command. Field order is defined by
+deadband/hysteresis m/s, RPM motor rpm. Field order is defined by
 `control_tuning.longitudinal.CONFIG_KEYS` and `Long_EncodeConfig`.
 
 STM_A validates the complete request, then hands it to a one-slot mailbox. The next
-Control cycle checks MANUAL, fresh Part I/II <200 ms, |speed|≤0.05 m/s, pedal=0,
+Control cycle checks MANUAL, fresh Part I <500 ms and Part II <1 s, |speed|≤0.05 m/s, pedal=0,
 |commanded phase|<0.1 A and |actual phase|≤1 A. Under one FreeRTOS critical section,
 expected_revision must equal applied revision; then all config fields/revision/source
 commit together and PI resets. A rejected request never waits for future motion state.
@@ -631,28 +653,24 @@ Duplicate last-applied request ID is idempotent. Revision exhaustion requires re
 IDs/revisions use the exact integer range of float32; they are not authorization tokens.
 Use the existing trusted vehicle ROS domain, not an untrusted network.
 
-`/drive/longitudinal_status`: best effort, 5 Hz, 32 floats:
+`/drive/longitudinal_status`: best effort, 5 Hz, 28 floats:
 
 | Index | Field |
 |---|---|
-| 0 | version=2 |
+| 0 | version=3 |
 | 1 | applied revision; boot=0 |
 | 2 | last request ID; malformed request=0 |
 | 3 | result: 0=idle, 1=applied, 2=invalid, 3=unsafe, 4=revision conflict, 5=busy |
 | 4 | calibration source: 0=DEFAULT, 1=HOST_OVERRIDE |
-| 5–20 | active config in CONFIG_KEYS order, including mode |
-| 21–26 | speed error, P, I/integrator state, feedforward current, unsaturated current, final PI current |
-| 27–30 | saturated, anti-windup, coasting, feedback valid (0/1) |
-| 31 | inhibit: 0=OK, 1=disabled, 2=feedback loss, 3=wait fresh command, 4=reverse unsupported, 5=stop |
+| 5–17 | active config in CONFIG_KEYS order, including mode and coast current floor |
+| 18–22 | speed error, P, I/integrator state, unsaturated current, final PI current |
+| 23–26 | saturated, anti-windup, coasting, AUTO Torque control feedback usable (Part I <500 ms and Part II <1 s; 0/1) |
+| 27 | inhibit: 0=OK, 1=disabled, 2=feedback loss, 3=wait fresh command, 4=reverse unsupported, 5=stop |
 
 Read actual CAN-transmitted current/RPM and actual phase/bus current from `/drive/status`.
 In speed mode its commanded_phase_current_a is a limit, not commanded torque.
 PI status final current is the controller output before CAN quantization, not measured current.
-MANUAL keeps the pedal as the torque demand and resets PI. Under a torque calibration the
-pedal uses the applied current limit, RPM ceiling and slew rates; under a speed calibration it
-keeps the legacy 0…480 A map. The pedal command carries no PI history, so an AUTO reset never
-changes it. Safety gates bypass slew to zero/HALTED. The inhibit field describes the AUTO
-speed loop only, so it reads `disabled` while a MANUAL driver is on the pedal.
+MANUAL leaves the pedal path unchanged and resets PI. Safety gates bypass slew to zero/HALTED.
 After Torque feedback recovery, a command received after recovery is required.
 Agent reconnect preserves RAM calibration but clears host commands/pending requests;
 MCU reboot restores source DEFAULT/revision 0/mode speed. Host clients do not auto-replay overrides.
@@ -662,9 +680,40 @@ readback before reporting success. The TUI only observes current settings and sa
 it does not send calibration or parameter writes. Saved values take effect on the next
 control-stack launch with that preset. For calibration, test procedure,
 range rationale and recorder coverage see
-[the implementation report](reports/2026-09-21_longitudinal_torque_pi.md) and
-[the feedforward addition](reports/2026-09-29_longitudinal_feedforward.md).
+[the implementation report](reports/2026-09-21_longitudinal_torque_pi.md).
 
+
+## External phase-current command
+
+`/vehicle/drive_current_command` uses `kaiev26_msgs/msg/DriveCurrentCommand`:
+
+| Field | Meaning |
+|---|---|
+| `header.stamp` | Publisher ROS clock, strictly advancing for accepted samples |
+| `phase_current_a` | Forward motor phase-current demand in A, 0–480 protocol envelope |
+
+Only `external_current` mode consumes this topic. The selected operating current/RPM envelope
+may be lower than the protocol maximum. `/vehicle/command` remains governor-owned and independently
+required: positive forward target, released brake and fresh host command. PC MPC, host reference PI
+and current-identification scenarios are alternative producers of the current topic.
+
+STM_A uses a separate 500 ms reception watchdog for current commands. A received current stamp must
+be at least the most recent accepted target stamp and less than 500 ms ahead of it. Current source
+stamps reject reordered commands and commands queued before a stop; HAL ticks measure reception age.
+They do not imply that the MCU is synchronized to the PC's UTC clock. Invalid current samples do not
+renew the watchdog. Brake, drive stop, mode changes, handshake, reconnect, invalid feedback and
+valid nonzero motor fault clear stored current. Feedback recovery also retains the existing
+requirement for a new upper-level command. Safety inhibits bypass current slew and send HALTED.
+
+The MCU performs no speed PI in this mode. CAN current remains in phase amperes, torque mode is
+bit1=0, and the configured motor RPM is a ceiling. Read actual CAN-transmitted current from
+`/drive/status.commanded_phase_current_a`; calibration status elements 17–24 are PI diagnostics.
+The new current message type, STM_A library/firmware and Host must be deployed together. New Host
+configuration clients read v1/v2 status and refuse external-current selection on v1 firmware.
+
+The current MPC model and all controller settings are fixed for a run. The Host publishes read-only
+`model_A`, `model_B`, `model_c` and `model_dt` parameters containing the loaded coefficients.
+The existing recorder captures these values when `/longitudinal_controller` is running.
 
 ## Control Tuning parameter names
 
@@ -683,23 +732,31 @@ S saves the selected preset for the next control-stack launch.
 
 ### AUTO drive envelope semantics
 
-The ABI v2 `max_drive_current_a` and `motor_rpm_limit` fields (canonical
+The ABI v1 `max_drive_current_a` and `motor_rpm_limit` fields (canonical
 `drive_current_limit_a`, `drive_motor_speed_limit_rpm`) apply to both AUTO modes.
 Speed uses them as the EZ native current-limit field and symmetric signed target-RPM
 envelope. Torque uses them as PI phase-current ceiling and EZ torque-mode RPM ceiling.
 The final sender still clamps forward to 4500 rpm and reverse to 1500 rpm.
-Under a torque calibration MANUAL also uses this current limit, RPM ceiling and the
-slew rates for the pedal demand; under a speed calibration the legacy 0…480 A pedal
-map and 4500 rpm ceiling apply. MANUAL never runs the speed PI or feedforward.
+MANUAL pedal/gear bypasses this AUTO calibration envelope.
 
 Airborne first-test candidate: Kp15/Ki2, 20 A, integral6 A, slew120/400 A/s,
-reapply5 A at40 A/s, RPM600, deadband0.05/release0.12 m/s, feedforward off.
-Driving remains 480 A/RPM4500 with the unchanged Speed CAN baseline, Kp380/Ki190 and the
-identified feedforward 0.00512 (m/s^2)/A, 0.228 m/s^2, 0.0288 1/s, accel limit 1.0 m/s^2.
-PI gains, integral, deadband/coast, slew/reapply and feedforward remain Torque-only,
-except for the pedal current/RPM/slew envelope noted above. Firmware
-Part I/II freshness is 200 ms: Speed status validity semantics stay unchanged;
-Torque resets/inhibits to 0 A/HALTED and requires a Host command received after feedback recovery.
+reapply5 A at40 A/s, RPM600, deadband0.05/release0.12 m/s.
+Driving remains 480 A/RPM4500 with unchanged gains and CAN baseline.
+Torque PI uses signed speed error with output limited to positive drive current
+or zero. Negative error reduces current continuously; lower output/slew saturation
+freezes the integral instead of clearing the learned load current. `coasting`
+reports PI demand limited by the coast floor while overspeed, not a latched output override. The
+`hysteresis` / `drive_coast_release_error_mps` field remains in the existing ABI
+for older firmware/settings but is unused by continuous PI. Reapply slew still
+limits positive current recovery after the floor demand. `coast_current_floor`
+is active only above a positive target; target zero and safety gates command zero.
+This loop does not request
+regeneration; explicit external regen requests retain their existing path.
+
+PI gains, integral, deadband and slew/reapply remain Torque-only. Firmware
+Part I freshness is 500 ms; Part II status becomes invalid at 1 s.
+AUTO Torque resets/inhibits to 0 A/HALTED if either Part is invalid and requires a Host
+command received after feedback recovery. Speed/MANUAL continue to report the valid flags.
 
 ## 12. RP2350 LV 배터리 계측·정비
 
@@ -723,3 +780,25 @@ NaN이며 INA die 온도를 대신 넣지 않습니다.
 LV 계기판은 기존 native `0x324` byte 5(flags), 6(0.1 V), 7(SOC %, unknown `0xFF`)를
 사용합니다. 별도 CAN ID는 추가하지 않으며 UART 1초 단절 시 LV flags를 내립니다.
 계측 상태는 ROS 상태 통합 3종이나 E-stop·traction 제어 입력에 포함되지 않습니다.
+
+## 식별 기반 횡방향 MPC
+
+`lateral_ctrl`의 `torque_controller=pd|mpc`는 같은 `/vehicle/command` 목표각과
+같은 KEYA 송신·안전 처리를 사용한다. MPC 모델 파일은 `steering_model_file`로 지정하며,
+`/steering/torque_command_raw`는 실제 전송한 signed KEYA raw 명령을 계속 발행한다.
+
+경로 MPC는 기존 Decision의 `lateral_controller=mpc`로 선택한다.
+
+| 토픽 | 타입 | 생산자 → 소비자 | 의미 |
+| --- | --- | --- | --- |
+| `/control/lateral/target` | `ackermann_msgs/AckermannDriveStamped` | C++ `lateral_path_mpc` → Decision motion-control | 계산 시각과 LEFT-positive 중앙 등가 목표각 `drive.steering_angle` [rad] |
+| `/control/lateral/diagnostics` | `diagnostic_msgs/DiagnosticArray` | 경로 MPC → Decision/recorder | 해 상태, 횡오차·방향오차, solve/compute 시간 |
+| `/control/steering/diagnostics` | `diagnostic_msgs/DiagnosticArray` | 조향 MPC → recorder | 해 상태, 반복 횟수, solve/compute 시간 |
+
+Decision은 MPC 선택 시 위 목표각을 속도·제동 명령과 합친다. 실패 진단 또는 150 ms를 넘긴
+해는 기존 정지 처리로 연결한다. 기존 `/planning/command` → governor → `/vehicle/command`
+소유권을 유지한다. 경로 입력 `Centerline`의 좌표계는 `base_footprint`, 각도 단위는 rad다.
+
+`path_model_file`에는 내부 조향 MPC를 켜고 측정한 폐루프 응답과 차량 yaw 응답이 들어간다.
+목표각·목표각 변화속도는 식별된 입력 범위와 기존 차량 설정의 교집합으로 제한한다.
+실제 조향 상태에는 차량의 각도 한계를 적용한다. 학습 입력 범위는 기계적 최대 능력의 측정값이 아니다.

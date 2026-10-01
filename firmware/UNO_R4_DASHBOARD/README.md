@@ -6,7 +6,7 @@ Arduino `setup()`/`loop()` 구조와 `Arduino_CAN` API를 사용합니다.
 
 MANUAL은 기존 KTM 스타일 화면을 유지합니다. AUTO는 상단 health 8개, 방위, KEYA
 motor-axis 조향각, 실제/목표 속도와 최근 5초 조향 전류를 표시합니다. 두 화면 모두
-480픽셀 scanline과 정적 RLE asset을 사용하며 전체 framebuffer를 만들지 않습니다.
+480픽셀 scanline과 압축된 정적 asset을 사용하며 전체 framebuffer를 만들지 않습니다.
 
 ```text
 UNO_R4_DASHBOARD.ino       Arduino sketch entry point
@@ -137,13 +137,27 @@ MANUAL의 우측 세로 gauge 아래, 하단 상태 panel 위 `x=281..470`, `y=2
 사용합니다. [`manual_tft_assets.h`](src/assets/manual_tft_assets.h)는 정적 레이아웃
 생성기가 만든 정적 raster, 곡선 antialias/progress mask와 Blender Pro glyph입니다.
 [`startup_tft_assets.h`](src/assets/startup_tft_assets.h)는
-고정 KAI outline 8-bit alpha와 16단계 haze mask를 행별 RLE로 저장합니다. 직접
+고정 KAI outline 8-bit alpha와 16단계 haze mask를 행별로 저장합니다. 직접
 편집하지 않습니다. [`auto_tft_assets.h`](src/assets/auto_tft_assets.h)는 AUTO의 흰 배경, 고정
 label과 계기 눈금을 담습니다. 둘 다 다음 명령으로 다시 생성합니다.
 
 ```bash
 python3 -m tools.generate_assets
 ```
+
+Flash를 줄이기 위해 asset은 다음 형식으로 저장하며, 디코더는
+[`asset_codec.h`](src/include/asset_codec.h)와 각 UI 파일에 있습니다.
+
+| Asset | 형식 | 손실 |
+|---|---|---|
+| MANUAL/AUTO 정적 배경 | RGB565 palette index. 행마다 같은 색 연속 또는 윗줄 유지 명령이며 8행마다 기준 행 | 없음 |
+| BUS/PHASE track | 0/255/임의 값 연속·원본 값 나열로 된 alpha 구간, 진행도는 첫 값과 픽셀당 +0/+1 bit | 없음 |
+| Startup outline/haze | outline은 track과 같은 alpha 구간, haze는 1 byte에 단계 4 bit·길이 4 bit | 없음 |
+| Glyph | 폰트별 16단계 alpha 표를 쓰는 4-bit 값. 두 값씩 묶거나 0/255 연속을 줄인 형식 중 작은 쪽 | 4-bit alpha |
+
+Glyph의 16단계 중 0과 255는 원래 값 그대로이고, 나머지 14단계는 폰트별 alpha
+분포에서 제곱 오차가 가장 작도록 고릅니다. 전체 시뮬레이터 화면 155장 기준으로 바뀐
+픽셀은 1.02%이며 그중 99.5%는 RGB565 한 단계 이내입니다.
 
 GUI를 열면 검은 화면에서 KAI symbol의 흰 outline이 약한 haze와 함께 나타나는 1.4초
 startup sequence가 한 번 재생됩니다. `Replay startup`으로 다시 볼 수 있으며 symbol은
@@ -262,6 +276,9 @@ MSP4031 physical touch와 Web Virtual Touch는 같은 navigation을 사용합니
 snapshot은 최신 값으로 합친 뒤 200 ms cadence에서 고정 buffer로 만듭니다. 모든
 snapshot/event/timing 출력은 매 loop `availableForWrite()`가 허용한 byte만
 `Serial.write()`하고 남은 offset을 다음 loop에서 이어 보냅니다.
+Part II age가 1 s에 도달하면 Part II valid bit가 내려가 MANUAL 화면의
+`THERMAL DATA LOST`와 serial의 `INVALID`로 표시됩니다. AUTO 화면은
+`DRIVE MOTOR FEEDBACK LOST`로 표시합니다. 200 ms 중간 경고는 없습니다.
 정확한 byte layout과 source type/unit은
 [`../STM_B/README.md`](../STM_B/README.md#85-dashboard-snapshot과-wire-단위)가 canonical contract입니다.
 

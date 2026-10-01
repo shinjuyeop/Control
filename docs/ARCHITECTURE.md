@@ -122,12 +122,12 @@ MANUAL: physical pedal/gear → 기존 direct Torque Control
 `drive_current_limit_a`는 Speed에서 EZ 내부 속도제어 current limit, Torque에서 PI 전류 상한입니다.
 `drive_motor_speed_limit_rpm`은 Speed target RPM과 Torque RPM ceiling에 공통으로 적용합니다.
 최종 전진 4500 / 후진 1500 rpm 물리 clamp는 CAN 송신부에서 별도로 유지합니다.
-따라서 driving Speed의 480 A/4500 rpm baseline은 동일하고 airborne는 20 A/600 rpm입니다.
+따라서 driving Speed의 480 A/4500 rpm baseline은 동일하고 airborne는 40 A/4500 rpm입니다.
 MANUAL pedal/gear는 AUTO preset envelope를 사용하지 않습니다.
 
-Torque는 Part I/II freshness <200 ms를 요구하며, 상실 시 history reset·0 A/HALTED 후
+Torque는 Part I freshness <500 ms와 Part II freshness <1 s를 요구하며, 상실 시 history reset·0 A/HALTED 후
 feedback 복구를 확인한 다음 받은 fresh Host command로만 재개합니다.
-Speed에서 Part I/II stale 자체는 기존처럼 status validity에만 반영됩니다.
+Speed에서는 Part I/II stale이 status validity에만 반영됩니다.
 
 구현 기준: `firmware/STM_A/Core/Src/app_freertos.c`
 
@@ -337,7 +337,7 @@ traction 차단 조건으로 사용하지 않습니다.
   실행합니다.
 - 구형 `/cmd_vel` 기반 PID/SILS 실험과 모델은
   [`archive/software/gazebo`](../archive/software/gazebo/README.md)에 보관하며 active build에서 제외합니다.
-  `vehicle_test_scenarios/auto_sysid_gazebo.py`의 외부 Gazebo workspace 연결 경로와는 별개입니다.
+  Gazebo SYSID 진입점은 `Simulation/kaiev26_gazebo_bringup`에서 관리합니다.
 - 벤치용 `steering_bench_test_node`는 시험 `/vehicle/command`,
   `/drive/status`, `/steering/test/estop`을 선택적으로 발행합니다. STM_A/B 없이
   조향만 단독 시험할 때 쓰며, **`command_governor`를 우회해 `/vehicle/command`에
@@ -358,7 +358,7 @@ traction 차단 조건으로 사용하지 않습니다.
 ### 7.1 KAI Vehicle Console과 HIL 가상 HMI
 
 `vehicle_console`은 유일한 React frontend, 공용 Web serving/Host·Origin 보안,
-ROS 수신·runtime normalization, 독립 Vehicle 관측·HARD latch acknowledgment backend를 제공합니다.
+ROS 수신·runtime normalization, 독립 Vehicle 관측 backend를 제공합니다.
 하나의 active ROS package 안에서 `vehicle_console.common`, `vehicle_console.vehicle`,
 `vehicle_console.hil`로 책임을 나눕니다. 기존 `kaiev26_hil` 보관본은 대체 완료 후 정리했으며 Git 이력에 남아 있습니다.
 Vehicle backend는 HIL backend/serial/scenario를 import하거나 초기화하지 않습니다.
@@ -412,7 +412,7 @@ ARM 이후 발행합니다. Web 조작권은 한 브라우저에만 주며 heart
 | HIL `/planning/command` 생성 | Host `vehicle_console.hil.hil_command_generator` |
 | 공용 Web frontend·관측·runtime | `vehicle_console` |
 | HIL 조작·scenario·가상 HMI | `vehicle_console.hil.hil_web_bridge` + 공용 Console |
-| Vehicle 관측·HARD latch acknowledgment | `vehicle_console/vehicle` |
+| Vehicle 관측 | `vehicle_console/vehicle` |
 | ROS graph 상세 분석 bridge·layout | `foxglove` |
 | LV 계측·Ah/Wh·SOC·영속 저장 | `XIAO_RP2350_LV_GAUGE` |
 | LV UART 수신·ROS 정비·Dashboard 중계 | STM_B `lv_battery_protocol.c` / `app_freertos.c` |

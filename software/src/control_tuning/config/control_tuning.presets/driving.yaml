@@ -1,10 +1,11 @@
+# tuning_preset으로 선택한 다음 구동 스택 실행에 적용됩니다. 저장은 현재 실행값을 바꾸지 않습니다.
 schema_version: 3
 condition: driving
 label: 주행
-saved_at: '2026-09-19T06:29:06.770309+00:00'
-calibration_note: First-test candidate; vehicle performance not validated
+saved_at: '2026-09-29T15:50:29.332522+00:00'
 steering_current_reference_a: 20.0
 steering:
+  steering_control_mode: torque
   steering_kp_a_per_deg: 2.4
   steering_kd_a_per_deg_s: 0.08
   steering_settle_error_deg: 0.1
@@ -15,14 +16,14 @@ steering:
   steering_peak_duration_ms: 1000
   steering_peak_recovery_ms: 5000
   steering_angle_margin_deg: 1.0
-  steering_control_mode: torque
   steering_min_vehicle_speed_kph: 0.5
 drive:
-  drive_control_mode: torque
-  drive_speed_kp_a_per_mps: 380.0
-  drive_speed_ki_a_per_mps_s: 190.0
+  drive_control_mode: speed
+  drive_speed_kp_a_per_mps: 180.0
+  drive_speed_ki_a_per_mps_s: 12.0
   drive_speed_deadband_mps: 0.05
   drive_coast_release_error_mps: 0.12
+  drive_coast_current_floor_a: 0.0
   drive_current_limit_a: 480.0
   drive_integrator_limit_a: 120.0
   drive_current_slew_up_a_s: 2400.0
@@ -30,12 +31,9 @@ drive:
   drive_reapply_current_band_a: 20.0
   drive_reapply_current_slew_a_s: 200.0
   drive_motor_speed_limit_rpm: 4500.0
-  drive_ff_current_gain_mps2_per_a: 0.00512
-  drive_ff_rolling_resistance_mps2: 0.228
-  drive_ff_speed_damping_per_s: 0.0288
-  drive_ff_accel_limit_mps2: 1.0
 governor:
   governor_command_timeout_ms: 200.0
+  governor_deceleration_slew_mps2: 0.5
 timeouts:
   steering_command_timeout_ms: 200
   steering_can_timeout_ms: 500

@@ -39,7 +39,7 @@ def load_steering_motor_calibration(path):
 def _make_actuator(context, calibration_parameters):
     # Explicit CLI arguments take precedence over the selected preset.
     optional_parameters = {}
-    for name in ('actuation_mode', 'steering_enabled'):
+    for name in ('actuation_mode', 'steering_enabled', 'torque_controller', 'steering_model_file'):
         value = LaunchConfiguration(name).perform(context)
         if value:
             optional_parameters[name] = LaunchConfiguration(name)
@@ -90,6 +90,8 @@ def generate_launch_description():
             'actuation_mode', default_value='', choices=['', 'position', 'torque'],
             description='Empty follows the selected tuning preset; otherwise overrides actuation mode.'),
         DeclareLaunchArgument('steering_enabled', default_value=''),
+        DeclareLaunchArgument('torque_controller', default_value='pd', choices=['pd','mpc']),
+        DeclareLaunchArgument('steering_model_file', default_value=''),
         DeclareLaunchArgument('hardware_can_enabled', default_value='true'),
         DeclareLaunchArgument('actuator_output_enabled', default_value='true'),
         DeclareLaunchArgument('test_input_injection_enabled', default_value='false'),

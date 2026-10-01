@@ -10,9 +10,9 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <depend>rclcpp</depend>
+  <depend>steering_mpc</depend>
   <depend>std_msgs</depend>
   <depend>diagnostic_msgs</depend>
-  <depend>std_srvs</depend>
   <depend>kaiev26_msgs</depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>launch</exec_depend>
