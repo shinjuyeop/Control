@@ -13,11 +13,18 @@ import rosbag2_py
 from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
 
-from control_tuning.longitudinal import STATUS_TOPIC, decode_status
+from control_tuning.longitudinal import (COLLAPSE_PHASE_LOW, COLLAPSE_RULES, STATUS_TOPIC,
+                                         collapse_flags, decode_status)
 from control_tuning.naming import canonical_capture
 
 TOPICS = ('/drive/status', '/vehicle/command', '/brake/status', '/gnss/fix_velocity',
           '/parameter_events', '/sysid/control_parameters', STATUS_TOPIC)
+PI_KEYS = ('speed_error_mps', 'p_current_a', 'i_current_a', 'ff_current_a', 'unsaturated_current_a',
+           'current_command_a', 'saturated', 'anti_windup', 'coasting', 'feedback_valid', 'inhibit',
+           'drive_path', 'output_current_a', 'rolling_hold', 'floor_applied', 'start_stepped',
+           'reverse_frames', 'collapse_events', 'collapse_flags', 'regen_request_a', 'regen_limit_a',
+           'regen_speed_factor', 'regen_voltage_factor', 'regen_bus_scale', 'regen_current_a',
+           'regen_active', 'pi_regen_mode')
 
 
 def read_bag(path):
@@ -32,7 +39,7 @@ def read_bag(path):
         '/drive/status': ('mode', 'gear', 'speed_mps', 'motor_rpm', 'phase_current_a',
                           'bus_current_a', 'bus_voltage_v', 'commanded_phase_current_a',
                           'commanded_motor_rpm', 'controller_control_mode', 'part1_valid',
-                          'part2_valid', 'part1_age_ms', 'stop_request'),
+                          'part2_valid', 'part1_age_ms', 'stop_request', 'tractive_commanded'),
     }
     while reader.has_next():
         topic, data, stamp = reader.read_next()
@@ -48,9 +55,8 @@ def read_bag(path):
             row['gnss'] = math.hypot(msg.twist.twist.linear.x, msg.twist.twist.linear.y)
         elif topic == STATUS_TOPIC:
             status = decode_status(msg.data)
-            rows[topic].append({'t': row['t'], **{key: status[key] for key in
-                ('speed_error_mps', 'p_current_a', 'i_current_a', 'unsaturated_current_a',
-                 'current_command_a', 'saturated', 'anti_windup', 'coasting', 'feedback_valid', 'inhibit')},
+            # v4 adds feedforward, rolling hold and collapse fields; v1~v3 lack them.
+            rows[topic].append({'t': row['t'], **{key: status[key] for key in PI_KEYS if key in status},
                 'revision': status['revision']})
             if not snapshots or status['revision'] != snapshots[-1]['revision']:
                 snapshots.append({'t': row['t'], **status})
@@ -85,7 +91,19 @@ def read_bag(path):
                        pi_samples=rows[STATUS_TOPIC])
 
 
-def summarize(d, start=0., end=None, target=None):
+def phase_low_of(calibration):
+    """Collapse phase-low threshold the firmware used (v5) or its waveform default."""
+    for snapshot in reversed(calibration or []):
+        config = snapshot.get('config', {})
+        for key in ('collapse_phase_low_sine_a', 'collapse_phase_low_square_a'):
+            if key in config:
+                return config[key]
+        if 'motor_waveform' in config:
+            return COLLAPSE_PHASE_LOW[config['motor_waveform']]
+    return COLLAPSE_PHASE_LOW['square']  # recorded before v4: square-wave EZ
+
+
+def summarize(d, start=0., end=None, target=None, phase_low=COLLAPSE_PHASE_LOW['square']):
     auto = (d['mode'] == 1) & (d['target'] > .1)
     if not auto.any():
         raise ValueError('No AUTO positive-target samples')
@@ -137,6 +155,9 @@ def summarize(d, start=0., end=None, target=None):
             gain, offset = np.linalg.lstsq(np.column_stack((i, np.ones(len(i)))), a, rcond=None)[0]
             result['net_acceleration_per_amp_p10_median_p90'] = np.quantile(a/i,[.1,.5,.9]).tolist()
             result['exploratory_fit_accel_equals_gain_current_plus_offset'] = [float(gain),float(offset)]
+    finish = origin + end if end is not None else d['t'][-1]
+    result['collapse'] = collapse_summary(d, origin + start, finish, phase_low)
+    result['regen'] = regen_summary(d, origin + start, finish)
     # Reapplication/coast from actual current only, not speed-mode current limit.
     coast = ok & (abs(current) < 5)
     result['coast_seconds_below_5a'] = float(coast.sum() * .1)
@@ -167,6 +188,66 @@ def summarize(d, start=0., end=None, target=None):
     return result
 
 
+def part1_frames(d, begin, finish):
+    """One /drive/status sample per 50 ms Part I frame inside the window."""
+    window = (d['t'] >= begin) & (d['t'] <= finish)
+    fresh = np.r_[True, np.diff(d['part1_age_ms']) < 0] & window & d['part1_valid'].astype(bool)
+    return np.flatnonzero(fresh)
+
+
+def collapse_summary(d, begin, finish, phase_low=COLLAPSE_PHASE_LOW['square']):
+    """EZ estimator collapses with the STM_A detector rules, one count per episode.
+
+    Works on any MCAP: square-wave logs predate the firmware counter, and the
+    same rules then compare square and sine (FOC) runs on equal terms.
+    """
+    if 'tractive_commanded' not in d or not ((d['t'] >= begin) & (d['t'] <= finish)).any():
+        return None
+    index = part1_frames(d, begin, finish)
+    events, frames, quiet, rolling, first_flags = 0, 0, COLLAPSE_RULES['rearm_frames'], 0, []
+    command = d['commanded_phase_current_a']
+    for before, previous, current in zip(index[:-2], index[1:-1], index[2:]):
+        rpm, prior = float(d['motor_rpm'][current]), float(d['motor_rpm'][previous])
+        running = bool(d['tractive_commanded'][current])
+        rolling += running and abs(prior) >= COLLAPSE_RULES['rpm_min']
+        flags = collapse_flags(float(command[current]), float(command[previous]),
+                               float(d['phase_current_a'][current]), float(d['bus_current_a'][current]),
+                               rpm, prior, running, running and d['controller_control_mode'][current] == 0,
+                               phase_low)
+        if not flags:
+            quiet += 1
+            continue
+        frames += 1
+        if quiet >= COLLAPSE_RULES['rearm_frames']:
+            events += 1
+            first_flags.append(int(flags))
+        quiet = 0
+    minutes = rolling * .05 / 60
+    return dict(events=events, anomalous_frames=frames, rolling_minutes=round(minutes, 3),
+                events_per_rolling_minute=round(events / minutes, 3) if minutes else None,
+                first_frame_flags=first_flags, phase_low_a=phase_low, rules=COLLAPSE_RULES)
+
+
+def regen_summary(d, begin, finish):
+    """AUTO frames that commanded negative phase current (LT, external or PI regen)."""
+    index = part1_frames(d, begin, finish)
+    if not len(index):
+        return None
+    command = d['commanded_phase_current_a'][index]
+    regen = (d['mode'][index] == 1) & (command < -.05)
+    if not regen.any():
+        return dict(seconds=0.)
+    t, speed = d['t'][index], d['speed_mps'][index]
+    rate = np.gradient(speed, t) if len(t) > 2 else np.zeros(len(t))
+    phase, bus = d['phase_current_a'][index][regen], d['bus_current_a'][index][regen]
+    return dict(seconds=round(float(regen.sum()) * .05, 2),
+                command_min_a=float(command[regen].min()),
+                deceleration_mean_mps2=round(float(-rate[regen].mean()), 3),
+                bus_current_min_a=float(bus.min()), bus_voltage_max_v=float(d['bus_voltage_v'][index][regen].max()),
+                phase_minus_command_mean_a=round(float((phase - command[regen]).mean()), 2),
+                charging_fraction=round(float((bus < 0).mean()), 3))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('bag')
@@ -178,6 +259,9 @@ def main():
     data, provenance = read_bag(args.bag)
     samples = provenance.pop('pi_samples')
     provenance['pi_sample_count'] = len(samples)
+    counters = [row['collapse_events'] for row in samples if 'collapse_events' in row]
+    if counters:
+        provenance['firmware_collapse_events_in_bag'] = int(counters[-1] - counters[0])
     if args.pi_csv:
         if not samples:
             raise ValueError('No longitudinal PI samples to export')
@@ -185,7 +269,8 @@ def main():
             writer = csv.DictWriter(stream, fieldnames=list(samples[0]))
             writer.writeheader()
             writer.writerows(samples)
-    print(json.dumps({'bag': args.bag, **summarize(data,args.start,args.end,args.target),
+    print(json.dumps({'bag': args.bag, **summarize(data, args.start, args.end, args.target,
+                                                    phase_low_of(provenance['calibration'])),
                       **provenance}, indent=2, ensure_ascii=False))
 
 

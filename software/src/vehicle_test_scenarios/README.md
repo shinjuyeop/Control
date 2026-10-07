@@ -30,6 +30,12 @@ ros2 run vehicle_test_scenarios vehicle_test_scenario_runner --sim-time
 TUI는 이 프로세스들을 임의로 재시작하지 않고 실제 토픽과 ROS graph를 바탕으로
 GO/NO-GO 원인을 표시한다.
 
+차량을 구동하는 Run(목표 속도 > 0 또는 전류 시험)은 시작할 때 STM_A 종방향 readback을 런치
+프리셋(`tuning_preset`, 기본 설정 파일)과 비교해 다르면 거부한다. STM_A가 재부팅돼 DEFAULT
+(480 A, Kp 180)로 돌아갔거나 launch helper가 적용에 실패한 경우다. 외부 종방향 제어기 launch가
+강제하는 `external_current` 모드는 허용한다. 화면의 `STM_A 종방향 보정(구동 시험)` 행이 같은 판정을
+보여 주며, 다르면 프리셋을 저장한 뒤 구동 스택을 재시작한다. 정지 조향 시험은 검사하지 않는다.
+
 시험 메뉴는 확장 가능한 카탈로그로 구성한다.
 
 | 상위 분류 | 하위 분류 | 시험 |

@@ -1,38 +1,136 @@
-"""STM_A longitudinal ABI v3: named host representation of fixed Float32 arrays.
+"""STM_A longitudinal ABI v5: named host representation of fixed Float32 arrays.
 
 Keep field order in sync with longitudinal_controller.h and docs/INTERFACES.md.
 Configuration is RAM-only and conditional on the STM_A revision and stop gate.
+The host keeps square/sine values side by side; STM_A receives the value for the
+declared motor waveform in one slot and only echoes the declaration.
 """
 import math
 import struct
 
 from .naming import canonical_values
 
+VERSION = 5
 MODES = ('speed', 'torque', 'external_current')
+WAVEFORMS = ('square', 'sine')
+SWITCH = ('disabled', 'enabled')
+REGEN_RPM_FIELD = ('zero', 'ceiling')
 LONGITUDINAL = 'stm_a_longitudinal'
 CONFIG_TOPIC = '/drive/longitudinal_config'
 STATUS_TOPIC = '/drive/longitudinal_status'
-CONFIG_KEYS = (
+# STM_A wire order after version/request_id/revision.
+WIRE_KEYS = (
     'control_mode', 'speed_kp_a_per_mps', 'speed_ki_a_per_mps_s',
     'max_drive_current_a', 'integrator_limit_a', 'current_slew_up_a_s',
     'current_slew_down_a_s', 'speed_deadband_mps', 'speed_hysteresis_mps',
-    'reapply_current_a', 'reapply_slew_a_s', 'motor_rpm_limit', 'coast_current_floor_a',
+    'reapply_current_a', 'reapply_slew_a_s', 'motor_rpm_limit', 'min_drive_current_a',
+    'motor_waveform', 'start_step', 'hold_on_speed_mps', 'hold_off_speed_mps',
+    'reverse_speed_mps', 'reverse_debounce_frames', 'collapse_hold_frames',
+    'ff_current_gain_mps2_per_a', 'ff_rolling_resistance_mps2', 'ff_speed_damping_per_s',
+    'ff_accel_limit_mps2', 'regen_max_current_a', 'regen_slew_a_s', 'regen_fade_speed_mps',
+    'regen_cutoff_speed_mps', 'regen_voltage_soft_v', 'regen_voltage_hard_v',
+    'regen_bus_current_limit_a', 'regen_rpm_field_mode', 'pi_regen_enabled',
+    'regen_enter_error_mps', 'regen_exit_error_mps', 'regen_kp_a_per_mps', 'collapse_phase_low_a',
 )
-STATE_KEYS = ('speed_error_mps', 'p_current_a', 'i_current_a', 'unsaturated_current_a',
-              'current_command_a', 'saturated', 'anti_windup', 'coasting',
-              'feedback_valid', 'inhibit')
-DEFAULT = dict(zip(CONFIG_KEYS, ('speed', 180., 12., 480., 120., 2400., 4800.,
-                               .05, .12, 20., 200., 4500., 0.)))
-AIRBORNE = dict(zip(CONFIG_KEYS, ('torque', 25., 2., 40., 6., 120., 400.,
-                                .05, .12, 5., 20., 4500., 1.)))
+V4_KEYS = WIRE_KEYS[:24]
+# v1..v3 readbacks: slot 12 was the coast-only floor (v3 only).
+LEGACY_KEYS = WIRE_KEYS[:12] + ('coast_current_floor_a',)
+# Values that depend on the EZ commutation, stored per waveform (WAVEFORMS order).
+SPECIFIC = {
+    'min_drive_current_a': ('min_drive_current_square_a', 'min_drive_current_sine_a'),
+    'ff_current_gain_mps2_per_a': ('ff_current_gain_square_mps2_per_a',
+                                   'ff_current_gain_sine_mps2_per_a'),
+    'collapse_phase_low_a': ('collapse_phase_low_square_a', 'collapse_phase_low_sine_a'),
+}
+CONFIG_KEYS = tuple(name for key in WIRE_KEYS for name in SPECIFIC.get(key, (key,)))
+CHOICES = {'control_mode': MODES, 'motor_waveform': WAVEFORMS, 'start_step': SWITCH,
+           'regen_rpm_field_mode': REGEN_RPM_FIELD, 'pi_regen_enabled': SWITCH}
+INTEGER_KEYS = ('reverse_debounce_frames', 'collapse_hold_frames')
+MIN_CURRENT_CAP_A = 30.
+# Battery (14S, 58.8 V full, 39 A continuous charge) and controller ceilings.
+REGEN_CURRENT_CAP_A, REGEN_VOLTAGE_CAP_V, REGEN_BUS_CURRENT_CAP_A = 60., 60., 39.
+STATE_KEYS = (
+    'speed_error_mps', 'p_current_a', 'i_current_a', 'ff_current_a', 'unsaturated_current_a',
+    'current_command_a', 'saturated', 'anti_windup', 'coasting', 'feedback_valid', 'inhibit',
+    'drive_path', 'output_current_a', 'rolling_hold', 'floor_applied', 'start_stepped',
+    'reverse_frames', 'collapse_events', 'collapse_flags', 'collapse_age_s',
+    'collapse_command_a', 'collapse_phase_current_a', 'collapse_bus_current_a',
+    'collapse_rpm', 'collapse_previous_rpm', 'collapse_path', 'collapse_hold',
+    'collapse_reaction_frames', 'regen_request_a', 'regen_limit_a', 'regen_speed_factor',
+    'regen_voltage_factor', 'regen_bus_scale', 'regen_current_a', 'regen_active', 'pi_regen_mode',
+)
+V4_STATE_KEYS = STATE_KEYS[:28]
+LEGACY_STATE_KEYS = ('speed_error_mps', 'p_current_a', 'i_current_a', 'unsaturated_current_a',
+                     'current_command_a', 'saturated', 'anti_windup', 'coasting',
+                     'feedback_valid', 'inhibit')
+PATHS = ('HALT', 'MANUAL', 'SPEED', 'TORQUE', 'EXTERNAL', 'REGEN', 'ZERO')
+COLLAPSE_FLAGS = {1: 'rpm', 2: 'phase_high', 4: 'phase_low', 8: 'bus'}
+# Sine (FOC) is the basis: no floor and no feedforward until identified. The
+# square-wave floor is kept ready for a controller switched back to square.
+PROTECTION = dict(
+    min_drive_current_square_a=12., min_drive_current_sine_a=0., motor_waveform='sine',
+    start_step='enabled', hold_on_speed_mps=.35, hold_off_speed_mps=.2,
+    reverse_speed_mps=.3, reverse_debounce_frames=3, collapse_hold_frames=0,
+    ff_current_gain_square_mps2_per_a=0., ff_current_gain_sine_mps2_per_a=0.,
+    ff_rolling_resistance_mps2=0., ff_speed_damping_per_s=0., ff_accel_limit_mps2=0.,
+    # Regeneration is off (0 A) until a preset enables it explicitly.
+    regen_max_current_a=0., regen_slew_a_s=100., regen_fade_speed_mps=1.5,
+    regen_cutoff_speed_mps=.8, regen_voltage_soft_v=57., regen_voltage_hard_v=58.,
+    regen_bus_current_limit_a=30., regen_rpm_field_mode='zero', pi_regen_enabled='disabled',
+    regen_enter_error_mps=.3, regen_exit_error_mps=.1, regen_kp_a_per_mps=0.,
+    # FOC current noise at 0 A reached -51 A at 2350 rpm on 2026-10-01.
+    collapse_phase_low_square_a=-30., collapse_phase_low_sine_a=-60.)
+DEFAULT = {**dict(zip(WIRE_KEYS[:12], ('speed', 180., 12., 480., 120., 2400., 4800.,
+                                        .05, .12, 20., 200., 4500.))), **PROTECTION}
+AIRBORNE = {**dict(zip(WIRE_KEYS[:12], ('torque', 25., 2., 40., 6., 120., 400.,
+                                         .05, .12, 5., 20., 4500.))), **PROTECTION}
 RESULTS = ('대기', '적용 완료', '잘못된 설정', 'MANUAL 정지·무전류 조건 불충족',
            '다른 설정이 먼저 적용됨', '다른 요청 처리 중')
+# Same rules as LONG_COLLAPSE_* in longitudinal_controller.h, for MCAPs recorded
+# before the firmware counter existed (square-wave baseline) and for FOC runs.
+COLLAPSE_RULES = dict(rpm_min=400., rpm_step=200., rpm_per_a=3., phase_margin_a=60.,
+                      bus_margin_a=60., rearm_frames=20)
+# Phase-low threshold by waveform when a recording predates collapse_phase_low.
+COLLAPSE_PHASE_LOW = {'square': -30., 'sine': -60.}
+
+
+def collapse_flags(command, previous_command, phase, bus, rpm, previous_rpm, running,
+                   torque_command, phase_low):
+    """Bitmask of one Part I frame, mirroring Long_CollapseFlags (v5)."""
+    r = COLLAPSE_RULES
+    if not running:
+        return 0
+    flags = 0
+    reference = max(abs(command), abs(previous_command))
+    step = max(r['rpm_step'], r['rpm_per_a'] * reference)
+    if abs(previous_rpm) >= r['rpm_min'] and (rpm * previous_rpm <= 0 or abs(rpm - previous_rpm) > step):
+        flags |= 1
+    if torque_command:
+        flags |= 2 if abs(phase) > reference + r['phase_margin_a'] else 0
+        flags |= 4 if min(command, previous_command) >= 0 and phase < phase_low else 0
+        flags |= 8 if abs(bus) > reference + r['bus_margin_a'] else 0
+    return flags
+
+
+def resolve(config):
+    """Wire values: each waveform-specific slot takes the declared waveform's value.
+
+    Accepts the host form (both waveforms) and the readback form (active only).
+    """
+    wire = {key: config[key] for key in WIRE_KEYS if key not in SPECIFIC}
+    index = WAVEFORMS.index(config['motor_waveform'])
+    for key, names in SPECIFIC.items():
+        wire[key] = config[names[index]] if names[index] in config else config[key]
+    return wire
 
 
 def validate_config(config):
-    if config['control_mode'] not in MODES:
-        raise ValueError('종방향 control_mode: speed / torque / external_current가 필요합니다.')
-    for key in CONFIG_KEYS[1:]:
+    for key, choices in CHOICES.items():
+        if config[key] not in choices:
+            raise ValueError(f'종방향 {key}: {" / ".join(choices)} 중 하나가 필요합니다.')
+    for key in CONFIG_KEYS:
+        if key in CHOICES:
+            continue
         value = config[key]
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
             raise ValueError(f'{key}: 유한한 숫자가 필요합니다.')
@@ -43,49 +141,118 @@ def validate_config(config):
         'speed_deadband_mps': (0, .2), 'speed_hysteresis_mps': (config['speed_deadband_mps'], .5),
         'reapply_current_a': (0, config['max_drive_current_a']),
         'reapply_slew_a_s': (0, config['current_slew_up_a_s']), 'motor_rpm_limit': (100, 4500),
-        'coast_current_floor_a': (0, config['max_drive_current_a']),
     }
     inclusive = {'speed_ki_a_per_mps_s', 'integrator_limit_a', 'speed_deadband_mps',
-                 'reapply_current_a', 'motor_rpm_limit', 'coast_current_floor_a'}
+                 'reapply_current_a', 'motor_rpm_limit'}
     for key, (lo, hi) in bounds.items():
         if config['control_mode'] != 'torque' and key not in ('max_drive_current_a', 'motor_rpm_limit'):
             continue
         if not (lo <= config[key] <= hi if key in inclusive else lo < config[key] <= hi):
             raise ValueError(f'{key}: {lo}~{hi} 범위를 확인하세요.')
+    # Mirrors Long_DecodeRequest: the floor and the reverse debounce also act in
+    # MANUAL and outside Torque, so they are checked for every control mode.
+    for key in INTEGER_KEYS:
+        if int(config[key]) != config[key]:
+            raise ValueError(f'{key}: 정수가 필요합니다.')
+    wire = resolve(config)
+    cap = min(config['max_drive_current_a'], MIN_CURRENT_CAP_A)
+    for name in SPECIFIC['min_drive_current_a']:
+        if not 0 <= config[name] <= MIN_CURRENT_CAP_A:
+            raise ValueError(f'{name}: 0~{MIN_CURRENT_CAP_A:g} A 범위를 확인하세요.')
+    if not 0 <= wire['min_drive_current_a'] <= cap:
+        raise ValueError(f'회전 중 최소 구동 전류: 0~{cap:g} A (구동 전류 한도 이하)를 확인하세요.')
+    checks = {
+        'hold_on_speed_mps': .1 <= config['hold_on_speed_mps'] <= 2,
+        'hold_off_speed_mps': 0 <= config['hold_off_speed_mps'] < config['hold_on_speed_mps'],
+        'reverse_speed_mps': .05 <= config['reverse_speed_mps'] <= 1,
+        'reverse_debounce_frames': 1 <= config['reverse_debounce_frames'] <= 10,
+        'collapse_hold_frames': 0 <= config['collapse_hold_frames'] <= 40,
+        'ff_rolling_resistance_mps2': 0 <= config['ff_rolling_resistance_mps2'] <= 2,
+        'ff_speed_damping_per_s': 0 <= config['ff_speed_damping_per_s'] <= 1,
+        'ff_accel_limit_mps2': 0 <= config['ff_accel_limit_mps2'] <= 5,
+    }
+    for name in SPECIFIC['ff_current_gain_mps2_per_a']:
+        checks[name] = config[name] == 0 or .0005 <= config[name] <= .2
+    # Mirrors Long_DecodeRequest: battery ceilings and non-degenerate fade bands.
+    checks.update({
+        'regen_max_current_a': 0 <= config['regen_max_current_a'] <= REGEN_CURRENT_CAP_A,
+        'regen_slew_a_s': 10 <= config['regen_slew_a_s'] <= 1000,
+        'regen_fade_speed_mps': .3 <= config['regen_fade_speed_mps'] <= 5,
+        'regen_cutoff_speed_mps': .1 <= config['regen_cutoff_speed_mps'] < config['regen_fade_speed_mps'],
+        'regen_voltage_soft_v': 40 <= config['regen_voltage_soft_v'] < config['regen_voltage_hard_v'],
+        'regen_voltage_hard_v': config['regen_voltage_hard_v'] <= REGEN_VOLTAGE_CAP_V,
+        'regen_bus_current_limit_a': 1 <= config['regen_bus_current_limit_a'] <= REGEN_BUS_CURRENT_CAP_A,
+        'regen_enter_error_mps': .05 <= config['regen_enter_error_mps'] <= 2,
+        'regen_exit_error_mps': 0 <= config['regen_exit_error_mps'] < config['regen_enter_error_mps'],
+        'regen_kp_a_per_mps': 0 <= config['regen_kp_a_per_mps'] <= 500,
+    })
+    for name in SPECIFIC['collapse_phase_low_a']:
+        checks[name] = -200 <= config[name] <= -10
+    for key, ok in checks.items():
+        if not ok:
+            raise ValueError(f'{key}: 허용 범위를 확인하세요.')
 
 
-def config_wire(config, version=3):
+def _number(key, value):
+    return float(CHOICES[key].index(value)) if key in CHOICES else float(value)
+
+
+def config_wire(config, version=VERSION):
     validate_config(config)
-    if version < 3 and config['coast_current_floor_a']:
-        raise ValueError('1 A 감속 전류 하한은 STM_A longitudinal ABI v3가 필요합니다.')
-    keys = CONFIG_KEYS if version >= 3 else CONFIG_KEYS[:-1]
-    return [float(MODES.index(config['control_mode'])), *[float(config[k]) for k in keys[1:]]]
+    if version != VERSION:
+        raise ValueError(f'STM_A longitudinal ABI v{VERSION} 펌웨어가 필요합니다 (현재 v{version}). '
+                         'STM_A와 host를 함께 갱신하세요.')
+    wire = resolve(config)
+    return [_number(key, wire[key]) for key in WIRE_KEYS]
 
 
-def request_data(config, request_id, revision, version=3):
-    if version not in (1, 2, 3):
-        raise ValueError('지원하지 않는 STM_A longitudinal ABI 버전입니다.')
-    if version == 1 and config['control_mode'] == 'external_current':
-        raise ValueError('외부 전류 입력은 STM_A longitudinal ABI v2가 필요합니다.')
+def request_data(config, request_id, revision, version=VERSION):
     return [float(version), float(request_id), float(revision), *config_wire(config, version)]
 
 
+def status_data(config, state=None, *, revision=1, request_id=1, result=1, source=1):
+    """v4 status array as STM_A publishes it; for emulators, tests and tools."""
+    state = {'feedback_valid': 1., 'collapse_age_s': -1., **(state or {})}
+    return [float(VERSION), float(revision), float(request_id), float(result), float(source),
+            *config_wire(config), *[float(state.get(key, 0.)) for key in STATE_KEYS]]
+
+
 def decode_status(data):
-    if data[0] not in (1, 2, 3) or len(data) != (28 if data[0] == 3 else 27) or not all(math.isfinite(x) for x in data):
-        raise ValueError('STM_A longitudinal status ABI v1/v2/v3가 필요합니다.')
-    if data[5] not in (range(3) if data[0] >= 2 else range(2)) or data[4] not in (0, 1) or data[3] not in range(len(RESULTS)):
+    layouts = {1: (12, LEGACY_STATE_KEYS), 2: (12, LEGACY_STATE_KEYS),
+               3: (13, LEGACY_STATE_KEYS), 4: (len(V4_KEYS), V4_STATE_KEYS),
+               5: (len(WIRE_KEYS), STATE_KEYS)}
+    if (not data or data[0] not in layouts or not all(math.isfinite(x) for x in data) or
+            len(data) != 5 + layouts[int(data[0])][0] + len(layouts[int(data[0])][1])):
+        raise ValueError('STM_A longitudinal status ABI v1~v5가 필요합니다.')
+    version = int(data[0])
+    count, state_keys = layouts[version]
+    if data[5] not in (range(3) if version >= 2 else range(2)) or data[4] not in (0, 1) or data[3] not in range(len(RESULTS)):
         raise ValueError('STM_A longitudinal status enum 오류')
-    offset = 18 if data[0] == 3 else 17
-    config = dict(zip(CONFIG_KEYS, [MODES[int(data[5])], *data[6:offset], *([] if data[0] == 3 else [0.])]))
+    raw = list(data[5:5 + count])
+    if version >= 4:
+        keys = WIRE_KEYS[:count]
+        wire = dict(zip(keys, raw))
+        if any(wire[key] not in range(len(CHOICES[key])) for key in CHOICES if key in wire):
+            raise ValueError('STM_A longitudinal status enum 오류')
+        wire.update({key: CHOICES[key][int(wire[key])] for key in CHOICES if key in wire})
+        wire.update({key: int(wire[key]) for key in INTEGER_KEYS})
+        # Readback names the active waveform's slot; the other one is not on the wire.
+        index = WAVEFORMS.index(wire['motor_waveform'])
+        config = {}
+        for key in keys:
+            config[SPECIFIC[key][index] if key in SPECIFIC else key] = wire[key]
+    else:
+        config = dict(zip(LEGACY_KEYS, [MODES[int(raw[0])], *raw[1:]]))
+        config.setdefault('coast_current_floor_a', 0.)
     # Float32 readback is compared in wire precision; never claim send == apply.
-    return dict(version=int(data[0]), revision=int(data[1]), request_id=int(data[2]), result=int(data[3]),
+    return dict(version=version, revision=int(data[1]), request_id=int(data[2]), result=int(data[3]),
                 source='HOST_OVERRIDE' if data[4] else 'DEFAULT', config=config,
                 display_values=canonical_values(config),
-                **dict(zip(STATE_KEYS, data[offset:])))
+                **dict(zip(state_keys, data[5 + count:])))
 
 
 def wire_equal(config, other):
     def pack(c):
-        return struct.pack('<13f', float(MODES.index(c['control_mode'])),
-                           *[c[k] for k in CONFIG_KEYS[1:]])
+        wire = resolve(c)
+        return struct.pack(f'<{len(WIRE_KEYS)}f', *[_number(key, wire[key]) for key in WIRE_KEYS])
     return pack(config) == pack(other)

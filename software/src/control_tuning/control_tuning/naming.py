@@ -37,6 +37,37 @@ KEY_ALIASES = {
     'reapply_current_a': 'drive_reapply_current_band_a',
     'reapply_slew_a_s': 'drive_reapply_current_slew_a_s',
     'motor_rpm_limit': 'drive_motor_speed_limit_rpm',
+    # STM_A ABI v4. The v3 coast floor above keeps its name for old MCAPs; the
+    # rolling minimum current is a different rule and is stored per waveform.
+    'motor_waveform': 'drive_motor_waveform',
+    'min_drive_current_square_a': 'drive_min_current_square_a',
+    'min_drive_current_sine_a': 'drive_min_current_sine_a',
+    'start_step': 'drive_start_step',
+    'hold_on_speed_mps': 'drive_hold_on_speed_mps',
+    'hold_off_speed_mps': 'drive_hold_off_speed_mps',
+    'reverse_speed_mps': 'drive_reverse_speed_mps',
+    'reverse_debounce_frames': 'drive_reverse_debounce_frames',
+    'collapse_hold_frames': 'drive_collapse_hold_frames',
+    'ff_current_gain_square_mps2_per_a': 'drive_ff_current_gain_square_mps2_per_a',
+    'ff_current_gain_sine_mps2_per_a': 'drive_ff_current_gain_sine_mps2_per_a',
+    'ff_rolling_resistance_mps2': 'drive_ff_rolling_resistance_mps2',
+    'ff_speed_damping_per_s': 'drive_ff_speed_damping_per_s',
+    'ff_accel_limit_mps2': 'drive_ff_accel_limit_mps2',
+    # STM_A ABI v5: regenerative braking and the per-waveform collapse threshold.
+    'regen_max_current_a': 'drive_regen_max_current_a',
+    'regen_slew_a_s': 'drive_regen_slew_a_s',
+    'regen_fade_speed_mps': 'drive_regen_fade_speed_mps',
+    'regen_cutoff_speed_mps': 'drive_regen_cutoff_speed_mps',
+    'regen_voltage_soft_v': 'drive_regen_voltage_soft_v',
+    'regen_voltage_hard_v': 'drive_regen_voltage_hard_v',
+    'regen_bus_current_limit_a': 'drive_regen_bus_current_limit_a',
+    'regen_rpm_field_mode': 'drive_regen_rpm_field',
+    'pi_regen_enabled': 'drive_pi_regen',
+    'regen_enter_error_mps': 'drive_regen_enter_error_mps',
+    'regen_exit_error_mps': 'drive_regen_exit_error_mps',
+    'regen_kp_a_per_mps': 'drive_regen_kp_a_per_mps',
+    'collapse_phase_low_square_a': 'drive_collapse_phase_low_square_a',
+    'collapse_phase_low_sine_a': 'drive_collapse_phase_low_sine_a',
 }
 
 

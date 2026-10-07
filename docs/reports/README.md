@@ -15,3 +15,6 @@
 | 2026-09-21 | [Competition 조향 복구 정책·구현 기록](2026-09-21_steering_availability.md) |
 | 2026-09-21 | [AUTO Torque PI·MCAP baseline·calibration·A/B 절차](2026-09-21_longitudinal_torque_pi.md) |
 | 2026-09-21 | [9/20 MCAP 종방향·전류 피크·RPM 이상 분석](2026-09-21_0920_longitudinal_review.md) |
+| 2026-09-29 | [AUTO Torque feedforward·MANUAL 페달 envelope·Kp/Ki 후보](2026-09-29_longitudinal_feedforward.md) |
+| 2026-10-01 | [EZkontrol 사인파 기준 종방향 재구성·방형파 붕괴 분석·사인파 시험 계획](2026-10-01_ezkontrol_sine_rework.md) |
+| 2026-10-02 | [회생제동 calibration(ABI v5)·속도 PI 자동 회생·거버너 slew 제거·사인파 붕괴 감지·회생 시험 계획](2026-10-02_regen_governor_rework.md) |

@@ -70,6 +70,17 @@ enum {
   CONTROLLER_CONTROL_MODE_TORQUE = 0u,
   CONTROLLER_CONTROL_MODE_SPEED = 1u
 };
+
+/* One motor command per Control frame. Every branch fills it; the rolling
+ * floor and the CAN send happen once after the branches. */
+typedef struct {
+  int32_t rpm;
+  float current;
+  uint8_t run;
+  uint8_t speed_control;
+  uint8_t path;
+  bool forward;
+} motor_request_t;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -80,10 +91,8 @@ enum {
 #define RPM_REV_MAX   1500
 #define AUTO_SPEED_MAX_MPS \
   ((float)RPM_FWD_MAX * 3.14159f * TIRE_DIAM_M / (60.0f * GEAR_RATIO))
-#define MANUAL_TORQUE_LIMIT_A 480.0f
-/* AUTO Torque 회생 시험: 조이스틱 LT 요청의 음수 상한과 전류 변화율. */
-#define AUTO_REGEN_MAX_A 20.0f
-#define AUTO_REGEN_SLEW_A_PER_S 100.0f
+/* MANUAL 페달 전 범위(Speed calibration)는 LONG_MANUAL_CURRENT_LIMIT_A(480 A)다. */
+/* AUTO 회생(LT·외부 전류·속도 PI)의 한도와 변화율은 calibration v5 regen_* 필드다. */
 #define PEDAL_ADC_MIN 560
 #define PEDAL_ADC_MAX 3000
 #define UART_RX_DMA_SIZE 64u
@@ -174,6 +183,8 @@ static volatile uint8_t s_tractive_commanded = 0u;
 /* send_motor_can이 버스에 실제로 실은 명령. 인코딩과 클램핑을 되돌린 값이라
  * 지령과 실측(Part I)을 같은 단위로 나란히 볼 수 있다. */
 static volatile float s_commanded_phase_current_a = 0.0f;
+/* 그 직전 송신 명령. 붕괴 감지가 한 프레임 늦은 Part I을 오판하지 않게 쓴다. */
+static volatile float s_previous_commanded_phase_current_a = 0.0f;
 static volatile float s_commanded_motor_rpm = 0.0f;
 
 /* CAN ISR가 갱신하고 uROS task가 짧은 critical section에서 snapshot한다. */
@@ -225,9 +236,24 @@ static uint8_t s_long_pending_valid;
 
 static uint8_t s_long_feedback_valid, s_long_inhibit = LONG_DISABLED;
 static LongGate s_long_gate;
+/* Rolling hold and final-output flags; Control task writes, others read. */
+static LongDrive s_long_drive;
+static volatile uint8_t s_long_path = LONG_PATH_HALT;
+static volatile float s_long_output_current;
+/* MANUAL pedal command after the configured slew; Control task only. */
+static float s_manual_current_a;
+/* Collapse detector: CAN ISR writes, uROS reads in a critical section. */
+static LongCollapse s_collapse;
+static volatile uint32_t s_collapse_tick;
+static int32_t s_collapse_previous_rpm;
+static volatile uint8_t s_last_command_run, s_last_command_torque;
+/* AUTO reaction frames left after a collapse; Control task owns the count. */
+static uint32_t s_collapse_seen;
+static volatile uint8_t s_collapse_reaction;
 static LongExternalInput s_external_current;
 static LongExternalInput s_regen_request;
-static float s_regen_current;
+/* 회생 한도·변화율·상태(Control task 소유, uROS가 critical section에서 읽음). */
+static LongRegen s_regen;
 static int64_t s_command_stamp_ns;
 static uint8_t s_external_previous_mode = 0xffu;
 static kaiev26_msgs__msg__DriveCurrentCommand s_current_msg;
@@ -427,9 +453,15 @@ void StartControl(void *argument)
   {
     RuntimeActivation activation = RuntimePeriodic_Begin(RM_CONTROL, &periodic);
     prepare_longitudinal(HAL_GetTick());
+    const LongConfig *config = &s_long_calibration.config;
     if (s_motor_handshake_done == 0u)
     {
       Long_Reset(&s_long_controller);
+      Long_RegenReset(&s_regen);
+      (void)Long_UpdateHold(&s_long_drive, config, false, 0.0f);
+      s_manual_current_a = 0.0f;
+      s_long_path = LONG_PATH_HALT;
+      s_long_output_current = 0.0f;
       taskENTER_CRITICAL();
       Long_ClearExternal(&s_external_current, s_command_stamp_ns);
       taskEXIT_CRITICAL();
@@ -466,82 +498,141 @@ void StartControl(void *argument)
       s_command_timeout = 0u;
     }
 
+    /* 새 붕괴 이벤트는 AUTO에서만 선택적 반응(하한 유지·재인가 금지)을 켠다. */
+    const uint32_t collapse_events = s_collapse.events;
+    if (collapse_events != s_collapse_seen)
+    {
+      s_collapse_seen = collapse_events;
+      if (MODE == 1u) s_collapse_reaction = config->collapse_hold_frames;
+    }
+
+    /* 기본은 HALTED(RUN=0, 0 A). 각 분기는 요청만 채우고 송신은 아래 한 곳에서 한다. */
+    motor_request_t request = {0, 0.0f, 0u, 0u, LONG_PATH_HALT, false};
+    const int32_t rpm_ceiling = (int32_t)config->rpm_limit;
     if (drive_permitted != 0u)
     {
       if (MODE == 1u)
       {
-        /* 회생 요청은 명령 전류를 0에서 목표까지 천천히 옮긴다. 요청이 끊기면
-         * 같은 기울기로 0에 돌아와 토크 부호가 한 번에 바뀌지 않게 한다. */
-        float regen_target = 0.0f;
-        taskENTER_CRITICAL();
-        if (s_long_calibration.config.mode == LONG_TORQUE && s_long_inhibit == LONG_OK &&
-            Long_ExternalFresh(&s_regen_request, HAL_GetTick(), HOST_COMMAND_TIMEOUT_MS))
-          regen_target = fmaxf(s_regen_request.current, -AUTO_REGEN_MAX_A);
-        taskEXIT_CRITICAL();
-        const float regen_step = AUTO_REGEN_SLEW_A_PER_S * 0.05f;
-        s_regen_current = fminf(fmaxf(regen_target, s_regen_current - regen_step),
-                                s_regen_current + regen_step);
+        s_manual_current_a = 0.0f;
+        /* 회생: LT·외부 전류 요청과 속도 PI 요청 중 큰 값을 regen_slew로 옮긴다.
+         * 속도·전압·충전전류 한도와 Part I 단절은 즉시 적용되고, 허용 조건이
+         * 깨지면 같은 기울기로 0에 돌아온다. 목표 0·안전 정지는 아래에서 즉시 0이다. */
+        if (COMMAND_SPEED > 0.0f && config->mode != LONG_SPEED) {
+          LongRegenInput regen = {
+            .target = COMMAND_SPEED, .speed = CURRENT_SPEED,
+            .pi = config->mode == LONG_TORQUE,
+            .allowed = s_long_inhibit == LONG_OK && s_long_feedback_valid != 0u &&
+                       s_motor_fault_bits == 0u &&
+                       s_controller_control_mode == CONTROLLER_CONTROL_MODE_TORQUE};
+          taskENTER_CRITICAL();
+          regen.bus_voltage = s_bus_voltage_v;
+          regen.bus_current = s_bus_current_a;
+          regen.part1_fresh = s_part1_received != 0u &&
+              age_since(HAL_GetTick(), s_last_part1_rx_ms) < MOTOR_FEEDBACK_TIMEOUT_MS;
+          if (Long_ExternalFresh(&s_regen_request, HAL_GetTick(), HOST_COMMAND_TIMEOUT_MS))
+            regen.external_request = -s_regen_request.current;
+          taskEXIT_CRITICAL();
+          (void)Long_RegenFrame(&s_regen, &s_long_controller, config, &regen, 0.05f);
+        } else {
+          Long_RegenReset(&s_regen);
+        }
+
+        /* 회전 중 하한은 AUTO 전류 경로(Torque/외부 전류)의 전진 구동에서만 잡는다.
+         * 붕괴 반응 중에는 속도 추정이 회복될 때까지 이미 잡힌 hold를 풀지 않는다. */
+        const bool current_path = config->mode != LONG_SPEED && COMMAND_SPEED > 0.0f &&
+            !s_regen.active && s_long_inhibit == LONG_OK && s_long_feedback_valid != 0u;
+        if (!(s_collapse_reaction > 0u && current_path && s_long_drive.hold))
+          (void)Long_UpdateHold(&s_long_drive, config, current_path, CURRENT_SPEED);
 
         if (COMMAND_SPEED == 0.0f ||
-            (s_long_calibration.config.mode != LONG_SPEED && COMMAND_SPEED < 0.0f)) {
+            (config->mode != LONG_SPEED && COMMAND_SPEED < 0.0f)) {
           /* Ordinary zero target coasts: cut torque immediately, no RPM hold or regen ramp. */
           Long_Reset(&s_long_controller);
-          s_regen_current = 0.0f;
-          send_motor_can(0, 0.0f, 0u, 0u);
-        } else if (s_long_calibration.config.mode == LONG_SPEED) {
+          Long_RegenReset(&s_regen);
+        } else if (config->mode == LONG_SPEED) {
           Long_Reset(&s_long_controller);
-          s_regen_current = 0.0f;
+          Long_RegenReset(&s_regen);
           const int32_t target_rpm = (int32_t)(COMMAND_SPEED * 60.0f * GEAR_RATIO /
                                               (3.14159f * TIRE_DIAM_M));
-          const LongMotorCommand command = Long_SpeedCommand(&s_long_calibration.config, target_rpm);
-          send_motor_can(command.rpm, command.current, 1u, 1u);
-        } else if (s_regen_current < 0.0f) {
-          /* 전진 회생: 음수 상전류 + 목표 RPM 0 + RUNNING. */
-          Long_Reset(&s_long_controller);
-          send_motor_can(0, s_regen_current, 1u, 0u);
-        } else if (s_long_calibration.config.mode == LONG_EXTERNAL_CURRENT &&
+          const LongMotorCommand command = Long_SpeedCommand(config, target_rpm);
+          request = (motor_request_t){command.rpm, command.current, 1u, 1u, LONG_PATH_SPEED, false};
+        } else if (s_regen.active) {
+          /* 전진 회생: 음수 상전류 + RUNNING. RPM 필드는 0(기존) 또는 양수 상한.
+           * 구동 PI는 동결되고(적분 유지) 회생이 끝나면 0 A부터 재인가한다. */
+          request = (motor_request_t){config->regen_rpm_field ? rpm_ceiling : 0, s_regen.current,
+                                      1u, 0u, LONG_PATH_REGEN, false};
+        } else if (s_long_inhibit == LONG_REVERSE_PENDING) {
+          /* 음수 속도 디바운스 중: RUN 유지, 0 A, PI 이력은 그대로 둔다. */
+          request = (motor_request_t){rpm_ceiling, 0.0f, 1u, 0u, LONG_PATH_ZERO, false};
+        } else if (s_long_inhibit == LONG_OK && COMMAND_SPEED > 0.0f && s_collapse_reaction > 0u) {
+          /* 붕괴 반응: 하한(없으면 0 A)에 머물고 PI를 멈춰 재인가하지 않는다. */
+          request = (motor_request_t){rpm_ceiling, Long_HoldFloor(&s_long_drive, config), 1u, 0u,
+              config->mode == LONG_EXTERNAL_CURRENT ? LONG_PATH_EXTERNAL : LONG_PATH_TORQUE, true};
+        } else if (config->mode == LONG_EXTERNAL_CURRENT &&
                    s_long_inhibit == LONG_OK && COMMAND_SPEED > 0.0f) {
           taskENTER_CRITICAL();
-          const float current = fminf(s_external_current.current,
-                                      s_long_calibration.config.max_current);
+          const float current = fminf(s_external_current.current, config->max_current);
           taskEXIT_CRITICAL();
-          send_motor_can((int32_t)s_long_calibration.config.rpm_limit, current, 1u, 0u);
-        } else if (s_long_calibration.config.mode == LONG_TORQUE &&
+          request = (motor_request_t){rpm_ceiling, current, 1u, 0u, LONG_PATH_EXTERNAL, true};
+        } else if (config->mode == LONG_TORQUE &&
                    s_long_inhibit == LONG_OK && COMMAND_SPEED > 0.0f) {
-          const float ceiling = s_long_calibration.config.rpm_limit * 3.14159f * TIRE_DIAM_M / (60.0f * GEAR_RATIO);
-          float current = Long_Update(&s_long_controller, &s_long_calibration.config,
-              fminf(COMMAND_SPEED, ceiling), CURRENT_SPEED, 0.05f);
-          send_motor_can((int32_t)s_long_calibration.config.rpm_limit, current, 1u, 0u);
+          const float ceiling = config->rpm_limit * 3.14159f * TIRE_DIAM_M / (60.0f * GEAR_RATIO);
+          /* hold 중에는 하한을 PI 안으로 넘겨 slew 상태를 하한에서 시작시킨다. */
+          const float current = Long_Update(&s_long_controller, config,
+              fminf(COMMAND_SPEED, ceiling), CURRENT_SPEED, 0.05f,
+              Long_HoldFloor(&s_long_drive, config));
+          request = (motor_request_t){rpm_ceiling, current, 1u, 0u, LONG_PATH_TORQUE, true};
         } else {
           Long_Reset(&s_long_controller);
-          send_motor_can(0, 0.0f, 0u, 0u);
         }
       }
       else
       {
+        /* 수동주행: 페달이 토크 요구이고 속도 PI는 동작하지 않는다. Torque/외부 전류
+         * calibration은 전류 한도·RPM 상한·상승/하강률 envelope를 공유하고 Speed
+         * calibration은 0~480 A 매핑을 그대로 쓴다. 전진 중 hold가 켜지면 페달
+         * 0~100%가 [하한, 한도]에 대응한다. 후진·정지는 기존 매핑이다. */
         Long_Reset(&s_long_controller);
-        s_regen_current = 0.0f;
-        /* 수동주행: 페달 0~100%를 상전류 0~480 A로 선형 매핑한다. */
-        float torque_current = ((float)PEDAL / 100.0f) * MANUAL_TORQUE_LIMIT_A;
-        int16_t rpm_limit = RPM_FWD_MAX;
-        if (GEAR == 1u)
+        Long_RegenReset(&s_regen);
+        const bool forward = GEAR == 0u;
+        (void)Long_UpdateHold(&s_long_drive, config,
+                              forward && s_long_feedback_valid != 0u, CURRENT_SPEED);
+        const bool envelope = config->mode != LONG_SPEED;
+        s_manual_current_a = Long_PedalCommand(config, (float)PEDAL, envelope,
+            s_long_drive.hold, s_manual_current_a, 0.05f);
+        int32_t rpm_limit = envelope ? rpm_ceiling : RPM_FWD_MAX;
+        float torque_current = s_manual_current_a;
+        if (!forward)
         {
           torque_current = -torque_current;
-          rpm_limit = -RPM_REV_MAX;
+          rpm_limit = -rpm_limit;
         }
-        send_motor_can(rpm_limit, torque_current, 1u, 0u);
+        request = (motor_request_t){rpm_limit, torque_current, 1u, 0u, LONG_PATH_MANUAL, forward};
       }
     }
     // ESTOP 활성시
     else
     {
-      /* 정지 시 RPM/전류뿐 아니라 RUNNING bit도 내려 HALTED를 명령한다. */
+      /* 정지 시 RPM/전류뿐 아니라 RUNNING bit도 내려 HALTED를 명령한다.
+       * 안전 정지는 페달 slew도 거치지 않는다. */
       Long_Reset(&s_long_controller);
-      s_regen_current = 0.0f;
+      Long_RegenReset(&s_regen);
+      s_manual_current_a = 0.0f;
       if (s_long_inhibit == LONG_OK) s_long_inhibit = LONG_STOP;
       /* No active zero-RPM hold: the independent brake path owns braking. */
-      send_motor_can(0, 0.0f, 0u, 0u);
     }
+    if (request.path == LONG_PATH_HALT || !request.forward)
+      (void)Long_UpdateHold(&s_long_drive, config, false, CURRENT_SPEED);
+
+    /* 모든 전진 구동 경로의 최종 전류는 여기 한 곳에서 회전 중 하한·출발 스텝을 거친다. */
+    if (request.forward)
+      request.current = Long_DriveFloor(&s_long_drive, config, request.current);
+    else
+      s_long_drive.floor_applied = s_long_drive.start_stepped = false;
+    s_long_path = request.path;
+    s_long_output_current = request.current;
+    send_motor_can(request.rpm, request.current, request.run, request.speed_control);
+    if (s_collapse_reaction > 0u) s_collapse_reaction--;
     // 20Hz / 50ms 주기
     RuntimePeriodic_Wait(RM_CONTROL, &periodic, activation);
   }
@@ -1451,8 +1542,12 @@ static void send_motor_can(int32_t rpm, float curr_a, uint8_t run_command,
     s_tractive_commanded = (run_command != 0u) ? 1u : 0u;
     /* 인코딩을 되돌려 저장한다. 양자화와 클램핑이 반영된 값이라
      * 의도한 값이 아니라 실제로 나간 값이 남는다. */
+    s_previous_commanded_phase_current_a = s_commanded_phase_current_a;
     s_commanded_phase_current_a = (float)current_encoded * 0.1f - 3200.0f;
     s_commanded_motor_rpm = (float)clamped_rpm;
+    /* 붕괴 감지는 버스에 실제로 나간 명령 종류를 기준으로 전류 규칙을 고른다. */
+    s_last_command_run = (run_command != 0u) ? 1u : 0u;
+    s_last_command_torque = (run_command != 0u && speed_control == 0u) ? 1u : 0u;
   } else {
     s_tractive_commanded = 0u;
   }
@@ -1525,6 +1620,7 @@ static void prepare_longitudinal(uint32_t now)
   }
   bool discard_command = false;
   s_long_inhibit = Long_CheckInhibit(&s_long_controller, &s_long_gate,
+      &s_long_calibration.config,
       MODE == 1u && s_long_calibration.config.mode != LONG_SPEED,
       s_long_feedback_valid,
       s_command_received && age_since(now, s_last_command_tick) < HOST_COMMAND_TIMEOUT_MS,
@@ -1563,10 +1659,27 @@ static void publish_longitudinal(void)
   Long_EncodeConfig(&s_long_calibration.config, d + 5);
   float *state = d + 5u + LONG_CONFIG_COUNT;
   state[0] = s_long_controller.error; state[1] = s_long_controller.p;
-  state[2] = s_long_controller.i; state[3] = s_long_controller.unsaturated;
-  state[4] = s_long_controller.current; state[5] = s_long_controller.saturated;
-  state[6] = s_long_controller.anti_windup; state[7] = s_long_controller.coasting;
-  state[8] = s_long_feedback_valid; state[9] = s_long_inhibit;
+  state[2] = s_long_controller.i; state[3] = s_long_controller.ff;
+  state[4] = s_long_controller.unsaturated; state[5] = s_long_controller.current;
+  state[6] = s_long_controller.saturated; state[7] = s_long_controller.anti_windup;
+  state[8] = s_long_controller.coasting; state[9] = s_long_feedback_valid;
+  state[10] = s_long_inhibit; state[11] = s_long_path;
+  state[12] = s_long_output_current; state[13] = s_long_drive.hold;
+  state[14] = s_long_drive.floor_applied; state[15] = s_long_drive.start_stepped;
+  state[16] = s_long_gate.reverse_frames;
+  /* 붕괴 감지: 누적 이벤트 수와 마지막 이벤트 첫 프레임 스냅샷. */
+  state[17] = (float)s_collapse.events; state[18] = s_collapse.flags;
+  state[19] = s_collapse.events != 0u ?
+      (float)age_since(HAL_GetTick(), s_collapse_tick) * 1.0e-3f : -1.0f;
+  state[20] = s_collapse.snapshot.command; state[21] = s_collapse.snapshot.phase;
+  state[22] = s_collapse.snapshot.bus; state[23] = (float)s_collapse.snapshot.rpm;
+  state[24] = (float)s_collapse.snapshot.previous_rpm; state[25] = s_collapse.path;
+  state[26] = s_collapse.hold; state[27] = s_collapse_reaction;
+  /* 회생: 요청, 계산 한도, 속도·전압 계수, 충전전류 보호 배율, 최종 전류, 경로, PI 회생. */
+  state[28] = s_regen.request; state[29] = s_regen.limit;
+  state[30] = s_regen.speed_factor; state[31] = s_regen.voltage_factor;
+  state[32] = 1.0f - s_regen.bus_cut; state[33] = s_regen.current;
+  state[34] = s_regen.active; state[35] = s_long_controller.regen_mode;
   taskEXIT_CRITICAL();
   RCL_PUBLISH_BEST_EFFORT(&s_long_publisher, &s_long_status_msg);
 }
@@ -1583,12 +1696,18 @@ static void cb_current(const void *message)
       msg->phase_current_a <= 0.0f && !s_command_brake_engage) {
     (void)Long_ReceiveRegen(&s_regen_request, msg->phase_current_a, stamp, HAL_GetTick());
   }
+  /* 외부 전류 모드: 음수는 회생 요청이고 구동은 0 A로 신선하게 유지한다.
+   * 양수는 회생 요청을 0으로 되돌려 이전 음수가 500 ms 남지 않게 한다. */
+  if (MODE == 1u && s_long_calibration.config.mode == LONG_EXTERNAL_CURRENT &&
+      isfinite(msg->phase_current_a) && !s_command_brake_engage) {
+    (void)Long_ReceiveRegen(&s_regen_request, fminf(msg->phase_current_a, 0.0f), stamp, HAL_GetTick());
+  }
   if (MODE == 1u && s_long_calibration.config.mode == LONG_EXTERNAL_CURRENT &&
       s_motor_handshake_done && s_long_feedback_valid && !DRIVE_STOP_REQUEST &&
       s_controller_control_mode == CONTROLLER_CONTROL_MODE_TORQUE &&
       !s_command_brake_engage && !s_motor_fault_bits && stamp >= s_command_stamp_ns &&
       stamp - s_command_stamp_ns < (int64_t)HOST_COMMAND_TIMEOUT_MS * 1000000LL) {
-    (void)Long_ReceiveExternal(&s_external_current, msg->phase_current_a, stamp, HAL_GetTick());
+    (void)Long_ReceiveExternal(&s_external_current, fmaxf(msg->phase_current_a, 0.0f), stamp, HAL_GetTick());
   }
   taskEXIT_CRITICAL();
 }
@@ -1642,6 +1761,7 @@ static void parse_motor_status_part1(const uint8_t data[8], uint32_t now)
   const uint32_t part1_gap_ms = age_since(now, s_last_part1_rx_ms);
   if ((s_part1_received == 0u) || (part1_gap_ms >= MOTOR_RPM_STREAM_RESET_MS)) {
     reset_motor_rpm_despiker();
+    s_collapse_previous_rpm = motor_rpm_raw;
   }
   /* 프레임이 몰려 들어와도 폭이 20 Hz 한 주기보다 좁아지지 않게 한다. */
   const float part1_dt_s = (float)((part1_gap_ms < 50u) ? 50u : part1_gap_ms) * 1.0e-3f;
@@ -1652,6 +1772,17 @@ static void parse_motor_status_part1(const uint8_t data[8], uint32_t now)
   s_bus_current_a = (float)raw_bus_current * 0.1f - 3200.0f;
   s_phase_current_a = (float)raw_phase_current * 0.1f - 3200.0f;
   s_motor_rpm_raw = (float)motor_rpm_raw;
+
+  /* 붕괴 감지(관측 전용): 원본 RPM과 버스에 실제로 나간 명령을 비교한다. */
+  const LongCollapseInput collapse = {
+    s_commanded_phase_current_a, s_previous_commanded_phase_current_a,
+    s_phase_current_a, s_bus_current_a, s_long_calibration.config.collapse_phase_low,
+    motor_rpm_raw, s_collapse_previous_rpm,
+    s_last_command_run != 0u, s_last_command_torque != 0u};
+  if (Long_CollapseUpdate(&s_collapse, &collapse, s_long_path, s_long_drive.hold)) {
+    s_collapse_tick = now;
+  }
+  s_collapse_previous_rpm = motor_rpm_raw;
   CURRENT_SPEED = wheel_rpm * (3.14159f * TIRE_DIAM_M) / 60.0f;
   s_last_part1_rx_ms = now;
   s_part1_received = 1u;

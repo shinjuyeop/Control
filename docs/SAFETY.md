@@ -124,6 +124,9 @@ STM_A Control task는 이 값에 더해 AUTO Host command freshness를 검사합
 | MANUAL 정상 | 페달 기반 torque command |
 | AUTO Speed 정상 | Host 속도→RPM에 active current/RPM envelope 적용, EZ Speed command |
 | AUTO Torque 정상 | Host 속도→STM_A 20 Hz PI, active current/RPM envelope 안에서 Torque command |
+| AUTO Torque/외부 전류, 음수 목표 | 즉시 PI reset·0 A/HALTED |
+| AUTO Torque/외부 전류, 측정 속도 < −`reverse_speed`(기본 0.30 m/s) | `reverse_debounce_frames`(기본 3 = 150 ms) 연속이면 PI reset·0 A/HALTED. 그 전에는 RUN 유지·0 A·PI 이력 유지 |
+| AUTO Torque/외부 전류 회생(기본 꺼짐) | 음수 상전류·RUN. 한도 = `regen_max_current_a` × 속도(0.8 m/s 이하 0) × 전압(58 V 이상 0) × 충전전류 보호. 한도는 즉시, 요청 변화와 허용 조건 상실은 `regen_slew_a_s`로 0 복귀 |
 
 EZkontrol Part I은 500 ms부터, Part II는 1 s부터 invalid입니다.
 Part I 미수신 500 ms 전에는 마지막 측정 속도가 유지되고 AUTO Torque PI가 이를 사용합니다.
@@ -137,6 +140,20 @@ AUTO Torque는 STM_A가 속도루프를 담당하므로 Part I 속도 피드백�
 inhibit·history reset 후 0 A/HALTED를 명령합니다.
 feedback 복구를 Control task가 확인한 뒤 pre-recovery command를 폐기하고 새 Host command를 요구합니다.
 Host timeout/물리 E-stop/STM_B safety gate는 각 mode의 기존 계약대로 별도 적용됩니다.
+
+회생은 정지 경로를 대신하거나 늦추지 않습니다. 목표 0·브레이크·E-stop·STM_B safety 무효·host
+timeout은 기존 HALTED를 그대로 보내며 회생 상태를 slew 없이 지웁니다. MANUAL과 AUTO Speed에서는
+회생하지 않습니다. 회생 기본 한도는 0 A(꺼짐)이고 켜더라도 팩 상한 58.8 V·연속 충전 39 A 아래의
+전압·충전전류 한도가 함께 걸립니다. 회생 RPM 필드와 EZ EBS 동작은 시험 전까지 미확인이므로
+EZ의 EBS auto는 Disable로 둡니다. 거버너는 기존 프리셋의 가·감속 slew를 유지합니다.
+목표 0·브레이크는 slew를 우회해 즉시 전달하고, 입력 공백이 timeout을 넘으면 slew 이력을 버립니다.
+
+STM_A longitudinal v4의 방형파 회피 동작은 위 정지 조건보다 뒤에 적용됩니다. 회전 중 최소 구동 전류는
+MANUAL 전진·AUTO Torque·외부 전류처럼 전진 구동 명령을 보낼 때만 걸고, HALTED·회생·후진·
+역회전 확인 중에는 걸지 않습니다. 붕괴 감지 반응(기본 꺼짐)도 AUTO 전류 경로에서만 동작하며
+목표 0·브레이크·E-stop·피드백 단절이 항상 우선합니다. 사인파 기본값(최소 전류 0)에서는 둘 다
+명령을 바꾸지 않습니다. 역회전 판정이 한 샘플(−0.05 m/s)에서 3프레임(−0.30 m/s)으로 바뀐 이유는
+[재구성 보고서](reports/2026-10-01_ezkontrol_sine_rework.md)의 순간 음수 속도 분석입니다.
 
 ## 6. E-stop 동작
 

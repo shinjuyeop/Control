@@ -314,6 +314,10 @@ def handle_key(menu, key, *, busy=False):
 
 def readiness_rows(snapshot):
     rows = list(snapshot['gates'])
+    if 'calibration' in snapshot:
+        # Checked again when a driving Run starts; stationary steering runs skip it.
+        problem = snapshot['calibration']
+        rows.append(('STM_A 종방향 보정(구동 시험)', problem is None, problem or '런치 프리셋과 일치'))
     shown_problems = {detail for _, go, detail in rows if not go}
     rows.extend(('실행 조건', False, issue)
                 for issue in snapshot['issues'] if issue not in shown_problems)

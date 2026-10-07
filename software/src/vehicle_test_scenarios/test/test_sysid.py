@@ -246,6 +246,8 @@ def controlled():
     clock = [100.0]
     node = SysidNode(clock=lambda: clock[0])
     node.steering_control.ready = Mock(return_value=True)
+    # STM_A calibration gate has its own test; here STM_A runs the launch preset.
+    node.calibration_problem = Mock(return_value=None)
     data = telemetry()
     node.graph_errors = []
 
@@ -277,6 +279,42 @@ def begin(node, tick, scenario='speed_step'):
     node.commands.put(('record_ready', None))
     tick(auto=True)
     assert node.state == 'COUNTDOWN'
+
+
+def test_driving_run_requires_stm_a_on_the_launch_preset(controlled):
+    from control_tuning.longitudinal import LONGITUDINAL, decode_status, status_data
+    from control_tuning.presets import load_launch_overrides
+    from control_tuning.storage import default_settings_path
+    from vehicle_test_scenarios.sysid_runtime import SysidNode as Runtime
+    node, tick, clock = controlled
+    del node.calibration_problem  # back to the real gate
+    preset = load_launch_overrides(default_settings_path(), LONGITUDINAL, 'airborne')
+
+    def readback(config, source=1, revision=3):
+        node.longitudinal_sample = (clock[0], decode_status(status_data(config, source=source, revision=revision)))
+
+    node.launch_preset = 'airborne'
+    readback(preset, source=0, revision=0)  # STM_A rebooted to DEFAULT
+    assert 'DEFAULT' in Runtime.calibration_problem(node)
+    node.request_run(settings_with_speed('speed_step'))
+    tick()
+    assert node.state not in ('RECORD_START', 'WAIT_AUTO') and 'Run 거부' in node.logs[-1]
+    readback({**preset, 'speed_kp_a_per_mps': preset['speed_kp_a_per_mps'] + 1})
+    assert '프리셋과 다름' in Runtime.calibration_problem(node)
+    readback(preset)
+    assert Runtime.calibration_problem(node) is None
+    # A launch with an external longitudinal controller forces external_current.
+    readback({**preset, 'control_mode': 'external_current'})
+    assert Runtime.calibration_problem(node) is None
+    clock[0] += 1
+    assert 'readback' in Runtime.calibration_problem(node)  # stale readback
+    readback(preset)
+    node.launch_preset = 'unspecified'
+    assert '프리셋 확인' in Runtime.calibration_problem(node)
+    node.launch_preset = 'airborne'
+    node.request_run(settings_with_speed('speed_step'))
+    tick()
+    assert node.state == 'RECORD_START'
 
 
 def test_reported_steering_fault_does_not_block_scenario_start(controlled):
@@ -698,12 +736,16 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path, record_mcap):
     rclpy.init()
     node = SysidNode()
     from std_msgs.msg import Float32MultiArray
-    from control_tuning.longitudinal import AIRBORNE, config_wire
+    from control_tuning.longitudinal import LONGITUDINAL, status_data
+    from control_tuning.presets import load_launch_overrides
+    from control_tuning.storage import default_settings_path
     source = Node('steering_actuator_node')
     lon_pub = source.create_publisher(Float32MultiArray, '/drive/longitudinal_status', 10)
-    source.create_timer(.1, lambda: lon_pub.publish(Float32MultiArray(data=[
-        3., 1., 1., 1., 1., *config_wire(AIRBORNE),
-        .1, 1., 2., 3., 3., 0., 0., 0., 1., 0.])))
+    # STM_A readback that matches the launch preset, so the calibration gate passes.
+    driving = load_launch_overrides(default_settings_path(), LONGITUDINAL, 'driving')
+    source.create_timer(.1, lambda: lon_pub.publish(Float32MultiArray(data=status_data(driving, dict(
+        speed_error_mps=.1, p_current_a=1., i_current_a=2., unsaturated_current_a=3.,
+        current_command_a=3.)))))
     source.declare_parameter('steering_enabled', True)
     source.declare_parameter('tuning_preset', 'driving')
     lateral_config = Path(get_package_share_directory('lateral_ctrl')) / 'config'
@@ -769,6 +811,8 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path, record_mcap):
         ], node.log)
         manager.start()
         spin_until(lambda: not node.issues())
+        # A driving Run checks STM_A against the launch preset read from steering.
+        spin_until(lambda: node.calibration_problem() is None)
         assert not received
         node.request_run(replace(
             default_run_settings('speed_ramp'), speed_high_kph=5.0,
@@ -811,8 +855,9 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path, record_mcap):
             assert capture['nodes']['/steering_actuator_node']['ros__parameters']['steering_enabled'] is False
             assert capture['nodes']['/command_governor']['ros__parameters']['input_timeout_ms'] == 200.0
             assert capture['longitudinal']['status'] == 'complete'
-            assert capture['longitudinal']['readback']['version'] == 3
-            assert capture['longitudinal']['readback']['config']['coast_current_floor_a'] == 1.0
+            assert capture['longitudinal']['readback']['version'] == 5
+            assert capture['longitudinal']['readback']['config']['motor_waveform'] == 'sine'
+            assert capture['longitudinal']['readback']['config']['min_drive_current_sine_a'] == 0.0
             assert counts['/drive/longitudinal_status'] > 0
             assert counts['/sysid/control_parameters'] == 1
             assert counts['/parameter_events'] > 0

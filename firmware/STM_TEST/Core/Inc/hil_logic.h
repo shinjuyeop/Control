@@ -70,6 +70,38 @@ typedef struct {
 } HilEZCommand_t;
 
 HilEZCommand_t HilLogic_EZDecodeCommand(const uint8_t data[8]);
+
+/* Square-wave defect model (P1-3). A deterministic regression stimulus for the
+ * STM_A rolling floor, reverse debounce and collapse detector, not a physical
+ * reproduction. In square-wave mode the real EZkontrol reported no current
+ * below about 4 A, and while rolling it lost its Hall speed estimate when a
+ * small current was reapplied after 0 A or held below about 12 A
+ * (2026-09-29/30 airborne MCAPs). */
+#define HIL_EZ_SQUARE_DEADZONE_A        4.0f
+#define HIL_EZ_SQUARE_STABLE_A         12.0f
+#define HIL_EZ_SQUARE_ROLLING_RPM     400.0f
+#define HIL_EZ_SQUARE_COLLAPSE_FRAMES     3u
+
+typedef struct {
+  float bus_current_a;
+  float phase_current_a;
+  float rpm;
+} HilEZFeedback_t;
+
+typedef struct {
+  bool previous_drive;
+  uint8_t collapse_frame;
+  uint32_t collapses;
+} HilEZSquareFault_t;
+
+/* One Part I frame. measured_current_a is the SET CURRENT value used when the
+ * command is not a torque demand; plant_rpm is the closed-loop plant RPM. */
+HilEZFeedback_t HilLogic_EZSquareFeedback(HilEZSquareFault_t *fault,
+                                          const HilEZCommand_t *command,
+                                          float plant_rpm, float measured_current_a);
+void HilLogic_EZEncodePart1Feedback(const HilState_t *state,
+                                    const HilEZFeedback_t *feedback,
+                                    uint8_t data[8]);
 float HilLogic_EZPlantTargetRpm(const HilEZCommand_t *command);
 float HilLogic_PlantStepRpm(float current_rpm, float target_rpm,
                             float dt_s, float tau_s);

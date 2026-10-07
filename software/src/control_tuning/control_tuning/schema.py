@@ -6,7 +6,7 @@ from .longitudinal import LONGITUDINAL, validate_config
 
 STEERING = 'steering_actuator_node'
 GOVERNOR = 'command_governor'
-GROUPS = ('조향응답', '조향출력', '구동응답', '구동출력', '수신제한')
+GROUPS = ('조향응답', '조향출력', '구동응답', '구동출력', '구동보호', '수신제한')
 
 
 @dataclass(frozen=True)
@@ -21,6 +21,12 @@ class Field:
     node: str = STEERING
     integer: bool = False
     choices: tuple = ()
+    # Waveform-specific value: shown and sent only for this motor waveform.
+    waveform: str = ''
+    # Integer settings where 0 is meaningful (for example "reaction off").
+    zero: bool = False
+    # Negative values are the meaningful range (a negative current threshold).
+    signed: bool = False
 
 
 FIELDS = (
@@ -51,20 +57,20 @@ FIELDS = (
           'torque_soft_limit_margin_deg', '측정된 조향 범위 안쪽으로 목표를 제한하고, 끝 부근의 바깥 방향 출력을 줄입니다.', 0.1),
     Field('steering_min_vehicle_speed_kph', '조향 허용 최소 차속', 'km/h', GROUPS[1],
           'minimum_steering_speed_kph', '0이면 정지 상태에서도 조향합니다. 최근에 수신한 유효한 차속 피드백은 계속 필요합니다.', 0.1),
-    Field('governor_command_timeout_ms', '거버너 명령 유효시간', 'ms', GROUPS[4],
+    Field('governor_command_timeout_ms', '거버너 명령 유효시간', 'ms', GROUPS[5],
           'input_timeout_ms', '/planning/command의 생성 시각을 검사합니다. 너무 오래되거나 미래 시각인 명령을 중계하지 않습니다.',
           10, node=GOVERNOR),
-    Field('steering_command_timeout_ms', '조향 명령 수신 제한', 'ms', GROUPS[4],
+    Field('steering_command_timeout_ms', '조향 명령 수신 제한', 'ms', GROUPS[5],
           'steer_command_timeout_ms', '/vehicle/command가 이 시간 이상 오래되면 조향 명령을 만료시킵니다.', 10, integer=True),
-    Field('steering_can_timeout_ms', '조향 CAN 수신 제한', 'ms', GROUPS[4],
+    Field('steering_can_timeout_ms', '조향 CAN 수신 제한', 'ms', GROUPS[5],
           'can_timeout_ms', 'KEYA CAN frame 수신 단절 기준입니다.', 10, integer=True),
-    Field('steering_position_feedback_timeout_ms', '조향 위치 피드백 제한', 'ms', GROUPS[4],
+    Field('steering_position_feedback_timeout_ms', '조향 위치 피드백 제한', 'ms', GROUPS[5],
           'feedback_timeout_ms', '위치 피드백 수신 제한입니다. torque에서는 torque 피드백 제한과 작은 값이 적용됩니다.', 10, integer=True),
-    Field('steering_torque_feedback_timeout_ms', '조향 토크모드 피드백 제한', 'ms', GROUPS[4],
+    Field('steering_torque_feedback_timeout_ms', '조향 토크모드 피드백 제한', 'ms', GROUPS[5],
           'torque_feedback_timeout_ms', '조향 Torque 모드의 위치 피드백·샘플 간격·제어 지연 제한입니다. 구동 STM_A에는 적용되지 않습니다. 제어 주기의 2배 이상, 200 ms 이하.', 10, integer=True),
-    Field('steering_vehicle_mode_timeout_ms', '조향용 차량모드 수신 제한', 'ms', GROUPS[4],
+    Field('steering_vehicle_mode_timeout_ms', '조향용 차량모드 수신 제한', 'ms', GROUPS[5],
           'mode_timeout_ms', '조향 허용 판단에 사용하는 /drive/status의 MANUAL/AUTO 차량모드 수신 단절 기준입니다.', 50, integer=True),
-    Field('steering_vehicle_speed_timeout_ms', '조향용 차속 수신 제한', 'ms', GROUPS[4],
+    Field('steering_vehicle_speed_timeout_ms', '조향용 차속 수신 제한', 'ms', GROUPS[5],
           'drive_status_timeout_ms', '조향 허용 판단에 사용하는 차속의 수신 단절 기준입니다.', 10, integer=True),
 
 )
@@ -72,6 +78,10 @@ FIELDS += (
     Field('drive_control_mode', '구동 제어 방식', '', GROUPS[2], 'control_mode',
           'S로 저장하고 선택한 프리셋으로 구동 스택을 재시작합니다. Torque 값은 초기 시험 후보입니다.',
           node=LONGITUDINAL, choices=('speed', 'torque', 'external_current')),
+    Field('drive_motor_waveform', '구동 모터 파형', '', GROUPS[2], 'motor_waveform',
+          'EZkontrol PC 설정의 정류 방식과 같게 맞춥니다. STM_A는 판별하지 못하고 기록만 합니다. '
+          '선택한 파형의 최소 전류·feedforward 이득만 보내며 나머지 값은 공통입니다.',
+          node=LONGITUDINAL, choices=('sine', 'square')),
     Field('governor_deceleration_slew_mps2', '거버너 감속 slew', 'm/s²', GROUPS[2], 'deceleration_slew_mps2',
           '양수 속도 목표를 낮추는 최대 변화율입니다. 작을수록 천천히 감속합니다. '
           '0.5이면 5→2 m/s에 6초. 목표 0·브레이크는 즉시 처리합니다. 0이면 제한 해제.',
@@ -88,8 +98,36 @@ FIELDS += (
           '구동 Torque 모드 전용입니다. MCAP 기반 초기 시험 후보이며 S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 0.01, node=LONGITUDINAL),
     Field('drive_coast_release_error_mps', '구동 타력 해제 오차 (구형 펌웨어)', 'm/s', GROUPS[2], 'speed_hysteresis_mps',
           '이전 타력 래치 제어용입니다. 연속 PI 펌웨어는 이 값을 사용하지 않으며 기존 설정 호환을 위해 보존합니다.', 0.01, node=LONGITUDINAL),
-    Field('drive_coast_current_floor_a', '구동 감속 최소 전류', 'A', GROUPS[2], 'coast_current_floor_a',
-          '목표보다 빠를 때 PI가 더 낮은 전류를 요구해도 이 값 이상을 명령합니다. 목표 0·정지·차단에서는 0 A입니다.', 0.1, node=LONGITUDINAL),
+    Field('drive_ff_current_gain_square_mps2_per_a', '구동 FF 전류 이득 (방형파)', '(m/s²)/A', GROUPS[2],
+          'ff_current_gain_square_mps2_per_a',
+          '식별 플랜트 a = 이득·I − 구름저항 − 감쇠·v의 이득입니다. 0이면 feedforward를 끕니다. '
+          '같은 상전류의 토크가 파형마다 달라 파형별로 따로 식별합니다.', 0.0005,
+          node=LONGITUDINAL, waveform='square'),
+    Field('drive_ff_current_gain_sine_mps2_per_a', '구동 FF 전류 이득 (사인파)', '(m/s²)/A', GROUPS[2],
+          'ff_current_gain_sine_mps2_per_a',
+          '식별 플랜트 a = 이득·I − 구름저항 − 감쇠·v의 이득입니다. 0이면 feedforward를 끕니다. '
+          '사인파(FOC) 일정 전류 가속 시험으로 식별하기 전에는 0으로 둡니다.', 0.0005,
+          node=LONGITUDINAL, waveform='sine'),
+    Field('drive_ff_rolling_resistance_mps2', '구동 FF 구름저항', 'm/s²', GROUPS[2], 'ff_rolling_resistance_mps2',
+          '파형 공통 기계 저항입니다. 전류 이득이 0이면 쓰지 않습니다.', 0.01, node=LONGITUDINAL),
+    Field('drive_ff_speed_damping_per_s', '구동 FF 속도 감쇠', '1/s', GROUPS[2], 'ff_speed_damping_per_s',
+          '파형 공통 속도 비례 저항입니다. 전류 이득이 0이면 쓰지 않습니다.', 0.001, node=LONGITUDINAL),
+    Field('drive_ff_accel_limit_mps2', '구동 FF 가속 항 한도', 'm/s²', GROUPS[2], 'ff_accel_limit_mps2',
+          '목표속도 변화율에서 가져오는 가속도 항의 크기 한도입니다. 목표 계단이 1/dt로 커지지 않게 합니다.',
+          0.1, node=LONGITUDINAL),
+    Field('drive_pi_regen', '속도 PI 자동 회생', '', GROUPS[2], 'pi_regen_enabled',
+          'enabled면 목표보다 진입 오차 이상 빠르고 구동 전류가 0까지 내려온 뒤 속도 PI가 회생을 요청합니다. '
+          '회생 최대 전류가 0이면 동작하지 않습니다. 조이스틱 수동 회생(R1·R2) 확인 전에는 disabled로 둡니다.',
+          node=LONGITUDINAL, choices=('disabled', 'enabled')),
+    Field('drive_regen_enter_error_mps', 'PI 회생 진입 과속', 'm/s', GROUPS[2], 'regen_enter_error_mps',
+          '목표보다 이만큼 빠르면 회생에 들어갑니다. 해제 과속보다 커야 하며 그 사이에서는 0 A로 타력 주행합니다.',
+          0.05, node=LONGITUDINAL),
+    Field('drive_regen_exit_error_mps', 'PI 회생 해제 과속', 'm/s', GROUPS[2], 'regen_exit_error_mps',
+          '과속이 이보다 작아지면 회생을 끝냅니다. 회생 전류는 회생 변화율로 0까지 돌아온 뒤 구동이 다시 시작됩니다.',
+          0.05, node=LONGITUDINAL),
+    Field('drive_regen_kp_a_per_mps', 'PI 회생 P 게인', 'A/(m/s)', GROUPS[2], 'regen_kp_a_per_mps',
+          '회생 요청 = 게인 × (과속 − 해제 과속). 회생 중 적분은 동결됩니다. 0이면 PI 회생 요청이 없습니다.',
+          5, node=LONGITUDINAL),
     Field('drive_current_limit_a', '구동 전류 한도', 'A', GROUPS[3], 'max_drive_current_a',
           'Speed/Torque 공통 구동 한도입니다. Torque에서는 PI 상전류 명령 상한, Speed에서는 EZ 내부 속도제어의 전류 한도입니다.', 10, node=LONGITUDINAL),
     Field('drive_integrator_limit_a', '구동 적분 전류 한도', 'A', GROUPS[3], 'integrator_limit_a',
@@ -104,19 +142,90 @@ FIELDS += (
           '구동 Torque 모드 전용입니다. MCAP 기반 초기 시험 후보이며 S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 20, node=LONGITUDINAL),
     Field('drive_motor_speed_limit_rpm', '구동 모터 회전수 한도', 'rpm', GROUPS[3], 'motor_rpm_limit',
           'Speed/Torque 공통 RPM 한도입니다. Torque에서는 EZ 모터 회전수 상한, Speed에서는 목표 RPM 범위를 제한합니다. 최종 전진/후진 물리 한도는 펌웨어에 별도로 적용됩니다.', 100, node=LONGITUDINAL),
+    Field('drive_regen_max_current_a', '회생 최대 전류', 'A', GROUPS[3], 'regen_max_current_a',
+          'AUTO Torque/외부 전류에서 회생 상전류 크기의 상한입니다(음수로 송신). 0이면 모든 회생이 꺼집니다. '
+          '조이스틱 LT 요청도 이 값을 넘지 못합니다. 공중 R1 시험은 5 → 10 → 20 A 순서로 올립니다.',
+          1, node=LONGITUDINAL),
+    Field('drive_regen_slew_a_s', '회생 전류 변화율', 'A/s', GROUPS[3], 'regen_slew_a_s',
+          '회생 전류가 늘고 줄 때의 변화율입니다. 허용 조건이 깨지면 이 변화율로 0에 돌아옵니다. '
+          '속도·전압·충전전류 한도와 안전 정지는 즉시 적용됩니다.', 10, node=LONGITUDINAL),
+    Field('drive_regen_rpm_field', '회생 RPM 필드', '', GROUPS[3], 'regen_rpm_field_mode',
+          'zero는 회생 중 EZ RPM 필드를 0으로(기존), ceiling은 구동 RPM 한도를 양수 상한으로 보냅니다. '
+          'EZ가 어느 쪽에서 정지 후 역회전을 막는지 공중 시험으로 정합니다.',
+          node=LONGITUDINAL, choices=('zero', 'ceiling')),
+    Field('drive_min_current_square_a', '회전 중 최소 구동 전류 (방형파)', 'A', GROUPS[4], 'min_drive_current_square_a',
+          '굴러가는 동안 MANUAL 전진·AUTO Torque·외부 전류의 최종 명령을 이 값 이상으로 유지합니다. '
+          '방형파 EZ의 0 A·저전류 재인가 붕괴 회피용이며 0이면 끕니다. 2026-09-29/30 공중 시험 기준 12 A.',
+          0.5, node=LONGITUDINAL, waveform='square'),
+    Field('drive_min_current_sine_a', '회전 중 최소 구동 전류 (사인파)', 'A', GROUPS[4], 'min_drive_current_sine_a',
+          '사인파(FOC)는 0 A도 능동 제어라 기본 0(꺼짐)입니다. FOC에서도 붕괴가 감지될 때만 시험적으로 올립니다.',
+          0.5, node=LONGITUDINAL, waveform='sine'),
+    Field('drive_start_step', '출발 전류 스텝', '', GROUPS[4], 'start_step',
+          '정지 상태에서 0과 최소 전류 사이의 명령을 최소 전류로 올려 데드존을 천천히 지나지 않게 합니다. '
+          '최소 전류가 0이면 효과가 없습니다.',
+          node=LONGITUDINAL, choices=('enabled', 'disabled')),
+    Field('drive_hold_on_speed_mps', '최소 전류 유지 시작 속도', 'm/s', GROUPS[4], 'hold_on_speed_mps',
+          '전진·유효 피드백에서 이 속도 이상이면 회전 중 최소 전류를 켭니다. 0.35 m/s ≈ 65 motor rpm.',
+          0.05, node=LONGITUDINAL),
+    Field('drive_hold_off_speed_mps', '최소 전류 유지 해제 속도', 'm/s', GROUPS[4], 'hold_off_speed_mps',
+          '이 속도 이하면 끕니다. 시작 속도보다 작아야 하며 그 사이가 히스테리시스입니다.',
+          0.05, node=LONGITUDINAL),
+    Field('drive_reverse_speed_mps', '역회전 판정 속도', 'm/s', GROUPS[4], 'reverse_speed_mps',
+          'AUTO Torque/외부 전류에서 측정 속도가 이 값보다 더 음수일 때 역회전 후보로 셉니다. 목표 음수는 즉시 정지합니다.',
+          0.05, node=LONGITUDINAL),
+    Field('drive_reverse_debounce_frames', '역회전 확정 프레임', '50 ms', GROUPS[4], 'reverse_debounce_frames',
+          '연속 프레임 수가 이 값에 도달해야 HALTED합니다. 그 전에는 RUN을 유지하고 0 A를 보냅니다.',
+          1, node=LONGITUDINAL, integer=True),
+    Field('drive_collapse_hold_frames', '붕괴 감지 반응 프레임', '50 ms', GROUPS[4], 'collapse_hold_frames',
+          'STM_A가 상전류·RPM 붕괴를 감지하면 AUTO에서 이 프레임 동안 최소 전류(없으면 0 A)에 머물고 PI를 멈춥니다. '
+          '0이면 관측·집계만 합니다.',
+          1, node=LONGITUDINAL, integer=True, zero=True),
+    Field('drive_collapse_phase_low_square_a', '붕괴 감지 음수 상전류 (방형파)', 'A', GROUPS[4],
+          'collapse_phase_low_square_a',
+          '회생이 아닌 명령 중 상전류가 이 값보다 낮으면 붕괴로 셉니다. 방형파 2026-09-29/30 기록 기준 -30 A.',
+          5, node=LONGITUDINAL, waveform='square', signed=True),
+    Field('drive_collapse_phase_low_sine_a', '붕괴 감지 음수 상전류 (사인파)', 'A', GROUPS[4],
+          'collapse_phase_low_sine_a',
+          '회생이 아닌 명령 중 상전류가 이 값보다 낮으면 붕괴로 셉니다. FOC 0 A 잡음이 2350 rpm에서 -51 A까지 나와 -60 A.',
+          5, node=LONGITUDINAL, waveform='sine', signed=True),
+    Field('drive_regen_fade_speed_mps', '회생 감소 시작 속도', 'm/s', GROUPS[4], 'regen_fade_speed_mps',
+          '이 속도 아래부터 회생 한도를 선형으로 줄입니다.', 0.1, node=LONGITUDINAL),
+    Field('drive_regen_cutoff_speed_mps', '회생 차단 속도', 'm/s', GROUPS[4], 'regen_cutoff_speed_mps',
+          '이 속도 이하에서는 회생이 즉시 0입니다. 정지 후 역구동을 막는 값이며 감소 시작 속도보다 작아야 합니다.',
+          0.1, node=LONGITUDINAL),
+    Field('drive_regen_voltage_soft_v', '회생 전압 감소 시작', 'V', GROUPS[4], 'regen_voltage_soft_v',
+          'bus 전압이 이 값부터 회생 한도를 선형으로 줄입니다. 팩 상한 58.8 V.', 0.5, node=LONGITUDINAL),
+    Field('drive_regen_voltage_hard_v', '회생 전압 차단', 'V', GROUPS[4], 'regen_voltage_hard_v',
+          '이 bus 전압 이상에서는 회생이 즉시 0입니다. 감소 시작보다 커야 하고 60 V 이하입니다.', 0.5, node=LONGITUDINAL),
+    Field('drive_regen_bus_current_limit_a', '회생 충전전류 한도', 'A', GROUPS[4], 'regen_bus_current_limit_a',
+          '측정 bus 충전전류가 이 크기를 넘으면 회생 한도를 프레임마다 20 % 줄이고 회복 시 회생 변화율로 돌립니다. '
+          '배터리 연속 충전 39 A 이하.', 1, node=LONGITUDINAL),
 )
 BY_KEY = {f.key: f for f in FIELDS}
 
 
-def applies_to_drive_mode(field, mode):
+def applies_to_drive_mode(field, mode, waveform=None):
+    if field.waveform and waveform is not None and field.waveform != waveform:
+        return False
     if field.key == 'governor_acceleration_slew_mps2':
         return mode == 'speed'
     if field.key == 'governor_deceleration_slew_mps2':
         return mode in ('speed', 'torque')
     if field.node != LONGITUDINAL:
         return True
-    if field.native in ('control_mode', 'max_drive_current_a', 'motor_rpm_limit'):
+    # MANUAL applies the rolling floor whatever the calibration mode is.
+    if field.native in ('control_mode', 'max_drive_current_a', 'motor_rpm_limit', 'motor_waveform',
+                        'min_drive_current_square_a', 'min_drive_current_sine_a', 'start_step',
+                        'hold_on_speed_mps', 'hold_off_speed_mps'):
         return True
+    if field.native in ('collapse_phase_low_square_a', 'collapse_phase_low_sine_a'):
+        return True  # the detector watches MANUAL and every AUTO path
+    if field.native in ('pi_regen_enabled', 'regen_enter_error_mps', 'regen_exit_error_mps',
+                        'regen_kp_a_per_mps'):
+        return mode == 'torque'
+    if field.native in ('reverse_speed_mps', 'reverse_debounce_frames', 'collapse_hold_frames') \
+            or field.native.startswith('regen_'):
+        return mode in ('torque', 'external_current')
     # Retain the old hysteresis setting in presets/ABI; continuous PI does not use it.
     return mode == 'torque' and field.native != 'speed_hysteresis_mps'
 
@@ -148,6 +257,9 @@ def current_per_raw(steering):
 
 
 def decode_node(node, native):
+    if node == LONGITUDINAL:
+        # Readback names only the active waveform's slot (and v1~v3 fewer fields).
+        return {f.key: native[f.native] for f in FIELDS if f.node == node and f.native in native}
     values = {f.key: native[f.native] for f in FIELDS if f.node == node}
     if node == STEERING:
         scale = current_per_raw(native)
@@ -175,8 +287,8 @@ def encode(values, context):
                 raise ValueError(f'{f.label}: 유한한 숫자가 필요합니다.')
             if f.integer and int(value) != value:
                 raise ValueError(f'{f.label}: 정수를 입력하십시오.')
-            if f.integer and not 0 < value <= 2147483647:
-                raise ValueError(f'{f.label}: 1~2147483647 사이 정수가 필요합니다.')
+            if f.integer and not (0 if f.zero else 1) <= value <= 2147483647:
+                raise ValueError(f'{f.label}: {0 if f.zero else 1}~2147483647 사이 정수가 필요합니다.')
             value = int(value) if f.integer else float(value)
         result[f.node][f.native] = value
     s = result[STEERING]
@@ -249,7 +361,25 @@ def range_hint(field, values, context):
             'drive_current_slew_up_a_s': '0 초과 ~ 9600', 'drive_current_slew_down_a_s': '0 초과 ~ 9600',
             'drive_speed_deadband_mps': '0~0.2', 'drive_coast_release_error_mps': 'deadband 초과 ~ 0.5',
             'drive_reapply_current_band_a': '0~최대 구동 전류', 'drive_reapply_current_slew_a_s': '0 초과 ~ 상승률',
-            'drive_motor_speed_limit_rpm': '100~4500', 'drive_coast_current_floor_a': '0~최대 구동 전류',
+            'drive_motor_speed_limit_rpm': '100~4500',
+            'drive_motor_waveform': 'sine / square; EZ 설정과 같게',
+            'drive_min_current_square_a': '0~30, 사용 파형이면 구동 전류 한도 이하',
+            'drive_min_current_sine_a': '0~30, 사용 파형이면 구동 전류 한도 이하',
+            'drive_start_step': 'enabled / disabled',
+            'drive_hold_on_speed_mps': '0.1~2', 'drive_hold_off_speed_mps': '0 ~ 시작 속도 미만',
+            'drive_reverse_speed_mps': '0.05~1', 'drive_reverse_debounce_frames': '1~10',
+            'drive_collapse_hold_frames': '0~40',
+            'drive_ff_current_gain_square_mps2_per_a': '0 또는 0.0005~0.2',
+            'drive_ff_current_gain_sine_mps2_per_a': '0 또는 0.0005~0.2',
+            'drive_ff_rolling_resistance_mps2': '0~2', 'drive_ff_speed_damping_per_s': '0~1',
+            'drive_ff_accel_limit_mps2': '0~5',
+            'drive_regen_max_current_a': '0~60 · 0이면 회생 꺼짐', 'drive_regen_slew_a_s': '10~1000',
+            'drive_regen_rpm_field': 'zero / ceiling', 'drive_pi_regen': 'disabled / enabled',
+            'drive_regen_enter_error_mps': '0.05~2, 해제보다 큼', 'drive_regen_exit_error_mps': '0 ~ 진입 미만',
+            'drive_regen_kp_a_per_mps': '0~500', 'drive_regen_fade_speed_mps': '0.3~5',
+            'drive_regen_cutoff_speed_mps': '0.1 ~ 감소 시작 미만', 'drive_regen_voltage_soft_v': '40 ~ 차단 미만',
+            'drive_regen_voltage_hard_v': '감소 시작 초과 ~ 60', 'drive_regen_bus_current_limit_a': '1~39',
+            'drive_collapse_phase_low_square_a': '-200~-10', 'drive_collapse_phase_low_sine_a': '-200~-10',
         }[field.key]
     peak = values['steering_peak_current_limit_a']
     period = context['torque_control_period_ms']

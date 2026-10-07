@@ -7,7 +7,7 @@ import yaml
 
 from .conditions import CONDITIONS, CONDITION_KEYS, condition_label
 from .schema import BY_KEY, STEERING, FIELDS, GOVERNOR, decode, encode, equivalent
-from .longitudinal import LONGITUDINAL
+from .longitudinal import LONGITUDINAL, PROTECTION
 from .naming import canonical_values
 from .storage import SettingsStore, fingerprint, read_document
 
@@ -104,13 +104,30 @@ class PresetStore:
                     raise ValueError(f'{key}: section 간 설정값이 서로 다릅니다.')
                 values[key] = value
         values = canonical_values(values)
-        values.setdefault('drive_coast_current_floor_a', 0.0)
+        # Presets saved before STM_A ABI v4 were tuned on the square-wave EZ. Their
+        # coast-only floor becomes the square rolling minimum current; the other
+        # v4 drive-protection and feedforward values take the firmware defaults.
+        legacy_floor = values.pop('drive_coast_current_floor_a', None)
+        if 'drive_motor_waveform' not in values:
+            values['drive_motor_waveform'] = 'square'
+            if legacy_floor is not None:
+                values.setdefault('drive_min_current_square_a', legacy_floor)
+        for key, value in canonical_values(PROTECTION).items():
+            values.setdefault(key, value)
         # Existing v2/v3 presets predate the governor ramp; use the base setting.
         values.setdefault('governor_deceleration_slew_mps2',
                           self.settings.saved['governor_deceleration_slew_mps2'])
         values.setdefault('governor_acceleration_slew_mps2',
                           self.settings.saved['governor_acceleration_slew_mps2'])
         return self.normalize(values)
+
+    def is_current(self, condition):
+        """True when the saved file already names every current field."""
+        entry = self.entry(condition)
+        if not entry or entry.get('schema_version') != 3:
+            return False
+        saved = sections({f.key: None for f in FIELDS})
+        return all(key in entry.get(section, {}) for section, keys in saved.items() for key in keys)
 
     def save(self, condition, values):
         self.entry(condition)

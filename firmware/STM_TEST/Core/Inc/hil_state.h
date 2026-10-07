@@ -79,6 +79,10 @@ typedef struct {
   bool ez_plant_enabled;
   float ez_target_rpm;
 
+  /* Optional square-wave defect model (SET EZ_SQUARE). Part I only: the
+   * plant RPM is untouched, the reported current/RPM are distorted. */
+  bool ez_square_fault;
+
   uint32_t ez_rx_count;
   uint32_t ez_tx_count;
   uint32_t keya_rx_count;

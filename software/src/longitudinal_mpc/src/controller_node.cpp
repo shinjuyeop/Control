@@ -140,7 +140,8 @@ private:
             last_current_);
         if(!result.solved) reason="solver failed";
       } else {
-        result.current=Long_Update(&pi_state_,&pi_config_,target,speed,.05);
+        // External-current mode: STM_A applies the rolling floor to this value itself.
+        result.current=Long_Update(&pi_state_,&pi_config_,target,speed,.05,0);
         result.solved=true;
       }
       if(const char *late=Inhibit()) reason=late;

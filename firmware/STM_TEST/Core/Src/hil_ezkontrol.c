@@ -22,6 +22,7 @@ static volatile bool s_rx_overflow;
 static bool s_initialized;
 static HilEZState_t s_state;
 static uint8_t s_life;
+static HilEZSquareFault_t s_square;
 
 static bool send_frame(uint32_t identifier, const uint8_t data[8])
 {
@@ -206,7 +207,20 @@ void HilEZKontrol_Task(void)
           if (send_frame(HIL_EZ_STATUS_PART1_ID, handshake)) increment_tx_count();
         } else {
           uint8_t part1[8], part2[8];
-          HilLogic_EZEncodePart1(&snapshot, part1);
+          if (snapshot.ez_square_fault) {
+            /* Distort only what STM_A reads back; the plant keeps its RPM. */
+            const HilEZCommand_t command = {
+              .running = snapshot.ez_running,
+              .speed_control = snapshot.ez_speed_control,
+              .rpm_field = snapshot.ez_command_rpm,
+              .phase_current_a = snapshot.ez_command_current_a};
+            const HilEZFeedback_t feedback = HilLogic_EZSquareFeedback(
+                &s_square, &command, snapshot.motor_rpm, snapshot.motor_current_a);
+            HilLogic_EZEncodePart1Feedback(&snapshot, &feedback, part1);
+          } else {
+            s_square = (HilEZSquareFault_t){0};
+            HilLogic_EZEncodePart1(&snapshot, part1);
+          }
           HilLogic_EZEncodePart2(&snapshot, s_life++, part2);
           if (send_frame(HIL_EZ_STATUS_PART1_ID, part1)) increment_tx_count();
           if (send_frame(HIL_EZ_STATUS_PART2_ID, part2)) increment_tx_count();

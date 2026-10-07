@@ -14,11 +14,23 @@ def test_drive_mode_filters_editable_fields_and_preserves_hidden_values(editor):
     editor.key('3')
     editor.commit('speed')
     assert [f.key for f in editor.fields] == [
-        'drive_control_mode', 'governor_deceleration_slew_mps2', 'governor_acceleration_slew_mps2']
-    editor.key('down')
+        'drive_control_mode', 'drive_motor_waveform', 'governor_deceleration_slew_mps2',
+        'governor_acceleration_slew_mps2']
+    editor.selected = 2
     editor.commit(.3)
-    editor.key('down')
+    editor.selected = 3
     editor.commit(1.2)
+    # MANUAL uses the rolling floor in every calibration; only the active
+    # waveform's minimum current and collapse threshold are editable.
+    editor.key('5')
+    assert [f.key for f in editor.fields] == [
+        'drive_min_current_sine_a', 'drive_start_step', 'drive_hold_on_speed_mps',
+        'drive_hold_off_speed_mps', 'drive_collapse_phase_low_sine_a']
+    editor.selected = 4
+    editor.commit(-45)  # a signed field takes a negative threshold
+    editor.selected = 0
+    with pytest.raises(ValueError):
+        editor.commit(-1)  # unsigned fields still refuse negative input
     editor.key('4')
     assert {f.key for f in editor.fields} == {'drive_current_limit_a', 'drive_motor_speed_limit_rpm'}
     original_pi = editor.draft['drive_speed_kp_a_per_mps']
@@ -28,14 +40,51 @@ def test_drive_mode_filters_editable_fields_and_preserves_hidden_values(editor):
     saved = editor.presets.load('airborne')
     assert saved['governor_deceleration_slew_mps2'] == .3
     assert saved['governor_acceleration_slew_mps2'] == 1.2
+    assert saved['drive_collapse_phase_low_sine_a'] == -45
+    assert saved['drive_current_limit_a'] == 10
     assert saved['drive_speed_kp_a_per_mps'] == original_pi
     editor.key('3')
     editor.commit('torque')
-    assert 'drive_speed_kp_a_per_mps' in {f.key for f in editor.fields}
-    assert 'drive_coast_release_error_mps' not in {f.key for f in editor.fields}
-    assert 'governor_acceleration_slew_mps2' not in {f.key for f in editor.fields}
+    keys = {f.key for f in editor.fields}
+    assert {'drive_speed_kp_a_per_mps', 'drive_pi_regen', 'drive_regen_kp_a_per_mps'} <= keys
+    assert 'governor_deceleration_slew_mps2' in keys
+    assert 'governor_acceleration_slew_mps2' not in keys
+    assert 'drive_coast_release_error_mps' not in keys
+    assert 'drive_ff_current_gain_sine_mps2_per_a' in keys
+    assert 'drive_ff_current_gain_square_mps2_per_a' not in keys
+    editor.key('4')
+    assert {'drive_regen_max_current_a', 'drive_regen_slew_a_s', 'drive_regen_rpm_field'} <= {
+        f.key for f in editor.fields}
+    editor.key('3')
     editor.commit('external_current')
-    assert [f.key for f in editor.fields] == ['drive_control_mode']
+    assert [f.key for f in editor.fields] == ['drive_control_mode', 'drive_motor_waveform']
+    editor.key('5')
+    assert {'drive_reverse_speed_mps', 'drive_reverse_debounce_frames', 'drive_collapse_hold_frames',
+            'drive_regen_cutoff_speed_mps', 'drive_regen_voltage_hard_v'} <= {f.key for f in editor.fields}
+
+
+def test_waveform_switch_shows_its_own_values_and_keeps_the_other(editor):
+    editor.key('3')
+    editor.commit('torque')
+    editor.key('down')
+    assert editor.field.key == 'drive_motor_waveform'
+    editor.key('enter')  # sine -> square
+    assert editor.draft['drive_motor_waveform'] == 'square'
+    assert 'drive_ff_current_gain_square_mps2_per_a' in {f.key for f in editor.fields}
+    editor.key('5')
+    assert editor.field.key == 'drive_min_current_square_a'
+    assert editor.draft['drive_min_current_square_a'] == 12.
+    editor.commit(10)
+    editor.key('s')
+    assert not editor.error
+    saved = editor.presets.load('airborne')
+    assert saved['drive_motor_waveform'] == 'square'
+    assert saved['drive_min_current_square_a'] == 10. and saved['drive_min_current_sine_a'] == 0.
+    # 0 frames is a valid "observe only" collapse reaction.
+    editor.selected = [f.key for f in editor.fields].index('drive_collapse_hold_frames')
+    editor.commit(0)
+    editor.key('s')
+    assert not editor.error
 
 
 @pytest.mark.parametrize('width,height', [(80, 24), (110, 32), (140, 42)])

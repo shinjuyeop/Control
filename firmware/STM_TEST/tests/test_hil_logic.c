@@ -100,6 +100,14 @@ static void test_ez_command_decode(void)
   encode_ez_command(data, -1500, 240.0f, true, false);
   command = HilLogic_EZDecodeCommand(data);
   assert(HilLogic_EZPlantTargetRpm(&command) < -700.0f);
+
+  /* Regen brakes toward 0 whether STM_A sends RPM 0 or a positive ceiling. */
+  encode_ez_command(data, 4500, -20.0f, true, false);
+  command = HilLogic_EZDecodeCommand(data);
+  assert(fabsf(HilLogic_EZPlantTargetRpm(&command)) < 0.001f);
+  encode_ez_command(data, 0, -20.0f, true, false);
+  command = HilLogic_EZDecodeCommand(data);
+  assert(fabsf(HilLogic_EZPlantTargetRpm(&command)) < 0.001f);
 }
 
 static void test_ez_plant_step(void)
@@ -129,6 +137,72 @@ static void test_ez_plant_step(void)
   assert(state.vehicle_speed_kph > 19.0f && state.vehicle_speed_kph < 19.5f);
   HilLogic_SetMotionFromRpm(&state, 0.0f);
   assert(fabsf(state.vehicle_speed_kph) < 0.001f);
+}
+
+static void test_ez_square_fault(void)
+{
+  HilEZSquareFault_t fault = {0};
+  HilEZCommand_t command = {.running = true, .speed_control = false,
+                            .rpm_field = 4500.0f, .phase_current_a = 12.0f};
+  HilEZFeedback_t out;
+
+  /* Held at or above 12 A while rolling: no collapse, current follows. */
+  fault.previous_drive = true;
+  out = HilLogic_EZSquareFeedback(&fault, &command, 1000.0f, 0.0f);
+  assert(fault.collapses == 0u && fabsf(out.phase_current_a - 12.0f) < 0.001f);
+  assert(fabsf(out.rpm - 1000.0f) < 0.001f);
+
+  /* Reapply after 0 A while rolling: spike, RPM 0, sign flip, recovery. */
+  command.phase_current_a = 0.0f;
+  out = HilLogic_EZSquareFeedback(&fault, &command, 500.0f, 0.0f);
+  assert(fault.collapses == 0u && fabsf(out.phase_current_a) < 0.001f);
+  command.phase_current_a = 2.0f;
+  out = HilLogic_EZSquareFeedback(&fault, &command, 500.0f, 0.0f);
+  assert(fault.collapses == 1u);
+  assert(out.phase_current_a < -100.0f && out.bus_current_a > 100.0f);
+  out = HilLogic_EZSquareFeedback(&fault, &command, 500.0f, 0.0f);
+  assert(fabsf(out.rpm) < 0.001f);
+  out = HilLogic_EZSquareFeedback(&fault, &command, 500.0f, 0.0f);
+  assert(out.rpm < -100.0f);
+  /* Back to the plant; 2 A sits in the dead zone and reads exactly zero. */
+  command.phase_current_a = 2.0f;
+  fault.previous_drive = true;
+  out = HilLogic_EZSquareFeedback(&fault, &command, 300.0f, 0.0f);
+  assert(fault.collapses == 1u && fabsf(out.rpm - 300.0f) < 0.001f);
+  assert(fabsf(out.phase_current_a) < 0.001f);
+
+  /* A small held current at speed collapses too; standstill never does. */
+  command.phase_current_a = 8.0f;
+  out = HilLogic_EZSquareFeedback(&fault, &command, 1200.0f, 0.0f);
+  assert(fault.collapses == 2u);
+  for (int i = 0; i < 3; ++i) (void)HilLogic_EZSquareFeedback(&fault, &command, 0.0f, 0.0f);
+  out = HilLogic_EZSquareFeedback(&fault, &command, 0.0f, 0.0f);
+  assert(fault.collapses == 2u && fabsf(out.phase_current_a - 8.0f) < 0.001f);
+
+  /* Native speed control: the EZ owns its current; report the injected value. */
+  command.speed_control = true;
+  out = HilLogic_EZSquareFeedback(&fault, &command, 1200.0f, 33.0f);
+  assert(fault.collapses == 2u && fabsf(out.phase_current_a - 33.0f) < 0.001f);
+
+  /* Bus and phase are encoded separately for the model. */
+  HilState_t state = {0};
+  uint8_t part1[8];
+  state.motor_voltage_v = 52.3f;
+  const HilEZFeedback_t feedback = {150.0f, -120.0f, 0.0f};
+  HilLogic_EZEncodePart1Feedback(&state, &feedback, part1);
+  assert(part1[2] == 0xDCu && part1[3] == 0x82u);   /* (150+3200)*10 = 33500 */
+  assert(part1[4] == 0x50u && part1[5] == 0x78u);   /* (-120+3200)*10 = 30800 */
+  assert(part1[6] == 0x00u && part1[7] == 0x7Du);   /* 0 rpm = 32000 */
+
+  char line[64], reply[128];
+  (void)snprintf(line, sizeof(line), "SET EZ_SQUARE ON");
+  assert(HilLogic_ProcessCommand(&state, line, reply, sizeof(reply)));
+  assert(state.ez_square_fault);
+  (void)snprintf(line, sizeof(line), "set ez_square off");
+  assert(HilLogic_ProcessCommand(&state, line, reply, sizeof(reply)));
+  assert(!state.ez_square_fault);
+  (void)snprintf(line, sizeof(line), "SET EZ_SQUARE MAYBE");
+  assert(!HilLogic_ProcessCommand(&state, line, reply, sizeof(reply)));
 }
 
 static void test_keya_decode(void)
@@ -224,6 +298,7 @@ int main(void)
   test_ezkontrol_encoding();
   test_ez_command_decode();
   test_ez_plant_step();
+  test_ez_square_fault();
   test_keya_decode();
   test_command_parser();
   puts("hil_logic tests: PASS");

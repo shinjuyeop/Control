@@ -154,7 +154,7 @@ host에서 컴파일한다. 새 task는 없다. steering fault/recovery 및 STM_
 
 ## 5. Runtime calibration, preset, rollout
 
-[정확한 wire 계약](../INTERFACES.md#longitudinal-calibration-v1)을 따른다.
+[정확한 wire 계약](../INTERFACES.md#longitudinal-calibration-v5)을 따른다.
 이미 정적 micro-ROS library에 있는 `std_msgs/Float32MultiArray`를 사용하므로
 kaiev26_msgs/DriveActuatorStatus schema와 STM_B firmware rollout은 필요하지 않다.
 fixed order/version, bounded storage를 사용하며 동적 string/array 할당을 추가하지 않는다.

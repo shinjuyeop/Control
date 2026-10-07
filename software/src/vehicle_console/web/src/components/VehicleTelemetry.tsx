@@ -427,11 +427,18 @@ export function DriveTelemetry({
         <Fact label="구동 제어 방식" value={String(config.drive_control_mode ?? legacyConfig.control_mode ?? "—").toUpperCase()} />
         <Fact label="Calibration 출처" value={String(lon.source ?? "—")} />
         <Fact label="구동 속도 P / I 게인" value={`${fmt(config.drive_speed_kp_a_per_mps ?? legacyConfig.speed_kp_a_per_mps)} / ${fmt(config.drive_speed_ki_a_per_mps_s ?? legacyConfig.speed_ki_a_per_mps_s)}`} />
-        <Fact label="PI P / I" value={`${fmt(lon.p_current_a)} / ${fmt(lon.i_current_a)} A`} />
-        <Fact label="PI 최종 전류" value={fmt(lon.current_command_a)} unit="A" />
+        <Fact label="모터 파형 · 회전 중 최소 전류" value={`${String(config.drive_motor_waveform ?? "—").toUpperCase()} · ${fmt(config.drive_min_current_sine_a ?? config.drive_min_current_square_a ?? legacyConfig.coast_current_floor_a)} A`} />
+        <Fact label="FF / P / I" value={`${fmt(lon.ff_current_a)} / ${fmt(lon.p_current_a)} / ${fmt(lon.i_current_a)} A`} />
+        <Fact label="PI 전류 / 최종 명령" value={`${fmt(lon.current_command_a)} / ${fmt(lon.output_current_a)} A`} />
         <Fact label="속도 오차" value={fmt(lon.speed_error_mps, 2)} unit="m/s" />
         <Fact label="포화 / Anti-windup / Coast" value={`${fmt(lon.saturated, 0)} / ${fmt(lon.anti_windup, 0)} / ${fmt(lon.coasting, 0)}`} />
-        <Fact label="종방향 허용 상태" value={enumText(["허용", "비활성", "피드백 단절", "새 명령 대기", "역방향 미지원", "정지"], lon.inhibit)} />
+        <Fact label="Hold / 하한 결정 / 출발 스텝" value={`${fmt(lon.rolling_hold, 0)} / ${fmt(lon.floor_applied, 0)} / ${fmt(lon.start_stepped, 0)}`} />
+        <Fact label="종방향 허용 상태" value={enumText(["허용", "비활성", "피드백 단절", "새 명령 대기", "역방향 미지원", "정지", "역회전 확인 중"], lon.inhibit)} />
+        <Fact label="회생 요청 / 한도 / 전류" value={`${fmt(lon.regen_request_a)} / ${fmt(lon.regen_limit_a)} / ${fmt(lon.regen_current_a)} A`} />
+        <Fact label="회생 속도·전압·충전 계수" value={`${fmt(lon.regen_speed_factor, 2)} / ${fmt(lon.regen_voltage_factor, 2)} / ${fmt(lon.regen_bus_scale, 2)}`} />
+        <Fact label="회생 경로 / PI 회생" value={`${fmt(lon.regen_active, 0)} / ${fmt(lon.pi_regen_mode, 0)} · 최대 ${fmt(config.drive_regen_max_current_a)} A`} />
+        <Fact label="구동 경로" value={enumText(["HALTED", "MANUAL", "SPEED", "TORQUE", "외부 전류", "회생", "RUN 0 A"], lon.drive_path)} />
+        <Fact label="붕괴 감지 누적 / 최근" value={`${fmt(lon.collapse_events, 0)} / ${typeof lon.collapse_age_s === "number" && lon.collapse_age_s >= 0 ? `${fmt(lon.collapse_age_s, 1)} s 전` : "—"}`} />
         {source("/drive/longitudinal_status")}
       </div>
       <Fact
