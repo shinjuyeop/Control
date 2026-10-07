@@ -166,6 +166,7 @@ export function ActiveConditions({
   for (const topic of [
     "/vehicle/command",
     "/drive/status",
+    "/drive/longitudinal_status",
     "/brake/status",
     "/steering/status",
   ]) {

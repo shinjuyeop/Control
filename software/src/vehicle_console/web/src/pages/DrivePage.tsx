@@ -1,3 +1,4 @@
+import type { Trace } from "../components/instruments";
 import { DriveComparison, CurrentPlot } from "../components/VehicleObservations";
 import { DriveFlow } from "../components/SubsystemSignals";
 import { StateRail } from "../components/SignalInstruments";
@@ -15,6 +16,25 @@ import {
   feedbackColor,
 } from "../domain/format";
 import { useWorkbench } from "../hooks/useWorkbench";
+const driveTraces: Trace[] = [
+  { key: "targetSpeed", label: "속도 목표", color: targetColor },
+  { key: "speed", label: "STM_A 속도", color: feedbackColor },
+  {
+    key: "targetRpm",
+    label: "Plant 목표",
+    color: auxiliaryColor,
+    axis: "right",
+    dashed: true,
+  },
+  {
+    key: "rpm",
+    label: "모터 응답",
+    color: "#206449",
+    axis: "right",
+    dashed: true,
+  },
+];
+
 export function DrivePage() {
   const { state, online, hil, drive, points, linkBadge } =
     useWorkbench();
@@ -53,24 +73,7 @@ export function DrivePage() {
       >
         <Chart
           points={points}
-          traces={[
-            { key: "targetSpeed", label: "속도 목표", color: targetColor },
-            { key: "speed", label: "STM_A 속도", color: feedbackColor },
-            {
-              key: "targetRpm",
-              label: "Plant 목표",
-              color: auxiliaryColor,
-              axis: "right",
-              dashed: true,
-            },
-            {
-              key: "rpm",
-              label: "모터 응답",
-              color: "#206449",
-              axis: "right",
-              dashed: true,
-            },
-          ]}
+          traces={driveTraces}
           unit="km/h"
           rightUnit="RPM"
           height={280}

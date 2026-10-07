@@ -24,7 +24,7 @@ export function VehicleApp() {
   const Page = selected.component;
   return <div className="workstation vehicle-workstation">
     <header className="global-bar">
-      <button className="wordmark" onClick={() => setPage("overview")} aria-label="KAI Vehicle Console Overview"><b>KAI</b><span>VEHICLE CONSOLE<strong className="profile-label">VEHICLE · MONITOR + FAULT ACK</strong></span></button>
+      <button className="wordmark" onClick={() => setPage("overview")} aria-label="KAI Vehicle Console Overview"><b>KAI</b><span>VEHICLE CONSOLE<strong className="profile-label">VEHICLE · MONITOR</strong></span></button>
       <div className="vehicle-link-status" role="status"><Badge tone={online ? "good" : "warning"}>{online ? "WEB LIVE" : "WEB OFFLINE"}</Badge>
         {[["STM_A", "/drive/status"], ["STM_B", "/brake/status"]].map(([name, topic]) => {
           const status = reception(state, online, topic);
@@ -41,7 +41,7 @@ export function VehicleApp() {
       </div>
       {!online && <div className="connection-notice" role="status"><Activity size={16} /><div><strong>WEB OFFLINE · 현재 상태 확인 불가</strong><p>자동 재연결 중 · 마지막 수신 이후 경과시간이 계속 증가합니다.</p></div></div>}
       <div className="page-content"><Page /></div>
-      <footer className="workspace-footer"><span>VEHICLE · MONITOR + FAULT ACK</span><span>상세 분석: Foxglove · 그래프 이력 60 s</span><span>{paused ? "HISTORY PAUSED" : "LIVE TELEMETRY"}</span></footer>
+      <footer className="workspace-footer"><span>VEHICLE · MONITOR</span><span>상세 분석: Foxglove · 그래프 이력 60 s</span><span>{paused ? "HISTORY PAUSED" : "LIVE TELEMETRY"}</span></footer>
     </main>
   </div>;
 }

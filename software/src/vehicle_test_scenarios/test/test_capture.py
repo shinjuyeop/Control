@@ -29,7 +29,8 @@ def parameter_nodes(monkeypatch):
     values.update(steering_enabled=True, torque_kd=1723.0, torque_direction_sign=-1)
     for key, value in values.items():
         steering.declare_parameter(key, value)
-    for key, value in dict(input_topic='/planning/command', output_topic='/vehicle/command', input_timeout_ms=234.).items():
+    for key, value in dict(input_topic='/planning/command', output_topic='/vehicle/command', input_timeout_ms=234.,
+                           deceleration_slew_mps2=.5, acceleration_slew_mps2=1.).items():
         governor.declare_parameter(key, value)
     executor = SingleThreadedExecutor()
     for node in (reader, steering, governor):
@@ -75,11 +76,23 @@ def test_capture_reads_actual_values_all_names_and_clock(parameter_nodes):
     assert document['nodes']['/command_governor']['ros__parameters']['input_timeout_ms'] == 234.
 
 
-def test_tui_adopts_running_launch_preset_and_preserves_operator_choice(parameter_nodes):
+def test_tui_adopts_running_launch_preset_and_preserves_operator_choice(parameter_nodes, tmp_path):
     from vehicle_test_scenarios.sysid_runtime import SysidNode
     from vehicle_test_scenarios.sysid_tui import MenuState
     _, steering, _, capture = parameter_nodes
+    from control_tuning.storage import SettingsStore
+    from control_tuning.presets import PresetStore, load_launch_overrides
+    from control_tuning.longitudinal import LONGITUDINAL, status_data
+    from std_msgs.msg import Float32MultiArray
+    from rclpy.parameter import Parameter
+    first_path, second_path = tmp_path / 'first.yaml', tmp_path / 'second.yaml'
+    for path, limit in ((first_path, 70.), (second_path, 60.)):
+        settings = SettingsStore(path)
+        presets = PresetStore(settings)
+        presets.save('airborne', {**settings.saved, 'drive_control_mode': 'speed', 'drive_current_limit_a': limit})
+        presets.save('driving', {**settings.saved, 'drive_control_mode': 'speed', 'drive_current_limit_a': 300.})
     steering.declare_parameter('tuning_preset', 'airborne')
+    steering.declare_parameter('control_tuning_file', str(first_path))
     document = capture('stationary')
     assert document['test_condition']['key'] == 'stationary'
     assert document['nodes']['/steering_actuator_node']['ros__parameters']['tuning_preset'] == 'airborne'
@@ -93,8 +106,24 @@ def test_tui_adopts_running_launch_preset_and_preserves_operator_choice(paramete
         while node.launch_preset == 'unspecified' and time.monotonic() < deadline:
             executor.spin_once(timeout_sec=.02)
         assert node.launch_preset == 'airborne'
+        assert node.launch_config_file == str(first_path)
+        applied = load_launch_overrides(first_path, LONGITUDINAL, 'airborne')
+        node._receive_longitudinal(Float32MultiArray(data=status_data(applied)))
+        assert node.calibration_problem() is None
+        # New startup metadata after a stack restart must replace the cached file
+        # even when the preset name is unchanged, then follow a new preset too.
+        for path, preset in ((second_path, 'airborne'), (second_path, 'driving')):
+            steering.set_parameters([Parameter('control_tuning_file', value=str(path)),
+                                     Parameter('tuning_preset', value=preset)])
+            deadline = time.monotonic() + 6
+            while (node.launch_config_file, node.launch_preset) != (str(path), preset) and time.monotonic() < deadline:
+                executor.spin_once(timeout_sec=.02)
+            assert (node.launch_config_file, node.launch_preset) == (str(path), preset)
+            applied = load_launch_overrides(path, LONGITUDINAL, preset)
+            node._receive_longitudinal(Float32MultiArray(data=status_data(applied)))
+            assert node.calibration_problem() is None
         menu.adopt_launch_preset(node.snapshot()['launch_preset'])
-        assert menu.run_settings().test_condition == 'airborne'
+        assert menu.run_settings().test_condition == 'driving'
         menu.test_condition = 'stationary'
         menu.adopt_launch_preset('airborne')
         assert menu.run_settings().test_condition == 'stationary'

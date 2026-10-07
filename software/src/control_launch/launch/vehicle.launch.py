@@ -20,7 +20,7 @@ E-stop을 먼저 확인한다.
 
 Torque 조향의 invalid/stale feedback과 control stall은 `FEEDBACK_LOST`로 정지한다.
 정상 feedback과 차단 뒤 받은 새 `/vehicle/command`가 확인되면 노드 재시작 없이
-자동 복구한다. `FAULT`는 KEYA bit0(Disable)을 제외한 실제 fault bit에만 사용한다.
+자동 복구한다. KEYA fault 비트는 진단·표시용이며 Host의 출력 차단이나 latch를 만들지 않는다.
 
 can0는 launch 전에 준비한다. 조향 노드는 SocketCAN timeout 또는 open/read/write
 실패 시 링크를 닫고 backoff를 두고 다시 연다. 재연결 뒤 fresh fault/position
@@ -29,8 +29,8 @@ host/systemd/의 networkd 설정을 설치하면 부팅·USB 재연결 시 인�
 자동으로 준비한다(HIL_RUNBOOK 10.1).
 
 command_governor는 /vehicle/command의 유일한 발행자라서 죽으면 명령이
-끊긴다(안전망은 위 timeout들). 노드가 stateless라 재시작만 하면 그대로
-복구되므로 respawn을 걸어 둔다. 반복 크래시는 로그와 /diagnostics의 명령
+끊긴다(안전망은 위 timeout들). respawn으로 재시작하며, 가감속 slew 이력은
+초기화하고 새 유효 명령부터 다시 처리한다. 반복 크래시는 로그와 /diagnostics의 명령
 두절로 드러난다.
 
 이 launch는 HIL bench(2026-08-14)에서 동형 구조로 검증했고, 실차 장치

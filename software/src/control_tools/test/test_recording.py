@@ -25,8 +25,8 @@ def test_camera_lidar_and_other_sensor_selections_are_preserved():
 
 
 def longitudinal_data(p=1., revision=1):
-    from control_tuning.longitudinal import status_data, AIRBORNE
-    return status_data(AIRBORNE, dict(speed_error_mps=.1, p_current_a=p, i_current_a=2.,
+    from control_tuning.longitudinal import status_data, DEFAULT
+    return status_data({**DEFAULT, 'control_mode': 'torque'}, dict(speed_error_mps=.1, p_current_a=p, i_current_a=2.,
                                       unsaturated_current_a=p + 2., current_command_a=p + 2.),
                        revision=revision)
 

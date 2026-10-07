@@ -10,11 +10,18 @@ from rclpy.executors import SingleThreadedExecutor
 from std_msgs.msg import Float32MultiArray
 
 from control_tuning.longitudinal import (
-    DEFAULT, AIRBORNE, CONFIG_KEYS, CONFIG_TOPIC, STATUS_TOPIC, STATE_KEYS, VERSION, WIRE_KEYS,
+    DEFAULT, CONFIG_KEYS, CONFIG_TOPIC, STATUS_TOPIC, STATE_KEYS, VERSION, WIRE_KEYS,
     collapse_flags, config_wire, decode_status, request_data, resolve, status_data as v5_status,
     validate_config, wire_equal,
 )
 from control_tuning.longitudinal_runtime import LongitudinalClient
+
+
+# Deliberate test input for the Torque path, independent of operator presets.
+TORQUE_CONFIG = {**DEFAULT, 'control_mode': 'torque', 'speed_kp_a_per_mps': 25.,
+                 'speed_ki_a_per_mps_s': 2., 'max_drive_current_a': 40., 'integrator_limit_a': 6.,
+                 'current_slew_up_a_s': 120., 'current_slew_down_a_s': 400.,
+                 'reapply_current_a': 5., 'reapply_slew_a_s': 20.}
 
 
 def status_data(config, revision=0, request_id=0, result=0, source=0):
@@ -24,7 +31,7 @@ def status_data(config, revision=0, request_id=0, result=0, source=0):
 def test_candidate_roundtrip_and_wire_precision():
     count = 5 + len(WIRE_KEYS) + len(STATE_KEYS)
     assert count == 78
-    for config in (DEFAULT, AIRBORNE):
+    for config in (DEFAULT, TORQUE_CONFIG):
         data = status_data(config)
         assert len(data) == count and data[0] == VERSION == 5
         data = struct.unpack(f'<{count}f', struct.pack(f'<{count}f', *data))
@@ -36,7 +43,7 @@ def test_candidate_roundtrip_and_wire_precision():
         assert actual['source'] == 'DEFAULT'
         assert actual['feedback_valid'] == 1 and actual['collapse_age_s'] == -1
     assert DEFAULT['max_drive_current_a'] == 480
-    assert AIRBORNE['max_drive_current_a'] < DEFAULT['max_drive_current_a']
+    assert TORQUE_CONFIG['max_drive_current_a'] < DEFAULT['max_drive_current_a']
     assert len(request_data(DEFAULT, 1, 0)) == 3 + 37
     # Older firmware cannot take the regen limits: refuse rather than reinterpret.
     for version in (1, 2, 3, 4):
@@ -56,7 +63,7 @@ def test_legacy_readback_still_decodes():
     with pytest.raises(ValueError):
         decode_status([4.] + head[1:] + [0.] * 10)
     # 2026-10-01 sine recordings are v4: 24 config + 28 state floats.
-    v4 = [4., 6., 9., 1., 1., *config_wire(AIRBORNE)[:24], *([0.] * 28)]
+    v4 = [4., 6., 9., 1., 1., *config_wire(TORQUE_CONFIG)[:24], *([0.] * 28)]
     v4[5 + 24 + 9] = 1.
     decoded = decode_status(v4)
     assert decoded['version'] == 4 and decoded['config']['motor_waveform'] == 'sine'
@@ -65,7 +72,7 @@ def test_legacy_readback_still_decodes():
 
 
 def test_waveform_specific_values_are_resolved_for_the_wire():
-    square = {**AIRBORNE, 'motor_waveform': 'square', 'ff_current_gain_square_mps2_per_a': .064}
+    square = {**TORQUE_CONFIG, 'motor_waveform': 'square', 'ff_current_gain_square_mps2_per_a': .064}
     wire = request_data(square, 1, 0)[3:]
     assert wire[WIRE_KEYS.index('min_drive_current_a')] == 12.
     assert wire[WIRE_KEYS.index('motor_waveform')] == 0.
@@ -116,7 +123,7 @@ def test_invalid_request_rejected_at_host_boundary(key, value):
 
 def test_regen_fields_reach_the_wire_and_default_off():
     assert DEFAULT['regen_max_current_a'] == 0 and DEFAULT['pi_regen_enabled'] == 'disabled'
-    regen = {**AIRBORNE, 'regen_max_current_a': 20., 'regen_rpm_field_mode': 'ceiling',
+    regen = {**TORQUE_CONFIG, 'regen_max_current_a': 20., 'regen_rpm_field_mode': 'ceiling',
              'pi_regen_enabled': 'enabled', 'regen_kp_a_per_mps': 40., 'motor_waveform': 'square'}
     wire = request_data(regen, 1, 0)[3:]
     assert wire[WIRE_KEYS.index('regen_max_current_a')] == 20.
@@ -182,11 +189,11 @@ def test_ros_apply_waits_for_matching_mcu_readback(monkeypatch):
 
     try:
         pump(lambda: not client.reason())
-        client.begin(AIRBORNE, 0)
+        client.begin(TORQUE_CONFIG, 0)
         pump(lambda: bool(requests))
         assert client.result is None  # sent is not applied
         request = requests[0].data
-        data = status_data(AIRBORNE, 1, int(request[1]), 1, 1)
+        data = status_data(TORQUE_CONFIG, 1, int(request[1]), 1, 1)
         pump(lambda: client.result is not None)
         assert client.result[0]
         assert client.fresh()['config']['control_mode'] == 'torque'
@@ -200,7 +207,7 @@ def test_ros_apply_waits_for_matching_mcu_readback(monkeypatch):
         pump(lambda: not client.reason())
         client.begin(DEFAULT, 1)
         pump(lambda: len(requests) == 2)
-        data = status_data(AIRBORNE, 1, int(requests[-1].data[1]), 3, 1)
+        data = status_data(TORQUE_CONFIG, 1, int(requests[-1].data[1]), 3, 1)
         pump(lambda: client.result is not None)
         assert not client.result[0]  # board rechecks stop gate and rejects
         assert client.fresh()['config']['control_mode'] == 'torque'

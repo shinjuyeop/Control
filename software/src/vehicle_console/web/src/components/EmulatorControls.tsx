@@ -1,3 +1,4 @@
+import type { Trace } from "./instruments";
 import { targetColor, feedbackColor } from "../domain/format";
 import { useWorkbench } from "../hooks/useWorkbench";
 import {
@@ -8,6 +9,11 @@ import {
   Panel,
   Source,
 } from "./instruments";
+
+const motorTraces: Trace[] = [
+  { key: "targetSteer", label: "수신 모터축 목표", color: targetColor },
+  { key: "steer", label: "에뮬레이터 응답", color: feedbackColor },
+];
 
 export function TractionFeedback() {
   const { hil, disabled, command, commands } = useWorkbench();
@@ -118,10 +124,7 @@ export function ShaftFeedback() {
     <Panel title="KEYA 모터축 피드백" eyebrow="STM_TEST / MOTOR SHAFT">
       <Chart
         points={points}
-        traces={[
-          { key: "targetSteer", label: "수신 모터축 목표", color: targetColor },
-          { key: "steer", label: "에뮬레이터 응답", color: feedbackColor },
-        ]}
+        traces={motorTraces}
         unit="motor deg"
       />
       {source("/hil/status")}

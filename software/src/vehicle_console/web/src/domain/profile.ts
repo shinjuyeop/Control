@@ -18,11 +18,11 @@ export function capabilities(state: Snapshot) {
 }
 
 export const vehicleTopics = [
-  "/vehicle/command", "/drive/status", "/steering/status", "/brake/status",
+  "/vehicle/command", "/drive/status", "/drive/longitudinal_status", "/steering/status", "/brake/status",
   "/stm_a/runtime_stats", "/stm_b/runtime_stats", "/diagnostics",
 ];
 
 export const sourceTopics = (state: Snapshot) => state.profile === "hil"
-  ? ["/hil/status", "/drive/status", "/brake/status", "/steering/status", "/vehicle/state",
+  ? ["/hil/status", "/drive/status", "/drive/longitudinal_status", "/brake/status", "/steering/status", "/vehicle/state",
      "/planning/command", "/vehicle/command", "/diagnostics", "/stm_a/runtime_stats", "/stm_b/runtime_stats"]
   : vehicleTopics;

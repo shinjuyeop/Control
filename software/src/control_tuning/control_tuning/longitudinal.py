@@ -82,8 +82,6 @@ PROTECTION = dict(
     collapse_phase_low_square_a=-30., collapse_phase_low_sine_a=-60.)
 DEFAULT = {**dict(zip(WIRE_KEYS[:12], ('speed', 180., 12., 480., 120., 2400., 4800.,
                                         .05, .12, 20., 200., 4500.))), **PROTECTION}
-AIRBORNE = {**dict(zip(WIRE_KEYS[:12], ('torque', 25., 2., 40., 6., 120., 400.,
-                                         .05, .12, 5., 20., 4500.))), **PROTECTION}
 RESULTS = ('대기', '적용 완료', '잘못된 설정', 'MANUAL 정지·무전류 조건 불충족',
            '다른 설정이 먼저 적용됨', '다른 요청 처리 중')
 # Same rules as LONG_COLLAPSE_* in longitudinal_controller.h, for MCAPs recorded

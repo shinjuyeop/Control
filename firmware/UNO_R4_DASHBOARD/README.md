@@ -26,6 +26,12 @@ README.md                  usage and hardware contract
 
 ## Local UI preview
 
+![UNO R4 Dashboard MANUAL 화면의 480×320 렌더링 예시](../../docs/images/ui/dashboard-manual.png)
+
+2026-10-07, 예시 `HIL_LCD` 보고값을 실제 펌웨어와 공유하는 C++ renderer에 넣은 원본 크기 이미지입니다.
+LCD 패널 사진이나 실차 측정값이 아니며, SPI·백라이트·터치의 물리 동작을 확인한 결과도 아닙니다.
+[HIL Web의 가상 LCD 화면](../../software/src/vehicle_console/HIL_WEB.md#가상-lcd-연결)에서도 같은 렌더러를 사용합니다.
+
 `python3 -m simulator`는 CAN/UNO/LCD hardware 없이 실제
 `.ino` 수신 loop, C++ page renderer와 ST7796 SPI driver를 host 공유라이브러리로
 실행합니다. MANUAL, AUTO, startup은 SPI byte가 해당 가상시각까지 전송한 RGB565

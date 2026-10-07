@@ -74,9 +74,14 @@ HIL의 Scenarios는 벤치 시험 기능이며 실차 입력 응답·경로 추�
 
 ## Profile과 표시
 
+![Vehicle Console Overview: 통신 수신 상태, 모드, 제동, 목표·관측 속도와 조향](../../../docs/images/ui/vehicle-overview.png)
+
+2026-10-07 브라우저 실행 화면. 하드웨어 없는 테스트가 발행한 ROS 예시 데이터이며 실차 주행 기록이 아니다.
+상단의 `8 / 8 LIVE`는 종방향 설정을 포함한 토픽 수신 상태를 뜻하며, 차량 주행 준비 완료 판정은 아니다.
+
 | Profile | Pages / capabilities |
 |---|---|
-| VEHICLE · MONITOR + FAULT ACK | Overview, Drive, Steering, Safety / Brake, ECU Runtime, Diagnostics |
+| VEHICLE · MONITOR | Overview, Drive, Steering, Safety / Brake, ECU Runtime, Diagnostics; 관측 전용 |
 | HIL | Bench, 공용 Drive/Steering/Safety/Runtime/Diagnostics, Fault Injection, Scenarios, Virtual LCD/Touch, control ownership/ARM/heartbeat |
 
 Profile은 선택한 서버 진입점에 고정되며 브라우저 전환 기능이 없다.
@@ -101,6 +106,7 @@ publisher와 best-effort RuntimeStats를 함께 받을 수 있다. 이 값들은
 |---|---|---|
 | `/vehicle/command` | `kaiev26_msgs/msg/ActuatorCommand` | 300 ms |
 | `/drive/status` | `kaiev26_msgs/msg/DriveActuatorStatus` | 300 ms |
+| `/drive/longitudinal_status` | `std_msgs/msg/Float32MultiArray`, ABI v1–v5 디코딩 | 1000 ms |
 | `/brake/status` | `kaiev26_msgs/msg/BrakeActuatorStatus` | 300 ms |
 | `/steering/status` | `kaiev26_msgs/msg/SteeringActuatorStatus` | 500 ms |
 | `/stm_a/runtime_stats`, `/stm_b/runtime_stats` | `kaiev26_msgs/msg/RuntimeStats` | 3000 ms, 수신과 firmware snapshot 진행 모두 필요 |

@@ -104,7 +104,7 @@ def _keys(editor, choosing):
     if choosing:
         return '←→ 프리셋   Enter 선택   Q 종료' + ('   Esc 돌아가기' if editor.preset_condition else '')
     if editor.editing is not None:
-        return 'Enter 입력 완료   Esc 취소   Backspace 지우기'
+        return 'Enter 입력 완료   Esc 취소   Backspace 지우기   Q 종료'
     if editor.help:
         return 'L 현재값  B 기본값  X 저장값  R 조회  F 파일  ? 닫기  Q 종료'
     return '←→ 분류  ↑↓ 항목  Enter 수정  S 저장  P 프리셋  ? 도움말  Q 종료'
@@ -113,7 +113,8 @@ def _keys(editor, choosing):
 def layout(editor, runtime, width, height):
     if width < 80 or height < 24:
         message = 'Control Tuning\n터미널을 80열 × 24행 이상으로 넓혀 주세요.\n'
-        message += ('Enter 종료 · Esc 취소' if editor.modal and editor.modal['action'] == 'quit' else 'Q 종료')
+        message += ('Enter 확인 · Esc 취소' if editor.modal else
+                    'Q 종료 · Esc 입력 취소' if editor.editing is not None else 'Q 종료')
         return Text(message, style='yellow')
     choosing = editor.selecting_preset or editor.preset_condition is None
     detail_size = 11 if editor.help and not choosing and not editor.modal else 6

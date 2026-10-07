@@ -21,7 +21,6 @@ from sensor_msgs.msg import Imu, NavSatFix
 from std_msgs.msg import Bool, String, Float32MultiArray
 from control_tuning.longitudinal import LONGITUDINAL, decode_status, wire_equal
 from control_tuning.presets import load_launch_overrides
-from control_tuning.storage import default_settings_path
 from tf2_msgs.msg import TFMessage
 
 from .scenario_runner import ScenarioSetpoint, CURRENT_SCENARIOS, current_setpoint, external_current_ready
@@ -126,6 +125,7 @@ class SysidNode(Node):
             lambda message: self._receive('/vehicle/command', message), qos_profile_sensor_data))
         self.create_timer(0.05, self._tick)
         self.launch_preset = 'unspecified'
+        self.launch_config_file = ''
         self.preset_client = self.create_client(
             GetParameters, '/steering_actuator_node/get_parameters')
         self.preset_future = None
@@ -143,23 +143,30 @@ class SysidNode(Node):
             if self.preset_future.done():
                 try:
                     values = self.preset_future.result().values
-                    preset = values[0].string_value if values else ''
-                    if preset in CONDITION_KEYS:
-                        with self.lock:
-                            self.launch_preset = preset
-                        self.preset_timer.cancel()
+                    if len(values) < 2 or values[0].string_value not in CONDITION_KEYS or not values[1].string_value:
+                        raise ValueError('런치 프리셋과 설정 파일 경로가 필요합니다. 조향 노드를 빌드·재시작하세요.')
+                    with self.lock:
+                        self.launch_preset = values[0].string_value
+                        self.launch_config_file = values[1].string_value
                 except Exception as error:
+                    with self.lock:
+                        self.launch_preset, self.launch_config_file = 'unspecified', ''
                     self.get_logger().debug(f'Launch preset query: {error}')
                 self.preset_future = None
             elif time.monotonic() - self.preset_requested_at >= 2.0:
                 self.preset_client.remove_pending_request(self.preset_future)
                 self.preset_future.cancel()
                 self.preset_future = None
+                with self.lock:
+                    self.launch_preset, self.launch_config_file = 'unspecified', ''
             return
         if self.preset_client.service_is_ready():
             self.preset_requested_at = time.monotonic()
             self.preset_future = self.preset_client.call_async(
-                GetParameters.Request(names=['tuning_preset']))
+                GetParameters.Request(names=['tuning_preset', 'control_tuning_file']))
+        else:
+            with self.lock:
+                self.launch_preset, self.launch_config_file = 'unspecified', ''
 
     @property
     def busy(self):
@@ -306,15 +313,16 @@ class SysidNode(Node):
             return ('STM_A 종방향 설정이 DEFAULT(재부팅 또는 프리셋 적용 실패): '
                     '선택한 프리셋으로 구동 스택을 재시작하세요')
         preset = self.launch_preset
-        if preset not in CONDITION_KEYS:
-            return '런치 프리셋 확인 대기'
+        config_file = self.launch_config_file
+        if preset not in CONDITION_KEYS or not config_file:
+            return '런치 프리셋 확인 대기: 조향 노드의 프리셋·설정 파일 경로가 필요합니다'
         try:
             cached = getattr(self, '_preset_expected', None)
-            if not cached or cached[0] != preset or time.monotonic() - cached[1] > 2.0:
-                cached = (preset, time.monotonic(),
-                          load_launch_overrides(default_settings_path(), LONGITUDINAL, preset))
+            if not cached or cached[:2] != (preset, config_file) or time.monotonic() - cached[2] > 2.0:
+                cached = (preset, config_file, time.monotonic(),
+                          load_launch_overrides(config_file, LONGITUDINAL, preset))
                 self._preset_expected = cached
-            expected = cached[2]
+            expected = cached[3]
             # An external longitudinal controller launch forces external_current.
             if scenario in CURRENT_SCENARIOS or status['config'].get('control_mode') == 'external_current':
                 expected = {**expected, 'control_mode': 'external_current'}
