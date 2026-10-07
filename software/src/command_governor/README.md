@@ -19,13 +19,20 @@ headless 실행 파일은 `vehicle_test_scenario_node`(ROS node `/vehicle_test_s
 기본 목표속도는 0이며, 실제 입력값과 실행기 제한은
 [시나리오 문서](../vehicle_test_scenarios/README.md)를 따른다.
 
-## 속도 목표 전달
+## 속도 명령 slew
 
-거버너는 속도 목표를 가공하지 않는다. 0·음수·계단 변화를 그대로 전달하고
-`brake_engage=true`면 속도 목표를 0으로 만든다. 조향도 가공하지 않는다.
-예전의 가·감속 slew(`deceleration_slew_mps2`, `acceleration_slew_mps2`)는 2026-10-02에 제거했다.
-종방향 변화율은 STM_A(전류 slew, 속도 PI, 회생 slew)와 상위 계획기가 맡는다.
-옛 프리셋·설정 파일에 남은 두 키는 무시하고 Control Tuning에서 S로 저장하면 지워진다.
+양수 목표속도를 낮출 때만 `deceleration_slew_mps2`로 하강률을 제한한다.
+기본 0.5 m/s²에서는 5→2 m/s 명령을 6초에 걸쳐 낮춘다. 음수 목표는 그대로 전달한다.
+Speed 프리셋은 `acceleration_slew_mps2`로 양수 목표 상승률도 제한한다.
+TUI 초기값 1.0 m/s²에서는 0→5 m/s에 5초가 걸린다. Torque/외부 전류 프리셋과
+외부 종방향 제어기를 선택한 vehicle launch는 가속 제한을 0(해제)으로 적용한다. 목표 0은 즉시 전달해 STM_A가 토크컷하고 타력감속한다.
+`brake_engage=true`는 즉시 전달하며 속도 목표를 0으로 만든다. 조향은 가공하지 않는다.
+
+계산은 연속된 유효 입력의 monotonic 수신 시간 차를 사용한다. 입력 공백이
+`input_timeout_ms`를 넘으면 이전 slew 상태를 버린다. 가속 제한이 켜져 있으면
+첫 입력 및 공백 이후 첫 입력은 0부터 다시 시작한다. 해제 상태면 새 목표부터 시작한다.
+0으로 설정하면 slew 제한을 해제한다. 이는 명령 변화율 제한이며 실제 차량
+감속도나 jerk를 보장하지 않는다. 실제 응답은 모터 제어기와 차량에서 확인해야 한다.
 
 ## 동작
 
@@ -63,8 +70,8 @@ HALTED로 정지한다.
 - 상태 판정·진단 합성 (`vehicle_state_publisher/diagnostics_publisher`의 몫)
 - 하드 바운드 — 최종 한도는 액추에이터 쪽이 지킨다: 종방향은 STM_A 펌웨어
   (RPM 4500/−1500, AUTO/MANUAL 480 A), 횡방향은 lateral_ctrl
-  (`command_count_limit` 5300 ≈ -28.33°..+28.03°, slew 60 deg/s). 거버너는 명령을
-  검증해 전달할 뿐 형상을 만들지 않는다.
+  (`command_count_limit` 5300 ≈ -28.33°..+28.03°, slew 60 deg/s). 거버너는 그 안에서
+  형상을 만든다.
 
 ## 계약 (발행자로서 지키는 것)
 
@@ -85,6 +92,8 @@ HALTED로 정지한다.
 | `input_topic` | `/planning/command` | 구독 토픽 |
 | `output_topic` | `/vehicle/command` | 발행 토픽 |
 | `input_timeout_ms` | `200.0` | 입력 나이 게이트. 조향 `steer_command_timeout_ms`와 같은 값. 0 이하면 launch가 실패한다 |
+| `deceleration_slew_mps2` | `0.5` | 양수 속도 목표 하강률 (m/s²). 0이면 제한 해제. 음수·비유한 값은 거부 |
+| `acceleration_slew_mps2` | Speed 프리셋 `1.0`, 노드 단독 기본 `0.0` | 양수 목표 상승률 (m/s²). 0이면 제한 해제 |
 
 파라미터 모두 시작 시 한 번만 읽는다. 런타임 `ros2 param set`은
 `restart required` 사유로 거부되므로 조용한 no-op이 되지 않는다.
@@ -95,6 +104,10 @@ HALTED로 정지한다.
 기본 프리셋 폴더는 Control 저장소의 `software/src/control_tuning/config/control_tuning.presets/`다.
 사용자 지정 `control_tuning_file:=bench.yaml`이면 `bench.presets/`를 읽는다.
 저장 후 거버너를 포함한 launch를 같은 프리셋으로 재시작한다.
+감속 slew는 `구동응답`의 `governor_deceleration_slew_mps2`로 편집한다.
+Speed/Torque에 표시하며 외부 전류 모드에는 표시하지 않는다.
+가속 slew는 같은 분류의 `governor_acceleration_slew_mps2`이며 Speed에서만 표시한다.
+프리셋 선택 없이 실행하는 HIL bench launch는 가속 slew를 해제한다.
 
 ## 빌드·시험·실행
 

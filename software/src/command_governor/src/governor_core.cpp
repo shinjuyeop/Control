@@ -1,13 +1,35 @@
 #include "command_governor/governor_core.hpp"
 
 #include <cmath>
+#include <algorithm>
 
 namespace command_governor
 {
 
-float forwarded_speed(float speed_target_mps, bool brake_engage)
+float SpeedSlew::update(
+  float target, bool brake, double receipt_s, double timeout_s,
+  double deceleration_rate, double acceleration_rate)
 {
-  return brake_engage ? 0.0f : speed_target_mps;
+  const double dt = receipt_s - previous_time_;
+  float output = brake ? 0.0f : target;
+  const bool continuous = initialized_ && dt >= 0.0 && dt <= timeout_s;
+  // Zero/brake cuts torque immediately. Reverse remains unshaped.
+  if (!brake && target > 0.0f) {
+    if (acceleration_rate > 0.0 && !continuous) {
+      output = 0.0f;
+    } else if (continuous) {
+      const double previous = std::max(0.0f, previous_speed_);
+      if (acceleration_rate > 0.0 && target > previous) {
+        output = static_cast<float>(std::min<double>(target, previous + acceleration_rate * dt));
+      } else if (deceleration_rate > 0.0 && target < previous) {
+        output = static_cast<float>(std::max<double>(target, previous - deceleration_rate * dt));
+      }
+    }
+  }
+  previous_speed_ = output;
+  previous_time_ = receipt_s;
+  initialized_ = true;
+  return output;
 }
 
 const char * to_string(InputVerdict verdict)

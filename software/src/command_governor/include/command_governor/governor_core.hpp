@@ -30,9 +30,18 @@ InputVerdict evaluate_input(
   bool stamp_invalid, double age_ms, double timeout_ms,
   float speed_target_mps, float steering_target_rad);
 
-// 수락한 명령의 속도 목표. brake면 0, 그 밖에는 0·음수·계단 변화까지 그대로 전달한다.
-// 변화율 제한은 두지 않는다: 종방향 변화율은 STM_A와 상위 계획기가 맡는다.
-float forwarded_speed(float speed_target_mps, bool brake_engage);
+// Accepted commands only; receipt time is monotonic. A stream gap discards history.
+class SpeedSlew
+{
+public:
+  float update(float target, bool brake, double receipt_s, double timeout_s,
+    double deceleration_rate, double acceleration_rate = 0.0);
+
+private:
+  bool initialized_{false};
+  double previous_time_{0.0};
+  float previous_speed_{0.0f};
+};
 
 }  // namespace command_governor
 

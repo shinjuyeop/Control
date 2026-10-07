@@ -145,8 +145,8 @@ Host timeout/물리 E-stop/STM_B safety gate는 각 mode의 기존 계약대로 
 timeout은 기존 HALTED를 그대로 보내며 회생 상태를 slew 없이 지웁니다. MANUAL과 AUTO Speed에서는
 회생하지 않습니다. 회생 기본 한도는 0 A(꺼짐)이고 켜더라도 팩 상한 58.8 V·연속 충전 39 A 아래의
 전압·충전전류 한도가 함께 걸립니다. 회생 RPM 필드와 EZ EBS 동작은 시험 전까지 미확인이므로
-EZ의 EBS auto는 Disable로 둡니다. 거버너의 속도 slew는 2026-10-02에 없앴으므로 상위 명령의 계단
-감속은 그대로 STM_A에 도착합니다.
+EZ의 EBS auto는 Disable로 둡니다. 거버너는 기존 프리셋의 가·감속 slew를 유지합니다.
+목표 0·브레이크는 slew를 우회해 즉시 전달하고, 입력 공백이 timeout을 넘으면 slew 이력을 버립니다.
 
 STM_A longitudinal v4의 방형파 회피 동작은 위 정지 조건보다 뒤에 적용됩니다. 회전 중 최소 구동 전류는
 MANUAL 전진·AUTO Torque·외부 전류처럼 전진 구동 명령을 보낼 때만 걸고, HALTED·회생·후진·

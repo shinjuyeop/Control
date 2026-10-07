@@ -114,18 +114,20 @@ UNO USB는 별개 인터페이스이며 115200을 유지합니다.
 
 `/vehicle/command`의 발행자는 `command_governor` 하나입니다. 거버너는
 `/planning/command`를 수신 즉시 정합성 게이트(stamp 0·음수, 나이 ±200 ms,
-finite)를 거쳐 재-stamp 후 재발행하며, 속도 목표는 가공하지 않습니다.
+finite)를 거쳐 양수 목표의 하강률을 제한하고 재-stamp 후 재발행하며,
 자체 타이머와 keep-alive가 없으므로 발행률은
 입력을 그대로 따릅니다. 따라서 상류(실차 시험은
 `vehicle_test_scenario_runner`, HIL은 `hil_command_generator`, 모두 20 Hz)가
 STM_A의 500 ms와 조향의 200 ms freshness 한계보다 충분히 빠르게 발행해야
 합니다. 5 Hz는 조향 200 ms의 경계라 간헐 timeout이 납니다.
-2026-10-02부터 거버너에는 속도 slew가 없습니다(옛 `deceleration_slew_mps2`,
-`acceleration_slew_mps2`는 제거). 양수·음수·계단 목표를 그대로 전달하고
-`brake_engage=true`면 속도 목표를 0으로 만듭니다. 0 목표는 즉시 전달해 STM_A가 0 A/HALTED
-Torque 명령으로 타력감속합니다. 종방향 변화율은 STM_A의 전류 slew, 속도 PI,
-회생 한도·변화율(calibration v5)과 상위 계획기가 맡습니다.
-Speed 선택은 정지 상태 설정 적용 후 CAN control-mode bit 1로 반영합니다.
+감속 slew는 `deceleration_slew_mps2` (기본 0.5 m/s², 0이면 해제)입니다.
+Speed 프리셋에서는 `acceleration_slew_mps2` (초기값 1.0 m/s², 0이면 해제)로
+양수 목표 상승률도 제한합니다. Torque/외부 전류에서는 가속 제한을 해제합니다.
+가속 제한이 켜져 있으면 첫 명령과 입력 공백 후 재개는 0부터 시작합니다.
+음수 목표는 그대로 전달하고, 0 목표는 즉시 전달해 STM_A가 0 A/HALTED
+Torque 명령으로 타력감속합니다. Speed의 0 RPM hold나 회생 ramp를 유지하지 않습니다.
+`brake_engage`도 지연하지 않습니다. 유효 입력 공백이 `input_timeout_ms`를 넘으면
+이전 slew 이력을 버립니다. Speed 선택은 정지 상태 설정 적용 후 CAN control-mode bit 1로 반영합니다.
 `/planning/command`의 production Planning publisher는 아직 구현되지 않았습니다.
 실차 시험·HIL·production publisher 중 하나만 실행합니다.
 

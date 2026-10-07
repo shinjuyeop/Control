@@ -82,6 +82,14 @@ FIELDS += (
           'EZkontrol PC 설정의 정류 방식과 같게 맞춥니다. STM_A는 판별하지 못하고 기록만 합니다. '
           '선택한 파형의 최소 전류·feedforward 이득만 보내며 나머지 값은 공통입니다.',
           node=LONGITUDINAL, choices=('sine', 'square')),
+    Field('governor_deceleration_slew_mps2', '거버너 감속 slew', 'm/s²', GROUPS[2], 'deceleration_slew_mps2',
+          '양수 속도 목표를 낮추는 최대 변화율입니다. 작을수록 천천히 감속합니다. '
+          '0.5이면 5→2 m/s에 6초. 목표 0·브레이크는 즉시 처리합니다. 0이면 제한 해제.',
+          0.1, node=GOVERNOR),
+    Field('governor_acceleration_slew_mps2', '거버너 가속 slew', 'm/s²', GROUPS[2], 'acceleration_slew_mps2',
+          'Speed 전용 목표속도 상승률입니다. 1이면 0→5 m/s에 5초. '
+          '첫 명령과 수신 재개 시 0부터 시작합니다. 0이면 제한 해제. 저장 후 스택 재시작에 반영됩니다.',
+          0.1, node=GOVERNOR),
     Field('drive_speed_kp_a_per_mps', '구동 속도 P 게인', 'A/(m/s)', GROUPS[2], 'speed_kp_a_per_mps',
           '구동 Torque 모드 전용입니다. MCAP 기반 초기 시험 후보이며 S 저장 후 구동 스택을 재시작하고 현재값을 확인합니다.', 10, node=LONGITUDINAL),
     Field('drive_speed_ki_a_per_mps_s', '구동 속도 I 게인', 'A/(m/s*s)', GROUPS[2], 'speed_ki_a_per_mps_s',
@@ -199,6 +207,10 @@ BY_KEY = {f.key: f for f in FIELDS}
 def applies_to_drive_mode(field, mode, waveform=None):
     if field.waveform and waveform is not None and field.waveform != waveform:
         return False
+    if field.key == 'governor_acceleration_slew_mps2':
+        return mode == 'speed'
+    if field.key == 'governor_deceleration_slew_mps2':
+        return mode in ('speed', 'torque')
     if field.node != LONGITUDINAL:
         return True
     # MANUAL applies the rolling floor whatever the calibration mode is.
@@ -219,10 +231,6 @@ def applies_to_drive_mode(field, mode, waveform=None):
 
 
 OWNED = {node: {f.native for f in FIELDS if f.node == node} for node in (STEERING, GOVERNOR, LONGITUDINAL)}
-# Settings that existed once and are now ignored when an old file still names them.
-# The governor speed slew was removed on 2026-10-02; STM_A owns the rate limits.
-RETIRED = {GOVERNOR: {'deceleration_slew_mps2', 'acceleration_slew_mps2'}}
-RETIRED_KEYS = {'governor_deceleration_slew_mps2', 'governor_acceleration_slew_mps2'}
 # Read these as well so conversions, limits and concurrent edits use actual node values.
 CONTEXT_NAMES = (
     'keya_protection_current_a', 'torque_control_period_ms', 'count_scale',
@@ -337,6 +345,10 @@ def validate_native(s, governor):
         raise ValueError('조향 한계 여유각이 캘리브레이션 범위를 벗어납니다.')
     if not math.isfinite(governor['input_timeout_ms']) or governor['input_timeout_ms'] <= 0:
         raise ValueError('상위 명령 유효시간은 0보다 큰 유한한 값이어야 합니다.')
+    if not math.isfinite(governor['deceleration_slew_mps2']) or governor['deceleration_slew_mps2'] < 0:
+        raise ValueError('거버너 감속 slew는 0 이상의 유한한 값이어야 합니다. 0이면 제한 해제입니다.')
+    if not math.isfinite(governor['acceleration_slew_mps2']) or governor['acceleration_slew_mps2'] < 0:
+        raise ValueError('거버너 가속 slew는 0 이상의 유한한 값이어야 합니다. 0이면 제한 해제입니다.')
 
 
 def range_hint(field, values, context):
@@ -372,6 +384,8 @@ def range_hint(field, values, context):
     peak = values['steering_peak_current_limit_a']
     period = context['torque_control_period_ms']
     hints = {
+        'governor_deceleration_slew_mps2': '0 이상 · 0이면 제한 해제',
+        'governor_acceleration_slew_mps2': '0 이상 · 0이면 제한 해제',
         'steering_kp_a_per_deg': f'0 초과, {peak / values["steering_settle_error_deg"]:g} 미만' if values['steering_settle_error_deg'] > 0 else '0 초과',
         'steering_kd_a_per_deg_s': '0 이상 · 코드상 고정 상한 없음',
         'steering_peak_current_limit_a': f'지속 명령 이상, {current_per_raw(context) * 10000:g} 이하',

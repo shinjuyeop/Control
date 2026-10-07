@@ -1,5 +1,8 @@
 # 회생제동 도입과 거버너 slew 제거 — 2026-10-02
 
+> 2026-10-07 통합: 기존 주행·공중 Speed 프리셋과 governor 가·감속 slew를 유지한다.
+> 아래 slew 제거와 공중 Torque·적분 25 A 변경은 채택하지 않았다. 회생 기능·보호·Run 설정 비교는 유지하며 회생 기본값은 꺼짐이다.
+
 [회생·거버너 지침](../EZKONTROL_REGEN_AND_GOVERNOR_REWORK.md)의 Part A, B1, B2, B3와 4장 운용 항목을
 구현한 기록이다. STM_A longitudinal ABI는 v4 → v5다.
 

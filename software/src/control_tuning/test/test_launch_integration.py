@@ -62,7 +62,8 @@ def test_launch_defaults_read_the_same_source_file_as_tui(store, tmp_path, monke
     assert context.launch_configurations['tuning_preset'] == 'driving'
     assert Path(context.launch_configurations['control_tuning_file']) == settings.path
     context.launch_configurations.update(params_file=str(store.base_paths[0]), actuation_mode='',
-                                        steering_enabled='', can_interface='unused', hardware_can_enabled='false',
+                                        steering_enabled='', torque_controller='pd', steering_model_file='',
+                                        can_interface='unused', hardware_can_enabled='false',
                                         actuator_output_enabled='false', test_input_injection_enabled='false',
                                         use_sim_time='false')
     monkeypatch.setattr(module, 'Node', lambda **kwargs: kwargs)
@@ -92,7 +93,8 @@ def test_launch_helpers_layer_profile_before_explicit_overrides(store, monkeypat
     context = LaunchContext()
     context.launch_configurations.update(control_tuning_file=str(store.path), tuning_preset=condition,
                                         params_file=str(store.base_paths[0]), actuation_mode='position',
-                                        steering_enabled='', can_interface='unused', hardware_can_enabled='false',
+                                        steering_enabled='', torque_controller='pd', steering_model_file='',
+                                        can_interface='unused', hardware_can_enabled='false',
                                         actuator_output_enabled='false', test_input_injection_enabled='false',
                                         use_sim_time='false')
     argument = {} if package == 'lateral_ctrl' else str(store.base_paths[1])

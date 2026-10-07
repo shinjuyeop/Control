@@ -72,7 +72,8 @@ def test_independent_recording_snapshot_shutdown_and_missing_feedback(tmp_path, 
     values.update(steering_enabled=True, torque_direction_sign=-1)
     for key, value in values.items():
         steering.declare_parameter(key, value)
-    for key, value in dict(input_topic='/planning/command', output_topic='/vehicle/command', input_timeout_ms=234.).items():
+    for key, value in dict(input_topic='/planning/command', output_topic='/vehicle/command', input_timeout_ms=234.,
+                           deceleration_slew_mps2=.5, acceleration_slew_mps2=0.).items():
         governor.declare_parameter(key, value)
     publisher = stm.create_publisher(Float32MultiArray, '/drive/longitudinal_status', qos_profile_sensor_data) if provide_longitudinal else None
     executor = SingleThreadedExecutor()

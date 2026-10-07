@@ -6,7 +6,7 @@ import fcntl
 import yaml
 
 from .conditions import CONDITIONS, CONDITION_KEYS, condition_label
-from .schema import BY_KEY, RETIRED_KEYS, STEERING, FIELDS, GOVERNOR, decode, encode, equivalent
+from .schema import BY_KEY, STEERING, FIELDS, GOVERNOR, decode, encode, equivalent
 from .longitudinal import LONGITUDINAL, PROTECTION
 from .naming import canonical_values
 from .storage import SettingsStore, fingerprint, read_document
@@ -114,20 +114,20 @@ class PresetStore:
                 values.setdefault('drive_min_current_square_a', legacy_floor)
         for key, value in canonical_values(PROTECTION).items():
             values.setdefault(key, value)
-        # Removed settings are ignored, not an error; S saves the file without them.
-        for key in RETIRED_KEYS:
-            values.pop(key, None)
+        # Existing v2/v3 presets predate the governor ramp; use the base setting.
+        values.setdefault('governor_deceleration_slew_mps2',
+                          self.settings.saved['governor_deceleration_slew_mps2'])
+        values.setdefault('governor_acceleration_slew_mps2',
+                          self.settings.saved['governor_acceleration_slew_mps2'])
         return self.normalize(values)
 
     def is_current(self, condition):
-        """True when the saved file names every current field and no removed one."""
+        """True when the saved file already names every current field."""
         entry = self.entry(condition)
         if not entry or entry.get('schema_version') != 3:
             return False
         saved = sections({f.key: None for f in FIELDS})
-        named = {key for section in saved for key in entry.get(section, {}) or {}}
-        return (all(key in entry.get(section, {}) for section, keys in saved.items() for key in keys)
-                and not named & RETIRED_KEYS)
+        return all(key in entry.get(section, {}) for section, keys in saved.items() for key in keys)
 
     def save(self, condition, values):
         self.entry(condition)
@@ -166,4 +166,7 @@ def load_launch_overrides(path, node, condition='driving', **base_paths):
         raise ValueError(f'프리셋이 없습니다: {presets.path_for(condition)}. '
                          'Control Tuning에서 해당 프리셋을 선택하고 S로 저장하세요.')
     values = presets.load(condition)
-    return encode(values, settings.saved_native[STEERING])[node]
+    parameters = encode(values, settings.saved_native[STEERING])[node]
+    if node == GOVERNOR and values['drive_control_mode'] != 'speed':
+        parameters['acceleration_slew_mps2'] = 0.0
+    return parameters

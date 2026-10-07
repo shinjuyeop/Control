@@ -41,6 +41,8 @@ TUI 상세에는 새 설정키와 기존 연결을 함께 표시한다.
 | `steering_angle_margin_deg` | 조향 한계각 여유 | deg | 조향 ROS: `torque_soft_limit_margin_deg` |
 | `steering_min_vehicle_speed_kph` | 조향 허용 최소 차속 | km/h | 조향 ROS: `minimum_steering_speed_kph` |
 | `governor_command_timeout_ms` | 거버너 명령 유효시간 | ms | 거버너 ROS: `input_timeout_ms` |
+| `governor_deceleration_slew_mps2` | 거버너 감속 slew | m/s² | 거버너 ROS: `deceleration_slew_mps2` |
+| `governor_acceleration_slew_mps2` | 거버너 가속 slew | m/s² | 거버너 ROS: `acceleration_slew_mps2` |
 | `steering_command_timeout_ms` | 조향 명령 수신 제한 | ms | 조향 ROS: `steer_command_timeout_ms` |
 | `steering_can_timeout_ms` | 조향 CAN 수신 제한 | ms | 조향 ROS: `can_timeout_ms` |
 | `steering_position_feedback_timeout_ms` | 조향 위치 피드백 제한 | ms | 조향 ROS: `feedback_timeout_ms` |
@@ -88,8 +90,8 @@ TUI 상세에는 새 설정키와 기존 연결을 함께 표시한다.
 | `drive_collapse_phase_low_square_a` | 붕괴 감지 음수 상전류 (방형파) | A | STM_A v5: `collapse_phase_low_a` (square 선택 시) |
 | `drive_collapse_phase_low_sine_a` | 붕괴 감지 음수 상전류 (사인파) | A | STM_A v5: `collapse_phase_low_a` (sine 선택 시) |
 
-거버너 `governor_deceleration_slew_mps2`·`governor_acceleration_slew_mps2`는 2026-10-02에 없앴다.
-옛 프리셋·공통 설정에 남아 있으면 무시하고 S 저장 시 지운다. 과거 MCAP의 캡처 값은 그대로 읽는다.
+거버너 가·감속 slew는 기존 프리셋 값을 유지한다. 가속 slew는 Speed에서만 적용하고,
+감속 slew는 양수 목표를 낮출 때 적용한다. 목표 0·브레이크는 즉시 처리하며 0 설정은 제한 해제다.
 
 v3의 `coast_current_floor_a`(canonical `drive_coast_current_floor_a`)는 목표보다 빠를 때만
 걸리던 하한이었다. v4는 이를 모든 전진 구동 경로의 최종 명령에 거는 **회전 중 최소 구동 전류**로
@@ -112,12 +114,12 @@ RPM 한도는 driving과 같고, 전류 한도는 공중 시험용으로 낮게 
 20 A/600 rpm 기능 확인 후보와 달리 40 km/h 목표를 RPM에서 제한하지 않지만,
 실제 도달 속도와 전류는 아직 공중 시험으로 검증되지 않았다.
 나머지 speed PI, 적분 한도, deadband/coast, current slew/reapply 항목은 Torque 전용이다.
-MANUAL pedal/gear는 이 AUTO envelope의 영향을 받지 않는다.
+MANUAL은 Torque/외부 전류 calibration의 전류 한도·RPM 상한·전류 slew를 공유하며, Speed에서는 기존 페달 매핑을 유지한다.
 
 TUI는 편집 중인 `drive_control_mode`와 `drive_motor_waveform`에 맞는 구동 항목만 표시한다.
-Speed는 모드·파형·전류 한도·RPM 한도와 구동보호의 최소 전류·출발 스텝·hold·붕괴 감지 음수 상전류를
+Speed는 모드·파형·전류 한도·RPM 한도·governor 가속/감속 slew와 구동보호의 최소 전류·출발 스텝·hold·붕괴 감지 음수 상전류를
 표시한다(MANUAL은 calibration mode와 관계없이 회전 중 최소 전류를 쓴다).
-Torque는 PI·deadband·feedforward·속도 PI 자동 회생·적분 한도·전류 slew/reapply·회생 한도와
+Torque는 governor 감속 slew·PI·deadband·feedforward·속도 PI 자동 회생·적분 한도·전류 slew/reapply·회생 한도와
 역회전 디바운스·붕괴 반응을 추가한다. `external_current`는 모드·파형·전류 한도·RPM 한도와
 회생(PI 자동 회생 제외)·구동보호 전체를 표시한다. 파형별 항목은 선택한 파형 쪽만 보이며
 다른 파형 값은 보존된다.

@@ -1,5 +1,8 @@
 # 회생제동 도입 + Governor slew 제거 지침 (STM_A longitudinal / command_governor)
 
+> 2026-10-07 통합: 기존 주행·공중 Speed 프리셋과 governor 가·감속 slew를 유지한다.
+> 아래 slew 제거와 공중 Torque·적분 25 A 변경은 채택하지 않았다. 회생 기능·보호·Run 설정 비교는 유지하며 회생 기본값은 꺼짐이다.
+
 > 대상: Claude Code. 2026-10-01 EZkontrol **Sine-wave(FOC)** 전환 후 공중 시험 결과와 설계 논의를 정리한 문서다.
 > 선행 문서: `docs/EZKONTROL_TORQUE_CONTROL_REWORK.md`, `docs/reports/2026-10-01_ezkontrol_sine_rework.md`.
 > **수정 전에 반드시 현재 저장소 코드를 먼저 읽고** 이 문서의 이름·인덱스·위치와 대조할 것. 다르면 현재 코드가 기준이다.

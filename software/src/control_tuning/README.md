@@ -63,19 +63,20 @@ v3는 `steering`, `drive`, `governor`, `timeouts`로 구분한다. 설정키는 
 
 | 값 | airborne | driving |
 |---|---:|---:|
-| mode | torque | speed |
+| mode | speed | speed |
 | 모터 파형 | sine | sine |
 | Kp / Ki | 15 / 10 | 180 / 12 |
-| max / integrator A | 80 / 25 | 480 / 120 |
+| max / integrator A | 80 / 6 | 480 / 120 |
 | slew up / down A/s | 120 / 400 | 2400 / 4800 |
 | deadband / hysteresis m/s | 0.05 / 0.12 | 0.05 / 0.12 |
 | reapply band A / slew A/s | 5 / 20 | 20 / 200 |
 | RPM ceiling | 4500 | 4500 |
 | 회전 중 최소 전류 square / sine A | 12 / 0 | 12 / 0 |
 | 회생 최대 전류 A | 0 (꺼짐) | 0 (꺼짐) |
+| governor 가속 / 감속 slew m/s² | 2 / 1 | 100 / 0.5 |
 
-위 표는 체크인된 프리셋 파일 값이다(2026-10-02). airborne 적분 한도 25 A는 2026-10-01 사인파 공중
-시험에서 정속 유지에 10~17 A가 필요했기 때문이다(6 A에서는 −0.3~−0.7 m/s 정상상태 오차).
+위 표는 기존 주행·공중 프리셋을 보존한 파일 값이다(2026-10-07). 두 프리셋 모두 Speed이며
+PI·적분·feedforward는 AUTO Speed에서 사용하지 않는다. 회생 최대 전류는 0, PI 자동 회생은 disabled다.
 [실측 근거·단위·airborne/A-B 절차](../../../docs/reports/2026-09-21_longitudinal_torque_pi.md)를 따른다.
 STM_A boot는 **torque/DEFAULT**(480 A, Kp 180, 사인파, 회생 꺼짐)다. 런치 helper가 프리셋 적용에
 실패하면 이 DEFAULT로 남으므로, 시나리오 TUI는 STM_A readback이 런치 프리셋과 다르면 구동 Run을
@@ -110,7 +111,7 @@ fsync/atomic replace, `.yaml.bak`과 외부 변경 검사를 사용한다. TUI�
 
 **v2 프리셋은 그대로 읽을 수 있고 S 저장 시 v3 이름으로 전환한다.** 읽기만으로 원본 파일을 바꾸지 않는다.
 새·옛 이름의 값이 충돌하면 오류로 표시한다. 나중에 추가된 STM_A v4 구동 보호·feedforward와 v5 회생 항목만
-기본값(회생 꺼짐)으로 채운다. 2026-10-02에 없앤 거버너 slew 두 키는 오류 없이 무시한다. STM_A v4 이전 프리셋은 방형파 EZ로 튜닝됐으므로 파형을 `square`로 읽고,
+기본값(회생 꺼짐)으로 채운다. 거버너 slew 두 키는 기존 값으로 유지하고 저장한다. STM_A v4 이전 프리셋은 방형파 EZ로 튜닝됐으므로 파형을 `square`로 읽고,
 옛 `drive_coast_current_floor_a`를 방형파 회전 중 최소 전류로 옮긴다. 채운 항목이 있으면 TUI가 알리며
 S로 저장해야 파일에 남는다. v1 flat preset은 종방향 값까지 명시해 이관해야 한다.
 공통 `control_tuning.yaml`의 native ROS override 형식은 유지한다.

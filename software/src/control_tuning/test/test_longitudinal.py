@@ -262,5 +262,5 @@ def test_checked_in_drive_envelopes_and_launch_mapping():
     # Slow 50 A/s cuts crawled through the square dead zone at speed (P0-5).
     assert airborne['drive_current_slew_down_a_s'] == 400.
     assert airborne['drive_current_limit_a'] == 80.
-    # Sine airborne steady state needs 10~17 A: the integrator must reach it.
-    assert airborne['drive_control_mode'] == 'torque' and airborne['drive_integrator_limit_a'] == 25.
+    # Keep the existing Speed preset; its Torque PI integrator is inactive.
+    assert airborne['drive_control_mode'] == 'speed' and airborne['drive_integrator_limit_a'] == 6.

@@ -13,7 +13,13 @@ from control_tuning.schema import GROUPS
 def test_drive_mode_filters_editable_fields_and_preserves_hidden_values(editor):
     editor.key('3')
     editor.commit('speed')
-    assert [f.key for f in editor.fields] == ['drive_control_mode', 'drive_motor_waveform']
+    assert [f.key for f in editor.fields] == [
+        'drive_control_mode', 'drive_motor_waveform', 'governor_deceleration_slew_mps2',
+        'governor_acceleration_slew_mps2']
+    editor.selected = 2
+    editor.commit(.3)
+    editor.selected = 3
+    editor.commit(1.2)
     # MANUAL uses the rolling floor in every calibration; only the active
     # waveform's minimum current and collapse threshold are editable.
     editor.key('5')
@@ -32,6 +38,8 @@ def test_drive_mode_filters_editable_fields_and_preserves_hidden_values(editor):
     editor.key('s')
     assert not editor.error
     saved = editor.presets.load('airborne')
+    assert saved['governor_deceleration_slew_mps2'] == .3
+    assert saved['governor_acceleration_slew_mps2'] == 1.2
     assert saved['drive_collapse_phase_low_sine_a'] == -45
     assert saved['drive_current_limit_a'] == 10
     assert saved['drive_speed_kp_a_per_mps'] == original_pi
@@ -39,6 +47,8 @@ def test_drive_mode_filters_editable_fields_and_preserves_hidden_values(editor):
     editor.commit('torque')
     keys = {f.key for f in editor.fields}
     assert {'drive_speed_kp_a_per_mps', 'drive_pi_regen', 'drive_regen_kp_a_per_mps'} <= keys
+    assert 'governor_deceleration_slew_mps2' in keys
+    assert 'governor_acceleration_slew_mps2' not in keys
     assert 'drive_coast_release_error_mps' not in keys
     assert 'drive_ff_current_gain_sine_mps2_per_a' in keys
     assert 'drive_ff_current_gain_square_mps2_per_a' not in keys
