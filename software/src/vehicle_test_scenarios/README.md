@@ -6,6 +6,11 @@
 
 ## 현장 실차 시험 TUI
 
+![차량 미연결 상태의 시험 TUI: 수신 대기 안내, RUN NO-GO, 시험 선택과 키 안내](../../../docs/images/ui/scenario-tui.png)
+
+2026-10-07 소스의 실제 Rich 화면 렌더러로 출력한 차량 미연결 예시다.
+상태 미수신과 `RUN NO-GO`를 그대로 보여 주며, 시험이나 명령 발행은 시작하지 않았다.
+
 ROS 환경과 workspace overlay를 source한 터미널에서 다음 명령 하나로 실행한다.
 
 ```bash

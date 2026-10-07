@@ -17,6 +17,11 @@ Python 의존성은 rich/PyYAML이다. MCAP 분석은 [control_tools](../control
 
 ## 분류와 적용
 
+![Control Tuning의 주행 프리셋 구동응답 화면: Speed·사인파와 governor 가감속 slew](../../../docs/images/ui/control-tuning.png)
+
+2026-10-07 소스의 실제 Rich 화면 렌더러로 출력한 오프라인 예시다. 저장된 주행 프리셋을 읽었으며
+차량이 연결되지 않아 현재값은 `—`다. 파일 값은 변경하지 않았고, 터미널에 따라 글꼴·색상은 달라질 수 있다.
+
 | 분류 | 항목 | 적용 |
 |---|---|---|
 | 1 조향응답 | 조향 제어 방식, P/D, 목표 도달 판정, 조향속도 필터 | S 저장 후 재시작 |

@@ -74,6 +74,11 @@ HIL의 Scenarios는 벤치 시험 기능이며 실차 입력 응답·경로 추�
 
 ## Profile과 표시
 
+![Vehicle Console Overview: 통신 수신 상태, 모드, 제동, 목표·관측 속도와 조향](../../../docs/images/ui/vehicle-overview.png)
+
+2026-10-07 브라우저 실행 화면. 하드웨어 없는 테스트가 발행한 ROS 예시 데이터이며 실차 주행 기록이 아니다.
+상단의 `8 / 8 LIVE`는 종방향 설정을 포함한 토픽 수신 상태를 뜻하며, 차량 주행 준비 완료 판정은 아니다.
+
 | Profile | Pages / capabilities |
 |---|---|
 | VEHICLE · MONITOR | Overview, Drive, Steering, Safety / Brake, ECU Runtime, Diagnostics; 관측 전용 |

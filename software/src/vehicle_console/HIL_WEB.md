@@ -12,6 +12,12 @@ KAI Vehicle Console의 HIL 운용 profile이다. Qt surface를 대체하며 seri
 
 ## 화면과 Control Dock
 
+![HIL Console의 Drive 페이지와 오른쪽 Control Dock](../../../docs/images/ui/hil-drive.png)
+
+2026-10-07 실행 화면. 차량과 분리한 로컬 테스트의 ROS 예시 데이터를 사용했다.
+`NO DATA`·`INVALID`는 해당 테스트 입력 상태이며, 화면 속 수치는 운용 프리셋이나 실차 측정값이 아니다.
+오른쪽 Control Dock에서 입력을 조작하고 중앙에서 명령·피드백을 비교한다.
+
 모든 페이지에서 같은 **Control Dock**을 사용한다. Desktop에서는 오른쪽 고정 패널,
 1100 px 이하에서는 상단 **Controls** 버튼으로 여는 drawer다. 좁은 화면의 패널은 닫기 버튼,
 바깥 영역 또는 Esc로 닫으며, 열린 동안 키보드 포커스가 패널 안에 머문다.
@@ -416,6 +422,11 @@ tailscale serve --tcp=8767 off
 검사와 단일 조작권 규칙을 유지한다. 인터넷 공개용 Funnel은 사용하지 않는다.
 
 ## 가상 LCD 연결
+
+![실제 펌웨어 렌더러의 MANUAL 화면을 보여주는 HIL Virtual LCD 페이지](../../../docs/images/ui/hil-virtual-lcd.png)
+
+예시 UNO 보고값을 가상 serial로 입력한 실행 화면이다. LCD 이미지는 실제 펌웨어와 공유하는
+C++ renderer가 생성했으며, 보드·패널을 촬영한 사진은 아니다. 조작권이 없는 상태라 `VIEW ONLY`로 표시된다.
 
 가상 LCD는 ROS 상태로 UNO 화면을 추정하지 않는다. UNO의 적용 표시값·페이지·CAN LOST
 보고를 전용 USB serial worker가 읽고, 실제 펌웨어 C++ renderer로 PNG를 만든다.
