@@ -13,7 +13,7 @@ ros2 run control_tuning control_tuning_tui
 코드 변경 뒤에는 `colcon build --symlink-install --packages-select control_tuning lateral_ctrl command_governor control_launch` 후 다시 `si` 한다.
 Python 의존성은 rich/PyYAML이다. MCAP 분석은 [control_tools](../control_tools/README.md)에서 수행한다.
 `--offline`은 파일 편집·저장만, `--preview`는 첫 화면 출력만 수행한다.
-80열×24행 이상, 104열에서 저장값 열, 132열에서 native 이름 열을 표시한다.
+80열×24행 이상, 104열에서 저장값 열, 132열에서 설정키 열을 표시한다.
 
 ## 분류와 적용
 
@@ -21,23 +21,26 @@ Python 의존성은 rich/PyYAML이다. MCAP 분석은 [control_tools](../control
 |---|---|---|
 | 1 조향응답 | 조향 제어 방식, P/D, 목표 도달 판정, 조향속도 필터 | S 저장 후 재시작 |
 | 2 조향출력 | 최대·지속 전류, 고출력 시간·회복, 한계각 여유, 조향 허용 최소 차속 | S 저장 후 재시작 |
-| 3 구동응답 | speed/torque, 속도 Kp/Ki, deadband/hysteresis | S 저장 후 재시작 |
-| 4 구동출력 | 최대 전류, 적분 상한, 전류 상승·하강·재인가, RPM 상한 | S 저장 후 재시작 |
-| 5 수신제한 | 상위 명령 유효시간과 조향 명령·CAN·피드백·모드·차속 수신 제한 | S 저장 후 재시작 |
+| 3 구동응답 | speed/torque/external_current, 모터 파형, governor 가감속 slew, 속도 PI·feedforward·PI 회생 | S 저장 후 재시작 |
+| 4 구동출력 | 최대 전류, 적분 상한, 전류 상승·하강·재인가, RPM 상한, 회생 전류 한도·변화율 | S 저장 후 재시작 |
+| 5 구동보호 | 파형별 최소 전류, 출발 스텝·hold, 역회전·붕괴 감지, 회생 속도·전압·충전전류 제한 | S 저장 후 재시작 |
+| 6 수신제한 | 상위 명령 유효시간과 조향 명령·CAN·피드백·모드·차속 수신 제한 | S 저장 후 재시작 |
 
-프리셋 선택 후 5개 분류가 터미널 폭에 맞춰 간격을 두고 한 행에 표시된다.
-←→/Tab으로 이동하거나 1–5로 바로 선택한다. 선택된 분류는 대괄호와 강조색으로 표시한다.
-최소 터미널 폭은 80열이다.
+프리셋 선택 후 6개 분류가 터미널 폭에 맞춰 간격을 두고 한 행에 표시된다.
+←→/Tab으로 이동하거나 1–6으로 바로 선택한다. 선택된 분류는 대괄호와 강조색으로 표시한다.
+최소 터미널 크기는 80열×24행이다. 숫자 편집 중에도 Q로 종료할 수 있으며,
+저장하지 않은 수정값이 있으면 기존 종료 확인을 거친다.
 
 하드웨어 연결, 조향 보정식, 제어 주기와 차량 운동 추정은 편집하지 않는다.
-Governor에는 새 ramp를 추가하지 않았다. Decision이 기존 accel/decel ramp를 담당한다.
+Governor는 프리셋의 양수 목표속도 가감속 slew를 적용한다. 가속 slew는 Speed에서만 사용하고,
+목표 0·브레이크는 즉시 전달한다. 세부 동작은 [governor 문서](../command_governor/README.md#속도-명령-slew)를 따른다.
 입력 허용 범위는 코드 계약이며 검증된 실차 tuning range가 아니다.
 
 ## 조작
 
 | 키 | 동작 |
 |---|---|
-| ←→ / Tab, 1–5 | 프리셋/분류 이동 |
+| ←→ / Tab, 1–6 | 프리셋/분류 이동 |
 | ↑↓ / 휠 | 항목 선택 |
 | Enter, +/− | 직접 입력/선택 전환, 증감 |
 | S | 선택한 프리셋 YAML 저장 |

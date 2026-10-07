@@ -294,6 +294,7 @@ def test_driving_run_requires_stm_a_on_the_launch_preset(controlled):
         node.longitudinal_sample = (clock[0], decode_status(status_data(config, source=source, revision=revision)))
 
     node.launch_preset = 'airborne'
+    node.launch_config_file = default_settings_path()
     readback(preset, source=0, revision=0)  # STM_A rebooted to DEFAULT
     assert 'DEFAULT' in Runtime.calibration_problem(node)
     node.request_run(settings_with_speed('speed_step'))
@@ -748,6 +749,7 @@ def test_real_governor_and_mcap_record_mode_and_input(tmp_path, record_mcap):
         current_command_a=3.)))))
     source.declare_parameter('steering_enabled', True)
     source.declare_parameter('tuning_preset', 'driving')
+    source.declare_parameter('control_tuning_file', default_settings_path())
     lateral_config = Path(get_package_share_directory('lateral_ctrl')) / 'config'
     steering_defaults = yaml.safe_load((lateral_config / 'steering_actuator.yaml').read_text())['steering_actuator_node']['ros__parameters']
     steering_defaults.update(yaml.safe_load((lateral_config / 'steering_motor_calibration.yaml').read_text()))

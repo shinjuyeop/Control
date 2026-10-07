@@ -1,3 +1,4 @@
+import type { Trace } from "../components/instruments";
 import { FaultSummary } from "../components/SubsystemSignals";
 import { RotateCcw } from "lucide-react";
 import {
@@ -10,6 +11,11 @@ import {
 } from "../components/instruments";
 import { age, targetColor, boolean, feedbackColor } from "../domain/format";
 import { useWorkbench } from "../hooks/useWorkbench";
+const speedTraces: Trace[] = [
+  { key: "targetSpeed", label: "Governor 출력", color: targetColor },
+  { key: "speed", label: "STM_A 피드백", color: feedbackColor },
+];
+
 export function FaultsPage() {
   const { state, hil, points, disabled, commands, command, linkBadge } =
     useWorkbench();
@@ -107,10 +113,7 @@ export function FaultsPage() {
       <Panel title="고장 전후 주행 응답">
         <Chart
           points={points}
-          traces={[
-            { key: "targetSpeed", label: "Governor 출력", color: targetColor },
-            { key: "speed", label: "STM_A 피드백", color: feedbackColor },
-          ]}
+          traces={speedTraces}
           unit="km/h"
         />
         <Notice>

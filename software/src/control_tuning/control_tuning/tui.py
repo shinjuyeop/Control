@@ -198,7 +198,10 @@ class Editor:
                     self.tell('←→로 프리셋을 고른 뒤 Enter를 누르세요.')
                 return
             if self.editing is not None:
-                if key == 'escape':
+                if key.lower() == 'q':
+                    self.editing = None
+                    self.review('quit')
+                elif key == 'escape':
                     self.editing = None
                 elif key == 'enter':
                     self.commit(self.editing)

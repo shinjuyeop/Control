@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
@@ -37,6 +39,7 @@ def load_steering_motor_calibration(path):
 
 
 def _make_actuator(context, calibration_parameters):
+    settings_path = str(Path(LaunchConfiguration('control_tuning_file').perform(context)).expanduser().absolute())
     # Explicit CLI arguments take precedence over the selected preset.
     optional_parameters = {}
     for name in ('actuation_mode', 'steering_enabled', 'torque_controller', 'steering_model_file'):
@@ -51,7 +54,7 @@ def _make_actuator(context, calibration_parameters):
             output='screen',
             parameters=[
                 LaunchConfiguration('params_file'),
-                load_launch_overrides(LaunchConfiguration('control_tuning_file').perform(context),
+                load_launch_overrides(settings_path,
                                       'steering_actuator_node',
                                       LaunchConfiguration('tuning_preset').perform(context),
                                       steering_config=LaunchConfiguration('params_file').perform(context)),
@@ -59,6 +62,7 @@ def _make_actuator(context, calibration_parameters):
                 {
                     **optional_parameters,
                     'tuning_preset': LaunchConfiguration('tuning_preset'),
+                    'control_tuning_file': settings_path,
                     'can_interface': LaunchConfiguration('can_interface'),
                     'hardware_can_enabled': LaunchConfiguration('hardware_can_enabled'),
                     'actuator_output_enabled': LaunchConfiguration('actuator_output_enabled'),

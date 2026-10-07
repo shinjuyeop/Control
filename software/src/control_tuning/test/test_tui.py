@@ -203,6 +203,25 @@ def test_terminal_navigation_scroll_and_incremental_updates(store, editor, width
     assert '\x1b[2J' not in output.getvalue()
 
 
+def test_quit_while_editing_in_a_small_terminal_preserves_saved_values(editor):
+    saved = editor.presets.path_for('airborne').read_bytes()
+    editor.commit(40)
+    editor.key('enter')
+    editor.key('2')
+    output = StringIO()
+    console = Console(file=output, width=70, height=20)
+    console.print(layout(editor, None, 70, 20))
+    assert 'Q 종료' in output.getvalue()
+    editor.key('q')
+    assert editor.editing is None and editor.modal['action'] == 'quit'
+    editor.key('escape')
+    assert not editor.done and editor.preset_dirty
+    editor.key('q')
+    editor.key('enter')
+    assert editor.done
+    assert editor.presets.path_for('airborne').read_bytes() == saved
+
+
 def test_discard_confirmation_and_terminal_cleanup(store, editor):
     editor.commit(40)
     editor.key('q')

@@ -26,6 +26,11 @@ ros2 run control_tuning control_tuning_tui
 2번에서 같은 프리셋으로 실행해야 적용됩니다. 구동 중 값을 변경했다면
 MANUAL·정지 상태에서 구동 스택을 재시작합니다. [튜닝 상세](../software/src/control_tuning/README.md)
 
+현재 저장된 주행·공중 프리셋은 모두 Speed·사인파이고 회생·feedforward는 꺼져 있습니다.
+값은 [프리셋 표](../software/src/control_tuning/README.md#두-프리셋과-schema-v3)를 기준으로 확인합니다.
+현재 Host는 STM_A longitudinal ABI v5 설정을 보내므로 STM_A firmware도 v5가 필요합니다.
+Git 갱신이나 Host 빌드만으로 STM_A firmware가 갱신되지는 않습니다.
+
 ## 2. 구동 스택
 
 ```zsh
@@ -38,7 +43,7 @@ ros2 launch control_launch vehicle.launch.py
 ros2 launch control_launch vehicle.launch.py tuning_preset:=airborne
 ```
 
-STM_A calibration 적용·readback 결과를 확인합니다. 실패하면 MANUAL·정지·페달 해제를
+STM_A calibration 적용·readback의 `HOST_OVERRIDE`와 선택 프리셋 값을 확인합니다. 실패하면 MANUAL·정지·페달 해제를
 확인하고 스택을 다시 실행합니다. [launch 상세](../software/src/control_launch/README.md)
 
 ## 3. 관측
@@ -99,7 +104,8 @@ ros2 run vehicle_test_scenarios vehicle_test_scenario_runner
 
 시험·속도·조향 진폭·시험 조건을 확인하고 **MCAP 녹화 ON**을 선택합니다.
 `R`을 눌러 녹화·설정 조회를 마친 뒤 AUTO 대기 상태에서 6번을 확인합니다.
-`S` / `Space`는 정지 요청·기록 마감, `Q`는 종료입니다.
+`S` / `Space`는 속도 0·`brake_engage=false`로 정상 종료하고 기록을 마감합니다. `Q`는 종료입니다.
+정상 종료는 토크컷·타력감속이며 물리 브레이크 정지를 뜻하지 않습니다.
 기본 속도는 0이지만 조향 진폭은 별도입니다.
 [시나리오·키 조작 상세](../software/src/vehicle_test_scenarios/README.md)
 

@@ -2,13 +2,14 @@
 
 조향·구동을 함께 편집하므로 **담당 계통 + 항목 + 단위**가 이름에 드러나게 한다.
 TUI/프리셋/정규화된 MCAP 분석값에는 같은 canonical key를 사용한다.
-기존 ROS 파라미터, topic/message type 및 STM_A v1 배열 순서는 연결용 계약으로 유지한다.
+기존 ROS 파라미터와 topic/message type은 유지하며 STM_A 배열은 현재 ABI v5를 따른다.
+구형 배열은 버전별 decoder로 읽고, Host 설정 송신은 v5만 지원한다.
 새 이름을 기존 이름으로 단순 치환할 때 단위까지 같다고 가정하면 안 된다.
 
 ## 이름 규칙
 
 - `steering_`: KEYA 조향 제어 또는 조향 허용 판단에 사용하는 설정.
-- `drive_`: STM_A AUTO Speed/Torque 공통 구동 envelope와 Torque 속도 PI 설정.
+- `drive_`: STM_A Speed/Torque/외부 전류의 구동 한도·보호, Torque 속도 PI와 회생 설정.
 - `governor_`: 상위 명령의 유효성 검사와 속도 명령 변화율.
 - `kp`, `ki`, `kd`: P/I/D 게인. `_a_per_deg`, `_a_per_mps` 등은 출력 전류와 오차의 단위를 표현한다.
 - `limit_a`: 명령/적분 전류 한도. MCAP의 실측 `phase_current_a` 또는 `motor_current_a`와 구분한다.
@@ -16,14 +17,15 @@ TUI/프리셋/정규화된 MCAP 분석값에는 같은 canonical key를 사용�
   조향 허용 판단용 차속의 수신 제한이며 STM_A 구동 속도 PI의 timeout이 아니다.
 
 특히 `steering_torque_feedback_timeout_ms`는 **조향 Torque 모드의 위치 피드백·샘플 간격·
-제어 지연 제한**이다. 구동 STM_A의 `MOTOR_FEEDBACK_TIMEOUT_MS=200`은 별도 firmware 상수다.
+제어 지연 제한**이다. 구동 STM_A의 Part I `MOTOR_FEEDBACK_TIMEOUT_MS=500`은 별도 firmware 상수다.
 이 두 timeout은 별도 계약이며 이번 envelope 변경에서도 값을 바꾸지 않는다.
 
 ## 새 이름과 기존 연결
 
 아래 ROS 항목은 해당 노드의 parameter 이름이다. 조향 node는 `/steering_actuator_node`,
-거버너는 `/command_governor`다. STM_A 항목은 v1 배열의 논리 필드명이며
-startup calibration helper도 기존 이름의 ROS 파라미터를 받는다.
+거버너는 `/command_governor`다. STM_A는 현재 ABI v5를 사용하며,
+아래 연결 열의 v1/v4/v5는 해당 필드가 도입된 버전이다. startup calibration helper도
+이 논리 필드명을 ROS 파라미터로 받는다.
 TUI 상세에는 새 설정키와 기존 연결을 함께 표시한다.
 
 | 새 설정키 | 화면 이름 | 단위 | 기존 연결 |
@@ -109,10 +111,11 @@ v3의 `coast_current_floor_a`(canonical `drive_coast_current_floor_a`)는 목표
 
 CAN 송신부의 최종 전진 4500 / 후진 1500 rpm 물리 clamp는 별도로 유지한다.
 Driving 480 A/4500 rpm에서 기존 Speed baseline CAN 명령은 동일하다.
-Airborne는 Kp15/Ki2, 40 A/4500 rpm의 first-test candidate이며 두 AUTO mode에 같은 envelope를 쓴다.
-RPM 한도는 driving과 같고, 전류 한도는 공중 시험용으로 낮게 유지한다. 기존
-20 A/600 rpm 기능 확인 후보와 달리 40 km/h 목표를 RPM에서 제한하지 않지만,
-실제 도달 속도와 전류는 아직 공중 시험으로 검증되지 않았다.
+현재 저장된 airborne는 Speed·사인파, 80 A/4500 rpm이다. 보존된 PI 값은 Kp15/Ki10,
+적분 한도 6 A이며 Speed에서는 사용하지 않는다. driving도 Speed·사인파이고,
+회생 최대 전류와 feedforward는 두 프리셋 모두 0이다.
+전체 저장값은 [프리셋 표](../software/src/control_tuning/README.md#두-프리셋과-schema-v3)와
+해당 YAML을 기준으로 한다. 파일 값은 실제 STM_A 적용·주행 검증 결과를 뜻하지 않는다.
 나머지 speed PI, 적분 한도, deadband/coast, current slew/reapply 항목은 Torque 전용이다.
 MANUAL은 Torque/외부 전류 calibration의 전류 한도·RPM 상한·전류 slew를 공유하며, Speed에서는 기존 페달 매핑을 유지한다.
 
@@ -166,7 +169,7 @@ condition: driving
 steering_current_reference_a: 20.0
 steering:
   steering_control_mode: torque
-  steering_kp_a_per_deg: 2.4
+  steering_kp_a_per_deg: 2.0
   # 나머지 조향 항목도 명시
 drive:
   drive_control_mode: torque

@@ -100,8 +100,8 @@ STM_A는 종방향 구동과 차량의 물리 모드·기어·가속 페달 입�
 
 - PA0 ADC로 가속 페달을 읽고 0~100%로 변환합니다.
 - PA8 모드 스위치와 PA9 기어 스위치를 읽습니다.
-- AUTO에서는 `/vehicle/command.speed_target_mps`를 선택한 Speed/Torque 경로로 제어합니다.
-  두 경로 모두 active preset의 current/RPM envelope를 사용합니다.
+- AUTO에서는 선택한 Speed/Torque/외부 전류 경로로 제어합니다.
+  각 경로는 active preset의 current/RPM envelope를 사용합니다.
 - MANUAL에서는 물리 페달과 기어를 torque-control 명령으로 변환합니다.
 - EZkontrol handshake와 CAN 명령·Part I/II 상태 수신을 담당합니다.
 - `/drive/status`로 모드, 기어, 속도, 명령 freshness와 모터 진단을 발행합니다.
@@ -109,21 +109,31 @@ STM_A는 종방향 구동과 차량의 물리 모드·기어·가속 페달 입�
 - STM_B safety frame 단절, STM_B 브레이크 요청, AUTO Host brake 또는 AUTO Host
   명령 timeout 조건에서 traction을 HALTED로 명령합니다.
 
-AUTO 종방향은 기존 20 Hz `StartControl`에서 다음 두 경로를 선택합니다.
+AUTO 종방향은 20 Hz `StartControl`에서 다음 경로를 선택합니다.
 
 ```text
 Speed Control: Host target speed → target motor RPM → preset current/RPM envelope
                → EZkontrol native Speed Control
-Torque Control: Host target speed → STM_A 20 Hz Speed PI → anti-windup/coast/current slew
+Torque Control: Host target speed → STM_A 20 Hz Speed PI + optional feedforward → current slew
                 → phase-current target → EZkontrol Torque Control
-MANUAL: physical pedal/gear → 기존 direct Torque Control
+External Current: /vehicle/drive_current_command → freshness/current/RPM envelope
+                  → EZkontrol Torque Control
+Regeneration: LT/external negative current or optional PI regen → speed/voltage/charge limits
+              → negative phase current (AUTO Torque/external current only)
+MANUAL: physical pedal/gear → pedal current mapping → EZkontrol Torque Control
 ```
 
 `drive_current_limit_a`는 Speed에서 EZ 내부 속도제어 current limit, Torque에서 PI 전류 상한입니다.
 `drive_motor_speed_limit_rpm`은 Speed target RPM과 Torque RPM ceiling에 공통으로 적용합니다.
 최종 전진 4500 / 후진 1500 rpm 물리 clamp는 CAN 송신부에서 별도로 유지합니다.
-따라서 driving Speed의 480 A/4500 rpm baseline은 동일하고 airborne는 40 A/4500 rpm입니다.
-MANUAL pedal/gear는 AUTO preset envelope를 사용하지 않습니다.
+현재 저장된 프리셋은 모두 Speed·사인파이며 driving은 480 A/4500 rpm, airborne는 80 A/4500 rpm입니다.
+회생 최대 전류와 feedforward는 0, PI 자동 회생은 disabled입니다.
+MANUAL은 Torque/외부 전류 calibration에서 전류 한도·RPM 상한·전류 slew를 공유하고,
+Speed calibration에서는 기존 0~480 A 페달 매핑을 사용합니다. MANUAL에서 속도 PI는 실행하지 않습니다.
+
+Host는 longitudinal ABI v5 설정을 송신하고 STM_A는 v5 상태를 발행합니다. Host와 STM_A firmware를
+함께 갱신해야 하며, 구형 상태 배열은 기록 분석용으로 읽을 수 있습니다.
+현재 저장값과 실제 적용값은 [Control Tuning](../software/src/control_tuning/README.md)과 readback으로 구분합니다.
 
 Torque는 Part I freshness <500 ms와 Part II freshness <1 s를 요구하며, 상실 시 history reset·0 A/HALTED 후
 feedback 복구를 확인한 다음 받은 fresh Host command로만 재개합니다.

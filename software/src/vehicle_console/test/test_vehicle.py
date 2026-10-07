@@ -15,7 +15,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from std_msgs.msg import Float32MultiArray
-from control_tuning.longitudinal import AIRBORNE, STATUS_TOPIC, status_data
+from control_tuning.longitudinal import DEFAULT, STATUS_TOPIC, status_data
 from rosidl_runtime_py.set_message import set_message_fields
 from starlette.websockets import WebSocketDisconnect
 
@@ -29,7 +29,7 @@ def vehicle(tmp_path):
     rclpy.init()
     app = create_app(tmp_path / "web", allowed_hosts=["100.112.72.27"])
     original = app.router.lifespan_context
-    control = {"publish": False, "runtime": True, "diagnostics": True}
+    control = {"publish": False, "runtime": True, "diagnostics": True, "longitudinal": True}
 
     @asynccontextmanager
     async def lifespan(application):
@@ -58,7 +58,9 @@ def vehicle(tmp_path):
                             message="CAN observation", values=[KeyValue(key="part1", value="valid")],
                         )])
                     elif msg_type is Float32MultiArray:
-                        msg = Float32MultiArray(data=status_data(AIRBORNE, dict(
+                        if not control["longitudinal"]:
+                            continue
+                        msg = Float32MultiArray(data=status_data({**DEFAULT, 'control_mode': 'torque', 'speed_kp_a_per_mps': 15.}, dict(
                             speed_error_mps=.2, p_current_a=1.6, i_current_a=.3,
                             unsaturated_current_a=1.9, current_command_a=1.9), request_id=17))
                     elif msg_type is ActuatorCommand:
@@ -132,7 +134,7 @@ def test_live_stale_reconnect_and_runtime_mapping(vehicle):
         assert state["topics"]["/vehicle/command"]["data"]["speed_target_mps"] == 1.5
         assert state["topics"]["/drive/status"]["data"]["speed_mps"] == pytest.approx(1.42)
         lon = state["topics"][STATUS_TOPIC]["data"]
-        assert lon["config"]["control_mode"] == "torque"  # v1 compatibility
+        assert lon["config"]["control_mode"] == "torque"  # explicit Torque test input
         assert lon["display_values"]["drive_control_mode"] == "torque"
         assert lon["display_values"]["drive_speed_kp_a_per_mps"] == 15.
         assert lon["source"] == "HOST_OVERRIDE"
@@ -224,7 +226,7 @@ def test_vehicle_browser_overview_stale_reconnect_and_responsive(vehicle, tmp_pa
     client, node, control = vehicle
     with browser_session(client) as page:
         expect(page.get_by_role("heading", name="Overview", exact=True)).to_be_visible()
-        expect(page.locator(".profile-label")).to_have_text("VEHICLE · MONITOR + FAULT ACK")
+        expect(page.locator(".profile-label")).to_have_text("VEHICLE · MONITOR")
         expect(page.locator(".vehicle-overview")).to_contain_text("NO DATA")
         expect(page.get_by_role("button", name="Bench Reset")).to_have_count(0)
         expect(page.locator("#control-dock")).to_have_count(0)
@@ -232,7 +234,12 @@ def test_vehicle_browser_overview_stale_reconnect_and_responsive(vehicle, tmp_pa
         for label in ("Fault Injection", "Scenarios", "Virtual LCD", "HIL"):
             expect(page.get_by_role("navigation").get_by_role("button", name=label, exact=True)).to_have_count(0)
         control["publish"] = True
-        expect(page.locator(".vehicle-overview")).to_contain_text("7 / 7 LIVE")
+        expect(page.locator(".vehicle-overview")).to_contain_text("8 / 8 LIVE")
+        control["longitudinal"] = False
+        expect(page.locator(".vehicle-overview")).to_contain_text("7 / 8 LIVE")
+        expect(page.locator(".reported-conditions")).to_contain_text(STATUS_TOPIC)
+        control["longitudinal"] = True
+        expect(page.locator(".vehicle-overview")).to_contain_text("8 / 8 LIVE")
         expect(page.locator(".overview-drive")).to_contain_text("5.11")
         expect(page.locator(".overview-drive")).to_contain_text("5.40")
         expect(page.locator(".vehicle-overview")).to_contain_text("RUNTIME OK")
@@ -245,6 +252,15 @@ def test_vehicle_browser_overview_stale_reconnect_and_responsive(vehicle, tmp_pa
             expect(page.get_by_role("heading", name=name, exact=True)).to_be_visible()
             assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
         expect(page.locator(".diagnostic-observations")).to_contain_text("CAN observation")
+        page.get_by_role("navigation").get_by_role("button", name="Drive", exact=True).click()
+        chart = page.locator(".chart path").first
+        page.get_by_role("button", name="그래프 일시정지").click()
+        frozen_path = chart.get_attribute("d")
+        assert frozen_path
+        page.wait_for_timeout(500)  # telemetry continues while the plotted history is paused
+        assert chart.get_attribute("d") == frozen_path
+        page.get_by_role("button", name="그래프 재개").click()
+        expect(chart).not_to_have_attribute("d", frozen_path)
         control["diagnostics_pub"].publish(DiagnosticArray(status=[DiagnosticStatus(
             name="steering/safety", hardware_id="KEYA", level=DiagnosticStatus.WARN,
             message="ACTIVE", values=[
@@ -269,7 +285,7 @@ def test_vehicle_browser_overview_stale_reconnect_and_responsive(vehicle, tmp_pa
         expect(page.get_by_text("WEB OFFLINE · 현재 상태 확인 불가", exact=True)).to_be_visible(timeout=7000)
         page.context.set_offline(False)
         control["publish"] = True
-        expect(page.locator(".vehicle-overview")).to_contain_text("7 / 7 LIVE", timeout=8000)
+        expect(page.locator(".vehicle-overview")).to_contain_text("8 / 8 LIVE", timeout=8000)
         assert {p.topic_name for p in node.publishers} <= {"/parameter_events"}
         print(f"Vehicle browser images: {tmp_path}")
 

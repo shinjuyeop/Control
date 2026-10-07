@@ -1,3 +1,4 @@
+import type { Trace } from "./instruments";
 import type { ReactNode } from "react";
 import { Badge, Chart, Details, Fact, Panel, Source } from "./instruments";
 import { SteeringArc, TargetActual } from "./SignalInstruments";
@@ -7,6 +8,16 @@ import { auxiliaryColor, feedbackColor, targetColor } from "../domain/format";
 import { mpsToKmh, radToDeg } from "../domain/units";
 import { useTelemetry } from "../hooks/useTelemetry";
 import type { Data } from "../domain/types";
+
+const wheelTraces: Trace[] = [
+  { key: "targetWheel", label: "로드휠 명령", color: targetColor },
+  { key: "wheel", label: "엔코더 환산 관측", color: feedbackColor },
+];
+
+const currentTraces: Trace[] = [
+  { key: "bus", label: "Bus current", color: auxiliaryColor },
+  { key: "phase", label: "Phase current", color: feedbackColor },
+];
 
 export function DriveComparison() {
   const { state, online } = useTelemetry();
@@ -37,10 +48,7 @@ export function SteeringComparison({ motorTargetDeg }: { motorTargetDeg?: number
 export function WheelPlot({ aside }: { aside?: ReactNode }) {
   const { state, online, points } = useTelemetry();
   return <Panel title="로드휠 위치 추종" eyebrow="LATERAL CONTROLLER" aside={aside}>
-    <Chart points={points} traces={[
-      { key: "targetWheel", label: "로드휠 명령", color: targetColor },
-      { key: "wheel", label: "엔코더 환산 관측", color: feedbackColor },
-    ]} unit="deg" />
+    <Chart points={points} traces={wheelTraces} unit="deg" />
     <Source name="/steering/status" sample={state.topics["/steering/status"]} online={online} />
   </Panel>;
 }
@@ -48,10 +56,7 @@ export function WheelPlot({ aside }: { aside?: ReactNode }) {
 export function CurrentPlot() {
   const { points } = useTelemetry();
   return <Panel title="전류 응답" eyebrow="STM_A / PART I">
-    <Chart points={points} traces={[
-      { key: "bus", label: "Bus current", color: auxiliaryColor },
-      { key: "phase", label: "Phase current", color: feedbackColor },
-    ]} unit="A" height={190} />
+    <Chart points={points} traces={currentTraces} unit="A" height={190} />
     <p className="muted">배터리 버스 전류와 모터 상전류는 서로 다른 값입니다.</p>
   </Panel>;
 }

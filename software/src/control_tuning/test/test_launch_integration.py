@@ -72,6 +72,7 @@ def test_launch_defaults_read_the_same_source_file_as_tui(store, tmp_path, monke
     if package == 'lateral_ctrl':
         assert layers[1]['torque_full_scale_error_deg'] == .4
         assert layers[-1]['tuning_preset'] == 'driving'
+        assert Path(layers[-1]['control_tuning_file']) == settings.path
     else:
         assert layers[1]['input_timeout_ms'] == 250.
 
@@ -103,6 +104,7 @@ def test_launch_helpers_layer_profile_before_explicit_overrides(store, monkeypat
     if package == 'lateral_ctrl':
         assert layers[1]['torque_full_scale_error_deg'] == .4
         assert layers[-1]['actuation_mode'] == 'position'
+        assert Path(layers[-1]['control_tuning_file']) == store.path
         assert layers[-1]['hardware_can_enabled'] is False
         assert layers[-1]['actuator_output_enabled'] is False
     else:
@@ -112,6 +114,7 @@ def test_launch_helpers_layer_profile_before_explicit_overrides(store, monkeypat
 
 
 def test_actual_nodes_save_then_restart_and_cli_priority(store, monkeypatch, tmp_path):
+    from rcl_interfaces.srv import GetParameters
     if os.environ.get('CONTROL_TUNING_LAUNCH_TESTS') != '1':
         pytest.skip('Opt in with CONTROL_TUNING_LAUNCH_TESTS=1 after building lateral_ctrl and command_governor')
     for package in ('lateral_ctrl', 'command_governor', 'control_tuning'):
@@ -175,6 +178,10 @@ def test_actual_nodes_save_then_restart_and_cli_priority(store, monkeypatch, tmp
                 assert client.values[STEERING]['torque_full_scale_error_deg'] == .3
                 assert client.values[STEERING]['minimum_steering_speed_kph'] == 1.
                 assert client.values[GOVERNOR]['input_timeout_ms'] == 250.
+                metadata = client.read_clients[STEERING].call_async(
+                    GetParameters.Request(names=['tuning_preset', 'control_tuning_file']))
+                pump(metadata.done)
+                assert [v.string_value for v in metadata.result().values] == ['driving', str(store.path)]
                 editor = Editor(store)
                 editor.key('enter')
                 editor.draft['steering_kp_a_per_deg'] = 48.
@@ -198,6 +205,10 @@ def test_actual_nodes_save_then_restart_and_cli_priority(store, monkeypatch, tmp
                 pump(lambda: client.fresh_values(STEERING) and client.fresh_values(GOVERNOR)
                      and client.values[STEERING]['torque_full_scale_error_deg'] == .5
                      and client.values[GOVERNOR]['input_timeout_ms'] == 300.)
+                metadata = client.read_clients[STEERING].call_async(
+                    GetParameters.Request(names=['tuning_preset', 'control_tuning_file']))
+                pump(metadata.done)
+                assert [v.string_value for v in metadata.result().values] == ['airborne', str(store.path)]
     finally:
         executor.shutdown()
         client.destroy_node()

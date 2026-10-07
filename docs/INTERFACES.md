@@ -818,24 +818,27 @@ remain readable through explicit name adapters; conflicting aliases fail instead
 silently selecting a value. All managed values remain required.
 
 Node-scoped ROS parameter names and `/parameter_events` keep their native names/units.
-The MCU array ABI remains v1. Its host decoder adds canonical `display_values` while
-retaining the existing `config` object for old clients. The topic/message types remain unchanged. The naming adapter needs no firmware
-rollout, but the shared AUTO Speed/Torque envelope requires the updated STM_A firmware. Control Tuning remains read-only with respect to runtime:
+The current MCU array ABI is v5: 40-float requests and 78-float status. The host decoder
+reads v1–v5 and adds canonical `display_values` while retaining `config` for consumers.
+Topic/message types remain unchanged, but the v5 request layout requires matching Host and STM_A firmware.
+Control Tuning remains read-only with respect to runtime:
 S saves the selected preset for the next control-stack launch.
 
 
 ### AUTO drive envelope semantics
 
-The ABI v1 `max_drive_current_a` and `motor_rpm_limit` fields (canonical
+The `max_drive_current_a` and `motor_rpm_limit` fields, introduced in ABI v1 (canonical
 `drive_current_limit_a`, `drive_motor_speed_limit_rpm`) apply to both AUTO modes.
 Speed uses them as the EZ native current-limit field and symmetric signed target-RPM
 envelope. Torque uses them as PI phase-current ceiling and EZ torque-mode RPM ceiling.
 The final sender still clamps forward to 4500 rpm and reverse to 1500 rpm.
-MANUAL pedal/gear bypasses this AUTO calibration envelope.
+MANUAL shares the current/RPM limits and current slew in Torque/external-current calibration;
+Speed calibration retains the direct 0–480 A pedal mapping. MANUAL does not run the speed PI.
 
-Airborne first-test candidate: Kp15/Ki2, 20 A, integral6 A, slew120/400 A/s,
-reapply5 A at40 A/s, RPM600, deadband0.05/release0.12 m/s.
-Driving remains 480 A/RPM4500 with unchanged gains and CAN baseline.
+The saved airborne and driving presets both select Speed/Sine. Airborne uses 80 A/RPM4500;
+driving uses 480 A/RPM4500. Governor acceleration/deceleration slew is 2/1 m/s² for airborne
+and 100/0.5 m/s² for driving. See the [current preset values](../software/src/control_tuning/README.md#두-프리셋과-schema-v3).
+Both presets disable feedforward and regeneration. These are saved settings, not a claim about live MCU readback.
 Torque PI uses signed speed error with output limited to positive drive current
 or zero. Negative error reduces current continuously; lower output/slew saturation
 freezes the integral instead of clearing the learned load current. `coasting`
@@ -846,8 +849,9 @@ limits positive current recovery from 0 A; with a rolling floor at or above
 `reapply_current` the slow band is skipped. The v3 `coast_current_floor` (overspeed only)
 is replaced in v4 by the rolling minimum current above; target zero and safety gates
 command zero.
-This loop does not request
-regeneration; explicit external regen requests retain their existing path.
+With `pi_regen_enabled` and a positive `regen_max_current_a`, the separate PI regen path
+can request negative current during overspeed. Both settings are disabled in the saved presets.
+LT and external negative-current requests use the same v5 regen limits.
 
 PI gains, integral, deadband and slew/reapply remain Torque-only. Firmware
 Part I freshness is 500 ms; Part II status becomes invalid at 1 s.

@@ -178,7 +178,7 @@ command를 50 ms nominal 주기로 보냅니다.
 - status Part II: `0x1802D0EF`
 - 전진 motor RPM 한계: `4500`
 - 후진 motor RPM 한계: `-1500`
-- AUTO Speed/Torque current/RPM envelope: active `LongConfig` (driving 480 A/4500 rpm, airborne 40 A/4500 rpm)
+- AUTO Speed/Torque current/RPM envelope: active `LongConfig` (저장된 driving 480 A/4500 rpm, airborne 80 A/4500 rpm; 두 프리셋 모두 Speed)
 - MANUAL torque-current 한계: `480 A`
 
 Part I의 motor RPM 원본은 `/drive/status.motor_rpm`에 그대로 발행합니다. 차량 속도는

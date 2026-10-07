@@ -53,7 +53,8 @@ in the HIL/UNO runbooks remains historical evidence, not proof of this refactor.
 
 After the initial frontend/Qt migration, the user chose one Console system.
 The active HIL implementation is now `vehicle_console.hil`, shared infrastructure
-is `vehicle_console.common`, and the Vehicle entrypoint only adds explicit steering HARD-latch acknowledgment without
-initializing HIL modules. 독립 `kaiev26_hil` 패키지의 보관본은 통합 완료 후 2026-09-22에 정리했습니다.
+is `vehicle_console.common`, and the Vehicle entrypoint observes telemetry without
+initializing HIL modules. Vehicle has no steering fault-clear endpoint or ROS command client.
+독립 `kaiev26_hil` 패키지의 보관본은 통합 완료 후 2026-09-22에 정리했습니다.
 Existing HIL node names, commands, watchdog, scenario and virtual-HMI behavior are
 preserved. Headless launch and CLI tools remain available from `vehicle_console`.

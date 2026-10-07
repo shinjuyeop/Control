@@ -76,7 +76,7 @@ HIL의 Scenarios는 벤치 시험 기능이며 실차 입력 응답·경로 추�
 
 | Profile | Pages / capabilities |
 |---|---|
-| VEHICLE · MONITOR + FAULT ACK | Overview, Drive, Steering, Safety / Brake, ECU Runtime, Diagnostics |
+| VEHICLE · MONITOR | Overview, Drive, Steering, Safety / Brake, ECU Runtime, Diagnostics; 관측 전용 |
 | HIL | Bench, 공용 Drive/Steering/Safety/Runtime/Diagnostics, Fault Injection, Scenarios, Virtual LCD/Touch, control ownership/ARM/heartbeat |
 
 Profile은 선택한 서버 진입점에 고정되며 브라우저 전환 기능이 없다.
@@ -101,6 +101,7 @@ publisher와 best-effort RuntimeStats를 함께 받을 수 있다. 이 값들은
 |---|---|---|
 | `/vehicle/command` | `kaiev26_msgs/msg/ActuatorCommand` | 300 ms |
 | `/drive/status` | `kaiev26_msgs/msg/DriveActuatorStatus` | 300 ms |
+| `/drive/longitudinal_status` | `std_msgs/msg/Float32MultiArray`, ABI v1–v5 디코딩 | 1000 ms |
 | `/brake/status` | `kaiev26_msgs/msg/BrakeActuatorStatus` | 300 ms |
 | `/steering/status` | `kaiev26_msgs/msg/SteeringActuatorStatus` | 500 ms |
 | `/stm_a/runtime_stats`, `/stm_b/runtime_stats` | `kaiev26_msgs/msg/RuntimeStats` | 3000 ms, 수신과 firmware snapshot 진행 모두 필요 |

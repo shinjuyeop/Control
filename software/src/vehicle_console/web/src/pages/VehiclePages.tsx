@@ -1,3 +1,4 @@
+import type { Trace } from "../components/instruments";
 import { Chart, Fact, Panel, Source, fmt } from "../components/instruments";
 import { HealthIndicator } from "../components/RuntimeInstruments";
 import { StateRail, TargetActual } from "../components/SignalInstruments";
@@ -11,14 +12,19 @@ import { brakeReasons, enumText, speedText, degrees } from "../domain/vehicle";
 import { mpsToKmh, radToDeg } from "../domain/units";
 import { useTelemetry } from "../hooks/useTelemetry";
 
+const speedTraces: Trace[] = [
+  { key: "targetSpeed", label: "속도 목표", color: targetColor }, { key: "speed", label: "STM_A 속도", color: feedbackColor }
+];
+
 export function VehicleOverview() {
   const { state, online } = useTelemetry();
   const command = received(state, online, "/vehicle/command"), drive = received(state, online, "/drive/status"),
     brake = received(state, online, "/brake/status"), steering = received(state, online, "/steering/status");
-  const live = sourceTopics(state).filter(topic => online && state.topics[topic]?.fresh).length;
+  const topics = sourceTopics(state);
+  const live = topics.filter(topic => online && state.topics[topic]?.fresh).length;
   return <div className="vehicle-overview">
     <StateRail label="차량 핵심 상태" items={[
-      { label: "ROS DATA", value: `${live} / 7 LIVE`, detail: "명령 · 구동 · 조향 · 제동 · ECU A/B · 진단", status: { label: online ? "WEB LIVE" : "WEB OFFLINE", tone: online ? "good" : "warning" } },
+      { label: "ROS DATA", value: `${live} / ${topics.length} LIVE`, detail: "명령 · 구동 · 종방향 설정 · 조향 · 제동 · ECU A/B · 진단", status: { label: online ? "WEB LIVE" : "WEB OFFLINE", tone: online ? "good" : "warning" } },
       { label: "MODE / GEAR", value: `${enumText(["MANUAL", "AUTO"], drive.mode)} / ${enumText(["FWD", "REV"], drive.gear)}`, status: reception(state, online, "/drive/status"), detail: `RUN ${boolean(drive.tractive_commanded)} · pedal ${fmt(drive.pedal_percent, 0)}%` },
       { label: "BRAKE REQUEST", value: boolean(brake.brake_commanded, "ENGAGED", "RELEASED"), status: reception(state, online, "/brake/status"), detail: brakeReasons(brake.stop_reason_bits) },
       { label: "E-STOP · STM_B", value: typeof brake.stop_reason_bits === "number" ? brake.stop_reason_bits & 4 ? "ACTIVE" : "CLEAR" : "UNKNOWN", detail: "brake.stop_reason_bits · 보드 보고", status: { label: typeof brake.stop_reason_bits === "number" ? brake.stop_reason_bits & 4 ? "ESTOP" : "REPORTED CLEAR" : "UNKNOWN", tone: typeof brake.stop_reason_bits !== "number" ? "muted" : brake.stop_reason_bits & 4 ? "danger" : "good" } },
@@ -66,7 +72,7 @@ export function VehicleOverview() {
 export function VehicleDrive() {
   const { state, online, points } = useTelemetry();
   return <><DriveComparison /><Panel title="주행 목표와 관측 속도" eyebrow="GOVERNOR → STM_A">
-    <Chart points={points} traces={[{ key: "targetSpeed", label: "속도 목표", color: targetColor }, { key: "speed", label: "STM_A 속도", color: feedbackColor }]} unit="km/h" />
+    <Chart points={points} traces={speedTraces} unit="km/h" />
     <Source name="/vehicle/command" sample={state.topics["/vehicle/command"]} online={online} /><Source name="/drive/status" sample={state.topics["/drive/status"]} online={online} />
   </Panel><CurrentPlot /><DriveTelemetry state={state} online={online} /></>;
 }

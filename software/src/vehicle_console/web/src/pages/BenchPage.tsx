@@ -1,3 +1,4 @@
+import type { Trace } from "../components/instruments";
 import { ArrowRight } from "lucide-react";
 import { EventList } from "../components/EventList";
 import { Badge, Chart, Fact, Panel, fmt } from "../components/instruments";
@@ -12,6 +13,20 @@ import {
   SteeringFlow,
   BenchSafetyFlow,
 } from "../components/SubsystemSignals";
+const speedTraces: Trace[] = [
+  {
+    key: "targetSpeed",
+    label: "Governor target",
+    color: targetColor,
+  },
+  { key: "speed", label: "STM_A observed", color: feedbackColor },
+];
+
+const wheelTraces: Trace[] = [
+  { key: "targetWheel", label: "Commanded", color: targetColor },
+  { key: "wheel", label: "Feedback", color: feedbackColor },
+];
+
 export function BenchPage() {
   const { state, online, fresh, hil, points, navigate } = useWorkbench();
   return (
@@ -61,14 +76,7 @@ export function BenchPage() {
         >
           <Chart
             points={points}
-            traces={[
-              {
-                key: "targetSpeed",
-                label: "Governor target",
-                color: targetColor,
-              },
-              { key: "speed", label: "STM_A observed", color: feedbackColor },
-            ]}
+            traces={speedTraces}
             unit="km/h"
             height={190}
           />
@@ -86,10 +94,7 @@ export function BenchPage() {
         >
           <Chart
             points={points}
-            traces={[
-              { key: "targetWheel", label: "Commanded", color: targetColor },
-              { key: "wheel", label: "Feedback", color: feedbackColor },
-            ]}
+            traces={wheelTraces}
             unit="deg"
             height={190}
           />

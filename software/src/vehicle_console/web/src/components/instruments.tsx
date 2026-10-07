@@ -1,5 +1,5 @@
 import { Activity, ChevronDown, CircleHelp, Send } from "lucide-react";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { Point, Sample } from "../domain/types";
 import { fmt } from "../domain/format";
 export { fmt } from "../domain/format";
@@ -271,7 +271,7 @@ export type Trace = {
   axis?: "left" | "right";
   dashed?: boolean;
 };
-export function Chart({
+export const Chart = memo(function Chart({
   points,
   traces,
   unit,
@@ -460,4 +460,4 @@ export function Chart({
       </svg>
     </div>
   );
-}
+});

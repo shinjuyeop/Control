@@ -35,7 +35,11 @@ STM_A/B Agent, `command_governor`, `steering_actuator_node`, 차량 상태·whee
 옵션 없이 실행하면 항상 주행 프리셋을 읽습니다. 선택한 프리셋이 없거나 잘못되면 오류를 냅니다.
 TUI에서 `S`로 저장한 값은 기존 launch를 완전히 종료하고 같은 프리셋으로 다시 실행할 때 반영됩니다. TUI는 실행 중 제어값을 변경하지 않습니다. [TUI 사용법](../control_tuning/README.md)을 참고하십시오.
 
-현재 조향 YAML은 하드웨어 출력을 허용하고 최소 차속을 `0 km/h`로 설정합니다.
+조향 노드는 사용한 `tuning_preset`과 절대 경로 `control_tuning_file`을 시작 전용 파라미터로
+공개합니다. 시험 TUI는 이 두 값을 주기적으로 읽어 실제 런치가 선택한 파일과 STM_A readback을 비교합니다.
+
+현재 조향 기본 YAML은 하드웨어 출력을 허용합니다. 실제 최소 차속은 선택 프리셋을 따르며
+주행은 `0.5 km/h`, 공중은 `0 km/h`입니다.
 AUTO·fresh 상태·새 명령 등 조향 조건은 계속 적용됩니다. KEYA 내부 mode는 Host가
 설정하지 않으며 torque 운용 시 Parameter 0020=2를 별도로 맞춰야 합니다.
 
@@ -44,14 +48,12 @@ AUTO·fresh 상태·새 명령 등 조향 조건은 계속 적용됩니다. KEYA
 실제 조향 변화율은 D항과 settle 판정에 사용하며 속도 자체로 정지하지 않습니다.
 invalid/stale feedback이나 control stall은 `FEEDBACK_LOST`로 zero→Disable합니다.
 정상 feedback과 차단 뒤 받은 새 command가 확인되면 노드 재시작이나 parameter toggle
-없이 같은 제어주기에서 재활성화할 수 있습니다. KEYA RECOVERABLE은 횟수·지속시간으로
-영구 latch하지 않으며 fresh evidence와 복구 이후 생성된 새 명령으로 재개합니다.
-HARD만 FAULT latch하고 실제 고장이 해제된 후 MANUAL·정지·fresh feedback 조건에서
-`/steering/clear_fault_latch`(std_srvs/Trigger)로 운영자가 acknowledge합니다.
+없이 같은 제어주기에서 재활성화할 수 있습니다. KEYA fault 비트와 HARD/RECOVERABLE 등급은
+진단·표시용이며 비트만으로 Host가 출력을 차단하거나 latch하지 않습니다.
+`/steering/clear_fault_latch` 서비스는 제공하지 않습니다.
 
-`ros2 launch vehicle_console vehicle.launch.py`는 관측과 명시적 **HARD latch acknowledgment**를
-제공합니다. Clear 버튼은 Enable이나 주행 명령을 보내지 않습니다.
-이 화면을 재시작해도 조향 노드는 재시작되지 않습니다. KEYA 자체 hardware fault도
+`ros2 launch vehicle_console vehicle.launch.py`는 관측 전용이며 fault clear API를 제공하지 않습니다.
+Console을 재시작해도 조향 노드는 재시작되지 않습니다. KEYA 자체 hardware fault도
 Host 재시작만으로 해제된다고 보장하지 않습니다.
 [조향 복구 계약](../lateral_ctrl/TORQUE_CONTROL.md),
 [실차 운용 절차](../../../docs/VEHICLE_RUNBOOK.md)를 참고하십시오.
