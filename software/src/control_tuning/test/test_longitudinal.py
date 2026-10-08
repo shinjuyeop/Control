@@ -252,10 +252,12 @@ def test_checked_in_drive_envelopes_and_launch_mapping():
         assert (values['drive_hold_on_speed_mps'], values['drive_hold_off_speed_mps']) == (.35, .2)
         assert (values['drive_reverse_speed_mps'], values['drive_reverse_debounce_frames']) == (.3, 3)
         assert values['drive_collapse_hold_frames'] == 0 and values['drive_start_step'] == 'enabled'
-        # Driving ships regeneration and feedforward off; airborne carries the 2026-10-08 tuning.
-        regen_max = 30. if condition == 'airborne' else 0.
-        assert values['drive_regen_max_current_a'] == regen_max
-        assert values['drive_pi_regen'] == ('enabled' if condition == 'airborne' else 'disabled')
+        # Both presets carry the 2026-10-08 Torque PI regeneration; only airborne has identified feedforward.
+        regen_max = 30.
+        assert values['drive_control_mode'] == 'torque' and values['drive_pi_regen'] == 'enabled'
+        assert values['drive_regen_max_current_a'] == regen_max and values['drive_regen_kp_a_per_mps'] == 15.
+        assert (values['drive_regen_enter_error_mps'], values['drive_regen_exit_error_mps']) == (.5, .3)
+        assert values['governor_deceleration_slew_mps2'] == 0.
         assert values['drive_ff_current_gain_sine_mps2_per_a'] == (.12 if condition == 'airborne' else 0.)
         assert (values['drive_regen_voltage_soft_v'], values['drive_regen_voltage_hard_v']) == (57., 58.)
         assert values['drive_regen_bus_current_limit_a'] == 30. and values['drive_regen_rpm_field'] == 'zero'
@@ -274,5 +276,8 @@ def test_checked_in_drive_envelopes_and_launch_mapping():
     # 2026-10-08 airborne RBS tuning: feedforward carries the load, I only the residual.
     assert airborne['drive_control_mode'] == 'torque' and airborne['drive_integrator_limit_a'] == 4.
     assert (airborne['drive_ff_rolling_resistance_mps2'], airborne['drive_ff_speed_damping_per_s']) == (1.05, .12)
-    assert (airborne['drive_regen_enter_error_mps'], airborne['drive_regen_exit_error_mps']) == (.5, .3)
-    assert airborne['drive_regen_kp_a_per_mps'] == 15. and airborne['drive_reapply_current_slew_a_s'] == 60.
+    assert airborne['drive_reapply_current_slew_a_s'] == 60.
+    driving = presets.load('driving')
+    # Driving keeps the ground envelope; feedforward waits for ground identification.
+    assert (driving['drive_current_limit_a'], driving['drive_integrator_limit_a']) == (480., 120.)
+    assert (driving['drive_speed_kp_a_per_mps'], driving['drive_speed_ki_a_per_mps_s']) == (180., 12.)

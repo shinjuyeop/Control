@@ -835,8 +835,10 @@ The final sender still clamps forward to 4500 rpm and reverse to 1500 rpm.
 MANUAL shares the current/RPM limits and current slew in Torque/external-current calibration;
 Speed calibration retains the direct 0–480 A pedal mapping. MANUAL does not run the speed PI.
 
-The saved driving preset selects Speed/Sine with 480 A/RPM4500, governor acceleration/deceleration
-slew 100/0.5 m/s², and feedforward and regeneration disabled. The saved airborne preset selects
+The saved driving preset selects Torque/Sine with 480 A/RPM4500, Kp/Ki 180/12, integrator limit 120 A,
+PI regeneration enabled (30 A, enter/exit 0.5/0.3 m/s, gain 15), governor deceleration slew 0 and
+feedforward disabled pending ground identification; this combination is not yet ground-validated.
+The saved airborne preset selects
 Torque/Sine with 80 A/RPM4500, integrator limit 4 A, feedforward 0.12/1.05/0.12, PI regeneration
 enabled (30 A, enter/exit 0.5/0.3 m/s, gain 15) and governor deceleration slew 0; acceleration slew
 is not used in Torque ([RBS tuning report](reports/2026-10-08_rbs_tuning_report.md)).
