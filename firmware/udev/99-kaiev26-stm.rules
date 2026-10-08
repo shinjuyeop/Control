@@ -2,8 +2,11 @@
 # OUT OF FUNCTION
 # ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="003E002E3235510B37333439", SYMLINK+="stm_a"
 
-# STM_A: NUCLEO-G474RE ST-LINK virtual COM port, STM_A firmware
-ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="003D00433234511137333934", SYMLINK+="stm_a"
+# RETIRED STM_A: PA2 -> ST-LINK VCP path dead (no bytes to host), 2026-09-29. Do not reuse as STM_A.
+# ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="003D00433234511137333934", SYMLINK+="stm_a"
+
+# STM_A: replacement NUCLEO-G474RE ST-LINK virtual COM port, STM_A firmware
+ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="0041004B3235510837333439", SYMLINK+="stm_a"
 
 # RETIRED STM_B: MCU damaged/overheating, 2026-08-27. Do not power or reuse.
 # ACTION=="add|change", SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", ATTRS{serial}=="004E003B3235510B37333439", SYMLINK+="stm_b"
