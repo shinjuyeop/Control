@@ -26,7 +26,8 @@ ros2 run control_tuning control_tuning_tui
 2번에서 같은 프리셋으로 실행해야 적용됩니다. 구동 중 값을 변경했다면
 MANUAL·정지 상태에서 구동 스택을 재시작합니다. [튜닝 상세](../software/src/control_tuning/README.md)
 
-현재 저장된 주행·공중 프리셋은 모두 Speed·사인파이고 회생·feedforward는 꺼져 있습니다.
+현재 저장된 주행 프리셋은 Speed·사인파이고 회생·feedforward는 꺼져 있습니다. 공중 프리셋은
+Torque·사인파이며 PI 자동 회생(최대 30 A)과 feedforward가 켜져 있습니다(2026-10-08, 공중 전용).
 값은 [프리셋 표](../software/src/control_tuning/README.md#두-프리셋과-schema-v3)를 기준으로 확인합니다.
 현재 Host는 STM_A longitudinal ABI v5 설정을 보내므로 STM_A firmware도 v5가 필요합니다.
 Git 갱신이나 Host 빌드만으로 STM_A firmware가 갱신되지는 않습니다.

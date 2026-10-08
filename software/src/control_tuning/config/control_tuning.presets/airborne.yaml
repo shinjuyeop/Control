@@ -2,7 +2,7 @@
 schema_version: 3
 condition: airborne
 label: 공중
-saved_at: '2026-10-01T12:06:10.360079+00:00'
+saved_at: '2026-10-08T15:05:52.225680+00:00'
 steering_current_reference_a: 20.0
 steering:
   steering_control_mode: torque
@@ -18,24 +18,31 @@ steering:
   steering_angle_margin_deg: 1.0
   steering_min_vehicle_speed_kph: 0.0
 drive:
-  drive_control_mode: speed
+  drive_control_mode: torque
   drive_motor_waveform: sine
   drive_speed_kp_a_per_mps: 15.0
   drive_speed_ki_a_per_mps_s: 10.0
   drive_speed_deadband_mps: 0.05
   drive_coast_release_error_mps: 0.12
   drive_ff_current_gain_square_mps2_per_a: 0.0
-  drive_ff_current_gain_sine_mps2_per_a: 0.0
-  drive_ff_rolling_resistance_mps2: 0.0
-  drive_ff_speed_damping_per_s: 0.0
+  drive_ff_current_gain_sine_mps2_per_a: 0.12
+  drive_ff_rolling_resistance_mps2: 1.05
+  drive_ff_speed_damping_per_s: 0.12
   drive_ff_accel_limit_mps2: 0.0
+  drive_pi_regen: enabled
+  drive_regen_enter_error_mps: 0.5
+  drive_regen_exit_error_mps: 0.3
+  drive_regen_kp_a_per_mps: 15.0
   drive_current_limit_a: 80.0
-  drive_integrator_limit_a: 6.0
+  drive_integrator_limit_a: 4.0
   drive_current_slew_up_a_s: 120.0
   drive_current_slew_down_a_s: 400.0
   drive_reapply_current_band_a: 5.0
-  drive_reapply_current_slew_a_s: 20.0
+  drive_reapply_current_slew_a_s: 60.0
   drive_motor_speed_limit_rpm: 4500.0
+  drive_regen_max_current_a: 30.0
+  drive_regen_slew_a_s: 100.0
+  drive_regen_rpm_field: zero
   drive_min_current_square_a: 12.0
   drive_min_current_sine_a: 0.0
   drive_start_step: enabled
@@ -44,13 +51,6 @@ drive:
   drive_reverse_speed_mps: 0.3
   drive_reverse_debounce_frames: 3
   drive_collapse_hold_frames: 0
-  drive_pi_regen: disabled
-  drive_regen_enter_error_mps: 0.3
-  drive_regen_exit_error_mps: 0.1
-  drive_regen_kp_a_per_mps: 0.0
-  drive_regen_max_current_a: 0.0
-  drive_regen_slew_a_s: 100.0
-  drive_regen_rpm_field: zero
   drive_collapse_phase_low_square_a: -30.0
   drive_collapse_phase_low_sine_a: -60.0
   drive_regen_fade_speed_mps: 1.5
@@ -60,7 +60,7 @@ drive:
   drive_regen_bus_current_limit_a: 30.0
 governor:
   governor_command_timeout_ms: 200.0
-  governor_deceleration_slew_mps2: 1.0
+  governor_deceleration_slew_mps2: 0.0
   governor_acceleration_slew_mps2: 2.0
 timeouts:
   steering_command_timeout_ms: 200

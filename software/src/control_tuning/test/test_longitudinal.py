@@ -245,16 +245,18 @@ def test_checked_in_drive_envelopes_and_launch_mapping():
     for condition in ('airborne', 'driving'):
         assert presets.is_current(condition)
         values = presets.load(condition)
-        # Sine (FOC) basis: no floor, no feedforward; square keeps the logged 12 A.
+        # Sine (FOC) basis: no floor; square keeps the logged 12 A and has no feedforward.
         assert values['drive_motor_waveform'] == 'sine'
         assert values['drive_min_current_sine_a'] == 0. and values['drive_min_current_square_a'] == 12.
-        assert values['drive_ff_current_gain_sine_mps2_per_a'] == 0.
         assert values['drive_ff_current_gain_square_mps2_per_a'] == 0.
         assert (values['drive_hold_on_speed_mps'], values['drive_hold_off_speed_mps']) == (.35, .2)
         assert (values['drive_reverse_speed_mps'], values['drive_reverse_debounce_frames']) == (.3, 3)
         assert values['drive_collapse_hold_frames'] == 0 and values['drive_start_step'] == 'enabled'
-        # Regeneration ships off; the presets name every limit so R1 only raises the maximum.
-        assert values['drive_regen_max_current_a'] == 0. and values['drive_pi_regen'] == 'disabled'
+        # Driving ships regeneration and feedforward off; airborne carries the 2026-10-08 tuning.
+        regen_max = 30. if condition == 'airborne' else 0.
+        assert values['drive_regen_max_current_a'] == regen_max
+        assert values['drive_pi_regen'] == ('enabled' if condition == 'airborne' else 'disabled')
+        assert values['drive_ff_current_gain_sine_mps2_per_a'] == (.12 if condition == 'airborne' else 0.)
         assert (values['drive_regen_voltage_soft_v'], values['drive_regen_voltage_hard_v']) == (57., 58.)
         assert values['drive_regen_bus_current_limit_a'] == 30. and values['drive_regen_rpm_field'] == 'zero'
         assert (values['drive_collapse_phase_low_square_a'], values['drive_collapse_phase_low_sine_a']) == (-30., -60.)
@@ -263,11 +265,14 @@ def test_checked_in_drive_envelopes_and_launch_mapping():
         wire = request_data(native, 1, 0)[3:]
         assert wire[WIRE_KEYS.index('min_drive_current_a')] == 0.
         assert wire[WIRE_KEYS.index('motor_waveform')] == 1.
-        assert wire[WIRE_KEYS.index('regen_max_current_a')] == 0.
+        assert wire[WIRE_KEYS.index('regen_max_current_a')] == regen_max
         assert request_data({**native, 'motor_waveform': 'square'}, 1, 0)[3:][12] == 12.
     airborne = presets.load('airborne')
     # Slow 50 A/s cuts crawled through the square dead zone at speed (P0-5).
     assert airborne['drive_current_slew_down_a_s'] == 400.
     assert airborne['drive_current_limit_a'] == 80.
-    # Keep the existing Speed preset; its Torque PI integrator is inactive.
-    assert airborne['drive_control_mode'] == 'speed' and airborne['drive_integrator_limit_a'] == 6.
+    # 2026-10-08 airborne RBS tuning: feedforward carries the load, I only the residual.
+    assert airborne['drive_control_mode'] == 'torque' and airborne['drive_integrator_limit_a'] == 4.
+    assert (airborne['drive_ff_rolling_resistance_mps2'], airborne['drive_ff_speed_damping_per_s']) == (1.05, .12)
+    assert (airborne['drive_regen_enter_error_mps'], airborne['drive_regen_exit_error_mps']) == (.5, .3)
+    assert airborne['drive_regen_kp_a_per_mps'] == 15. and airborne['drive_reapply_current_slew_a_s'] == 60.

@@ -18,3 +18,4 @@
 | 2026-09-29 | [AUTO Torque feedforward·MANUAL 페달 envelope·Kp/Ki 후보](2026-09-29_longitudinal_feedforward.md) |
 | 2026-10-01 | [EZkontrol 사인파 기준 종방향 재구성·방형파 붕괴 분석·사인파 시험 계획](2026-10-01_ezkontrol_sine_rework.md) |
 | 2026-10-02 | [회생제동 calibration(ABI v5)·속도 PI 자동 회생·거버너 slew 제거·사인파 붕괴 감지·회생 시험 계획](2026-10-02_regen_governor_rework.md) |
+| 2026-10-08 | [공중 회생제동(RBS) 튜닝: PI 자동 회생·feedforward 식별·적분 한도·공중 프리셋 최종값](2026-10-08_rbs_tuning_report.md) |
