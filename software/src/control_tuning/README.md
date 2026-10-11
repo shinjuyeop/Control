@@ -71,20 +71,25 @@ v3는 `steering`, `drive`, `governor`, `timeouts`로 구분한다. 설정키는 
 
 | 값 | airborne | driving |
 |---|---:|---:|
-| mode | speed | speed |
+| mode | torque | torque |
 | 모터 파형 | sine | sine |
 | Kp / Ki | 15 / 10 | 180 / 12 |
-| max / integrator A | 80 / 6 | 480 / 120 |
+| FF 이득 (사인파) / 구름저항 / 속도 감쇠 | 0.12 / 1.05 / 0.12 | 0 / 0 / 0 |
+| max / integrator A | 80 / 4 | 480 / 120 |
 | slew up / down A/s | 120 / 400 | 2400 / 4800 |
 | deadband / hysteresis m/s | 0.05 / 0.12 | 0.05 / 0.12 |
-| reapply band A / slew A/s | 5 / 20 | 20 / 200 |
+| reapply band A / slew A/s | 5 / 60 | 20 / 200 |
 | RPM ceiling | 4500 | 4500 |
 | 회전 중 최소 전류 square / sine A | 12 / 0 | 12 / 0 |
-| 회생 최대 전류 A | 0 (꺼짐) | 0 (꺼짐) |
-| governor 가속 / 감속 slew m/s² | 2 / 1 | 100 / 0.5 |
+| 회생 최대 전류 A | 30 | 30 |
+| PI 자동 회생 / 진입·해제 m/s / P 게인 | enabled / 0.5·0.3 / 15 | enabled / 0.5·0.3 / 15 |
+| governor 가속 / 감속 slew m/s² | 2 / 0 (가속 slew는 Torque에서 미사용) | 100 / 0 |
 
-위 표는 기존 주행·공중 프리셋을 보존한 파일 값이다(2026-10-07). 두 프리셋 모두 Speed이며
-PI·적분·feedforward는 AUTO Speed에서 사용하지 않는다. 회생 최대 전류는 0, PI 자동 회생은 disabled다.
+airborne은 2026-10-08 공중 회생 튜닝의 최종값(Torque, PI 자동 회생 30 A, feedforward)이며
+근거는 [RBS 튜닝 보고서](../../../docs/reports/2026-10-08_rbs_tuning_report.md)에 있다. driving은 같은 날
+회생 구조(Torque, PI 자동 회생 30 A·0.5/0.3 m/s·P 15, 거버너 감속 slew 0)만 옮겼고, 출력 범위(480 A, Kp 180/Ki 12,
+적분 120 A, slew 2400/4800 A/s, 재인가 20 A·200 A/s)는 기존 값이다. feedforward는 지상 식별 전이라 꺼져 있고,
+이 조합은 아직 지상에서 검증하지 않았다.
 [실측 근거·단위·airborne/A-B 절차](../../../docs/reports/2026-09-21_longitudinal_torque_pi.md)를 따른다.
 STM_A boot는 **torque/DEFAULT**(480 A, Kp 180, 사인파, 회생 꺼짐)다. 런치 helper가 프리셋 적용에
 실패하면 이 DEFAULT로 남으므로, 시나리오 TUI는 STM_A readback이 런치 프리셋과 다르면 구동 Run을

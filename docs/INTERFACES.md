@@ -835,10 +835,15 @@ The final sender still clamps forward to 4500 rpm and reverse to 1500 rpm.
 MANUAL shares the current/RPM limits and current slew in Torque/external-current calibration;
 Speed calibration retains the direct 0–480 A pedal mapping. MANUAL does not run the speed PI.
 
-The saved airborne and driving presets both select Speed/Sine. Airborne uses 80 A/RPM4500;
-driving uses 480 A/RPM4500. Governor acceleration/deceleration slew is 2/1 m/s² for airborne
-and 100/0.5 m/s² for driving. See the [current preset values](../software/src/control_tuning/README.md#두-프리셋과-schema-v3).
-Both presets disable feedforward and regeneration. These are saved settings, not a claim about live MCU readback.
+The saved driving preset selects Torque/Sine with 480 A/RPM4500, Kp/Ki 180/12, integrator limit 120 A,
+PI regeneration enabled (30 A, enter/exit 0.5/0.3 m/s, gain 15), governor deceleration slew 0 and
+feedforward disabled pending ground identification; this combination is not yet ground-validated.
+The saved airborne preset selects
+Torque/Sine with 80 A/RPM4500, integrator limit 4 A, feedforward 0.12/1.05/0.12, PI regeneration
+enabled (30 A, enter/exit 0.5/0.3 m/s, gain 15) and governor deceleration slew 0; acceleration slew
+is not used in Torque ([RBS tuning report](reports/2026-10-08_rbs_tuning_report.md)).
+See the [current preset values](../software/src/control_tuning/README.md#두-프리셋과-schema-v3).
+These are saved settings, not a claim about live MCU readback.
 Torque PI uses signed speed error with output limited to positive drive current
 or zero. Negative error reduces current continuously; lower output/slew saturation
 freezes the integral instead of clearing the learned load current. `coasting`

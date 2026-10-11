@@ -163,8 +163,9 @@ NUCLEO-G474RE의 ST-LINK serial을 기준으로 다음 이름을 사용합니다
 
 | 보드 | 올린 펌웨어 | ST-LINK/USB serial | 고정 장치 이름 |
 |---|---|---|---|
-| Vehicle STM_A | STM_A | `003D00433234511137333934` | `/dev/stm_a` |
+| Vehicle STM_A | STM_A | `0041004B3235510837333439` | `/dev/stm_a` |
 | Vehicle STM_B | STM_B | `002E00253235510837333439` | `/dev/stm_b` |
+| Retired STM_A | STM_A 사용 금지 (PA2→VCP 경로 불량, 2026-09-29) | `003D00433234511137333934` | 미등록 |
 | Retired STM_B | 사용 금지 (MCU 손상) | `004E003B3235510B37333439` | 미등록 |
 | HIL bench A | STM_A | `0025002B3234511137333934` | `/dev/hil_a` |
 | HIL bench B | STM_B | `003600283235510B37333439` | `/dev/hil_b` |

@@ -111,9 +111,11 @@ v3의 `coast_current_floor_a`(canonical `drive_coast_current_floor_a`)는 목표
 
 CAN 송신부의 최종 전진 4500 / 후진 1500 rpm 물리 clamp는 별도로 유지한다.
 Driving 480 A/4500 rpm에서 기존 Speed baseline CAN 명령은 동일하다.
-현재 저장된 airborne는 Speed·사인파, 80 A/4500 rpm이다. 보존된 PI 값은 Kp15/Ki10,
-적분 한도 6 A이며 Speed에서는 사용하지 않는다. driving도 Speed·사인파이고,
-회생 최대 전류와 feedforward는 두 프리셋 모두 0이다.
+현재 저장된 airborne는 Torque·사인파, 80 A/4500 rpm이다. Kp15/Ki10, 적분 한도 4 A, feedforward
+0.12/1.05/0.12, PI 자동 회생(최대 30 A, 진입·해제 0.5/0.3 m/s, P 게인 15), 재인가 60 A/s다
+([RBS 튜닝 보고서](reports/2026-10-08_rbs_tuning_report.md), 공중 전용). driving은 Torque·사인파,
+480 A/4500 rpm, Kp180/Ki12, 적분 한도 120 A에 같은 PI 자동 회생(30 A, 0.5/0.3 m/s, P 15)을 쓰고
+feedforward는 지상 식별 전이라 꺼져 있다. driving 회생 조합은 지상 미검증이다.
 전체 저장값은 [프리셋 표](../software/src/control_tuning/README.md#두-프리셋과-schema-v3)와
 해당 YAML을 기준으로 한다. 파일 값은 실제 STM_A 적용·주행 검증 결과를 뜻하지 않는다.
 나머지 speed PI, 적분 한도, deadband/coast, current slew/reapply 항목은 Torque 전용이다.
