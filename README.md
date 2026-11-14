@@ -16,6 +16,8 @@ Host의 기준 환경은 Ubuntu 22.04 / ROS 2 Humble입니다.
 실차는 Host PC, 구동을 담당하는 STM_A, 제동을 담당하는 STM_B, UNO R4 계기판과 RP2350 배터리 적산계로 구성됩니다.
 각 STM은 별도의 micro-ROS Agent를 통해 ROS 2 graph에 참여하고, 두 STM 사이에는 차량·안전 상태를 교환하는 UART 경로를 둡니다.
 
+> 구성요소별 역할, 토픽별 연결, 운전 모드와 표시·정비 경로는 **[시스템 아키텍처](docs/ARCHITECTURE.md)**에서 자세히 설명합니다.
+
 ```mermaid
 flowchart TB
     Host["Host PC · ROS 2<br/>명령 관리 · 조향 · 상태 통합<br/>Console / Foxglove"]
@@ -67,7 +69,6 @@ Host는 이를 `/vehicle/state`, `/vehicle/wheel_twist`, `/diagnostics`로 제�
 LV 배터리 상태는 `RP2350 → STM_B → ROS / UNO 계기판`으로 전달되며,
 AUTO 계기판 정보는 Host의 요약을 STM_B가 Dashboard CAN으로 중계합니다.
 
-토픽별 연결, 운전 모드와 표시·정비 경로는 [시스템 아키텍처](docs/ARCHITECTURE.md),
 메시지·단위·UART/CAN 형식은 [인터페이스](docs/INTERFACES.md)에 정리했습니다.
 
 ## 핵심 설계와 구현
