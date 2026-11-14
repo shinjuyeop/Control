@@ -36,7 +36,8 @@ flowchart TB
     Host <-->|"SocketCAN"| KEYA["KEYA<br/>조향 모터"]
 
     subgraph Meter["LV 배터리 계측"]
-        RP["XIAO RP2350<br/>전압 · 전류 · Ah/Wh · SOC<br/>적산 · 저장"] <-->|"I2C"| INA["배터리 션트<br/>INA228"]
+        RP["XIAO RP2350<br/>전압 · 전류 · Ah/Wh · SOC<br/>적산 · 저장"] <-->|"I2C"| INA["INA228<br/>전압 · 전류 계측"]
+        INA ---|"양단 전압 측정<br/>IN+ / IN−"| Shunt["외장 션트 저항<br/>100 A / 75 mV"]
     end
     B <-->|"UART4 ↔ UART0<br/>상태 · 정비"| RP
     B -->|"Dashboard CAN"| UNO["UNO R4 Dashboard<br/>ST7796S LCD<br/>FT6336U touch"]
@@ -46,8 +47,10 @@ flowchart TB
     classDef peripheral fill:#e6f5ed,stroke:#35815a,color:#163e29
     class Host host
     class A,B controller
-    class INA,RP,UNO,EZ,Brake,KEYA peripheral
+    class Shunt,INA,RP,UNO,EZ,Brake,KEYA peripheral
 ```
+
+배터리 션트의 양단 전압은 INA228이 측정하고, XIAO RP2350은 INA228의 측정값을 I²C로 읽습니다.
 
 | 구성요소 | 담당 기능 |
 |---|---|

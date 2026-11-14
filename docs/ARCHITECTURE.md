@@ -42,10 +42,12 @@ flowchart TB
     end
 
     subgraph Meter["독립 계측 · HMI"]
-        INA["LV 배터리 션트 / INA228"]
+        Shunt["LV 배터리 외장 션트<br/>100 A / 75 mV"]
+        INA["INA228<br/>전압 · 전류 계측"]
         RP["XIAO RP2350<br/>전압 · 전류 · Ah/Wh · SOC / 저장"]
         UNO["UNO R4 Dashboard<br/>ST7796S LCD · FT6336U touch"]
-        INA -->|"I2C"| RP
+        Shunt -->|"양단 전압 측정<br/>IN+ / IN−"| INA
+        INA <-->|"I2C"| RP
     end
 
     EStop["Dashboard / Side / RF<br/>물리 E-stop"] --> B
@@ -65,7 +67,7 @@ flowchart TB
     classDef peripheral fill:#e6f5ed,stroke:#35815a,color:#163e29
     class Planning,Governor,Steering,Observe host
     class A,B controller
-    class INA,RP,UNO,EZ,Brake,KEYA peripheral
+    class Shunt,INA,RP,UNO,EZ,Brake,KEYA peripheral
 ```
 
 | 경로 | 담당 | Host / ROS 의존성 |
@@ -198,9 +200,11 @@ pinout·전압·renderer 세부사항은
 
 ### 3.4 XIAO RP2350 LV 배터리 적산계
 
-XIAO RP2350은 100 A / 75 mV 션트와 INA228을 통해 LV 배터리의 전압·전류를
-측정합니다. `Wire1` I2C로 센서를 읽고 CHARGE 증가량으로 Ah, 구간 평균 전압으로
-Wh를 계산합니다. SOC·용량·영점·트립 상태는 LittleFS journal에 저장합니다.
+INA228은 100 A / 75 mV 외장 션트의 양단 전압을 `IN+`·`IN−`로 측정합니다.
+XIAO RP2350은 INA228의 측정값을 `Wire1` I²C로 읽습니다. 션트와 INA228 사이는
+전압 측정선이며, I²C 통신 구간은 INA228과 XIAO 사이입니다.
+CHARGE 증가량으로 Ah, 구간 평균 전압으로 Wh를 계산하고,
+SOC·용량·영점·트립 상태는 LittleFS journal에 저장합니다.
 
 - 계측·적산·저장은 ROS나 PC 연결 없이 계속 동작합니다.
 - UART0(`D6/GPIO0` TX, `D7/GPIO1` RX)와 STM_B UART4(`PC11` RX, `PC10` TX)가
@@ -321,7 +325,8 @@ LV 배터리는 별도 `/lv_battery/state` 경로이며 이 세 status 합성에
 
 ```mermaid
 flowchart TB
-    INA["INA228 / 외장 션트"] -->|"I2C · Wire1"| RP["XIAO RP2350<br/>계측 · 적산 · SOC · LittleFS"]
+    Shunt["외장 션트 저항<br/>100 A / 75 mV"] -->|"양단 전압 측정<br/>IN+ / IN−"| INA["INA228"]
+    INA <-->|"I2C · Wire1"| RP["XIAO RP2350<br/>계측 · 적산 · SOC · LittleFS"]
     RP <-->|"UART0 ↔ UART4 · 115200<br/>상태 / command / 저장 완료 ACK"| B["STM_B"]
     A["STM_A"] -->|"USART1 · 차량 / 구동 상세"| B
     Summary["Host · auto_dashboard_summary"] -->|"/dashboard/auto_status · 10 Hz"| B
