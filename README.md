@@ -13,9 +13,8 @@ Host의 기준 환경은 Ubuntu 22.04 / ROS 2 Humble입니다.
 
 <p align="center">
   <a href="docs/images/hardware/vehicle-2026-front.jpg">
-    <img src="docs/images/hardware/vehicle-2026-front.jpg" alt="외장을 장착하지 않은 2026년 차량의 전면과 센서·제어 장치 구성" width="480">
-  </a><br>
-  <sub>2026년 차량 구성 · 외장 미장착 상태</sub>
+    <img src="docs/images/hardware/vehicle-2026-front.jpg" alt="차량 전면과 센서·제어 장치 구성" width="280">
+  </a>
 </p>
 
 ## 시스템 구조
@@ -157,9 +156,8 @@ HIL 벤치에서는 실차와 같은 STM_A/B 펌웨어를 사용하고, STM_TEST
 
 <p align="center">
   <a href="docs/images/hardware/hil-bench.jpg">
-    <img src="docs/images/hardware/hil-bench.jpg" alt="STM32 보드와 입출력 배선, LCD를 구성한 HIL 시험 박스" width="420">
-  </a><br>
-  <sub>HIL 시험 박스 · 제어 보드와 입출력 배선 구성</sub>
+    <img src="docs/images/hardware/hil-bench.jpg" alt="STM32 보드와 입출력 배선, LCD를 구성한 HIL 시험 박스" width="280">
+  </a>
 </p>
 
 [STM_TEST 구성](firmware/STM_TEST/README.md) · [HIL backend](software/src/vehicle_console/HIL_BACKEND.md) ·
