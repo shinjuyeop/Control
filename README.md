@@ -11,6 +11,13 @@ Web 관측, MCAP 기록·분석 도구를 포함해 **제어 구현부터 시스
 상위 Planning과는 `/planning/command`로 연결하며 공통 메시지는 별도 `kaiev26_msgs`에서 관리합니다.
 Host의 기준 환경은 Ubuntu 22.04 / ROS 2 Humble입니다.
 
+<p align="center">
+  <a href="docs/images/hardware/vehicle-2026-front.jpg">
+    <img src="docs/images/hardware/vehicle-2026-front.jpg" alt="외장을 장착하지 않은 2026년 차량의 전면과 센서·제어 장치 구성" width="480">
+  </a><br>
+  <sub>2026년 차량 구성 · 외장 미장착 상태</sub>
+</p>
+
 ## 시스템 구조
 
 실차는 Host PC, 구동을 담당하는 STM_A, 제동을 담당하는 STM_B, UNO R4 계기판과 RP2350 배터리 적산계로 구성됩니다.
@@ -147,7 +154,16 @@ Cortex-M4 DWT cycle counter와 RTOS tick으로 Task 실행시간, 지터, deadli
 HIL 벤치에서는 실차와 같은 STM_A/B 펌웨어를 사용하고, STM_TEST가 물리 입력과 모터 CAN 응답을 대신합니다.
 페달 DAC, 모드·기어·E-stop GPIO를 주입하고 브레이크 PWM을 읽으며, EZkontrol·KEYA emulator와 plant 모델로
 명령에 대한 응답을 생성합니다. Web Console에서 입력·고장 조건·시험 시나리오를 조작하고 각 보드의 상태를 함께 관측합니다.
-[STM_TEST 구성](firmware/STM_TEST/README.md) · [HIL backend](software/src/vehicle_console/HIL_BACKEND.md)
+
+<p align="center">
+  <a href="docs/images/hardware/hil-bench.jpg">
+    <img src="docs/images/hardware/hil-bench.jpg" alt="STM32 보드와 입출력 배선, LCD를 구성한 HIL 시험 박스" width="420">
+  </a><br>
+  <sub>HIL 시험 박스 · 제어 보드와 입출력 배선 구성</sub>
+</p>
+
+[STM_TEST 구성](firmware/STM_TEST/README.md) · [HIL backend](software/src/vehicle_console/HIL_BACKEND.md) ·
+[HIL 운용](docs/HIL_RUNBOOK.md)
 
 실차 관측과 HIL 시험은 `vehicle_console`의 공용 Web 화면을 사용합니다. Vehicle profile은 차량 토픽을 관측하고,
 HIL profile은 벤치 입력·시나리오·가상 LCD/Touch 기능을 제공합니다.

@@ -96,6 +96,28 @@ STM_A와 STM_B는 각각 별도의 LPUART1 serial transport와 micro-ROS Agent�
 > 그 자리를 대신합니다. `/vehicle/command`는 `command_governor`가 유일하게
 > 발행합니다.
 
+### 2.1 실차 장착 구성
+
+2026년 차량의 외장을 제거한 후면과 제어 박스 내부입니다.
+Host PC와 제어 박스의 장착 위치, STM_A·STM_B 및 RF 모듈의 배치를 보여줍니다.
+
+<p align="center">
+  <a href="images/hardware/vehicle-2026-rear.jpg">
+    <img src="images/hardware/vehicle-2026-rear.jpg" alt="2026년 차량 후면의 Host PC와 개방된 제어 박스 장착 모습" width="480">
+  </a><br>
+  <sub>차량 후면 · Host PC와 제어 박스 장착 위치</sub>
+</p>
+
+<p align="center">
+  <a href="images/hardware/control-box-labeled.png">
+    <img src="images/hardware/control-box-labeled.png" alt="RF 모듈, STM_A, STM_B와 신호 레벨 변환 회로 위치를 표시한 제어 박스 내부" width="800">
+  </a><br>
+  <sub>제어 박스 내부 · STM_A, STM_B, RF 모듈과 신호 레벨 변환 회로</sub>
+</p>
+
+연결 상세는 [차량 배선도](vehicle-wiring/README.md),
+대시보드의 물리 조작부는 [실차 운용](VEHICLE_RUNBOOK.md#대시보드-조작부)을 참고합니다.
+
 ## 3. 구성요소별 역할
 
 ### 3.1 STM_A

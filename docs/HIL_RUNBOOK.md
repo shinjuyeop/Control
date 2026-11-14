@@ -31,6 +31,15 @@ Tailscale 원격 브라우저 예시: **http://100.112.72.27:8767/** (현재 호
 
 ## 1. 실행 구성
 
+<p align="center">
+  <a href="images/hardware/hil-bench.jpg">
+    <img src="images/hardware/hil-bench.jpg" alt="STM32 보드와 입출력 배선, LCD를 구성한 HIL 시험 박스" width="480">
+  </a><br>
+  <sub>HIL 시험 박스 · 제어 보드와 입출력 배선 구성</sub>
+</p>
+
+STM_TEST의 신호 핀과 연결 상대는 [STM_TEST 핀맵](../firmware/STM_TEST/README.md#4-핀맵)을 참고한다.
+
 ```text
 Browser ── WebSocket ── hil_web_bridge
                          ├─ /hil/* ── stm_test_bridge ── STM_TEST

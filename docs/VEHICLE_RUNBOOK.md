@@ -3,6 +3,19 @@
 설치·빌드·장치 설정을 마친 차량 PC 기준입니다.
 구조는 [Architecture](ARCHITECTURE.md), 장치 준비는 [Firmware](../firmware/README.md)를 참고합니다.
 
+## 대시보드 조작부
+
+<p align="center">
+  <a href="images/hardware/dashboard-front-labeled.png">
+    <img src="images/hardware/dashboard-front-labeled.png" alt="E-stop, KILL, 시동, ASMS, 기어 스위치와 LCD 위치를 표시한 대시보드 전면" width="800">
+  </a><br>
+  <sub>대시보드 전면 · 물리 스위치와 LCD 위치</sub>
+</p>
+
+사진은 조작부의 위치를 보여줍니다. LCD 화면 구성은
+[UNO R4 Dashboard](../firmware/UNO_R4_DASHBOARD/README.md),
+E-stop의 동작과 복구 조건은 [안전 설계](SAFETY.md)를 참고합니다.
+
 ## 1. 준비
 
 각 터미널에서 workspace 환경을 불러옵니다. 아래 명령은 **zsh 기준**입니다.
