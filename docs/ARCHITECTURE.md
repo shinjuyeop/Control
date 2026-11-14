@@ -299,6 +299,8 @@ Planning / Motion Control (별도 상위 패키지)
 `path_mpc`는 별도 Decision에서 실행되어 목표 조향각을 제공하고 Decision이 속도·제동과
 결합합니다. 기본 명령 경로와 제어기 선택의 관계는 [Software](../software/README.md)에 정리했습니다.
 
+종방향·조향·경로 MPC는 모델 식별과 Gazebo SITL 비교를 위한 구현이며, 현재 실차 운용에는 사용하지 않습니다.
+
 ## 5. 상태 및 진단 데이터 흐름
 
 ### 5.1 차량 상태 통합

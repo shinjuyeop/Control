@@ -42,6 +42,9 @@ Planning / 실차 시험 입력 / HIL 입력 중 하나
 
 ### MPC와 모델 식별
 
+종방향·조향·경로 MPC는 현재 실차 운용에 사용하지 않습니다.
+실차 기록을 이용한 모델 식별과 Gazebo SITL 비교를 위한 구현입니다.
+
 | 패키지 | 구현 범위 |
 |---|---|
 | [steering_mpc](src/steering_mpc/README.md) | 실차 bag의 토크 입력→보정 조향각 모델 식별, `lateral_ctrl` 안에서 선택하는 C++ 조향 MPC |

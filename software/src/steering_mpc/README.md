@@ -1,5 +1,7 @@
 # steering_mpc
 
+> 현재 실차 운용에는 사용하지 않는다. 모델 식별과 Gazebo SITL 비교를 위한 실험용 제어기다.
+
 실차 SYSID bag에서 KEYA 토크 입력→실제 조향각 모델을 식별하고, 기존 `lateral_ctrl` 안에서 50 Hz 조향 토크 MPC를 실행한다. C++ solver는 `mpc_common`을 사용한다. 모델 식별·비교용 Python은 `scripts/`에 설치된다. 패키지 빌드는 `ament_cmake`다.
 
 `lateral_ctrl`가 CAN 출력, Enable/Disable, E-stop, 피드백 만료, peak/sustained 토크 한계를 계속 담당한다. MPC는 기존 PD와 같은 안전 출력을 사용한다.

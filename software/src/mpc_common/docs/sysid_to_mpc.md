@@ -1,10 +1,12 @@
 # 주행 기록에서 모델 예측 제어까지: KAIEV26 SYSID와 MPC 세 가지
 
 작성일: 2026-09-26  
-대상: `Control/software/src/`의 [`longitudinal_mpc`](../../longitudinal_mpc)(종방향 전류 MPC), [`steering_mpc`](../../steering_mpc)(조향 토크 MPC), [`path_mpc`](../../path_mpc)(경로 MPC), 세 제어기가 함께 쓰는 QP 라이브러리 [`mpc_common`](..)  
+대상: `Control/software/src/`의 [`longitudinal_mpc`](../../longitudinal_mpc)(종방향 전류 MPC), [`steering_mpc`](../../steering_mpc)(조향 토크 MPC), [`path_mpc`](../../path_mpc)(경로 MPC), 조향·경로 MPC가 공유하는 QP 라이브러리 [`mpc_common`](..)\
 데이터: 실차 bag (09-03 건국대 수동 토크 주행, 09-06 K-City AUTO 주행, 09-19 조향 SYSID 주행, 09-20 K-City 주행)  
 결과 원본: `~/Storage/ROS2_Workspace_offload/{longitudinal_mpc, lateral_mpc, vehicle_sysid_analysis}/`, `ros2_ws/src/vehicle_sysid_analysis/results/260919/`  
 관련 문서: [`docs/reports/2026-09-24_lateral_mpc.md`](../../../../docs/reports/2026-09-24_lateral_mpc.md), [`docs/reports/2026-09-21_longitudinal_torque_pi.md`](../../../../docs/reports/2026-09-21_longitudinal_torque_pi.md), Gazebo에서 제어기를 연결해 돌린 결과는 [Gazebo-in-the-loop](../../../../../../docs/gazebo_in_the_loop.md)
+
+> 이 문서의 종방향·조향·경로 MPC는 현재 실차 운용에 사용하지 않는다. 실차 기록을 이용한 모델 식별과 Gazebo SITL 비교를 위한 구현·분석 기록이다.
 
 차량 주행 기록에서 모델을 뽑는 시스템 식별(SYSID)과, 그 모델로 미래를 예측해 입력을 고르는 모델 예측 제어(MPC)를 다룬다. 1부는 실차 기록으로 종방향, 조향, 경로 모델을 식별한 과정이고, 2부는 그 모델을 쓰는 MPC 세 가지의 설계다. Gazebo에서 제어기를 폐루프로 돌린 결과는 실차 성능의 근거가 아니므로 별도 문서로 뺐다. 마지막 장에는 면접에서 나올 만한 질문과 답을 모았다.
 

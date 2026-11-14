@@ -200,6 +200,7 @@ NUCLEO-G474RE의 ST-LINK serial을 기준으로 다음 이름을 사용합니다
 다시 읽고 현재 장치에 적용합니다.
 
 ```bash
+cd ~/KAI_ws/src/Control
 sudo install -m 0644 firmware/udev/99-kaiev26-stm.rules \
   /etc/udev/rules.d/99-kaiev26-stm.rules
 sudo udevadm control --reload-rules

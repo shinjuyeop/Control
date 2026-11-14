@@ -57,7 +57,7 @@ flowchart TB
 
 | 구성요소 | 담당 기능 |
 |---|---|
-| [**Host PC**](software/README.md) | 상위 명령 검사·전달, KEYA 조향 제어, 선택형 MPC, 차량 상태·진단 통합과 시험·관측 도구 |
+| [**Host PC**](software/README.md) | 상위 명령 검사·전달, KEYA 조향 제어, 실험용 MPC, 차량 상태·진단 통합과 시험·관측 도구 |
 | [**STM_A**](firmware/STM_A/README.md) | 물리 페달·모드·기어 입력, 종방향 제어, EZkontrol CAN 명령·피드백, 구동 차단 조건 적용 |
 | [**STM_B**](firmware/STM_B/README.md) | 세 물리 E-stop 입력, 최종 브레이크 요청 결정과 서보 PWM, STM_A 안전 상태 전달, 계기판·LV 상태 중계 |
 | [**UNO R4 Dashboard**](firmware/UNO_R4_DASHBOARD/README.md) | CAN 수신, SPI LCD로 차량 상태·배터리 정보 표시, I²C touch 기반 화면 탐색 |
@@ -122,6 +122,9 @@ CAN 송수신, Enable/Disable, 피드백 만료와 출력의 peak·sustained 한
 조향 토크 MPC는 실차 SYSID bag에서 식별한 입력 지연·각도 응답 모델을 사용하며, 기존 PD와 같은 액추에이터 경로에서 선택합니다.
 경로 MPC는 횡오차·방향오차·yaw rate·조향 응답을 모델에 포함해 목표 조향각을 계산하고,
 별도 Decision 패키지가 이를 속도·제동 명령과 결합합니다. 두 MPC는 `mpc_common`의 QP 계산과 OSQP workspace를 재사용합니다.
+
+종방향·조향·경로 MPC는 현재 실차 운용에 사용하지 않습니다. 실차 기록을 이용한 모델 식별과
+Gazebo SITL 비교를 위한 구현으로 남겨두었습니다.
 [Torque 제어](software/src/lateral_ctrl/TORQUE_CONTROL.md) · [Steering MPC](software/src/steering_mpc/README.md) ·
 [Path MPC](software/src/path_mpc/README.md) · [모델 식별·제어 비교 기록](docs/reports/2026-09-24_lateral_mpc.md)
 

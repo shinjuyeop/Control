@@ -613,7 +613,6 @@ AUTO Torque는 둘 중 하나가 invalid면 차단합니다. 조향 timeout은 `
 - Production `/planning/command` publisher (Planning)와 발행률.
   `/vehicle/command` 발행자는 `command_governor`로 확정됨
 - STM_A→STM_B UART timeout을 브레이크 판단에 포함할지 여부
-- EZkontrol Part II 장기 미수신을 traction stop 조건으로 포함할지 여부
 - EZkontrol status 실제 송신 주기
 - KEYA 내부 watchdog 시간과 현재 position command의 keep-alive 보장
 - STM_A·STM_B PCB connector 기준 실제 배선 및 signal ground

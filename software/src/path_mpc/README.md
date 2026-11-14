@@ -1,5 +1,7 @@
 # path_mpc
 
+> 현재 실차 운용에는 사용하지 않는다. 모델 식별과 Gazebo SITL 비교를 위한 실험용 제어기다.
+
 `path_controller`는 Decision의 목표 경로와 차량 상태를 받아 20 Hz 목표 조향각을 계산한다. C++/OSQP QP 계산은 `mpc_common`을 사용하며, 실행은 기존 Decision launch가 담당한다. 패키지 빌드는 `ament_cmake`다.
 
 `/control/lateral/target`은 `ackermann_msgs/AckermannDriveStamped`로 계산 시각과 LEFT-positive 목표 조향각을 전달한다. Decision이 기존 속도·제동 명령과 합쳐 최종 명령을 발행한다. 해가 실패하거나 150 ms를 넘기면 기존 정지 처리가 동작한다.
