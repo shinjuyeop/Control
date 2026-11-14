@@ -620,97 +620,101 @@ AUTO Torque는 둘 중 하나가 invalid면 차단합니다. 조향 timeout은 `
 - `BrakeActuatorStatus`와 `/vehicle/state` input freshness 정책
 
 
-## Longitudinal calibration v5
+<a id="longitudinal-calibration-v5"></a>
 
-STM_A AUTO longitudinal config/status uses `std_msgs/msg/Float32MultiArray` with
-empty `layout.dim` and `layout.data_offset=0`. The bounded MCU buffers accept the exact
-40-float v5 request and publish a 78-float v5 status. v4 (27-float), v3 (16-float) and
-v1/v2 (15-float) requests remain accepted; their missing fields take the v5 boot defaults
-below (regeneration off), and a v3 slot 12 value becomes the rolling minimum current.
-New Host clients send only v5 and refuse older firmware. Unsupported
-version/length/nonfinite/config ranges are rejected; malformed DDS sequences that cannot
-deserialize have no acknowledgment. `DriveCurrentCommand` and regenerated micro-ROS
-libraries are required for external-current control. `DriveActuatorStatus` retains its
-existing layout.
+## 종방향 캘리브레이션 v5
 
-`/drive/longitudinal_config`: reliable, volatile (never transient-local), 40 floats:
+STM_A의 AUTO 종방향 설정·상태는 `std_msgs/msg/Float32MultiArray`를 사용하며,
+`layout.dim`은 비우고 `layout.data_offset=0`으로 둡니다. MCU의 고정 크기 버퍼는
+정확히 40개 float로 구성된 v5 요청을 받고, 78개 float로 구성된 v5 상태를 발행합니다.
+v4(27개), v3(16개), v1/v2(15개) 요청도 수신할 수 있습니다. 구형 요청에 없는 필드는
+아래 v5 부팅 기본값(회생 꺼짐)으로 채우며, v3의 인덱스 12 값은 주행 중 최소 구동 전류로 해석합니다.
+현재 Host 클라이언트는 v5 요청만 보내고 구형 펌웨어는 거부합니다. 지원하지 않는 버전·길이,
+유한하지 않은 값, 설정 범위 위반은 거부하며, 역직렬화할 수 없는 DDS sequence에는 응답하지 않습니다.
+외부 전류 제어에는 `DriveCurrentCommand`와 이를 포함해 다시 생성한 micro-ROS 라이브러리가 필요합니다.
+`DriveActuatorStatus`의 기존 레이아웃은 유지합니다.
 
-| Index | Field |
+`/drive/longitudinal_config`: reliable, volatile(transient-local 사용 안 함), float 40개:
+
+| 인덱스 | 필드·의미 |
 |---|---|
 | 0 | version=5 |
-| 1 | request_id: integer 1…16777215 |
-| 2 | expected_revision: integer 0…16777215 |
-| 3 | control_mode: 0=speed, 1=torque PI, 2=external_current (different from EZ feedback bit!) |
+| 1 | request_id: 정수 1…16777215 |
+| 2 | expected_revision: 정수 0…16777215 |
+| 3 | control_mode: 0=speed, 1=torque PI, 2=external_current. EZ 피드백의 모드 비트와는 다름 |
 | 4–14 | Kp, Ki, max_drive_current, integrator_limit, slew_up, slew_down, deadband, hysteresis, reapply_current, reapply_slew, motor_rpm_limit |
-| 15 | min_drive_current: rolling minimum forward current, 0…min(max_drive_current, 30); 0 disables 16–19 effects |
-| 16 | motor_waveform: 0=square, 1=sine. Operator declaration of the EZ commutation; STM_A only echoes it |
-| 17 | start_step: 0/1. Below the hold, a forward demand in (0, min_drive_current) steps to min_drive_current |
+| 15 | min_drive_current: 주행 중 최소 전진 구동 전류, 0…min(max_drive_current, 30). 0이면 16–19의 제어 효과를 사용하지 않음 |
+| 16 | motor_waveform: 0=square, 1=sine. 운영자가 EZ의 구동 파형을 지정하며 STM_A는 수신값만 보고 |
+| 17 | start_step: 0/1. 주행 유지가 꺼진 상태에서 전진 요청이 (0, min_drive_current)이면 min_drive_current로 올림 |
 | 18 | hold_on_speed: 0.1…2 m/s |
 | 19 | hold_off_speed: 0 … < hold_on_speed m/s |
 | 20 | reverse_speed: 0.05…1 m/s |
-| 21 | reverse_debounce_frames: integer 1…10 (50 ms frames) |
-| 22 | collapse_hold_frames: integer 0…40; 0 = observe/count only |
-| 23 | ff_current_gain: 0 (feedforward off) or 0.0005…0.2 (m/s²)/A |
+| 21 | reverse_debounce_frames: 정수 1…10, frame당 50 ms |
+| 22 | collapse_hold_frames: 정수 0…40. 0이면 관측·집계만 수행 |
+| 23 | ff_current_gain: 0(feedforward 꺼짐) 또는 0.0005…0.2 (m/s²)/A |
 | 24–26 | ff_rolling_resistance 0…2 m/s², ff_speed_damping 0…1 1/s, ff_accel_limit 0…5 m/s² |
-| 27 | regen_max_current: 0…60 A regen magnitude limit (sent negative); **0 disables all regen** |
-| 28 | regen_slew: 10…1000 A/s, up and down |
+| 27 | regen_max_current: 회생 전류 크기 한도 0…60 A, 송신 시 음수. **0이면 모든 회생 비활성화** |
+| 28 | regen_slew: 증가·감소 모두 10…1000 A/s |
 | 29–30 | regen_fade_speed 0.3…5 m/s; regen_cutoff_speed 0.1 … < fade m/s |
 | 31–32 | regen_voltage_soft 40 … < hard V; regen_voltage_hard … 60 V |
-| 33 | regen_bus_current_limit: 1…39 A measured charge current |
-| 34 | regen_rpm_field: 0 = RPM field 0 (as before), 1 = motor_rpm_limit as positive ceiling |
-| 35 | pi_regen: 0/1. Speed PI may request regen (AUTO Torque only) |
+| 33 | regen_bus_current_limit: 실측 충전전류 기준 1…39 A |
+| 34 | regen_rpm_field: 0=기존처럼 RPM 필드에 0, 1=motor_rpm_limit를 양수 상한으로 사용 |
+| 35 | pi_regen: 0/1. 속도 PI의 회생 요청 허용, AUTO Torque 전용 |
 | 36–38 | regen_enter_error 0.05…2 m/s; regen_exit_error 0 … < enter; regen_kp 0…500 A/(m/s) |
-| 39 | collapse_phase_low: −200…−10 A; phase current below it is a collapse on a torque frame whose latest and previous commands are both ≥ 0 |
+| 39 | collapse_phase_low: −200…−10 A. 최근·직전 명령이 모두 ≥ 0인 Torque frame에서 상전류가 이 값보다 낮으면 붕괴로 판정 |
 
-Current fields are phase amperes; Kp A/(m/s), Ki A/(m/s*s), slew A/s,
-deadband/hysteresis m/s, RPM motor rpm. Field order is defined by
-`control_tuning.longitudinal.WIRE_KEYS` and `Long_EncodeConfig`. The Host stores
-`min_drive_current`, `ff_current_gain` and `collapse_phase_low` per waveform (`*_square_*`,
-`*_sine_*`) and sends the value of the declared waveform; every other field is common.
-Boot defaults: Torque, sine, min current 0 (drive protection inert), start step on,
-hold 0.35/0.20 m/s, reverse 0.30 m/s × 3 frames, collapse reaction 0, feedforward 0,
-regen max 0 (off), regen slew 100 A/s, fade/cutoff 1.5/0.8 m/s, voltage 57/58 V,
-charge 30 A, RPM field 0, PI regen off with 0.3/0.1 m/s and gain 0, collapse phase low −60 A.
+전류 필드의 단위는 모터 상전류 A입니다. Kp는 A/(m/s), Ki는 A/(m/s*s), slew는 A/s,
+deadband·hysteresis는 m/s, RPM은 모터 rpm입니다. 필드 순서는
+`control_tuning.longitudinal.WIRE_KEYS`와 `Long_EncodeConfig`가 정의합니다.
+Host는 `min_drive_current`, `ff_current_gain`, `collapse_phase_low`를 파형별
+(`*_square_*`, `*_sine_*`)로 저장하고 지정한 파형의 값을 보냅니다. 나머지 필드는 공통입니다.
 
-STM_A validates the complete request, then hands it to a one-slot mailbox. The next
-Control cycle checks MANUAL, fresh Part I <500 ms and Part II <1 s, |speed|≤0.05 m/s, pedal=0,
-|commanded phase|<0.1 A and |actual phase|≤1 A. Under one FreeRTOS critical section,
-expected_revision must equal applied revision; then all config fields/revision/source
-commit together and PI resets. A rejected request never waits for future motion state.
-Duplicate last-applied request ID is idempotent. Revision exhaustion requires reboot.
-IDs/revisions use the exact integer range of float32; they are not authorization tokens.
-Use the existing trusted vehicle ROS domain, not an untrusted network.
+부팅 기본값은 Torque·sine, 최소 전류 0(최소 전류 기반 보호 미적용), start step 켜짐입니다.
+hold는 0.35/0.20 m/s, 역회전 판정은 0.30 m/s × 3 frame, 붕괴 대응과 feedforward는 0입니다.
+회생 한도는 0(꺼짐), 회생 slew는 100 A/s, fade/cutoff는 1.5/0.8 m/s,
+전압은 57/58 V, 충전전류는 30 A, RPM 필드는 0입니다.
+PI 회생은 꺼짐이며 진입·해제 오차 0.3/0.1 m/s와 gain 0을 사용합니다. 붕괴 상전류 하한은 −60 A입니다.
 
-`/drive/longitudinal_status`: best effort, 5 Hz, 78 floats (v4: 57, v3: 28):
+STM_A는 전체 요청을 검증한 뒤 요청 하나를 담는 mailbox에 전달합니다. 다음 Control 주기에서
+MANUAL, Part I 수신 경과 <500 ms, Part II <1 s, |속도|≤0.05 m/s, 페달=0,
+|지령 상전류|<0.1 A, |실측 상전류|≤1 A를 확인합니다. 하나의 FreeRTOS critical section 안에서
+`expected_revision`이 적용 중인 revision과 같은지 확인하고, 모든 설정 필드·revision·source를
+함께 반영한 뒤 PI를 초기화합니다. 거부된 요청은 차량이 나중에 적용 가능 상태가 될 때까지 대기하지 않습니다.
+마지막으로 적용한 request ID를 다시 받으면 중복 적용하지 않습니다. revision 범위를 모두 사용하면 재부팅이 필요합니다.
+ID와 revision은 float32가 정확하게 표현할 수 있는 정수 범위를 사용하며 인증 토큰이 아닙니다.
+신뢰할 수 있는 기존 차량 ROS domain에서 사용합니다.
 
-| Index | Field |
+`/drive/longitudinal_status`: best effort, 5 Hz, float 78개(v4: 57개, v3: 28개):
+
+| 인덱스 | 필드·의미 |
 |---|---|
 | 0 | version=5 |
-| 1 | applied revision; boot=0 |
-| 2 | last request ID; malformed request=0 |
-| 3 | result: 0=idle, 1=applied, 2=invalid, 3=unsafe, 4=revision conflict, 5=busy |
-| 4 | calibration source: 0=DEFAULT, 1=HOST_OVERRIDE |
-| 5–41 | active config in wire order (indices 3–39 of the request) |
-| 42–47 | speed error, P, I/integrator state, feedforward current, unsaturated current, final PI current |
-| 48–51 | saturated, anti-windup, coasting, AUTO Torque control feedback usable (Part I <500 ms and Part II <1 s; 0/1) |
-| 52 | inhibit: 0=OK, 1=disabled, 2=feedback loss, 3=wait fresh command, 4=reverse, 5=stop, 6=reverse pending (RUN at 0 A) |
-| 53 | drive path: 0=HALTED, 1=MANUAL, 2=AUTO Speed, 3=AUTO Torque, 4=external current, 5=regen, 6=RUN at 0 A |
-| 54 | final commanded phase current after the rolling floor (A, signed as sent) |
-| 55–57 | rolling hold active, floor decided the output (request ≤ min current), start step applied (0/1) |
-| 58 | consecutive reverse-speed frames (debounce progress) |
-| 59 | collapse events since boot (episodes; a new one needs 20 clean Part I frames) |
-| 60 | collapse flags of the latest event: 1=RPM, 2=phase high, 4=phase low, 8=bus |
-| 61 | seconds since the latest event; −1 = none |
-| 62–66 | latest event first frame: command, phase current, bus current, raw RPM, previous raw RPM |
-| 67–69 | latest event drive path, rolling hold at that frame, AUTO reaction frames left |
-| 70–71 | regen request (A ≥ 0: LT/external or speed PI, the larger), regen limit (A ≥ 0) |
-| 72–74 | regen speed factor, voltage factor, charge-current scale (1 = no bus guard cut) |
-| 75–77 | regen current sent (A ≤ 0), regen path active (0/1), speed-PI regen mode (0/1) |
+| 1 | 적용된 revision, 부팅 시 0 |
+| 2 | 마지막 request ID, 잘못된 형식의 요청은 0 |
+| 3 | 결과: 0=대기(idle), 1=적용(applied), 2=무효(invalid), 3=안전 조건 미충족(unsafe), 4=revision 충돌, 5=처리 중(busy) |
+| 4 | 설정 출처: 0=DEFAULT, 1=HOST_OVERRIDE |
+| 5–41 | 적용 중인 설정, 전송 순서 기준 요청 인덱스 3–39 |
+| 42–47 | 속도 오차, P, I/적분기 상태, feedforward 전류, 포화 전 전류, 최종 PI 전류 |
+| 48–51 | 포화, anti-windup, coasting, AUTO Torque 피드백 사용 가능 여부(Part I <500 ms 및 Part II <1 s; 0/1) |
+| 52 | 차단 상태: 0=OK, 1=비활성, 2=피드백 소실, 3=새 명령 대기, 4=역회전, 5=정지, 6=역회전 판정 대기(0 A로 RUN) |
+| 53 | 구동 경로: 0=HALTED, 1=MANUAL, 2=AUTO Speed, 3=AUTO Torque, 4=외부 전류, 5=회생, 6=0 A로 RUN |
+| 54 | 주행 중 최소 전류 적용 후 최종 지령 상전류, 송신 부호 기준 A |
+| 55–57 | 주행 유지 활성, 최소 전류가 출력 결정(요청 ≤ 최소 전류), start step 적용 여부(0/1) |
+| 58 | 역회전 속도가 연속된 frame 수, debounce 진행 상태 |
+| 59 | 부팅 이후 붕괴 사건 수. 정상 Part I frame 20개가 연속된 뒤에야 새 사건으로 집계 |
+| 60 | 최근 사건의 붕괴 플래그: 1=RPM, 2=상전류 상한, 4=상전류 하한, 8=bus 전류 |
+| 61 | 최근 사건 이후 경과 시간(s), 사건이 없으면 −1 |
+| 62–66 | 최근 사건의 첫 frame: 지령, 상전류, bus 전류, 원본 RPM, 직전 원본 RPM |
+| 67–69 | 최근 사건의 구동 경로, 당시 주행 유지 상태, 남은 AUTO 대응 frame 수 |
+| 70–71 | 회생 요청(A ≥ 0, LT/외부 요청과 속도 PI 중 큰 값), 회생 한도(A ≥ 0) |
+| 72–74 | 회생 속도 계수, 전압 계수, 충전전류 배율(1이면 bus 보호에 따른 감축 없음) |
+| 75–77 | 송신 회생 전류(A ≤ 0), 회생 경로 활성(0/1), 속도 PI 회생 모드(0/1) |
 
-Regeneration (AUTO Torque and external current only). Requests: LT `/vehicle/drive_current_command`
-≤ 0 in Torque, any ≤ 0 value in external-current mode (positive values reset the request and
-keep the external drive input fresh at their value), and the speed PI when `pi_regen=1`.
-STM_A takes the larger request and computes every 50 ms
+회생은 AUTO Torque와 외부 전류 모드에서만 동작합니다. Torque에서는
+LT의 `/vehicle/drive_current_command` ≤ 0, 외부 전류 모드에서는 같은 토픽의 ≤ 0 값이
+회생 요청입니다. 외부 전류 모드의 양수 값은 회생 요청을 초기화하고 해당 값으로 구동 입력을 갱신합니다.
+`pi_regen=1`이면 속도 PI도 회생을 요청할 수 있습니다. STM_A는 두 요청 중 큰 값을 선택하고
+50 ms마다 다음을 계산합니다.
 
 ```
 limit = regen_max × speed_factor(v) × voltage_factor(V) × bus_scale
@@ -720,148 +724,158 @@ bus_scale: × 0.8 per frame while bus current < −regen_bus_current_limit, back
 target = allowed ? −min(request, limit) : 0;  current = slew(target, regen_slew), then clamp to −limit
 ```
 
-The limit applies in the same frame (cutoff, voltage, charge guard, stale Part I → 0). The gate
-`allowed` = AUTO current path, inhibit OK, Part I/II fresh, fault 0, EZ in torque mode; when it
-drops the current returns to 0 at `regen_slew`. Target 0, brake, E-stop, STM_B safety and host
-timeout keep their HALTED path and reset regen at once; MANUAL and AUTO Speed never regenerate.
-While regen is active (including the frame that returns to 0 A) STM_A sends it instead of the
-drive PI: the PI integrator and mode are frozen and the drive output restarts from 0 A through
-the reapply band, so the phase current never changes sign within one frame. Speed-PI regen
-enters below −`regen_enter_error` only after the drive output reached 0 A, requests
-`regen_kp × (overspeed − regen_exit_error)` and leaves above −`regen_exit_error`.
+한도는 같은 frame에서 즉시 적용합니다. cutoff, 전압·충전 보호, Part I 만료 조건에서는
+해당 한도에 맞추며, Part I이 만료되면 0으로 제한합니다. `allowed`는 AUTO 전류 경로,
+차단 조건 없음, Part I/II 유효, fault 0, EZ Torque 모드를 모두 요구합니다.
+이 조건이 해제되면 전류는 `regen_slew`에 따라 0으로 돌아갑니다. 목표 0, 브레이크, E-stop,
+STM_B safety와 Host timeout은 기존 HALTED 경로를 유지하며 회생을 즉시 초기화합니다.
+MANUAL과 AUTO Speed에서는 회생하지 않습니다.
 
-Collapse rules per Part I frame while RUN (constants in `longitudinal_controller.h`), with C the
-larger magnitude of the latest and the previous transmitted command: raw RPM at ≥400 rpm drops to
-≤0, flips sign or changes more than max(200, 3·C) rpm in one frame; and for a torque command
-|phase| > C+60 A, |bus| > C+60 A, or, when neither command is negative (regen), phase <
-`collapse_phase_low`.
-The bounds come from the 2026-09-29/30 square-wave MCAPs (48/49 collapses, no false alarm) and the
-2026-10-01 sine runs (FOC 0 A noise to −51 A, 350 A launches up to 600 rpm per frame); see
-[the sine rework report](reports/2026-10-01_ezkontrol_sine_rework.md) and
-[the regen rework report](reports/2026-10-02_regen_governor_rework.md).
+회생이 활성인 동안에는 0 A로 돌아오는 frame까지 구동 PI 대신 회생 전류를 송신합니다.
+PI 적분기와 모드 상태를 유지하고, 구동 출력은 0 A에서 재인가 구간을 거쳐 다시 시작해
+한 frame 안에서 상전류 부호가 바뀌지 않게 합니다. 속도 PI 회생은 구동 출력이 0 A에 도달한 뒤
+속도 오차가 −`regen_enter_error`보다 작을 때 진입합니다.
+`regen_kp × (overspeed − regen_exit_error)`를 요청하고, 오차가 −`regen_exit_error`보다 커지면 해제합니다.
 
-Read actual CAN-transmitted current/RPM and actual phase/bus current from `/drive/status`.
-In speed mode its commanded_phase_current_a is a limit, not commanded torque.
-PI status final current is the controller output before CAN quantization, not measured current.
-MANUAL keeps the pedal as torque demand and resets PI. Safety gates bypass slew to zero/HALTED.
+붕괴 판정은 RUN 중 Part I frame마다 수행하며 상수는 `longitudinal_controller.h`에 있습니다.
+C는 최근·직전 송신 지령의 절댓값 중 큰 값입니다. 원본 RPM이 ≥400 rpm에서 ≤0으로 떨어지거나,
+부호가 바뀌거나, 한 frame에서 max(200, 3·C) rpm보다 크게 변하면 RPM 붕괴로 판정합니다.
+Torque 명령에서는 |상전류| > C+60 A, |bus 전류| > C+60 A, 또는 최근·직전 명령이 모두
+음수(회생)가 아닌데 상전류가 `collapse_phase_low`보다 낮은 경우를 판정합니다.
+이 기준은 2026-09-29/30 방형파 MCAP(붕괴 49건 중 48건 검출, 오탐 없음)과
+2026-10-01 사인파 시험(FOC 0 A 잡음 −51 A까지, 350 A 출발 시 frame당 최대 600 rpm)을
+근거로 정했습니다. [사인파 재구성 보고서](reports/2026-10-01_ezkontrol_sine_rework.md)와
+[회생 재구성 보고서](reports/2026-10-02_regen_governor_rework.md)를 참고합니다.
 
-Rolling floor: one output stage after the drive-path branches raises every forward drive
-command (MANUAL forward, AUTO Torque, external current, AUTO collapse reaction) to
-`min_drive_current` while the rolling hold is on. The hold turns on at
-speed ≥ hold_on_speed with forward gear/target, valid feedback and no HALTED, regen or reverse
-path, and off at ≤ hold_off_speed or when any of those fail. AUTO Torque passes the floor into
-the PI, which seeds its slew state there and freezes the integral at the floor. Outside the hold,
-a decreasing output never crawls through (0, min_drive_current): it goes straight to the PI
-value. MANUAL with the hold maps pedal 0…100 % to min…limit (limit = Torque/External
-max_drive_current, Speed calibration 480 A); stopped or reverse keeps the existing map. Pedal
-deadband (2 %) is unchanged. With `min_drive_current = 0` (sine default) none of this acts.
+실제 CAN 송신 전류·RPM과 실측 상전류·bus 전류는 `/drive/status`에서 확인합니다.
+Speed 모드의 `commanded_phase_current_a`는 전류 한도이며 토크 지령이 아닙니다.
+PI 상태의 최종 전류는 CAN 양자화 전 제어기 출력이며 실측 전류가 아닙니다.
+MANUAL은 페달을 토크 요구량으로 사용하고 PI를 초기화합니다. 안전 차단은 slew를 우회해 0 A/HALTED를 명령합니다.
 
-Reverse: a negative target still inhibits at once. Measured speed below −reverse_speed must
-persist for reverse_debounce_frames before `LONG_REVERSE` → HALTED; until then STM_A keeps
-RUN at 0 A (path 6) and keeps the PI history. The previous single-sample −0.05 m/s rule halted
-on one-frame despike glitches.
+주행 중 최소 전류(rolling floor)는 구동 경로 분기 뒤의 공통 출력 단계에서 적용합니다.
+주행 유지(rolling hold)가 켜져 있으면 모든 전진 구동 명령(MANUAL 전진, AUTO Torque,
+외부 전류, AUTO 붕괴 대응)을 `min_drive_current` 이상으로 올립니다. 전진 기어·목표,
+유효한 피드백, HALTED·회생·역회전 경로가 아닌 상태에서 속도 ≥ `hold_on_speed`이면
+유지를 켜고, 속도 ≤ `hold_off_speed`이거나 조건 하나라도 해제되면 끕니다.
+AUTO Torque는 이 하한을 PI에 전달해 slew 상태의 시작값으로 사용하고 하한에서는 적분기를 유지합니다.
+유지 상태 밖에서 출력이 감소할 때는 (0, min_drive_current) 구간을 천천히 통과하지 않고 PI 값으로 바로 이동합니다.
+유지 중 MANUAL은 페달 0…100 %를 최소 전류…전류 한도로 매핑합니다.
+한도는 Torque/외부 전류 설정의 `max_drive_current`, Speed 설정의 480 A입니다.
+정지·후진에서는 기존 매핑을 유지하며 페달 deadband(2 %)는 바꾸지 않습니다.
+`min_drive_current = 0`인 사인파 기본값에서는 이 처리가 동작하지 않습니다.
 
-Collapse reaction (`collapse_hold_frames > 0`, AUTO only): for that many frames after a new
-event the AUTO current path sends the floor (or 0 A without a hold) and freezes the PI.
-MANUAL is never overridden. Target zero, brake, E-stop and safety inhibits keep priority.
-After Torque feedback recovery, a command received after recovery is required.
-Agent reconnect preserves RAM calibration but clears host commands/pending requests;
-MCU reboot restores source DEFAULT/revision 0/mode speed. Host clients do not auto-replay overrides.
+역회전: 음수 목표는 즉시 차단합니다. 실측 속도가 −`reverse_speed`보다 낮은 상태가
+`reverse_debounce_frames`만큼 이어지면 `LONG_REVERSE` → HALTED로 전환합니다.
+그전까지는 0 A로 RUN(경로 6)을 유지하고 PI 이력을 보존합니다.
+이전의 단일 샘플 −0.05 m/s 기준은 한 frame의 despike 잡음만으로 정지할 수 있었습니다.
 
-The launch calibration helper compares the matching request ID, revision and full float32
-readback before reporting success. The TUI only observes current settings and saves presets;
-it does not send calibration or parameter writes. Saved values take effect on the next
-control-stack launch with that preset. For calibration, test procedure,
-range rationale and recorder coverage see
-[the implementation report](reports/2026-09-21_longitudinal_torque_pi.md).
+붕괴 대응(`collapse_hold_frames > 0`, AUTO 전용): 새 사건 발생 후 지정한 frame 수 동안
+AUTO 전류 경로는 최소 전류를 보내고(주행 유지가 꺼져 있으면 0 A) PI 상태를 유지합니다.
+MANUAL 출력은 덮어쓰지 않으며, 목표 0·브레이크·E-stop·안전 차단이 우선합니다.
+Torque 피드백 복구 후에는 복구 시점 이후 수신한 새 명령이 필요합니다.
+Agent 재연결은 RAM 설정을 보존하고 Host 명령·대기 요청을 초기화합니다.
+MCU 재부팅은 source DEFAULT/revision 0/Torque 모드로 돌아갑니다.
+Host 클라이언트는 이전 override를 자동 재전송하지 않습니다.
 
+launch의 calibration helper는 request ID, revision과 전체 float32 readback을 비교한 뒤
+성공을 보고합니다. TUI는 현재 설정 관측과 프리셋 저장만 수행하며 calibration 요청이나
+파라미터 쓰기를 보내지 않습니다. 저장값은 해당 프리셋으로 제어 스택을 다음에 실행할 때 적용합니다.
+설정 적용·시험 절차, 범위 선정 근거와 녹화 항목은
+[구현 보고서](reports/2026-09-21_longitudinal_torque_pi.md)를 참고합니다.
 
-## External phase-current command
+<a id="external-phase-current-command"></a>
 
-`/vehicle/drive_current_command` uses `kaiev26_msgs/msg/DriveCurrentCommand`:
+## 외부 상전류 명령
 
-| Field | Meaning |
+`/vehicle/drive_current_command`는 `kaiev26_msgs/msg/DriveCurrentCommand`를 사용합니다.
+
+| 필드 | 의미 |
 |---|---|
-| `header.stamp` | Publisher ROS clock, strictly advancing for accepted samples |
-| `phase_current_a` | Forward motor phase-current demand in A, 0–480 protocol envelope |
+| `header.stamp` | 발행자의 ROS 시각. 수락되는 샘플은 직전 수락 시각보다 커야 함 |
+| `phase_current_a` | 모터 상전류 요청(A). 구동 요청은 0…480 A, 회생 요청은 −480…0 A이며 실제 출력에는 별도 설정 한도 적용 |
 
-Only `external_current` mode consumes this topic. The selected operating current/RPM envelope
-may be lower than the protocol maximum. `/vehicle/command` remains governor-owned and independently
-required: positive forward target, released brake and fresh host command. PC MPC, host reference PI
-and current-identification scenarios are alternative producers of the current topic.
+`external_current` 모드에서는 이 토픽을 구동·회생 입력으로 사용하고,
+AUTO Torque 모드에서는 0 이하 값을 회생 요청으로 받습니다.
+선택한 운용 전류·RPM 한도는 프로토콜 최대값보다 낮을 수 있습니다.
+`/vehicle/command`는 계속 governor가 발행하며, 양수 전진 목표·브레이크 해제·Host 명령 유효성은
+별도로 필요합니다. PC MPC, Host 참조 PI, 전류 식별 시나리오 중 선택한 구성에서 전류 토픽을 발행합니다.
 
-STM_A uses a separate 500 ms reception watchdog for current commands. A received current stamp must
-be at least the most recent accepted target stamp and less than 500 ms ahead of it. Current source
-stamps reject reordered commands and commands queued before a stop; HAL ticks measure reception age.
-They do not imply that the MCU is synchronized to the PC's UTC clock. Invalid current samples do not
-renew the watchdog. Brake, drive stop, mode changes, handshake, reconnect, invalid feedback and
-valid nonzero motor fault clear stored current. Feedback recovery also retains the existing
-requirement for a new upper-level command. Safety inhibits bypass current slew and send HALTED.
+STM_A는 외부 전류 명령에 별도의 500 ms 수신 watchdog을 적용합니다.
+외부 구동 전류의 timestamp는 가장 최근에 수락한 목표 명령 시각 이상이고,
+그보다 500 ms 미만으로 앞서 있어야 합니다. 전류 발행 시각으로 순서가 뒤바뀌거나 정지 전에
+대기열에 쌓인 명령을 거부하고, 수신 후 경과 시간은 HAL tick으로 측정합니다.
+이 검사는 MCU가 PC의 UTC 시계와 동기화됐다는 뜻이 아닙니다.
+유효하지 않은 전류 샘플은 watchdog을 갱신하지 않습니다. 브레이크, 구동 정지, 모드 변경,
+handshake, 재연결, 무효 피드백, 유효한 모터 fault 비트가 0이 아닌 경우에는 저장된 전류를 초기화합니다.
+피드백 복구 뒤에는 기존과 같이 새 상위 명령을 요구합니다. 안전 차단은 전류 slew를 우회해 HALTED를 송신합니다.
 
-The MCU performs no speed PI in this mode. CAN current remains in phase amperes, torque mode is
-bit1=0, and the configured motor RPM is a ceiling. Read actual CAN-transmitted current from
-`/drive/status.commanded_phase_current_a`; calibration status elements 42–52 are PI diagnostics,
-element 54 is the final command after the rolling floor and 70–77 describe regeneration.
-The new current message type, STM_A library/firmware and Host must be deployed together. Host
-configuration clients read v1–v5 status for recordings but send v5 requests only.
+외부 전류 모드에서 MCU는 속도 PI를 실행하지 않습니다. CAN 전류 단위는 모터 상전류 A이며,
+Torque 모드는 bit1=0, 설정한 모터 RPM은 상한입니다. 실제 CAN 송신 전류는
+`/drive/status.commanded_phase_current_a`에서 읽습니다. calibration 상태 인덱스 42–52는
+PI 진단, 54는 주행 중 최소 전류 적용 후 최종 지령, 70–77은 회생 상태입니다.
+새 전류 메시지 타입, STM_A 라이브러리·펌웨어와 Host를 함께 배포해야 합니다.
+Host 설정 클라이언트는 기록 해석용으로 v1–v5 상태를 읽지만 요청은 v5만 보냅니다.
 
-The current MPC model and all controller settings are fixed for a run. The Host publishes read-only
-`model_A`, `model_B`, `model_c` and `model_dt` parameters containing the loaded coefficients.
-The existing recorder captures these values when `/longitudinal_controller` is running.
+실행에 사용하는 MPC 모델과 모든 제어기 설정은 한 Run 동안 고정합니다. Host는 불러온 계수를
+읽기 전용 `model_A`, `model_B`, `model_c`, `model_dt` 파라미터로 제공합니다.
+기존 recorder는 `/longitudinal_controller`가 실행 중이면 이 값들을 함께 수집합니다.
 
-## Control Tuning parameter names
+<a id="control-tuning-parameter-names"></a>
 
-TUI/preset keys use `steering_`, `drive_`, `governor_` prefixes with physical units.
-[The complete mapping and migration contract](CONTROL_TUNING_PARAMETERS.md) defines
-preset schema v3 and parameter snapshot schema v2. Existing v2 presets and v1 snapshots
-remain readable through explicit name adapters; conflicting aliases fail instead of
-silently selecting a value. All managed values remain required.
+## Control Tuning 파라미터 이름
 
-Node-scoped ROS parameter names and `/parameter_events` keep their native names/units.
-The current MCU array ABI is v5: 40-float requests and 78-float status. The host decoder
-reads v1–v5 and adds canonical `display_values` while retaining `config` for consumers.
-Topic/message types remain unchanged, but the v5 request layout requires matching Host and STM_A firmware.
-Control Tuning remains read-only with respect to runtime:
-S saves the selected preset for the next control-stack launch.
+TUI·프리셋 키는 물리 단위와 `steering_`, `drive_`, `governor_` 접두사를 사용합니다.
+[전체 이름 연결·호환 계약](CONTROL_TUNING_PARAMETERS.md)은 preset schema v3와
+parameter snapshot schema v2를 정의합니다. 기존 v2 프리셋과 v1 snapshot은 명시적인
+이름 변환 어댑터로 읽을 수 있습니다. 별칭이 충돌하면 임의로 값을 고르지 않고 실패 처리합니다.
+관리 대상 값은 모두 필수입니다.
 
+노드별 ROS 파라미터와 `/parameter_events`는 기존 이름·단위를 유지합니다.
+현재 MCU 배열 ABI는 v5이며 요청은 float 40개, 상태는 78개입니다.
+Host decoder는 v1–v5를 읽고 기존 소비자용 `config`를 유지하면서 표준 이름의
+`display_values`를 추가합니다. 토픽·메시지 타입은 유지하지만 v5 요청 레이아웃에 맞는
+Host와 STM_A 펌웨어가 필요합니다. Control Tuning은 실행 중인 제어값을 읽기만 하며,
+`S`는 다음 제어 스택 실행에 사용할 선택 프리셋을 저장합니다.
 
-### AUTO drive envelope semantics
+<a id="auto-drive-envelope-semantics"></a>
 
-The `max_drive_current_a` and `motor_rpm_limit` fields, introduced in ABI v1 (canonical
-`drive_current_limit_a`, `drive_motor_speed_limit_rpm`) apply to both AUTO modes.
-Speed uses them as the EZ native current-limit field and symmetric signed target-RPM
-envelope. Torque uses them as PI phase-current ceiling and EZ torque-mode RPM ceiling.
-The final sender still clamps forward to 4500 rpm and reverse to 1500 rpm.
-MANUAL shares the current/RPM limits and current slew in Torque/external-current calibration;
-Speed calibration retains the direct 0–480 A pedal mapping. MANUAL does not run the speed PI.
+### AUTO 구동 한도 적용 방식
 
-The saved driving preset selects Torque/Sine with 480 A/RPM4500, Kp/Ki 180/12, integrator limit 120 A,
-PI regeneration enabled (30 A, enter/exit 0.5/0.3 m/s, gain 15), governor deceleration slew 0 and
-feedforward disabled pending ground identification; this combination is not yet ground-validated.
-The saved airborne preset selects
-Torque/Sine with 80 A/RPM4500, integrator limit 4 A, feedforward 0.12/1.05/0.12, PI regeneration
-enabled (30 A, enter/exit 0.5/0.3 m/s, gain 15) and governor deceleration slew 0; acceleration slew
-is not used in Torque ([RBS tuning report](reports/2026-10-08_rbs_tuning_report.md)).
-See the [current preset values](../software/src/control_tuning/README.md#두-프리셋과-schema-v3).
-These are saved settings, not a claim about live MCU readback.
-Torque PI uses signed speed error with output limited to positive drive current
-or zero. Negative error reduces current continuously; lower output/slew saturation
-freezes the integral instead of clearing the learned load current. `coasting`
-reports PI demand limited by the rolling floor while overspeed, not a latched output override. The
-`hysteresis` / `drive_coast_release_error_mps` field remains in the existing ABI
-for older firmware/settings but is unused by continuous PI. Reapply slew still
-limits positive current recovery from 0 A; with a rolling floor at or above
-`reapply_current` the slow band is skipped. The v3 `coast_current_floor` (overspeed only)
-is replaced in v4 by the rolling minimum current above; target zero and safety gates
-command zero.
-With `pi_regen_enabled` and a positive `regen_max_current_a`, the separate PI regen path
-can request negative current during overspeed. Both settings are disabled in the saved presets.
-LT and external negative-current requests use the same v5 regen limits.
+ABI v1부터 사용한 `max_drive_current_a`와 `motor_rpm_limit`
+(표준 이름 `drive_current_limit_a`, `drive_motor_speed_limit_rpm`)은
+AUTO Speed와 Torque에 모두 적용합니다. Speed에서는 EZ 내부 전류 한도와 양·음 대칭의
+목표 RPM 한도로, Torque에서는 PI 상전류 상한과 EZ Torque 모드의 RPM 상한으로 사용합니다.
+최종 송신부는 전진 4500 rpm, 후진 1500 rpm으로 별도 제한합니다.
+MANUAL은 Torque/외부 전류 설정에서 전류·RPM 한도와 전류 slew를 공유하고,
+Speed 설정에서는 기존 페달 0–480 A 직접 매핑을 유지합니다. MANUAL은 속도 PI를 실행하지 않습니다.
 
-PI gains, integral, deadband and slew/reapply remain Torque-only. Firmware
-Part I freshness is 500 ms; Part II status becomes invalid at 1 s.
-AUTO Torque resets/inhibits to 0 A/HALTED if either Part is invalid and requires a Host
-command received after feedback recovery. Speed/MANUAL continue to report the valid flags.
+저장된 driving 프리셋은 Torque/Sine, 480 A/RPM4500, Kp/Ki 180/12, 적분 한도 120 A입니다.
+PI 회생(30 A, 진입·해제 0.5/0.3 m/s, gain 15)을 켜고 governor 감속 slew는 0으로 두며,
+feedforward는 지상 식별 전까지 끕니다. 이 조합의 지상 검증은 아직 수행하지 않았습니다.
+저장된 airborne 프리셋은 Torque/Sine, 80 A/RPM4500, 적분 한도 4 A,
+feedforward 0.12/1.05/0.12입니다. PI 회생(30 A, 진입·해제 0.5/0.3 m/s, gain 15)을 켜고
+governor 감속 slew는 0으로 둡니다. Torque에서는 가속 slew를 사용하지 않습니다.
+[RBS 튜닝 보고서](reports/2026-10-08_rbs_tuning_report.md)와
+[현재 프리셋 값](../software/src/control_tuning/README.md#두-프리셋과-schema-v3)을 참고합니다.
+이는 저장된 설정이며 현재 MCU에 적용된 readback을 뜻하지 않습니다.
+
+Torque PI는 부호 있는 속도 오차를 사용하고 출력을 양수 구동 전류 또는 0으로 제한합니다.
+음수 오차는 전류를 연속적으로 낮춥니다. 출력·slew 하한에 도달하면 학습한 부하 전류를 지우지 않고
+적분기를 유지합니다. `coasting`은 과속 중 PI 요구가 주행 중 최소 전류로 제한된 상태를 보고하며,
+출력을 강제로 고정하는 latch가 아닙니다. `hysteresis` / `drive_coast_release_error_mps` 필드는
+구형 펌웨어·설정 호환을 위해 ABI에 남지만 연속 PI에서는 사용하지 않습니다.
+재인가 slew는 0 A 이후 양수 전류 복구를 제한하며, 주행 중 최소 전류가 `reapply_current`
+이상이면 느린 구간을 건너뜁니다. v3의 `coast_current_floor`(과속 전용)는 v4부터 위의
+주행 중 최소 전류로 대체했습니다. 목표 0과 안전 차단은 전류 0을 명령합니다.
+
+`pi_regen_enabled`와 양수 `regen_max_current_a`를 사용하면 별도 PI 회생 경로가
+과속 중 음수 전류를 요청할 수 있습니다. 현재 저장된 두 프리셋은 이 기능을 켜며,
+MCU 부팅 기본값에서는 꺼져 있습니다. LT와 외부 음수 전류 요청도 같은 v5 회생 한도를 적용합니다.
+
+PI 게인·적분·deadband와 PI의 slew·재인가는 Torque 전용입니다.
+펌웨어 Part I 유효시간은 500 ms이며, Part II 상태는 1 s부터 무효입니다.
+AUTO Torque는 둘 중 하나라도 무효이면 PI를 초기화하고 0 A/HALTED로 차단하며,
+피드백 복구 이후 수신한 Host 명령을 요구합니다. Speed/MANUAL은 기존처럼 유효성 플래그를 보고합니다.
 
 ## 12. RP2350 LV 배터리 계측·정비
 
