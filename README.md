@@ -1,60 +1,162 @@
 # Control
 
-ROS 2의 차량 제어 명령을 STM32 기반 구동·제동 펌웨어와 CAN 조향 제어에 연결하는 프로젝트입니다.
-Host와 MCU의 책임, 명령 유효성, 통신 단절 시 동작을 정의하고 HIL 벤치와 차량 시험 기록으로 구현을 검토합니다.
-상위 Planning은 별도 시스템이며, 이 저장소는 액추에이터 제어와 상태 통합, 시험·계측 도구를 다룹니다.
+Control은 **자율주행 차량의 구동·제동·조향을 통합하는 ROS 2 기반 차량 제어 시스템**입니다.
+상위 Planning이 보낸 목표속도·조향각·제동 요청을 실제 모터와 브레이크 명령으로 변환하고,
+차량의 물리 입력과 액추에이터 피드백을 함께 처리합니다.
+
+Host PC의 ROS 2 소프트웨어, STM32G474·FreeRTOS 제어 펌웨어, CAN 계기판과 저전압 배터리 계측을
+하나의 저장소에서 관리합니다. 제어기뿐 아니라 보드 입출력을 모사하는 HIL 벤치, 파라미터 설정,
+Web 관측, MCAP 기록·분석 도구를 포함해 **제어 구현부터 시스템 통합·시험·운용까지** 연결합니다.
+
+상위 Planning과는 `/planning/command`로 연결하며 공통 메시지는 별도 `kaiev26_msgs`에서 관리합니다.
+Host의 기준 환경은 Ubuntu 22.04 / ROS 2 Humble입니다.
 
 ## 시스템 구조
 
+실차는 Host PC, 구동을 담당하는 STM_A, 제동을 담당하는 STM_B, UNO R4 계기판과 RP2350 배터리 적산계로 구성됩니다.
+각 STM은 별도의 micro-ROS Agent를 통해 ROS 2 graph에 참여하고, 두 STM 사이에는 차량·안전 상태를 교환하는 UART 경로를 둡니다.
+
 ```mermaid
-flowchart LR
-    P["Planning<br/>시험 입력"] -->|"ROS 2"| G["Host<br/>command_governor"]
-    G -->|"micro-ROS<br/>Agent A"| A["STM_A<br/>구동 · 물리 입력"]
-    G -->|"micro-ROS<br/>Agent B"| B["STM_B<br/>E-stop · 제동"]
-    G -->|"ROS 2"| S["Host<br/>lateral_ctrl"]
-    E["물리 E-stop"] --> B
-    B -->|"안전 UART"| A
-    A -->|"CAN"| D["EZkontrol<br/>구동 모터"]
-    B -->|"PWM"| R["브레이크 서보"]
-    S <-->|"CAN"| K["KEYA<br/>조향 모터"]
+flowchart TB
+    Host["Host PC · ROS 2<br/>명령 관리 · 조향 · 상태 통합<br/>Console / Foxglove"]
+
+    A["STM_A · FreeRTOS<br/>모드 · 기어 · 페달 / 구동"]
+    B["STM_B · FreeRTOS<br/>E-stop · 브레이크<br/>표시 중계"]
+    A <-->|"USART1<br/>차량 · 안전 상태"| B
+
+    Inputs["물리 입력<br/>모드 · 기어 · 가속 페달"] --> A
+    EStop["물리 E-stop<br/>Dashboard · Side · RF"] --> B
+    Host <-->|"micro-ROS · Agent A<br/>LPUART1"| A
+    Host <-->|"micro-ROS · Agent B<br/>LPUART1"| B
+
+    A <-->|"CAN"| EZ["EZkontrol<br/>구동 모터"]
+    B -->|"PWM"| Brake["브레이크 서보"]
+    Host <-->|"SocketCAN"| KEYA["KEYA<br/>조향 모터"]
+
+    subgraph Meter["LV 배터리 계측"]
+        RP["XIAO RP2350<br/>전압 · 전류 · Ah/Wh · SOC<br/>적산 · 저장"] <-->|"I2C"| INA["배터리 션트<br/>INA228"]
+    end
+    B <-->|"UART4 ↔ UART0<br/>상태 · 정비"| RP
+    B -->|"Dashboard CAN"| UNO["UNO R4 Dashboard<br/>ST7796S LCD<br/>FT6336U touch"]
+
+    classDef host fill:#e8f1ff,stroke:#3567a0,color:#142b45
+    classDef controller fill:#fff0d9,stroke:#ad7020,color:#49300c
+    classDef peripheral fill:#e6f5ed,stroke:#35815a,color:#163e29
+    class Host host
+    class A,B controller
+    class INA,RP,UNO,EZ,Brake,KEYA peripheral
 ```
 
-STM_A/B는 STM32G474·FreeRTOS에서 동작하며 각각 별도의 micro-ROS Agent로 Host에 연결됩니다.
-위 그림은 명령과 정지 요청 경로입니다. 상태 피드백, UNO R4 계기판과 RP2350 배터리 계측의 연결은
-[시스템 아키텍처](docs/ARCHITECTURE.md)에 정리했습니다.
+| 구성요소 | 담당 기능 |
+|---|---|
+| [**Host PC**](software/README.md) | 상위 명령 검사·전달, KEYA 조향 제어, 선택형 MPC, 차량 상태·진단 통합과 시험·관측 도구 |
+| [**STM_A**](firmware/STM_A/README.md) | 물리 페달·모드·기어 입력, 종방향 제어, EZkontrol CAN 명령·피드백, 구동 차단 조건 적용 |
+| [**STM_B**](firmware/STM_B/README.md) | 세 물리 E-stop 입력, 최종 브레이크 요청 결정과 서보 PWM, STM_A 안전 상태 전달, 계기판·LV 상태 중계 |
+| [**UNO R4 Dashboard**](firmware/UNO_R4_DASHBOARD/README.md) | Dashboard CAN 수신, 차량 상태·배터리 정보의 LCD 표시, touch 기반 화면 탐색 |
+| [**XIAO RP2350**](firmware/XIAO_RP2350_LV_GAUGE/README.md) | INA228 전압·전류 측정, Ah/Wh 적산, SOC·설정 저장, STM_B 및 USB 정비 통신 |
+| [**STM_TEST — HIL 벤치**](firmware/STM_TEST/README.md) | 실제 STM_A/B에 연결해 페달·모드·기어·E-stop을 주입하고 브레이크 PWM과 EZkontrol·KEYA CAN을 모사·관측 |
+
+### 명령과 상태의 흐름
+
+AUTO 명령은 `Planning → command_governor → /vehicle/command` 순서로 전달됩니다.
+STM_A는 구동 목표, STM_B는 제동 요청, Host의 `lateral_ctrl`은 조향 목표를 받아 각 액추에이터를 제어합니다.
+MANUAL에서는 STM_A가 물리 페달·기어를 사용하고, STM_B의 물리 E-stop 경로는 두 모드에서 모두 동작합니다.
+
+구동·제동·조향 피드백은 `/drive/status`, `/brake/status`, `/steering/status`로 돌아옵니다.
+Host는 이를 `/vehicle/state`, `/vehicle/wheel_twist`, `/diagnostics`로 제공하고 Console·Foxglove에서 관측합니다.
+LV 배터리 상태는 `RP2350 → STM_B → ROS / UNO 계기판`으로 전달되며,
+AUTO 계기판 정보는 Host의 요약을 STM_B가 Dashboard CAN으로 중계합니다.
+
+토픽별 연결, 운전 모드와 표시·정비 경로는 [시스템 아키텍처](docs/ARCHITECTURE.md),
+메시지·단위·UART/CAN 형식은 [인터페이스](docs/INTERFACES.md)에 정리했습니다.
 
 ## 핵심 설계와 구현
 
-- **명령 유효성과 단절 처리.** Governor가 오래되거나 잘못된 명령을 거부하고, 입력이 끊기면 마지막 값을 재발행하지 않습니다. 각 소비자가 자신의 timeout과 복구 조건을 적용합니다. 속도 명령 변화율 제한은 설정에 따라 선택합니다. [명령 경로](software/src/command_governor/README.md)
-- **구동과 제동의 책임 분리.** 물리 E-stop은 Host를 거치지 않고 STM_B의 브레이크와 STM_A의 구동 차단 요청으로 이어집니다. Host 명령 timeout은 AUTO 구동 차단과 조향 비활성화 조건이며, 그 자체로 STM_B 브레이크가 체결되지는 않습니다. [안전 동작과 한계](docs/SAFETY.md)
-- **제어 주기와 통신 비용의 관측.** STM_A는 상위 구동 목표를 20 Hz로 갱신하며, 공통 스케줄러가 지난 실행 시점을 건너뛰어 밀린 작업의 연속 실행을 피합니다. 실행시간·지터·deadline miss와 UART 전송 영향을 계측합니다. [펌웨어 구조](firmware/README.md) · [계측 정의와 HIL 기록](firmware/common/README.md)
+### 구동·제동의 책임과 물리 안전 경로
 
-종방향 PI·feedforward·회생제동, 조향 PD와 선택형 MPC, 상태 통합 및 시험 도구의 구현 위치는
-[소프트웨어 안내](software/README.md)에서 찾을 수 있습니다.
+구동 입력과 모터 제어는 STM_A, 물리 E-stop과 브레이크 서보는 STM_B가 담당합니다.
+STM_B는 물리 E-stop과 AUTO의 Host 제동 요청으로 최종 브레이크 요청을 만들고,
+같은 요청을 STM_A에 UART로 전달해 구동 차단에 반영합니다. 물리 E-stop 처리는 Host의 ROS 통신을 거치지 않습니다.
 
-## 검증 범위
+계기판 렌더링은 UNO R4, 배터리 계측·적산·저장은 RP2350이 수행합니다.
+STM_B의 표시 중계는 저우선순위 Task로 처리하고, LCD·touch·SOC 값은 차량 제어 명령을 만들지 않도록 역할을 나눴습니다.
+계통별 정지 조건과 복구 동작은 [안전 설계](docs/SAFETY.md), Task·입출력 구성은
+[STM_A](firmware/STM_A/README.md)와 [STM_B](firmware/STM_B/README.md)를 참고합니다.
 
-아래는 저장된 시험·분석 기록의 요약입니다. 각 날짜의 구성과 시험 조건에 한정됩니다.
+### 명령 유효성 검사와 통신 단절 처리
 
-| 환경 | 확인한 내용 | 해석 범위 |
-|---|---|---|
-| HIL 벤치, 2026-09-08~09 | 실제 STM_A/B와 STM_TEST로 명령·E-stop·PWM·CAN timeout 경로 확인. [기록](docs/HIL_RUNBOOK.md#15-진행-상태와-남은-작업) | EZ/KEYA 응답은 모사 값이며 실제 기구의 토크 응답 검증과 구분 |
-| 바퀴 무부하, 2026-10-08~09 | PI 회생·feedforward·재인가 튜닝. 하강 언더슛 0.47 → 0.07 m/s 기록. [보고서](docs/reports/2026-10-08_rbs_tuning_report.md) | 공중 조건의 결과. 저속 회생 차단 시험과 지상 적용 검증은 별도 |
-| 지상 주행, 2026-10-03 기록 분석 | 속도·전류에서 정속 오차와 가속 추종 지연을 분석하고 후속 튜닝 후보 도출. [분석·시험 계획](docs/reports/2026-10-09_ground_longitudinal_tuning_plan.md) | 문서의 개선 예측은 시뮬레이션이며 후속 실측 결과가 아님 |
-| Gazebo, 2026-09-24 | 조향 PD/MPC와 경로 제어 조합 비교. [보고서](docs/reports/2026-09-24_lateral_mpc.md) | 해당 보고서에서 실차 MPC 주행은 수행하지 않음 |
+상위 명령을 각 액추에이터로 전달하기 전에 `command_governor`에서 timestamp와 유한값을 검사합니다.
+통합 launch에서는 이 노드가 `/vehicle/command`를 발행하며, 양수 속도 목표의 변화율 제한을 설정에 따라 적용합니다.
+입력이 끊기면 마지막 명령을 계속 재발행하지 않아 하류에서 상위 명령의 단절을 감지할 수 있습니다.
 
-현재 저장된 주행 회생 프리셋의 지상 검증과 조향 모델의 적용 범위 확대는 남아 있습니다.
-시험 계획·소프트웨어 검사·실측 결과의 구분과 원본 자료 범위는 [검증 기록 안내](docs/reports/README.md)를 따릅니다.
+STM_A는 AUTO 명령 timeout과 STM_B safety UART 상태로 구동 허용 여부를 판단합니다.
+조향 노드는 명령·차량 상태·CAN 피드백의 유효성을 확인하고, timeout 이후에는 과거 목표를 버리고 새 명령을 기다립니다.
+검사·명령 전달은 [Command Governor](software/src/command_governor/README.md),
+상태 전환과 복구는 [조향 제어](software/src/lateral_ctrl/README.md)에 설명했습니다.
+
+### 종방향 속도·전류 제어와 회생제동
+
+STM_A의 20 Hz 제어 Task는 EZkontrol 내부 속도 제어를 사용하는 **Speed 경로**, MCU에서 속도 PI를 계산하는
+**Torque 경로**, Host가 계산한 상전류를 받는 **외부 전류 경로**를 지원합니다.
+Torque 경로는 속도 오차와 선택형 feedforward를 상전류 목표로 변환하고, 적분·전류 한도와 출력 변화율을 적용합니다.
+회생제동은 음의 상전류 요청에 속도·bus 전압·충전전류 조건을 적용하며, 회생 해제 후 구동 재인가도 별도로 처리합니다.
+
+Host의 `longitudinal_mpc`는 식별 모델을 사용하는 C++/OSQP MPC와 STM_A의 C PI 계산을 재사용하는 비교 경로를 제공합니다.
+Host 제어기를 선택해도 전류 명령은 STM_A의 수신·출력 한도를 거쳐 CAN으로 전달됩니다.
+구현은 [STM_A](firmware/STM_A/README.md)와 [Longitudinal MPC](software/src/longitudinal_mpc/README.md),
+설정·readback은 [Control Tuning](software/src/control_tuning/README.md)에서 확인할 수 있습니다.
+
+### 조향 보정, PD 제어와 모델 기반 제어
+
+`lateral_ctrl`은 KEYA encoder count를 보정식으로 차량 조향각에 변환하고,
+목표각과 실제 각도·각속도를 이용해 PD 토크 명령을 계산합니다.
+CAN 송수신, Enable/Disable, 피드백 만료와 출력의 peak·sustained 한도는 같은 조향 노드가 관리합니다.
+
+조향 토크 MPC는 실차 SYSID bag에서 식별한 입력 지연·각도 응답 모델을 사용하며, 기존 PD와 같은 액추에이터 경로에서 선택합니다.
+경로 MPC는 횡오차·방향오차·yaw rate·조향 응답을 모델에 포함해 목표 조향각을 계산하고,
+별도 Decision 패키지가 이를 속도·제동 명령과 결합합니다. 두 MPC는 `mpc_common`의 QP 계산과 OSQP workspace를 재사용합니다.
+[Torque 제어](software/src/lateral_ctrl/TORQUE_CONTROL.md) · [Steering MPC](software/src/steering_mpc/README.md) ·
+[Path MPC](software/src/path_mpc/README.md) · [모델 식별·제어 비교 기록](docs/reports/2026-09-24_lateral_mpc.md)
+
+### FreeRTOS 주기 실행과 상태 계측
+
+MCU의 제어·물리 입력·보드 간 UART·micro-ROS 처리를 Task로 나누고, STM_B의 E-stop과 브레이크 처리에 우선순위를 둡니다.
+공통 주기 실행 코드는 최초 실행 위상을 유지하면서 이미 지난 실행 시점을 건너뛰어, 지연된 작업이 연속으로 실행되는 것을 피합니다.
+
+Cortex-M4 DWT cycle counter와 RTOS tick으로 Task 실행시간, 지터, deadline miss, stack·heap 상태를 계측하고
+별도의 runtime 토픽으로 관측합니다. UART 전송이 상태 발행과 명령 처리에 미치는 영향도 이 경로에서 확인합니다.
+[펌웨어 구성](firmware/README.md) · [스케줄링·Runtime metrics](firmware/common/README.md)
+
+## HIL과 운용·분석 도구
+
+HIL 벤치에서는 실차와 같은 STM_A/B 펌웨어를 사용하고, STM_TEST가 물리 입력과 모터 CAN 응답을 대신합니다.
+페달 DAC, 모드·기어·E-stop GPIO를 주입하고 브레이크 PWM을 읽으며, EZkontrol·KEYA emulator와 plant 모델로
+명령에 대한 응답을 생성합니다. Web Console에서 입력·고장 조건·시험 시나리오를 조작하고 각 보드의 상태를 함께 관측합니다.
+[STM_TEST 구성](firmware/STM_TEST/README.md) · [HIL backend](software/src/vehicle_console/HIL_BACKEND.md)
+
+실차 관측과 HIL 시험은 `vehicle_console`의 공용 Web 화면을 사용합니다. Vehicle profile은 차량 토픽을 관측하고,
+HIL profile은 벤치 입력·시나리오·가상 LCD/Touch 기능을 제공합니다.
+차량의 상태·진단은 Console에서 요약하고, 상세 ROS 데이터는 Foxglove로 확인합니다.
+[Vehicle Console](software/src/vehicle_console/README.md) · [Foxglove](software/src/foxglove/README.md)
+
+시험 입력, 적용 파라미터와 차량 응답을 함께 남겨 제어 설정과 관측 결과를 연결합니다.
+`control_tuning`에서 주행·공중 프리셋을 편집·저장하고, `vehicle_test_scenarios`에서 Step/Sine/Ramp 등의 입력을 생성합니다.
+`control_tools`는 MCAP 녹화, 실행 파라미터·readback 수집, 속도·조향·전류 응답 분석을 담당합니다.
+[시험 시나리오](software/src/vehicle_test_scenarios/README.md) · [설정 도구](software/src/control_tuning/README.md) ·
+[기록·분석 도구](software/src/control_tools/README.md) · [시험·분석 기록](docs/reports/README.md)
 
 ## 시작하기와 문서
 
-Host 환경은 Ubuntu 22.04 / ROS 2 Humble입니다. 공통 메시지 `kaiev26_msgs`와 실행 구성별 외부 패키지가 필요합니다.
-빌드 환경과 의존성을 먼저 준비하고, 실차 또는 HIL에 맞는 운용 절차를 따릅니다.
+ROS 패키지는 `~/KAI_ws/src/Control`과 `~/KAI_ws/src/kaiev26_msgs`를 같은 워크스페이스에 배치해 빌드합니다.
+실차 통합 launch에는 `kaiev26_description` 등 구성별 의존성과 장치 준비가 필요합니다.
+[Software의 환경·빌드 안내](software/README.md#환경과-빌드)에서 시작한 뒤 실차 또는 HIL runbook을 따릅니다.
 
 | 문서 | 내용 |
 |---|---|
-| [Software](software/README.md) | 명령·상태 경로, 패키지별 README, 외부 의존성과 빌드 |
-| [Firmware](firmware/README.md) | 보드별 README, FreeRTOS 구현, 빌드·Agent 연결 |
-| [문서 지도](docs/README.md) | 아키텍처·인터페이스·안전·하드웨어 문서와 개발 규칙 |
+| [시스템 아키텍처](docs/ARCHITECTURE.md) | 전체 구성, 구성요소별 역할, 명령·상태·계측·표시 경로 |
+| [인터페이스](docs/INTERFACES.md) · [안전 설계](docs/SAFETY.md) | ROS·UART·CAN 계약, 운전 모드별 정지 조건과 복구 |
+| [Software](software/README.md) · [Firmware](firmware/README.md) | 패키지·보드별 README, 구현 위치와 빌드·연결 |
 | [실차 운용](docs/VEHICLE_RUNBOOK.md) · [HIL 운용](docs/HIL_RUNBOOK.md) | 환경 준비, 실행·관측·시험·종료 |
-| [시험·분석 기록](docs/reports/README.md) | 주제별 읽기 순서와 날짜별 근거 |
+| [하드웨어 자료](docs/hardware/README.md) · [배선도](docs/vehicle-wiring/README.md) | 제조사 매뉴얼·통신 프로토콜과 배선 |
+| [시험·분석 기록](docs/reports/README.md) | HIL·차량·시뮬레이션 기록과 제어 분석 보고서 |
+| [전체 문서 지도](docs/README.md) | 상세 문서, 과거 구현과 개발 규칙 |
