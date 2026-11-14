@@ -36,17 +36,23 @@ flowchart TB
     Host <-->|"SocketCAN"| KEYA["KEYA<br/>조향 모터"]
 
     subgraph Meter["LV 배터리 계측"]
-        RP["XIAO RP2350<br/>전압 · 전류 · Ah/Wh · SOC<br/>적산 · 저장"] <-->|"I2C"| INA["INA228<br/>전압 · 전류 계측"]
+        RP["XIAO RP2350<br/>전압 · 전류 · SOC<br/>Ah/Wh 적산 · 저장"] <-->|"I2C"| INA["INA228<br/>전압 · 전류 계측"]
     end
     B <-->|"UART4 ↔ UART0<br/>상태 · 정비"| RP
-    B -->|"CAN"| UNO["UNO R4 Dashboard<br/>ST7796S LCD · SPI<br/>FT6336U touch · I2C"]
+
+    subgraph Dashboard["Dashboard"]
+        UNO["UNO R4<br/>계기판 제어"]
+        UNO -->|"SPI"| LCD["ST7796S LCD"]
+        UNO <-->|"I2C"| Touch["FT6336U touch"]
+    end
+    B -->|"CAN"| UNO
 
     classDef host fill:#e8f1ff,stroke:#3567a0,color:#142b45
     classDef controller fill:#fff0d9,stroke:#ad7020,color:#49300c
     classDef peripheral fill:#e6f5ed,stroke:#35815a,color:#163e29
     class Host host
     class A,B controller
-    class INA,RP,UNO,EZ,Brake,KEYA peripheral
+    class INA,RP,UNO,LCD,Touch,EZ,Brake,KEYA peripheral
 ```
 
 | 구성요소 | 담당 기능 |
