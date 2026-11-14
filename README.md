@@ -57,7 +57,7 @@ flowchart TB
 
 | 구성요소 | 담당 기능 |
 |---|---|
-| [**Host PC**](software/README.md) | 상위 명령 검사·전달, KEYA 조향 제어, 실험용 MPC, 차량 상태·진단 통합과 시험·관측 도구 |
+| [**Host PC**](software/README.md) | 상위 명령 검사·전달, KEYA 조향 제어, 차량 상태·진단 통합과 시험·관측 도구 |
 | [**STM_A**](firmware/STM_A/README.md) | 물리 페달·모드·기어 입력, 종방향 제어, EZkontrol CAN 명령·피드백, 구동 차단 조건 적용 |
 | [**STM_B**](firmware/STM_B/README.md) | 세 물리 E-stop 입력, 최종 브레이크 요청 결정과 서보 PWM, STM_A 안전 상태 전달, 계기판·LV 상태 중계 |
 | [**UNO R4 Dashboard**](firmware/UNO_R4_DASHBOARD/README.md) | CAN 수신, SPI LCD로 차량 상태·배터리 정보 표시, I²C touch 기반 화면 탐색 |
@@ -119,28 +119,18 @@ STM_A의 20 Hz 제어 Task는 세 가지 종방향 제어 경로를 지원합니
 
 회생제동은 음의 상전류 요청에 속도·bus 전압·충전전류 조건을 적용하며, 회생 해제 후 구동 재인가도 별도로 처리합니다.
 
-Host의 `longitudinal_mpc`는 식별 모델을 사용하는 C++/OSQP MPC와 STM_A의 C PI 계산을 재사용하는 비교 경로를 제공합니다.
-
-구현은 [STM_A](firmware/STM_A/README.md)와 [Longitudinal MPC](software/src/longitudinal_mpc/README.md),
+구현은 [STM_A](firmware/STM_A/README.md),
 설정·readback은 [Control Tuning](software/src/control_tuning/README.md)에서 확인할 수 있습니다.
 
-### 조향 보정, PD 제어와 모델 기반 제어
+### 조향 보정과 PD 제어
 
-`lateral_ctrl`은 KEYA encoder count를 보정식으로 차량 조향각에 변환합니다.
-CAN 송수신, Enable/Disable, 피드백 만료와 출력의 peak·sustained 한도도 같은 조향 노드가 관리합니다.
+`lateral_ctrl`은 KEYA 조향 모터를 제어하며, 각도 보정부터 CAN 출력과 상태 관리까지 담당합니다.
 
+- **각도 보정**: KEYA encoder count를 보정식으로 차량 조향각에 변환합니다.
 - **PD 제어**: 목표각과 실제 각도·각속도를 이용해 토크 명령을 계산합니다.
-- **조향 토크 MPC**: 실차 SYSID bag에서 식별한 입력 지연·각도 응답 모델을 사용하며, 기존 PD와 같은 액추에이터 경로에서 선택합니다.
-- **경로 MPC**: 횡오차·방향오차·yaw rate·조향 응답을 모델에 포함해 목표 조향각을 계산합니다.
-  별도 Decision 패키지가 이를 속도·제동 명령과 결합합니다.
+- **CAN·상태 관리**: CAN 송수신, Enable/Disable, 피드백 만료와 출력의 peak·sustained 한도를 관리합니다.
 
-조향·경로 MPC는 `mpc_common`의 QP 계산과 OSQP workspace를 재사용합니다.
-
-종방향·조향·경로 MPC는 현재 실차 운용에 사용하지 않습니다. 실차 기록을 이용한 모델 식별과
-Gazebo SITL 비교를 위한 구현으로 남겨두었습니다.
-
-[Torque 제어](software/src/lateral_ctrl/TORQUE_CONTROL.md) · [Steering MPC](software/src/steering_mpc/README.md) ·
-[Path MPC](software/src/path_mpc/README.md) · [모델 식별·제어 비교 기록](docs/reports/2026-09-24_lateral_mpc.md)
+[조향 제어](software/src/lateral_ctrl/README.md) · [Torque 제어](software/src/lateral_ctrl/TORQUE_CONTROL.md)
 
 ### FreeRTOS 주기 실행과 상태 계측
 
@@ -184,4 +174,5 @@ ROS 패키지는 `~/KAI_ws/src/Control`과 `~/KAI_ws/src/kaiev26_msgs`를 같은
 | [실차 운용](docs/VEHICLE_RUNBOOK.md) · [HIL 운용](docs/HIL_RUNBOOK.md) | 환경 준비, 실행·관측·시험·종료 |
 | [하드웨어 자료](docs/hardware/README.md) · [배선도](docs/vehicle-wiring/README.md) | 제조사 매뉴얼·통신 프로토콜과 배선 |
 | [시험·분석 기록](docs/reports/README.md) | HIL·차량·시뮬레이션 기록과 제어 분석 보고서 |
+| [MPC·모델 식별](software/README.md#mpc와-모델-식별) | 현재 실차 운용에 사용하지 않는 종방향·조향·경로 MPC 구현과 모델 식별·Gazebo 비교 기록 |
 | [전체 문서 지도](docs/README.md) | 상세 문서, 과거 구현과 개발 규칙 |
