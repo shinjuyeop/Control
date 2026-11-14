@@ -16,8 +16,9 @@
 | 보드별 역할, FreeRTOS Task와 코드 진입점 | [Firmware](../firmware/README.md) |
 | 제어 설정의 저장·적용·readback | [Control Tuning](../software/src/control_tuning/README.md) · [파라미터 연결표](CONTROL_TUNING_PARAMETERS.md) |
 
-`ARCHITECTURE.md`·`INTERFACES.md`·`SAFETY.md`는 현재 시스템의 기준 문서입니다.
-패키지별 README는 구성요소의 구현·실행을 설명하고, `reports/`는 해당 시점의 분석과 판단을 보존합니다.
+`docs/` 바로 아래에는 아키텍처·인터페이스·안전·운용과 파라미터 호환 계약의 기준 문서를 둡니다.
+패키지별 README는 구성요소의 구현·실행을 설명하고, 날짜별 분석·튜닝 가이드·재구성 지침·작업 기록은
+[`reports/`](reports/README.md)에 모아 해당 시점의 분석과 판단을 보존합니다.
 과거 보고서의 설정값을 현재 프리셋이나 실장치 적용값으로 간주하지 않습니다.
 
 ## 검증 근거 읽기

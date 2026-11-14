@@ -1,6 +1,6 @@
 # EZkontrol 사인파 기준 종방향 재구성 — 2026-10-01
 
-[재구성 지침](../EZKONTROL_TORQUE_CONTROL_REWORK.md)의 P0·P1을 STM_A longitudinal ABI v4로 구현하고,
+[재구성 지침](2026-10-01_ezkontrol_torque_rework_plan.md)의 P0·P1을 STM_A longitudinal ABI v4로 구현하고,
 방형파(Square-wave) 공중 speed step 기록에서 파라미터를 정한 기록이다. 기준 파형은 사인파(FOC)다.
 방형파 회피 동작은 지우지 않고 **파형별 설정값**으로 남겼다.
 

@@ -4,7 +4,7 @@
 > 아래 slew 제거와 공중 Torque·적분 25 A 변경은 채택하지 않았다. 회생 기능·보호·Run 설정 비교는 유지하며 회생 기본값은 꺼짐이다.
 
 > 대상: Claude Code. 2026-10-01 EZkontrol **Sine-wave(FOC)** 전환 후 공중 시험 결과와 설계 논의를 정리한 문서다.
-> 선행 문서: `docs/EZKONTROL_TORQUE_CONTROL_REWORK.md`, `docs/reports/2026-10-01_ezkontrol_sine_rework.md`.
+> 선행 문서: `docs/reports/2026-10-01_ezkontrol_torque_rework_plan.md`, `docs/reports/2026-10-01_ezkontrol_sine_rework.md`.
 > **수정 전에 반드시 현재 저장소 코드를 먼저 읽고** 이 문서의 이름·인덱스·위치와 대조할 것. 다르면 현재 코드가 기준이다.
 > 이 문서의 수치는 시험 후보값이다. 하드코딩하지 말고 설정값으로 둔다.
 
@@ -223,8 +223,8 @@ output = slew(target, regen_slew_a_s)
 ## 7. 구현 결과 (2026-10-02, kty)
 
 Part A, B1, B2, B3, 4장 P2는 STM_A longitudinal ABI v5와 host 갱신으로 구현했다. 매핑, 사인파 기록 평가,
-R1·R2·B2 시험 계획은 [회생 보고서](reports/2026-10-02_regen_governor_rework.md), wire 계약은
-[INTERFACES v5](INTERFACES.md#longitudinal-calibration-v5)를 따른다. 이 문서와 달라진 점:
+R1·R2·B2 시험 계획은 [회생 보고서](2026-10-02_regen_governor_rework.md), wire 계약은
+[INTERFACES v5](../INTERFACES.md#longitudinal-calibration-v5)를 따른다. 이 문서와 달라진 점:
 
 - B2는 `Long_Update` 출력 범위를 음수로 넓히지 않았다. `Long_PiRegen()`이 회생 요청 크기만 만들고
   LT/외부 요청과 같은 `Long_RegenFrame()` 한도·slew를 거친다. 구동 PI 출력은 계속 `[0, max_current]`이고

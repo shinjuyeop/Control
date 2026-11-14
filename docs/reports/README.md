@@ -2,7 +2,7 @@
 
 [프로젝트 개요](../../README.md) · [문서 지도](../README.md)
 
-날짜별 분석, 시험 계획과 구현 결과를 보관합니다. 문서 기준일과 실제 시험일은 다를 수 있으며,
+날짜별 분석, 시험 계획, 튜닝·재구성 지침과 구현 결과를 보관합니다. 문서 기준일과 실제 시험일은 다를 수 있으며,
 내용은 해당 시점의 기록입니다. 현재 동작은 [아키텍처](../ARCHITECTURE.md)·[인터페이스](../INTERFACES.md)·
 [안전 문서](../SAFETY.md), 실행 절차는 [실차 runbook](../VEHICLE_RUNBOOK.md)을 따릅니다.
 
@@ -33,10 +33,14 @@
 | 2026-09-21 | 9/20 MCAP 분석 | [종방향·전류 피크·RPM 이상](2026-09-21_0920_longitudinal_review.md) |
 | 2026-09-24 | 식별·Gazebo 비교 | [C++ 횡방향 MPC](2026-09-24_lateral_mpc.md) |
 | 2026-09-29 | 구현·식별·튜닝 후보 | [Torque feedforward와 MANUAL 페달 envelope](2026-09-29_longitudinal_feedforward.md) |
+| 2026-09-29 | 시험 계획·튜닝 가이드 | [종방향 Torque 시험 시나리오와 파라미터 튜닝](2026-09-29_longitudinal_torque_test_plan.md) |
 | 2026-10-01 | 공중 로그 분석·구현·시험 계획 | [EZkontrol 사인파 기준 재구성](2026-10-01_ezkontrol_sine_rework.md) |
+| 2026-10-01 | 설계 지침·구현 기록 | [EZkontrol 토크 제어 재구성](2026-10-01_ezkontrol_torque_rework_plan.md) |
 | 2026-10-02 | 구현·host/ARM 검사·시험 계획 | [회생제동 ABI v5와 Governor 변경 이력](2026-10-02_regen_governor_rework.md) |
+| 2026-10-02 | 설계 지침·통합 기록 | [회생제동·Governor 재구성](2026-10-02_regen_governor_rework_plan.md) |
 | 2026-10-08 | 공중 무부하 실측 | [PI 회생·feedforward·재인가 튜닝](2026-10-08_rbs_tuning_report.md) |
 | 2026-10-09 | 지상 실측 분석·시뮬레이션·시험 계획 | [지상 종방향 구동·회생 튜닝 지침](2026-10-09_ground_longitudinal_tuning_plan.md) |
+| 2026-10-09 | 작업·결정 기록 | [종방향 회생·feedforward 튜닝 논의](2026-10-09_longitudinal_tuning_discussion.md) |
 
 10/02 문서의 Governor slew 제거안은 문서 상단의 10/07 통합 메모에서 채택하지 않았다고 명시합니다.
 현재 코드에는 slew 기능이 있으며, 저장 프리셋에서의 활성 여부와는 별개입니다.
@@ -52,17 +56,12 @@
 | [Console 검증](../../software/src/vehicle_console/CONSOLE_VALIDATION.md) | 통합 당시 소프트웨어 검사, 실제 ROS pub/sub 및 관측 범위 |
 | [STM runtime metrics](../../firmware/common/README.md) | 주기·wall time·지터의 의미, 460800-baud board-only HIL 관측 |
 
-## 자료 범위와 과거 설계 메모
+## 자료 범위와 문서 규칙
 
 원본 MCAP, 분석 CSV·plot과 일부 상세 결과는 보고서에 적힌 로컬·외장 저장소 경로에 있으며 Git에 포함되지 않습니다.
 재분석에는 해당 Run의 원본 기록, 파라미터 snapshot/readback과 분석 도구가 필요합니다.
 Git에 있는 요약만으로 원본 실험 전체를 재현할 수 있는 것은 아닙니다. [기록 도구와 형식](../../software/src/control_tools/LOGGING.md)
 
-다음 문서는 당시 설계·시험 논의의 배경입니다. 현행 실행 절차나 검증 완료 목록으로 사용하지 않습니다.
-
-- [9/29 Torque 시험 시나리오·튜닝 가이드](../260929_Long_TorqueTest.md)
-- [EZkontrol 토크 제어 재구성 지침](../EZKONTROL_TORQUE_CONTROL_REWORK.md)
-- [회생·Governor 변경 지침과 통합 메모](../EZKONTROL_REGEN_AND_GOVERNOR_REWORK.md)
-- [10/08~09 작업 대화 요약](../conversation_1009.md)
-
-새 기록은 `YYYY-MM-DD_topic_in_snake_case.md`로 작성하고, 시험 조건·사용 자료·수행한 검증과 남은 범위를 함께 적습니다.
+튜닝 가이드·재구성 지침·작업 논의도 위 날짜별 기록에 함께 정리합니다.
+파일명은 `YYYY-MM-DD_topic_in_snake_case.md`로 통일하고 날짜는 문서 기준일을 사용합니다.
+새 기록에는 시험 조건·사용 자료·수행한 검증과 남은 범위를 함께 적습니다.

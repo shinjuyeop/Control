@@ -2,7 +2,7 @@
 
 Claude Code와 진행한 kty 브랜치 작업 대화를 시간 순서로 정리한 기록이다. 원문 그대로가 아니라
 요청, 확인한 사실, 답변 요지, 결정, 커밋을 요약했다. 수치와 근거는
-[RBS 튜닝 보고서](reports/2026-10-08_rbs_tuning_report.md)에 더 자세히 있다.
+[RBS 튜닝 보고서](2026-10-08_rbs_tuning_report.md)에 더 자세히 있다.
 
 ## 1. main 머지 (slew·회생 보존)
 
@@ -62,7 +62,7 @@ Claude Code와 진행한 kty 브랜치 작업 대화를 시간 순서로 정리�
 ## 5. 공중 회생 튜닝
 
 공중 프리셋으로 speed_step을 반복하며 기록을 분석했다. 단계별 수치는
-[RBS 튜닝 보고서](reports/2026-10-08_rbs_tuning_report.md) 3장에 있다.
+[RBS 튜닝 보고서](2026-10-08_rbs_tuning_report.md) 3장에 있다.
 
 | 단계 | 관찰 | 조치 |
 |---|---|---|
