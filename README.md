@@ -39,7 +39,7 @@ flowchart TB
         RP["XIAO RP2350<br/>전압 · 전류 · Ah/Wh · SOC<br/>적산 · 저장"] <-->|"I2C"| INA["INA228<br/>전압 · 전류 계측"]
     end
     B <-->|"UART4 ↔ UART0<br/>상태 · 정비"| RP
-    B -->|"Dashboard CAN"| UNO["UNO R4 Dashboard<br/>ST7796S LCD<br/>FT6336U touch"]
+    B -->|"CAN"| UNO["UNO R4 Dashboard<br/>ST7796S LCD · SPI<br/>FT6336U touch · I2C"]
 
     classDef host fill:#e8f1ff,stroke:#3567a0,color:#142b45
     classDef controller fill:#fff0d9,stroke:#ad7020,color:#49300c
@@ -54,7 +54,7 @@ flowchart TB
 | [**Host PC**](software/README.md) | 상위 명령 검사·전달, KEYA 조향 제어, 선택형 MPC, 차량 상태·진단 통합과 시험·관측 도구 |
 | [**STM_A**](firmware/STM_A/README.md) | 물리 페달·모드·기어 입력, 종방향 제어, EZkontrol CAN 명령·피드백, 구동 차단 조건 적용 |
 | [**STM_B**](firmware/STM_B/README.md) | 세 물리 E-stop 입력, 최종 브레이크 요청 결정과 서보 PWM, STM_A 안전 상태 전달, 계기판·LV 상태 중계 |
-| [**UNO R4 Dashboard**](firmware/UNO_R4_DASHBOARD/README.md) | Dashboard CAN 수신, 차량 상태·배터리 정보의 LCD 표시, touch 기반 화면 탐색 |
+| [**UNO R4 Dashboard**](firmware/UNO_R4_DASHBOARD/README.md) | CAN 수신, SPI LCD로 차량 상태·배터리 정보 표시, I²C touch 기반 화면 탐색 |
 | [**XIAO RP2350**](firmware/XIAO_RP2350_LV_GAUGE/README.md) | INA228 전압·전류 측정, Ah/Wh 적산, SOC·설정 저장, STM_B 및 USB 정비 통신 |
 | [**STM_TEST — HIL 벤치**](firmware/STM_TEST/README.md) | 실제 STM_A/B에 연결해 페달·모드·기어·E-stop을 주입하고 브레이크 PWM과 EZkontrol·KEYA CAN을 모사·관측 |
 
@@ -67,7 +67,7 @@ MANUAL에서는 STM_A가 물리 페달·기어를 사용하고, STM_B의 물리 
 구동·제동·조향 피드백은 `/drive/status`, `/brake/status`, `/steering/status`로 돌아옵니다.
 Host는 이를 `/vehicle/state`, `/vehicle/wheel_twist`, `/diagnostics`로 제공하고 Console·Foxglove에서 관측합니다.
 LV 배터리 상태는 `RP2350 → STM_B → ROS / UNO 계기판`으로 전달되며,
-AUTO 계기판 정보는 Host의 요약을 STM_B가 Dashboard CAN으로 중계합니다.
+AUTO 계기판 정보는 Host의 요약을 STM_B가 CAN으로 중계합니다.
 
 메시지·단위·UART/CAN 형식은 [인터페이스](docs/INTERFACES.md)에 정리했습니다.
 
