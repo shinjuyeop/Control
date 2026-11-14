@@ -81,50 +81,64 @@ AUTO 계기판 정보는 Host의 요약을 STM_B가 CAN으로 중계합니다.
 
 ### 구동·제동의 책임과 물리 안전 경로
 
-구동 입력과 모터 제어는 STM_A, 물리 E-stop과 브레이크 서보는 STM_B가 담당합니다.
-STM_B는 물리 E-stop과 AUTO의 Host 제동 요청으로 최종 브레이크 요청을 만들고,
-같은 요청을 STM_A에 UART로 전달해 구동 차단에 반영합니다. 물리 E-stop 처리는 Host의 ROS 통신을 거치지 않습니다.
+구동과 제동을 별도 MCU에 나누고, 표시·계측은 전용 보드로 분리했습니다.
 
-계기판 렌더링은 UNO R4, 배터리 계측·적산·저장은 RP2350이 수행합니다.
+- **STM_A**: 구동 입력과 모터 제어를 담당합니다.
+- **STM_B**: 물리 E-stop과 AUTO의 Host 제동 요청으로 최종 브레이크 요청을 만들고 서보를 제어합니다.
+  같은 요청을 STM_A에 UART로 전달해 구동 차단에 반영합니다.
+- **UNO R4**: 계기판 렌더링을 담당합니다.
+- **RP2350**: 배터리 계측·적산·저장을 담당합니다.
+
+물리 E-stop 처리는 Host의 ROS 통신을 거치지 않습니다.
 STM_B의 표시 중계는 저우선순위 Task로 처리하고, LCD·touch·SOC 값은 차량 제어 명령을 만들지 않도록 역할을 나눴습니다.
+
 계통별 정지 조건과 복구 동작은 [안전 설계](docs/SAFETY.md), Task·입출력 구성은
 [STM_A](firmware/STM_A/README.md)와 [STM_B](firmware/STM_B/README.md)를 참고합니다.
 
 ### 명령 유효성 검사와 통신 단절 처리
 
-상위 명령을 각 액추에이터로 전달하기 전에 `command_governor`에서 timestamp와 유한값을 검사합니다.
-통합 launch에서는 이 노드가 `/vehicle/command`를 발행하며, 양수 속도 목표의 변화율 제한을 설정에 따라 적용합니다.
-입력이 끊기면 마지막 명령을 계속 재발행하지 않아 하류에서 상위 명령의 단절을 감지할 수 있습니다.
+명령 검사와 통신 단절 처리는 각 제어 단계에서 수행합니다.
 
-STM_A는 AUTO 명령 timeout과 STM_B safety UART 상태로 구동 허용 여부를 판단합니다.
-조향 노드는 명령·차량 상태·CAN 피드백의 유효성을 확인하고, timeout 이후에는 과거 목표를 버리고 새 명령을 기다립니다.
+- **Command Governor**: 상위 명령의 timestamp와 유한값을 검사하고, 통합 launch에서 `/vehicle/command`를 발행합니다.
+  양수 속도 목표의 변화율 제한을 설정에 따라 적용하며, 입력이 끊기면 마지막 명령을 계속 재발행하지 않아
+  하류에서 상위 명령의 단절을 감지할 수 있습니다.
+- **STM_A**: AUTO 명령 timeout과 STM_B safety UART 상태로 구동 허용 여부를 판단합니다.
+- **조향 노드**: 명령·차량 상태·CAN 피드백의 유효성을 확인하고, timeout 이후에는 과거 목표를 버리고 새 명령을 기다립니다.
+
 검사·명령 전달은 [Command Governor](software/src/command_governor/README.md),
 상태 전환과 복구는 [조향 제어](software/src/lateral_ctrl/README.md)에 설명했습니다.
 
 ### 종방향 속도·전류 제어와 회생제동
 
-STM_A의 20 Hz 제어 Task는 EZkontrol 내부 속도 제어를 사용하는 **Speed 경로**, MCU에서 속도 PI를 계산하는
-**Torque 경로**, Host가 계산한 상전류를 받는 **외부 전류 경로**를 지원합니다.
-Torque 경로는 속도 오차와 선택형 feedforward를 상전류 목표로 변환하고, 적분·전류 한도와 출력 변화율을 적용합니다.
+STM_A의 20 Hz 제어 Task는 세 가지 종방향 제어 경로를 지원합니다.
+
+- **Speed**: EZkontrol 내부 속도 제어를 사용합니다.
+- **Torque**: MCU에서 속도 PI를 계산하고, 속도 오차와 선택형 feedforward를 상전류 목표로 변환합니다.
+  적분·전류 한도와 출력 변화율을 적용합니다.
+- **외부 전류**: Host가 계산한 상전류 목표를 받아 STM_A의 수신·출력 한도를 거쳐 CAN으로 전달합니다.
+
 회생제동은 음의 상전류 요청에 속도·bus 전압·충전전류 조건을 적용하며, 회생 해제 후 구동 재인가도 별도로 처리합니다.
 
 Host의 `longitudinal_mpc`는 식별 모델을 사용하는 C++/OSQP MPC와 STM_A의 C PI 계산을 재사용하는 비교 경로를 제공합니다.
-Host 제어기를 선택해도 전류 명령은 STM_A의 수신·출력 한도를 거쳐 CAN으로 전달됩니다.
+
 구현은 [STM_A](firmware/STM_A/README.md)와 [Longitudinal MPC](software/src/longitudinal_mpc/README.md),
 설정·readback은 [Control Tuning](software/src/control_tuning/README.md)에서 확인할 수 있습니다.
 
 ### 조향 보정, PD 제어와 모델 기반 제어
 
-`lateral_ctrl`은 KEYA encoder count를 보정식으로 차량 조향각에 변환하고,
-목표각과 실제 각도·각속도를 이용해 PD 토크 명령을 계산합니다.
-CAN 송수신, Enable/Disable, 피드백 만료와 출력의 peak·sustained 한도는 같은 조향 노드가 관리합니다.
+`lateral_ctrl`은 KEYA encoder count를 보정식으로 차량 조향각에 변환합니다.
+CAN 송수신, Enable/Disable, 피드백 만료와 출력의 peak·sustained 한도도 같은 조향 노드가 관리합니다.
 
-조향 토크 MPC는 실차 SYSID bag에서 식별한 입력 지연·각도 응답 모델을 사용하며, 기존 PD와 같은 액추에이터 경로에서 선택합니다.
-경로 MPC는 횡오차·방향오차·yaw rate·조향 응답을 모델에 포함해 목표 조향각을 계산하고,
-별도 Decision 패키지가 이를 속도·제동 명령과 결합합니다. 두 MPC는 `mpc_common`의 QP 계산과 OSQP workspace를 재사용합니다.
+- **PD 제어**: 목표각과 실제 각도·각속도를 이용해 토크 명령을 계산합니다.
+- **조향 토크 MPC**: 실차 SYSID bag에서 식별한 입력 지연·각도 응답 모델을 사용하며, 기존 PD와 같은 액추에이터 경로에서 선택합니다.
+- **경로 MPC**: 횡오차·방향오차·yaw rate·조향 응답을 모델에 포함해 목표 조향각을 계산합니다.
+  별도 Decision 패키지가 이를 속도·제동 명령과 결합합니다.
+
+조향·경로 MPC는 `mpc_common`의 QP 계산과 OSQP workspace를 재사용합니다.
 
 종방향·조향·경로 MPC는 현재 실차 운용에 사용하지 않습니다. 실차 기록을 이용한 모델 식별과
 Gazebo SITL 비교를 위한 구현으로 남겨두었습니다.
+
 [Torque 제어](software/src/lateral_ctrl/TORQUE_CONTROL.md) · [Steering MPC](software/src/steering_mpc/README.md) ·
 [Path MPC](software/src/path_mpc/README.md) · [모델 식별·제어 비교 기록](docs/reports/2026-09-24_lateral_mpc.md)
 
@@ -135,6 +149,7 @@ MCU의 제어·물리 입력·보드 간 UART·micro-ROS 처리를 Task로 나�
 
 Cortex-M4 DWT cycle counter와 RTOS tick으로 Task 실행시간, 지터, deadline miss, stack·heap 상태를 계측하고
 별도의 runtime 토픽으로 관측합니다. UART 전송이 상태 발행과 명령 처리에 미치는 영향도 이 경로에서 확인합니다.
+
 [펌웨어 구성](firmware/README.md) · [스케줄링·Runtime metrics](firmware/common/README.md)
 
 ## HIL과 운용·분석 도구
