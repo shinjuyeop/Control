@@ -1,5 +1,7 @@
 # Control firmware
 
+[프로젝트 개요](../README.md) · [문서 지도](../docs/README.md) · [Host 소프트웨어](../software/README.md)
+
 STM_A는 종방향 모터와 차량 입력을 담당하고, STM_B는 물리 E-stop과 브레이크
 서보를 담당합니다. 두 보드는 USART1으로 차량 상태와 최종 브레이크 요청을 서로
 교환하며, 각 보드는 LPUART1 460800 baud로 별도의 micro-ROS Agent에 연결됩니다.
@@ -40,6 +42,24 @@ Renesas UNO core로 빌드합니다. STM_TEST는 LPUART1 ASCII protocol로 PC와
 
 STM 공통 주기·성능 계측은 [common](common/README.md)을 따른다.
 
+## 구현을 읽는 순서
+
+| 관심 영역 | 코드와 상세 문서 |
+|---|---|
+| 구동 목표에서 CAN 출력까지 | [STM_A](STM_A/README.md)의 `StartControl`과 [longitudinal_controller.c](STM_A/Core/Src/longitudinal_controller.c): Speed/Torque PI·feedforward·회생·외부 전류 계산 |
+| 물리 E-stop과 브레이크 요청 | [STM_B](STM_B/README.md)의 [update_safety_state·Brake·EStop Task](STM_B/Core/Src/app_freertos.c): GPIO 판독, 최종 요청과 PWM 적용 |
+| MCU 사이의 통신·단절 판단 | [board_uart_protocol.c](common/board_uart_protocol.c)와 각 보드의 RX/TX Task. [UART 계약](../docs/INTERFACES.md), [timeout·복구](../docs/SAFETY.md) |
+| 주기 실행과 비용 계측 | [runtime_periodic.h](common/runtime_periodic.h), [runtime_metrics.c](common/runtime_metrics.c), [계측 정의](common/README.md) |
+| 실제 보드의 입출력 시험 | [STM_TEST](STM_TEST/README.md): GPIO·DAC 입력 주입, PWM 관측, EZ/KEYA CAN emulator |
+
+STM_A는 기본 50 ms 제어 목표 갱신과 통신 처리를 Task로 나눕니다. STM_B는 E-stop 처리와
+브레이크 PWM, safety UART, 저우선순위 dashboard 전송을 분리합니다. Task 주기·우선순위와
+ISR에서 처리하는 범위는 보드별 README를 따릅니다. 계측값은 관측된 실행시간이며 formal WCET가 아닙니다.
+
+HIL은 실제 STM_A/B 펌웨어의 입출력·통신 경로를 확인하지만, STM_TEST의 모터 모델이 실차 부하나
+조향 기구의 토크 응답을 대신 검증하지는 않습니다. [HIL 시험 기록](../docs/HIL_RUNBOOK.md#15-진행-상태와-남은-작업)과
+[공중·지상 제어 기록](../docs/reports/README.md)을 구분해 읽습니다.
+
 ## 보드와 핀 표기
 
 STM_A·STM_B·STM_TEST 세 보드는 NUCLEO-G474RE(MB1367, STM32G474RETx)를 사용합니다. 각 README의 핀맵은
@@ -75,6 +95,10 @@ MCU 핀 이름과 ST morpho 헤더 번호를 함께 적습니다.
 
 브레이크 서보를 직접 구동하는 보드는 STM_B뿐입니다. STM_A는 브레이크 서보를
 구동하지 않습니다.
+
+AUTO에서 STM_A는 Host 명령이 500 ms 이상 끊기면 구동을 HALTED로 명령합니다.
+STM_B는 Host 명령 단절이나 STM_A→STM_B UART timeout만으로 브레이크를 체결하지 않습니다.
+구동 차단·서보 요청·실제 차량 정지는 구분해야 하며, 전체 조건은 [Safety](../docs/SAFETY.md)를 따릅니다.
 
 MANUAL에서는 Host의 `brake_engage`가 브레이크 서보와 수동 페달 구동을 정지시키지
 않습니다. 물리 E-stop만 MANUAL의 브레이크 서보를 작동시킵니다. 따라서 AUTO에서
@@ -139,17 +163,17 @@ vendored Agent와 `micro_ros_msgs`만 ROS 패키지로 빌드합니다.
 
 ```bash
 cd ~/KAI_ws
-si
+source /opt/ros/humble/setup.bash
 
 colcon build \
   --base-paths src/Control/firmware \
   --packages-select micro_ros_msgs micro_ros_agent
 
-si
+source install/setup.bash
 ```
 
 vendored upstream revision과 로컬 빌드 수정은
-`firmware/micro_ros_agent/UPSTREAM.md`에 기록되어 있습니다.
+[micro-ROS Agent upstream 기록](micro_ros_agent/UPSTREAM.md)에 있습니다.
 
 ## STM 보드 고정 장치 이름
 
@@ -218,7 +242,8 @@ STM_TEST는 micro-ROS를 쓰지 않으므로 Agent를 붙이지 않습니다.
 
 ```bash
 cd ~/KAI_ws
-si
+source /opt/ros/humble/setup.bash
+source install/setup.bash
 ros2 run micro_ros_agent micro_ros_agent serial \
   --dev /dev/hil_a -b 460800
 ```
@@ -227,7 +252,8 @@ ros2 run micro_ros_agent micro_ros_agent serial \
 
 ```bash
 cd ~/KAI_ws
-si
+source /opt/ros/humble/setup.bash
+source install/setup.bash
 ros2 run micro_ros_agent micro_ros_agent serial \
   --dev /dev/hil_b -b 460800
 ```

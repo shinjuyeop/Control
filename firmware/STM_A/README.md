@@ -1,5 +1,7 @@
 # STM_A Firmware
 
+[펌웨어 안내](../README.md) · [Host 제어 구성](../../software/README.md)
+
 > 이 문서는 현재 작업 브랜치의 소스 코드를 기준으로 작성되었습니다.
 > 코드 변경 시 핀, 주기, timeout, 통신 ID와 안전 조건을 함께 갱신해야 합니다.
 
@@ -18,6 +20,28 @@ STM_A는 STM32G474 기반의 차량 입력·종방향 구동 보드입니다. �
 - STM_B의 final brake request 수신과 UART timeout 감시
 - `/vehicle/command` 구독과 `/drive/status` 발행
 - AUTO Host command timeout과 traction HALTED 처리
+
+### 제어 경로와 설정의 구분
+
+| 경로 | 목표와 계산 위치 |
+|---|---|
+| AUTO Speed | Host 목표속도를 RPM 목표로 바꾸고 EZkontrol 내부 속도 제어 사용 |
+| AUTO Torque | STM_A의 20 Hz 속도 PI·선택형 feedforward로 상전류 목표 계산 |
+| AUTO 외부 전류 | Host의 `/vehicle/drive_current_command`를 freshness·전류/RPM 한도 안에서 적용 |
+| MANUAL | 물리 페달·기어에서 구동 목표 계산; Host 속도 PI 명령 경로와 구분 |
+
+[app_freertos.c](Core/Src/app_freertos.c)가 입력·정지 조건·CAN 송신을 연결하고,
+[longitudinal_controller.c](Core/Src/longitudinal_controller.c)가 PI·전류 제한·회생 계산과
+설정 검증을 담당합니다. 회생은 AUTO Torque/외부 전류 경로에서 설정과 속도·전압·충전전류
+조건에 따라 허용됩니다. 물리 E-stop·safety UART 조건은 모든 구동 경로에 적용하며,
+Host brake와 Host 명령 timeout은 AUTO에서 적용합니다.
+
+부팅 DEFAULT, 저장 프리셋, 현재 적용값은 서로 다를 수 있습니다. Host의 설정 helper가
+정지 조건에서 calibration을 적용하고 `/drive/longitudinal_status`의 revision·readback으로 확인합니다.
+현재 설정과 wire 형식은 [Control Tuning](../../software/src/control_tuning/README.md)과
+[longitudinal calibration 계약](../../docs/INTERFACES.md#longitudinal-calibration-v5)을 따릅니다.
+실제 응답의 근거는 [시험·분석 기록](../../docs/reports/README.md)에 있으며, 코드 경로의 존재만으로
+모든 프리셋과 운전 조건의 실차 검증이 끝난 것은 아닙니다.
 
 ## 3. 보드와 MCU
 
@@ -101,6 +125,7 @@ logic 기준입니다.
 |---|---|
 | `Core/Src/main.c` | clock·Peripheral·RTOS 초기화 |
 | `Core/Src/app_freertos.c` | 전체 Task, ROS 2, CAN protocol, UART parser와 안전 로직 |
+| `Core/Src/longitudinal_controller.c` | 종방향 PI·feedforward·회생·외부 전류와 calibration 계산 |
 | `Core/Src/globals.c` | Task·ISR 공유 상태와 fail-safe 초기값 |
 | `Core/Src/fdcan.c` | FDCAN timing, 핀과 interrupt 설정 |
 | `Core/Src/usart.c` | micro-ROS LPUART1과 보드 간 USART1 설정 |

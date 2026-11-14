@@ -1,8 +1,10 @@
 # command_governor
 
+[소프트웨어 안내](../../README.md) · [시스템 구조](../../../docs/ARCHITECTURE.md)
+
 `/planning/command`(Planning의 의도)를 받아 `/vehicle/command`(액추에이터 계약)로
-재발행하는 명령 파이프의 한 단계다. **이 노드가 `/vehicle/command`의 유일한
-발행자다.** 단일 writer 보장은 운영 절차가 아니라 이 구조에서 나온다.
+재발행한다. **실차·HIL 통합 launch에서 `/vehicle/command`의 발행자는 이 노드 하나다.**
+ROS가 다른 발행자의 추가를 막지는 않으므로, 직접 명령을 발행하는 조향 단독 벤치와 함께 실행하지 않는다.
 
 ```text
 Planning ──/planning/command──> command_governor ──/vehicle/command──┬─> STM_A
@@ -34,6 +36,10 @@ TUI 초기값 1.0 m/s²에서는 0→5 m/s에 5초가 걸린다. Torque/외부 �
 0으로 설정하면 slew 제한을 해제한다. 이는 명령 변화율 제한이며 실제 차량
 감속도나 jerk를 보장하지 않는다. 실제 응답은 모터 제어기와 차량에서 확인해야 한다.
 
+현재 저장된 `driving`·`airborne`은 Torque 프리셋이며 감속 slew는 0이다.
+프리셋 변환은 Torque/외부 전류의 가속 slew도 0으로 적용한다. 따라서 slew 기능의 존재,
+노드 단독 기본값과 실제 launch 적용값을 구분해야 한다. [프리셋 값과 적용 방식](../control_tuning/README.md)
+
 ## 동작
 
 - **수신 즉시 재발행.** 자체 타이머가 없다. 타이머 재발행은 최대 한 주기의
@@ -55,10 +61,10 @@ TUI 초기값 1.0 m/s²에서는 0→5 m/s에 5초가 걸린다. Torque/외부 �
 거부된 입력은 발행되지 않고 1초 throttle로 경고 로그에 남는다.
 
 거부는 **메시지 전체를 버린다 — `brake_engage=true`가 실려 있어도.** 정합성이
-깨진 명령으로는 어떤 액추에이터도 움직이지 않는다는 의도적 선택이다. 상류가
-죽으며 남긴 stale brake는 여기서 소실되지만, 제동 안전은 이 경로에 의존하지
-않는다: 물리 E-stop은 STM_B 독립 경로이고, AUTO 명령 두절은 STM_A 500 ms
-HALTED로 정지한다.
+깨진 명령을 하류에 새 명령으로 전달하지 않기 위한 선택이다. 물리 E-stop은 STM_B 독립 경로이고,
+AUTO 명령 두절 시 STM_A는 500 ms timeout으로 구동을 HALTED로 명령한다.
+STM_B는 Host timeout만으로 브레이크를 체결하지 않으므로, 이 구동 차단을 차량의
+제동 완료로 해석하지 않는다. [계통별 안전 동작](../../../docs/SAFETY.md)
 
 ## 하지 않는 일
 
@@ -68,10 +74,8 @@ HALTED로 정지한다.
 - enable/disable 상태기계 (조향의 것은 lateral_ctrl에 있다)
 - 캘리브레이션, 각도 변환
 - 상태 판정·진단 합성 (`vehicle_state_publisher/diagnostics_publisher`의 몫)
-- 하드 바운드 — 최종 한도는 액추에이터 쪽이 지킨다: 종방향은 STM_A 펌웨어
-  (RPM 4500/−1500, AUTO/MANUAL 480 A), 횡방향은 lateral_ctrl
-  (`command_count_limit` 5300 ≈ -28.33°..+28.03°, slew 60 deg/s). 거버너는 그 안에서
-  형상을 만든다.
+- 최종 출력 한도 — 종방향은 STM_A의 calibration·CAN 출력 한도, 횡방향은
+  lateral_ctrl의 [각도 보정과 Torque 출력 한도](../lateral_ctrl/TORQUE_CONTROL.md)가 담당한다.
 
 ## 계약 (발행자로서 지키는 것)
 
@@ -79,8 +83,9 @@ HALTED로 정지한다.
   BEST_EFFORT 발행자는 매칭 자체가 안 된다
 - nonzero `header.stamp`, 시스템 클럭 기준 — 조향은 stamp 나이 200 ms 초과 시
   즉시 Disable한다
-- `brake_engage`를 매 메시지 명시 — 걸린 브레이크는 fresh한
-  `brake_engage=false`로만 풀린다
+- `brake_engage`를 매 메시지 명시 — AUTO에서 Host 브레이크 해제 명령은
+  기존 brake보다 새 stamp의 `brake_engage=false`여야 한다. 물리 E-stop과 MANUAL 전환의 동작은
+  [Safety](../../../docs/SAFETY.md)를 따른다
 - 발행률은 입력을 따른다. 실차 시험의 `vehicle_test_scenario_runner`와 HIL의
   `hil_command_generator`는 20 Hz로 발행한다. 5 Hz는 조향 200 ms 예산의
   경계라 간헐 Disable이 난다
@@ -111,12 +116,16 @@ Speed/Torque에 표시하며 외부 전류 모드에는 표시하지 않는다.
 
 ## 빌드·시험·실행
 
+ROS 의존성과 메시지 패키지가 준비된 워크스페이스에서 실행한다.
+[환경과 전체 빌드](../../README.md#환경과-빌드)를 참고한다.
+
 ```bash
 cd ~/KAI_ws
-si
+source /opt/ros/humble/setup.bash
+source install/setup.bash
 colcon build --packages-select command_governor
 colcon test --packages-select command_governor && colcon test-result --verbose
-si
+source install/setup.bash
 ros2 launch command_governor command_governor.launch.py
 ```
 
@@ -133,6 +142,8 @@ respawn과 함께 띄우고, HIL에서는 `vehicle_console/hil.launch.py`가
 
 ## 관련 문서
 
+- 입력 판정·slew 계산: [governor_core.cpp](src/governor_core.cpp), [host 단위 테스트](test/test_governor_core.cpp)
+- ROS 수신·재-stamp·발행: [command_governor_node.cpp](src/command_governor_node.cpp)
 - 통신 계약: [`../../../docs/INTERFACES.md`](../../../docs/INTERFACES.md)
 - 시스템 구조: [`../../../docs/ARCHITECTURE.md`](../../../docs/ARCHITECTURE.md)
 - HIL 경로: [`../vehicle_console/HIL_BACKEND.md`](../vehicle_console/HIL_BACKEND.md)

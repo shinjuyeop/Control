@@ -1,5 +1,7 @@
 # System Architecture
 
+[프로젝트 개요](../README.md) · [문서 지도](README.md) · [Software](../software/README.md) · [Firmware](../firmware/README.md)
+
 > 이 문서는 현재 작업 브랜치의 소스 코드를 기준으로 작성되었습니다.
 > 코드 변경 시 주기, timeout, 핀, 통신 ID와 안전 조건을 함께 갱신해야 합니다.
 
@@ -126,8 +128,10 @@ MANUAL: physical pedal/gear → pedal current mapping → EZkontrol Torque Contr
 `drive_current_limit_a`는 Speed에서 EZ 내부 속도제어 current limit, Torque에서 PI 전류 상한입니다.
 `drive_motor_speed_limit_rpm`은 Speed target RPM과 Torque RPM ceiling에 공통으로 적용합니다.
 최종 전진 4500 / 후진 1500 rpm 물리 clamp는 CAN 송신부에서 별도로 유지합니다.
-현재 저장된 프리셋은 모두 Speed·사인파이며 driving은 480 A/4500 rpm, airborne는 80 A/4500 rpm입니다.
-회생 최대 전류와 feedforward는 0, PI 자동 회생은 disabled입니다.
+현재 저장된 driving·airborne은 Torque·사인파이며 PI 자동 회생을 사용합니다.
+feedforward는 airborne에서 사용하고 driving에서는 꺼져 있습니다. 부팅 DEFAULT는 회생이 꺼져 있으며,
+저장 프리셋이 실제로 적용됐는지는 readback으로 확인합니다. 값과 검증 범위는
+[Control Tuning](../software/src/control_tuning/README.md#두-프리셋과-schema-v3)을 따릅니다.
 MANUAL은 Torque/외부 전류 calibration에서 전류 한도·RPM 상한·전류 slew를 공유하고,
 Speed calibration에서는 기존 0~480 A 페달 매핑을 사용합니다. MANUAL에서 속도 PI는 실행하지 않습니다.
 
@@ -139,7 +143,8 @@ Torque는 Part I freshness <500 ms와 Part II freshness <1 s를 요구하며, �
 feedback 복구를 확인한 다음 받은 fresh Host command로만 재개합니다.
 Speed에서는 Part I/II stale이 status validity에만 반영됩니다.
 
-구현 기준: `firmware/STM_A/Core/Src/app_freertos.c`
+구현 기준: [STM_A Task·I/O](../firmware/STM_A/Core/Src/app_freertos.c),
+[종방향 제어 계산](../firmware/STM_A/Core/Src/longitudinal_controller.c)
 
 ### 3.2 STM_B
 
@@ -215,8 +220,10 @@ Wh를 계산합니다. SOC·용량·영점·트립 상태는 LittleFS journal에
 
 - ROS 2 graph와 각 STM의 micro-ROS Agent를 실행합니다.
 - `command_governor`가 상위 Planning 계층의 `/planning/command`를 받아
-  `/vehicle/command`로 재발행합니다. 이 노드가 `/vehicle/command`의 유일한
-  발행자이며, 현재는 패스스루(정합성 게이트만, 형상 없음)입니다. Planning의
+  입력 timestamp·유한값을 검사하고 `/vehicle/command`로 재발행합니다. 통합 launch에서는
+  이 노드가 해당 토픽의 유일한 발행자입니다. 양수 속도 목표의 가·감속 slew를 설정에 따라
+  적용하며 목표 0·브레이크는 즉시 전달합니다. 현재 Torque 프리셋은 가·감속 slew를
+  비활성화합니다. [Governor 계약](../software/src/command_governor/README.md)을 따릅니다. Planning의
   production 구현은 이 저장소 밖에서 관리하고 실차 시험은 `vehicle_test_scenario_runner`, HIL은
   `hil_command_generator`가 대역입니다. 두 시험 발행자는 동시에 실행하지 않습니다.
 - `lateral_ctrl/steering_actuator_node`가 KEYA 모터의 SocketCAN 소유자가 되어
@@ -227,30 +234,35 @@ Wh를 계산합니다. SOC·용량·영점·트립 상태는 LittleFS journal에
   `/diagnostics`를 1 Hz로 발행합니다. `auto_dashboard_summary`는 계기판용
   `/dashboard/auto_status`를 10 Hz로 발행합니다.
 - 실차 구동 스택은 `control_launch/launch/vehicle.launch.py`로 실행합니다.
-  구동 노드와 `/diagnostics` 요약을 포함하며 관측 화면은 `vehicle_console/vehicle.launch.py`와
-  `foxglove/foxglove_bridge.launch.py`로 따로 켭니다. 실차 장치에서의 최종 확인은 아직이며
-  HIL bench에서 동형 구조로 검증했습니다.
+  차량 TF와 STM_A calibration helper, 구동 노드와 `/diagnostics` 요약을 포함하며 관측 화면은
+  `vehicle_console/vehicle.launch.py`와 `foxglove/foxglove_bridge.launch.py`로 따로 켭니다.
+  기본 종방향은 펌웨어 제어이며 Host PI/MPC·외부 전류 식별 경로도 선택할 수 있습니다.
+  구성별 실행은 [Software](../software/README.md), 당시 HIL·실차 시험 범위는
+  [검증 기록](reports/README.md)을 확인합니다.
 
 ### 3.6 조향 제어
 
 `software/src/lateral_ctrl`의 `steering_actuator_node`가 `/vehicle/command`,
 `/drive/status`, `/brake/status`를 받아 KEYA 조향 모터를 제어합니다.
 
-현재 launch가 읽는 YAML은 `actuation_mode=torque`,
-`minimum_steering_speed_kph=0.0`입니다. 노드의 코드 기본값인 `position`, `1.0`과
-구분해야 합니다. 최소속도가 0이어도 유효하고 fresh한 구동 속도 피드백이 필요합니다.
+현재 차량 launch는 기본 YAML에 선택 프리셋과 명시적 인자를 덮어씁니다.
+저장된 두 프리셋의 조향 모드는 `torque`이고, 최소 차속은 driving 0.5 km/h,
+airborne 0 km/h입니다. 노드의 코드 기본값인 `position`, 1.0 km/h와 구분해야 합니다.
+최소속도가 0이어도 유효하고 fresh한 구동 속도 피드백이 필요합니다.
 
-Startup-only `actuation_mode`는 `position`(기존 count 명령) 또는 `torque`(외부
-calibrated wheel-angle PD)를 선택합니다. `TorqueSteeringController`는 ROS/CAN과
-독립적인 제어·rate 추정·raw/time envelope를 소유하고, 노드는 CAN과 기존 안전 상태
-머신을 계속 소유합니다. runtime mode 전환은 없으며 KEYA 0020은 운영자가
+Startup-only `actuation_mode`는 `position`(기존 count 명령) 또는 `torque`를 선택합니다.
+Torque 모드에서는 기본 보정 조향각 PD 또는 식별 모델을 사용하는
+[조향 MPC](../software/src/steering_mpc/README.md)를 선택합니다. 제어 계산과 출력 한도는
+ROS/CAN 처리와 분리하며, `lateral_ctrl` 노드가 CAN과 안전 상태 머신을 계속 소유합니다.
+runtime mode 전환은 없으며 KEYA 0020은 운영자가
 position=3/torque=2로 맞춥니다. [Torque 운용 계약](../software/src/lateral_ctrl/TORQUE_CONTROL.md)을
 참고하십시오. 기존 HIL position 모델을 torque 응답 검증으로 간주하지 않습니다.
 
 - AUTO, 유효한 mode·position·CAN feedback, E-stop 해제, command brake 해제
   조건에서만 새 조향 명령을 활성화합니다.
-- MANUAL, E-stop, command brake, 통신 timeout 또는 모터 fault에서 KEYA를
-  Disable합니다.
+- MANUAL, E-stop, command brake, 통신·피드백 timeout에서는 KEYA에 Disable을 요청합니다.
+  현재 KEYA fault 비트는 진단용이며 비트만으로 Host가 Disable하거나 latch하지 않습니다.
+  실제 모터 내부 fault 차단 범위와 CAN 단절 시 stop frame 전달 한계는 [Safety](SAFETY.md)를 따릅니다.
 - `/steering/status`와 보조 진단 토픽을 발행합니다.
 
 상세 사용법은
@@ -265,7 +277,7 @@ Planning / Motion Control (별도 상위 패키지)
   또는 vehicle_test_scenario_node (headless, ROS node /vehicle_test_scenario_runner)
   또는 hil_command_generator (HIL)
   └─ /planning/command: ActuatorCommand
-      └─ command_governor (정합성 게이트, 재-stamp; 현재 패스스루)
+      └─ command_governor (입력 검사, 선택형 속도 slew, 재-stamp)
           └─ /vehicle/command: ActuatorCommand
               ├─ STM_A: speed_target_mps, brake_engage
               ├─ STM_B: brake_engage
@@ -277,6 +289,11 @@ Planning / Motion Control (별도 상위 패키지)
 - STM_B는 AUTO일 때만 Host brake를 최종 브레이크 요청에 포함합니다.
 - 조향 노드는 MANUAL에서 KEYA 모터를 Disable합니다.
 - `ActuatorCommand`에는 gear나 enable 필드가 없습니다.
+
+선택형 Host 종방향 PI/MPC는 `/vehicle/command`를 받아 별도의
+`/vehicle/drive_current_command`를 발행하며, STM_A의 외부 전류 경로가 소비합니다.
+`path_mpc`는 별도 Decision에서 실행되어 목표 조향각을 제공하고 Decision이 속도·제동과
+결합합니다. 기본 명령 경로와 제어기 선택의 관계는 [Software](../software/README.md)에 정리했습니다.
 
 ## 5. 상태 및 진단 데이터 흐름
 
@@ -415,7 +432,7 @@ ARM 이후 발행합니다. Web 조작권은 한 브라우저에만 주며 heart
 | `/vehicle/state`·`/vehicle/wheel_twist` 합성 | Host `vehicle_state_publisher/vehicle_state_publisher_node` |
 | status 3종의 `/diagnostics` 요약 | Host `vehicle_state_publisher/diagnostics_publisher` |
 | `/vehicle/command` 단일 발행과 명령 정합성 게이트 | Host `command_governor` |
-| 명령 형상 (속도 상한·램프·축간 협조) | Host `command_governor` (예정, 현재 패스스루) |
+| 양수 속도 명령의 가·감속 변화율 제한 | Host `command_governor` (설정에 따라 활성화; 최종 출력 한도는 액추에이터 쪽 담당) |
 | Production Planning / motion-control 명령 생성 (`/planning/command`) | 현재 코드에서 확인되지 않음 |
 | 시험·측정·독립 녹화·공통 기록 설정·분석 | Host `control_tools` |
 | 실차 시험 `/planning/command` 생성 | Host `vehicle_test_scenarios` |
